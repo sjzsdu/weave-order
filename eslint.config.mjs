@@ -31,4 +31,23 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // 目录边界铁律：agent 层禁止直接 import kernel，只能通过 tools 接口调用。
+    // tools -> kernel 仍放行（铁律允许），其余包不受影响。
+    files: ["apps/api/src/agent/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/kernel/**"],
+              message:
+                "目录边界铁律：agent 层禁止直接 import kernel，只能通过 tools 接口调用。",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
