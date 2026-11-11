@@ -1,15 +1,28 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["DATABASE_URL", "REDIS_URL", "NODE_ENV", "PORT"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
     "typecheck": {
+      "dependsOn": ["^build"],
       "outputs": []
     },
     "test": {
       "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "migrate": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "demo": {
+      "dependsOn": ["^build"],
+      "cache": false,
       "outputs": []
     },
     "dev": {

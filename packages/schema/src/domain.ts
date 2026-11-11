@@ -54,12 +54,7 @@ export type Customer = z.infer<typeof Customer>;
  * 用带类型的递归联合替代 any/unknown，保证「不留 any」且值结构可校验。
  */
 export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export const JsonValueSchema: z.ZodType<JsonValue> = z.union([
   z.null(),
@@ -67,7 +62,10 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.union([
   z.number(),
   z.string(),
   z.array(z.lazy(() => JsonValueSchema)),
-  z.record(z.string(), z.lazy(() => JsonValueSchema)),
+  z.record(
+    z.string(),
+    z.lazy(() => JsonValueSchema),
+  ),
 ]);
 
 /** 业务场景标签：决策增量所属的场景。 */
@@ -130,17 +128,7 @@ export const FollowupPreference = z.object({
   /** 偏好联系时段，如 "09:00-11:00" */
   preferredTimeWindow: z.string().max(64).nullable(),
   avoidDays: z
-    .array(
-      z.enum([
-        "MONDAY",
-        "TUESDAY",
-        "WEDNESDAY",
-        "THURSDAY",
-        "FRIDAY",
-        "SATURDAY",
-        "SUNDAY",
-      ]),
-    )
+    .array(z.enum(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]))
     .default([]),
   notes: z.array(z.string().max(500)).default([]),
 });
@@ -161,3 +149,63 @@ export const CustomerContext = z.object({
   updatedAt: Timestamp,
 });
 export type CustomerContext = z.infer<typeof CustomerContext>;
+
+/** 样品状态。 */
+export const SampleStatus = z.enum(["ACTIVE", "ARCHIVED"]);
+export type SampleStatus = z.infer<typeof SampleStatus>;
+
+/** 面料样品（完整实体，内核读写）。 */
+export const FabricSample = z.object({
+  id: EntityId,
+  code: z.string().min(1).max(64),
+  name: z.string().min(1).max(255),
+  composition: z.string().max(255).nullable(),
+  weight: z.string().max(64).nullable(),
+  unit: Unit,
+  /** 内核报价的价格底线（整数分）；低于此线一律 KERNEL_REJECTED。 */
+  costFloor: Money.nullable(),
+  status: SampleStatus,
+  createdAt: Timestamp,
+});
+export type FabricSample = z.infer<typeof FabricSample>;
+
+/** 寄样单状态。智能体只能产出 DRAFT，人类确认后才进入 CONFIRMED。 */
+export const SampleShipmentStatus = z.enum([
+  "DRAFT",
+  "CONFIRMED",
+  "SHIPPED",
+  "DELIVERED",
+  "CANCELLED",
+]);
+export type SampleShipmentStatus = z.infer<typeof SampleShipmentStatus>;
+
+/** 寄样渠道。 */
+export const ShipmentChannel = z.enum(["COURIER", "EXPRESS", "HAND_CARRY"]);
+export type ShipmentChannel = z.infer<typeof ShipmentChannel>;
+
+/** 寄样单明细。 */
+export const SampleShipmentItem = z.object({
+  sampleId: EntityId,
+  quantity: Quantity,
+});
+export type SampleShipmentItem = z.infer<typeof SampleShipmentItem>;
+
+/** 寄样单（完整实体，内核读写）。 */
+export const SampleShipment = z.object({
+  id: EntityId,
+  customerId: EntityId,
+  status: SampleShipmentStatus,
+  channel: ShipmentChannel,
+  carrier: z.string().max(128).nullable(),
+  trackingNumber: z.string().max(128).nullable(),
+  note: z.string().max(2000).nullable(),
+  items: z.array(SampleShipmentItem).min(1),
+  confirmedBy: z.string().max(128).nullable(),
+  confirmedAt: Timestamp.nullable(),
+  createdAt: Timestamp,
+});
+export type SampleShipment = z.infer<typeof SampleShipment>;
+
+/** 报价单状态。 */
+export const QuoteStatus = z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]);
+export type QuoteStatus = z.infer<typeof QuoteStatus>;

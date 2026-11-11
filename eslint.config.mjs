@@ -2,6 +2,21 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
+/**
+ * 目录边界铁律（机器强制，不靠自觉）：
+ * 1. apps/api/src/agent 只能 import tools，禁止 import kernel，也禁止触达数据库。
+ * 2. apps/api/src/tools、approval 只能调用 kernel service，禁止直连数据库。
+ * 3. 只有 kernel / platform 可以拥有数据库连接。
+ */
+const DATABASE_PATTERNS = [
+  "drizzle-orm",
+  "drizzle-orm/*",
+  "@weave-order/db",
+  "@weave-order/db/**",
+  "pg",
+  "**/platform/database",
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -12,7 +27,7 @@ export default tseslint.config(
       "**/*.config.js",
       "**/*.config.mjs",
       "**/*.config.ts",
-      "apps/api/test/**",
+      "packages/db/drizzle/**",
     ],
   },
   js.configs.recommended,
@@ -33,8 +48,7 @@ export default tseslint.config(
     },
   },
   {
-    // 目录边界铁律：agent 层禁止直接 import kernel，只能通过 tools 接口调用。
-    // tools -> kernel 仍放行（铁律允许），其余包不受影响。
+    // 铁律 #1 / #3：智能体不碰内核，也不碰数据库。
     files: ["apps/api/src/agent/**/*.ts"],
     rules: {
       "no-restricted-imports": [
@@ -43,8 +57,29 @@ export default tseslint.config(
           patterns: [
             {
               group: ["**/kernel", "**/kernel/**"],
+              message: "目录边界铁律：agent 层禁止直接 import kernel，只能通过 tools 接口调用。",
+            },
+            {
+              group: DATABASE_PATTERNS,
               message:
-                "目录边界铁律：agent 层禁止直接 import kernel，只能通过 tools 接口调用。",
+                "目录边界铁律：agent 层禁止触达数据库（drizzle/pg/@weave-order/db），只能通过 tools 调用内核。",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // 工具层只能调用 kernel service，不得自己连数据库。
+    files: ["apps/api/src/tools/**/*.ts", "apps/api/src/approval/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: DATABASE_PATTERNS,
+              message: "目录边界铁律：tools/approval 只调用 kernel service，禁止直连数据库。",
             },
           ],
         },

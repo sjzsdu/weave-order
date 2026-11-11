@@ -14,7 +14,10 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @weave-order/db generate",
+    "db:migrate": "turbo run migrate",
+    "demo": "turbo run migrate && turbo run demo"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -1,0 +1,59 @@
+import { auditLog } from "@weave-order/db";
+import type { Db, Tx } from "@weave-order/db";
+import { AuditLogEntry } from "@weave-order/schema";
+import type { AuditAction, JsonValue } from "@weave-order/schema";
+import { desc } from "drizzle-orm";
+
+/** 谁在写账本：智能体 / 人类 / 系统任务。 */
+export type ActorType = "AGENT" | "HUMAN" | "SYSTEM";
+
+export interface KernelContext {
+  actor: { type: ActorType; id: string };
+  /** 同一次业务动作引发的多条审计记录用同一个 correlationId 串起来。 */
+  correlationId?: string;
+}
+
+export interface AuditWrite {
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  before?: JsonValue | null;
+  after?: JsonValue | null;
+}
+
+/**
+ * 在写业务表的同一事务内追加审计记录。
+ * 审计写入失败 => 整个事务回滚，账本不会出现「改了但没有记录」的状态。
+ */
+export async function appendAudit(tx: Tx, ctx: KernelContext, entry: AuditWrite): Promise<void> {
+  await tx.insert(auditLog).values({
+    actorType: ctx.actor.type,
+    actorId: ctx.actor.id,
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: entry.entityId,
+    before: entry.before ?? null,
+    after: entry.after ?? null,
+    correlationId: ctx.correlationId ?? null,
+  });
+}
+
+/** 读取审计日志（最新在前），并用契约 Schema 校验读取模型。 */
+export async function listAuditLog(db: Db, limit = 20): Promise<AuditLogEntry[]> {
+  const rows = await db.select().from(auditLog).orderBy(desc(auditLog.seq)).limit(limit);
+  return rows.map((row) =>
+    AuditLogEntry.parse({
+      id: row.id,
+      seq: row.seq,
+      actorType: row.actorType,
+      actorId: row.actorId,
+      action: row.action,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      before: row.before ?? null,
+      after: row.after ?? null,
+      correlationId: row.correlationId,
+      createdAt: row.createdAt.toISOString(),
+    }),
+  );
+}

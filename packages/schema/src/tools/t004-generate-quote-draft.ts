@@ -6,23 +6,27 @@ import { Currency, EntityId, Money, Quantity, Timestamp } from "../domain";
  * 报价行输入：智能体建议的单价 + 数量。
  * `unitPrice` 仅作为建议，最终单价 / 总额一律由确定性内核重算并判定。
  */
-export const QuoteLineItemInput = z.object({
-  fabricSampleId: EntityId,
-  quantity: Quantity,
-  unitPrice: Money,
-  notes: z.string().max(500).optional(),
-});
+export const QuoteLineItemInput = z
+  .object({
+    fabricSampleId: EntityId,
+    quantity: Quantity,
+    unitPrice: Money,
+    notes: z.string().max(500).optional(),
+  })
+  .strict();
 export type QuoteLineItemInput = z.infer<typeof QuoteLineItemInput>;
 
 /** T-004 输入：生成报价草稿。 */
-export const T004GenerateQuoteDraftInput = z.object({
-  customerId: EntityId,
-  items: z.array(QuoteLineItemInput).min(1).max(200),
-  currency: Currency,
-  /** 报价有效期（天） */
-  validityDays: z.number().int().positive().max(365).default(30),
-  remarks: z.string().max(2000).optional(),
-});
+export const T004GenerateQuoteDraftInput = z
+  .object({
+    customerId: EntityId,
+    items: z.array(QuoteLineItemInput).min(1).max(200),
+    currency: Currency,
+    /** 报价有效期（天） */
+    validityDays: z.number().int().positive().max(365).default(30),
+    remarks: z.string().max(2000).optional(),
+  })
+  .strict();
 export type T004GenerateQuoteDraftInput = z.infer<typeof T004GenerateQuoteDraftInput>;
 
 /**

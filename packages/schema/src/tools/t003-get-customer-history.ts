@@ -15,14 +15,7 @@ export type QuoteSummary = z.infer<typeof QuoteSummary>;
 /** 订单摘要。 */
 export const OrderSummary = z.object({
   id: EntityId,
-  status: z.enum([
-    "PENDING",
-    "CONFIRMED",
-    "IN_PRODUCTION",
-    "SHIPPED",
-    "COMPLETED",
-    "CANCELLED",
-  ]),
+  status: z.enum(["PENDING", "CONFIRMED", "IN_PRODUCTION", "SHIPPED", "COMPLETED", "CANCELLED"]),
   currency: Currency,
   total: Money,
   placedAt: Timestamp,
@@ -41,11 +34,13 @@ export const FabricSampleSummary = z.object({
 export type FabricSampleSummary = z.infer<typeof FabricSampleSummary>;
 
 /** T-003 输入：查询客户历史。 */
-export const T003GetCustomerHistoryInput = z.object({
-  customerId: EntityId,
-  /** 各列表返回条数上限，默认 20 */
-  limit: z.number().int().positive().max(200).default(20),
-});
+export const T003GetCustomerHistoryInput = z
+  .object({
+    customerId: EntityId,
+    /** 各列表返回条数上限，默认 20 */
+    limit: z.number().int().positive().max(200).default(20),
+  })
+  .strict();
 export type T003GetCustomerHistoryInput = z.infer<typeof T003GetCustomerHistoryInput>;
 
 /** T-003 成功数据。 */
