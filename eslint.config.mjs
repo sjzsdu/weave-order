@@ -12,6 +12,7 @@ export default tseslint.config(
       "**/*.config.js",
       "**/*.config.mjs",
       "**/*.config.ts",
+      "apps/api/test/**",
     ],
   },
   js.configs.recommended,
@@ -41,7 +42,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ["**/kernel/**"],
+              group: ["**/kernel", "**/kernel/**"],
               message:
                 "目录边界铁律：agent 层禁止直接 import kernel，只能通过 tools 接口调用。",
             },

@@ -60,11 +60,11 @@ pnpm format      # 格式化
 3. **每个业务能力以工具（Tool）形式暴露**：工具输入输出有严格 Schema 校验；智能体不「打开页面」，只调用工具。
 4. **人类界面只有三个窗口**：任务派发（Intent Bar）、审批与异常分诊（Review Queue）、业务全景只读视图（Read-Only Panorama）。
 
-## 目录边界铁律（后续步骤用 ESLint no-restricted-imports 强制）
+## 目录边界铁律
 
 - `apps/api/src/kernel/` 下的 service 是唯一可以写业务表的代码。
 - `apps/api/src/tools/` 只调用 kernel 的 service，不直接连数据库。
-- `apps/api/src/agent/` 只调用 tools/ 的接口，不 import kernel/ 的任何模块。
+- `apps/api/src/agent/` 只调用 tools/ 的接口，不 import kernel/ 的任何模块。**这条边界已用 ESLint `no-restricted-imports` 强制**（`eslint.config.mjs`，覆盖 `**/kernel` 与 `**/kernel/**`，含裸 barrel 导入），并有常驻回归测试（`apps/api/test/boundary.test.ts`）锁定。
 - `packages/schema/` 的 Zod Schema 是前后端和工具层的唯一契约来源，不重复定义。
 
 ## 契约设计（packages/schema）
