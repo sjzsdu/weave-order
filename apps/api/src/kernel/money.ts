@@ -1,4 +1,5 @@
 import type { Currency, Money } from "@weave-order/schema";
+import { KernelError } from "./errors";
 
 /**
  * 金额与数量的确定性运算。
@@ -19,11 +20,29 @@ export function milliToQuantity(milli: number): number {
 
 /**
  * 单价（分/单位） × 数量 = 行金额（分）。
- * 先把数量放大为千分之一的整数，再对结果做一次 half-up 舍入。
+ *
+ * 用 BigInt 做乘法再用一次 half-up 舍入：金额列已经是 bigint，
+ * 中间结果可以超过 2^53，不能交给 IEEE754。结果超出安全整数时显式拒绝，
+ * 而不是静默丢精度。
  */
 export function multiplyCents(unitPriceCents: number, quantityMilli: number): number {
-  const product = unitPriceCents * quantityMilli;
-  return Math.floor((product + 500) / 1000);
+  if (
+    !Number.isSafeInteger(unitPriceCents) ||
+    !Number.isSafeInteger(quantityMilli) ||
+    unitPriceCents < 0 ||
+    quantityMilli < 0
+  ) {
+    throw new KernelError("KERNEL_REJECTED", "金额/数量必须是非负安全整数", {
+      reason: "UNSAFE_ARITHMETIC_INPUT",
+    });
+  }
+  const rounded = (BigInt(unitPriceCents) * BigInt(quantityMilli) + 500n) / 1000n;
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new KernelError("KERNEL_REJECTED", `行金额超出安全整数范围：${rounded.toString()} 分`, {
+      reason: "AMOUNT_OVERFLOW",
+    });
+  }
+  return Number(rounded);
 }
 
 export function makeMoney(amount: number, currency: Currency): Money {

@@ -18,7 +18,11 @@ export type Currency = z.infer<typeof Currency>;
  * 既杜绝浮点精度问题，也让「金额只能由确定性内核计算」在类型层可判别。
  */
 export const Money = z.object({
-  amount: z.number().int().nonnegative(),
+  amount: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER, "金额超出安全整数范围（约 9007 万亿元分），拒绝该值"),
   currency: Currency,
 });
 export type Money = z.infer<typeof Money>;
@@ -29,7 +33,7 @@ export type Unit = z.infer<typeof Unit>;
 
 /** 数量：正数 + 单位。 */
 export const Quantity = z.object({
-  value: z.number().positive(),
+  value: z.number().positive().max(1_000_000_000),
   unit: Unit,
 });
 export type Quantity = z.infer<typeof Quantity>;

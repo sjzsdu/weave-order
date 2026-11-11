@@ -1,4 +1,4 @@
-import { index, integer, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, index, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import { currencyEnum, sampleStatusEnum, unitEnum } from "./enums";
 
 /**
@@ -16,7 +16,7 @@ export const samples = pgTable(
     /** 克重描述，如 "220g/m2" */
     weight: varchar("weight", { length: 64 }),
     unit: unitEnum("unit").notNull().default("meter"),
-    costFloorAmount: integer("cost_floor_amount"),
+    costFloorAmount: bigint("cost_floor_amount", { mode: "number" }),
     costFloorCurrency: currencyEnum("cost_floor_currency"),
     status: sampleStatusEnum("status").notNull().default("ACTIVE"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -1,4 +1,4 @@
-import { samples } from "@weave-order/db";
+import { sampleEmbeddings, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateSampleInput } from "@weave-order/schema";
 import type { FabricSample } from "@weave-order/schema";
@@ -7,6 +7,8 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
 import { toIso } from "./mappers";
+import type { EmbeddingProvider } from "../platform/embedding";
+import { sampleEmbeddingText } from "./sample-embedding-text";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -29,10 +31,22 @@ export function mapSample(row: SampleRow): FabricSample {
 
 /** 样品内核服务：samples 的唯一写入入口。 */
 export class SampleService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly embedder: EmbeddingProvider,
+  ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
     const parsed = CreateSampleInput.parse(input);
+    // 向量生成在写库前完成；provider 不可用时样品不会半写入。
+    const embedding = await this.embedder.embedText(
+      sampleEmbeddingText({
+        code: parsed.code,
+        name: parsed.name,
+        composition: parsed.composition ?? null,
+        weight: parsed.weight ?? null,
+      }),
+    );
     try {
       return await this.db.transaction(async (tx) => {
         const rows = await tx
@@ -54,6 +68,12 @@ export class SampleService {
             reason: "INSERT_RETURNED_NO_ROW",
           });
         }
+        await tx.insert(sampleEmbeddings).values({
+          sampleId: row.id,
+          model: this.embedder.name,
+          dimension: this.embedder.dimension,
+          embedding,
+        });
         await appendAudit(tx, ctx, {
           action: "SAMPLE_CREATED",
           entityType: "sample",

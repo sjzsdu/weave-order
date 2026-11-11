@@ -5,7 +5,7 @@
   "description": "NestJS 后端（确定性内核 / 工具接口层 / 智能体编排 / 审批队列）",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsc -p tsconfig.build.json --watch",
+    "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

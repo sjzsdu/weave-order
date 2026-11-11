@@ -204,7 +204,35 @@ async function main(): Promise<void> {
   await kernel.quotes.confirmDraft(draft.id, HUMAN);
   ok("人类确认后报价草稿已转 SENT");
 
-  section("⑨ 审计日志（每一次账本写入都有记录）");
+  section("⑨ 找样工具：参数匹配（T-002）与以图搜图（T-001）");
+  const specResult = await tools.searchFabricBySpec.execute(
+    { query: "高支棉", composition: "棉", limit: 5 },
+    AGENT,
+  );
+  if (!specResult.ok) {
+    throw new Error(`T-002 失败：${JSON.stringify(specResult.error)}`);
+  }
+  const bestMatch = specResult.data.matches[0];
+  ok(
+    `T-002 命中 ${specResult.data.matches.length} 个样品，首个：${bestMatch?.sample.name ?? "无"}（命中 ${bestMatch?.matchedOn.join("/") ?? "-"}）`,
+  );
+
+  // 演示用 1x1 PNG（不依赖外部模型 key，embedding 走 local stub）。
+  const pixelPng =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const imageResult = await tools.searchFabricByImage.execute(
+    { image: { mimeType: "image/png", base64: pixelPng }, topK: 3, minSimilarity: 0 },
+    AGENT,
+  );
+  if (!imageResult.ok) {
+    throw new Error(`T-001 失败：${JSON.stringify(imageResult.error)}`);
+  }
+  ok(
+    `T-001 返回 ${imageResult.data.matches.length} 个候选（provider=${imageResult.data.embeddingModel}，dim=${imageResult.data.dimension}），相似度由内核算出`,
+  );
+  ok("两个工具都只读，不写账本；embedding provider 可在不改进程契约的情况下替换");
+
+  section("⑩ 审计日志（每一次账本写入都有记录）");
   const auditRows = await kernel.audit.list(20);
   for (const row of auditRows.slice(0, 10)) {
     console.log(
@@ -213,7 +241,7 @@ async function main(): Promise<void> {
   }
   ok(`本次共读取到 ${auditRows.length} 条审计记录（倒序）`);
 
-  section("⑩ 审计日志不可篡改（数据库触发器拦截 UPDATE / DELETE）");
+  section("⑪ 审计日志不可篡改（数据库触发器拦截 UPDATE / DELETE）");
   try {
     await db.execute(
       sql`UPDATE audit_log SET actor_id = 'tampered' WHERE seq = ${auditRows[0]?.seq ?? -1}`,
@@ -226,6 +254,7 @@ async function main(): Promise<void> {
   }
 
   section("结论");
+  ok("打开页面：pnpm dev → http://localhost:5173（选样品、点一个按钮，看到 DRAFT 与审计流水）");
   ok("建客户 → 内核写入 → 审计日志有记录：同一条命令跑通");
   ok("智能体只能通过工具拿到 DRAFT，确认动作只能由人类触发（内核校验 actor.type）");
   ok("报价金额、成本底线由内核计算与拦截，不信任 LLM 输出");

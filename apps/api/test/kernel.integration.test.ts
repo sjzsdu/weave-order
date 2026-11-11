@@ -177,6 +177,94 @@ describe("确定性内核（集成）", () => {
     });
   }, 20_000);
 
+  it("找样 T-002：样品创建即建索引，参数匹配说明命中字段", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const id = suffix();
+    const cotton = await kernel.samples.create(
+      {
+        code: `IT-SEARCH-C-${id}`,
+        name: "高支棉测试面料",
+        composition: "100% 棉",
+        weight: "220g/m2",
+        unit: "meter",
+      },
+      HUMAN,
+    );
+    await kernel.samples.create(
+      {
+        code: `IT-SEARCH-P-${id}`,
+        name: "涤纶测试面料",
+        composition: "100% polyester",
+        unit: "meter",
+      },
+      HUMAN,
+    );
+
+    const bySpec = await kernel.search.searchBySpec({
+      query: "高支棉测试面料",
+      composition: "棉",
+      limit: 10,
+    });
+    const hit = bySpec.matches.find((match) => match.sample.id === cotton.id);
+    expect(hit).toBeDefined();
+    expect(hit?.matchedOn).toContain("name");
+    expect(hit?.score).toBeGreaterThan(0);
+    expect(bySpec.matches.every((match) => match.sample.composition?.includes("棉"))).toBe(true);
+  }, 20_000);
+
+  it("找样 T-001：以图搜图返回契约内的确定性相似度", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const image = { mimeType: "image/jpeg", base64: "aGVsbG8td2VhdmU=" };
+    const first = await kernel.search.searchByImage(image, 5, 0);
+    const second = await kernel.search.searchByImage(image, 5, 0);
+
+    expect(first.embeddingModel).toBe("local-stub-v1");
+    expect(first.dimension).toBe(16);
+    expect(first.matches.length).toBeGreaterThan(0);
+    for (const match of first.matches) {
+      expect(match.score).toBeGreaterThanOrEqual(0);
+      expect(match.score).toBeLessThanOrEqual(1);
+    }
+    expect(second.matches.map((match) => match.score)).toEqual(
+      first.matches.map((match) => match.score),
+    );
+  }, 20_000);
+
+  it("报价：bigint 金额可以承载超过 int4 的单笔大单", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const id = suffix();
+    const customer = await kernel.customers.create(
+      { code: `IT-BIG-C-${id}`, name: "大单客户" },
+      HUMAN,
+    );
+    const sample = await kernel.samples.create(
+      { code: `IT-BIG-S-${id}`, name: "大单面料", unit: "meter" },
+      HUMAN,
+    );
+
+    const draft = await kernel.quotes.generateDraft(
+      {
+        customerId: customer.id,
+        currency: "CNY",
+        items: [
+          {
+            fabricSampleId: sample.id,
+            quantity: { value: 10, unit: "meter" },
+            // 3000 万/米 × 10 米 = 3 亿分（300 万元），旧 int4 列会溢出
+            unitPrice: { amount: 3_000_000_000, currency: "CNY" },
+          },
+        ],
+      },
+      AGENT,
+    );
+    expect(draft.total.amount).toBe(30_000_000_000);
+    const reloaded = await kernel.quotes.getDraft(draft.id);
+    expect(reloaded.total.amount).toBe(30_000_000_000);
+  }, 20_000);
+
   it("审计日志：数据库层面禁止 UPDATE / DELETE", async (ctx) => {
     if (!available) ctx.skip();
     const kernel = kernelOf();

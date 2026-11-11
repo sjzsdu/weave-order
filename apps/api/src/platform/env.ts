@@ -8,6 +8,8 @@ import { z } from "zod";
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1).default("postgres://weave:weave@localhost:5433/weave_order"),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
+  /** embedding provider：local-stub（默认，无需外部 key） */
+  EMBEDDING_PROVIDER: z.string().min(1).default("local-stub"),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });

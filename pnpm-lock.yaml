@@ -87,6 +87,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@weave-order/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       react:
         specifier: ^18.3.1
         version: 18.3.1

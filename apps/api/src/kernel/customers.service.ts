@@ -231,6 +231,16 @@ export class CustomerService {
     });
   }
 
+  /** 只读列表，给页面选择演示客户用。 */
+  async list(limit = 20): Promise<Customer[]> {
+    const rows = await this.db
+      .select()
+      .from(customers)
+      .orderBy(desc(customers.createdAt))
+      .limit(limit);
+    return rows.map(mapCustomer);
+  }
+
   async getContext(customerId: string): Promise<CustomerContext> {
     const rows = await this.db
       .select()

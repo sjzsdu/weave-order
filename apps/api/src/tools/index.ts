@@ -11,8 +11,18 @@ import {
   createGetCustomerHistoryTool,
   type GetCustomerHistoryTool,
 } from "./get-customer-history.tool";
+import {
+  createSearchFabricByImageTool,
+  type SearchFabricByImageTool,
+} from "./search-fabric-by-image.tool";
+import {
+  createSearchFabricBySpecTool,
+  type SearchFabricBySpecTool,
+} from "./search-fabric-by-spec.tool";
 
 export interface Tools {
+  searchFabricByImage: SearchFabricByImageTool;
+  searchFabricBySpec: SearchFabricBySpecTool;
   getCustomerHistory: GetCustomerHistoryTool;
   generateQuoteDraft: GenerateQuoteDraftTool;
   createSampleShipment: CreateSampleShipmentTool;
@@ -21,6 +31,8 @@ export interface Tools {
 /** 智能体可见的全部工具：只依赖 Kernel 的公开方法，不依赖数据库。 */
 export function createTools(kernel: Kernel): Tools {
   return {
+    searchFabricByImage: createSearchFabricByImageTool(kernel),
+    searchFabricBySpec: createSearchFabricBySpecTool(kernel),
     getCustomerHistory: createGetCustomerHistoryTool(kernel),
     generateQuoteDraft: createGenerateQuoteDraftTool(kernel),
     createSampleShipment: createCreateSampleShipmentTool(kernel),

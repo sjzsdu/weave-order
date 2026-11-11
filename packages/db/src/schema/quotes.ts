@@ -1,4 +1,13 @@
-import { index, integer, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 import {
   currencyEnum,
   quoteStatusEnum,
@@ -50,7 +59,7 @@ export const sampleShipmentItems = pgTable(
     sampleId: uuid("sample_id")
       .notNull()
       .references(() => samples.id, { onDelete: "restrict" }),
-    quantityMilli: integer("quantity_milli").notNull(),
+    quantityMilli: bigint("quantity_milli", { mode: "number" }).notNull(),
     unit: unitEnum("unit").notNull(),
   },
   (table) => [index("sample_shipment_items_shipment_idx").on(table.shipmentId)],
@@ -66,8 +75,8 @@ export const quotes = pgTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     status: quoteStatusEnum("status").notNull().default("DRAFT"),
     currency: currencyEnum("currency").notNull(),
-    subtotalAmount: integer("subtotal_amount").notNull(),
-    totalAmount: integer("total_amount").notNull(),
+    subtotalAmount: bigint("subtotal_amount", { mode: "number" }).notNull(),
+    totalAmount: bigint("total_amount", { mode: "number" }).notNull(),
     validityDays: integer("validity_days").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     remarks: text("remarks"),
@@ -95,10 +104,10 @@ export const quoteItems = pgTable(
       .references(() => samples.id, { onDelete: "restrict" }),
     position: integer("position").notNull(),
     description: varchar("description", { length: 255 }).notNull(),
-    quantityMilli: integer("quantity_milli").notNull(),
+    quantityMilli: bigint("quantity_milli", { mode: "number" }).notNull(),
     unit: unitEnum("unit").notNull(),
-    unitPriceAmount: integer("unit_price_amount").notNull(),
-    lineTotalAmount: integer("line_total_amount").notNull(),
+    unitPriceAmount: bigint("unit_price_amount", { mode: "number" }).notNull(),
+    lineTotalAmount: bigint("line_total_amount", { mode: "number" }).notNull(),
   },
   (table) => [index("quote_items_quote_idx").on(table.quoteId)],
 );

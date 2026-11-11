@@ -26,6 +26,15 @@ describe("kernel 金额确定性运算", () => {
     expect(multiplyCents(19, 3000)).toBe(57);
   });
 
+  it("大额金额用 BigInt 计算，不丢精度（bigint 列场景）", () => {
+    // 单价 3000 万分 × 10 米 = 3 亿分（300 万元），远超 int4 上限
+    expect(multiplyCents(3_000_000_000, 10_000)).toBe(30_000_000_000);
+  });
+
+  it("结果超出安全整数范围时显式拒绝，而不是静默丢精度", () => {
+    expect(() => multiplyCents(Number.MAX_SAFE_INTEGER, 1_000_000)).toThrow(/超出安全整数范围/);
+  });
+
   it("金额格式化不丢分", () => {
     expect(formatCents(123456789)).toBe("1,234,567.89");
     expect(formatCents(5)).toBe("0.05");
