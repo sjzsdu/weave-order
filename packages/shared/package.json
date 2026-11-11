@@ -1,0 +1,21 @@
+{
+  "name": "@weave-order/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "公共类型与工具函数",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
