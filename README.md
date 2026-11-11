@@ -13,7 +13,7 @@
 | ORM / 查询层 | Drizzle ORM（TypeScript 优先）                                   |
 | 缓存与队列   | Redis 7                                                          |
 | 向量检索     | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW |
-| 智能体编排   | LangGraph.js（工具调用走 Zod 校验，后续）                        |
+| 智能体编排   | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）  |
 | 前端         | React 18 + TypeScript + Vite（Web + H5 按路由区分）              |
 | 校验         | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）        |
 | 测试         | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）      |
@@ -29,9 +29,9 @@ weave-order/
 │   │   │   ├── tools/       # 工具接口层：智能体唯一可调用的入口
 │   │   │   ├── http/        # 最小 HTTP 面：目录、工具、确认、审计
 │   │   │   ├── platform/    # 配置、数据库、Redis、embedding provider
-│   │   │   ├── agent/       # 智能体编排层（后续，只调 tools）
+│   │   │   ├── agent/       # 寄样跟进智能体（LangGraph，只调 tools）
 │   │   │   └── approval/    # 审批队列（后续）
-│   │   ├── scripts/         # demo-kernel.ts 验收演示
+│   │   ├── scripts/         # demo-kernel / demo-followup 验收演示
 │   │   └── test/            # 边界 / 单元 / 内核集成 / HTTP e2e
 │   └── web/                 # React 18 + Vite（只读页面 + 一个按钮）
 ├── packages/
@@ -88,9 +88,37 @@ pnpm typecheck    # 全仓类型检查
 pnpm test         # 单元 + 边界；有本地 PG 时内核/HTTP 集成测试自动启用
 pnpm db:generate  # 改完 Drizzle Schema 后生成 SQL 迁移
 pnpm db:migrate   # 应用迁移
-pnpm demo         # 迁移 + 内核验收演示
+pnpm demo         # 迁移 + 内核演示 + 寄样跟进智能体（含检查点续跑）
+pnpm demo:followup # 只跑寄样跟进智能体演示
 pnpm format       # Prettier
 ```
+
+### 智能体编排（第四步）
+
+寄样跟进智能体的完整旅程，由 LangGraph 状态机编排、检查点存 PostgreSQL：
+
+```
+建寄样单(T-005) → 追踪物流 → 生成跟进建议 → 等待客户回复(interrupt)
+   → 识别回复 → 客户询价? → 生成报价草稿(T-004, DRAFT) → DONE
+                          ↘ 不问价 → DONE
+```
+
+- 节点只调用 tools；agent 层不 import kernel（ESLint 边界）。
+- 所有产出停在 `DRAFT` / 建议态：寄样单、跟进建议、报价草稿都需要人类后续确认。
+- 物流、LLM、客户回复来源都是 provider 接口，默认本地确定性实现，零外部 key：
+
+| 能力                | 默认实现                            | 环境变量             | 接真实服务时                                          |
+| ------------------- | ----------------------------------- | -------------------- | ----------------------------------------------------- |
+| 跟进建议 / 回复意图 | `local-rule`（规则引擎）            | `LLM_PROVIDER`       | 实现 `LlmProvider`                                    |
+| 物流轨迹            | `local-deterministic`（运单号哈希） | `LOGISTICS_PROVIDER` | 实现 `LogisticsProvider`                              |
+| 客户回复来源        | `local-scripted`（脚本化）          | `REPLY_SOURCE`       | 实现 `ReplySource`（微信/邮件适配器负责原始报文解析） |
+
+检查点：LangGraph 官方 `PostgresSaver`，表（`checkpoints` / `checkpoint_blobs` /
+`checkpoint_writes`）由 `setup()` 幂等创建，与业务表的 Drizzle 迁移互不干扰。
+
+`pnpm demo` 会真实演示续跑：进程 A 跑到「等待客户回复」中断并打印 checkpoint id，
+随后启动**全新 Node 进程 + 新连接池**的进程 B，从同一 thread 恢复、注入客户回复、
+识别询价并产出 `DRAFT` 报价，最后打印两边的审计流水。
 
 ### 最小 HTTP 面
 
@@ -160,16 +188,22 @@ pnpm format       # Prettier
 | `quotes` / `quote_items`                     | 报价单与明细，金额 bigint，行金额/总额由内核计算                           |
 | `sample_embeddings`                          | 样品向量索引（model + dimension + `real[]`），创建样品时写入               |
 | `audit_log`                                  | 追加型审计日志，数据库触发器禁止 UPDATE / DELETE                           |
+| LangGraph 检查点表                           | `checkpoints` / `checkpoint_blobs` / `checkpoint_writes`（saver setup 创建） |
 
 迁移在 `packages/db/drizzle/`，由 `drizzle-kit generate` 生成、`pnpm db:migrate` 应用。
+检查点表由 LangGraph `PostgresSaver.setup()` 幂等创建（与业务迁移分离）。
 
 ## 本轮范围
 
-第三步（找样 + 报价 + 最小可点页面）已完成：
+第四步（寄样跟进智能体 + LangGraph 编排）已完成，累计包含第三步能力：
 
 - T-001 以图搜图、T-002 参数匹配两个找样工具；embedding provider 可替换，默认 local stub。
 - T-004 报价草稿接入 HTTP；金额改 `bigint` 并在契约层加 `.max()`。
 - 最小 HTTP 面（目录 / 工具 / 人类确认 / 审计）+ 只读页面（一个按钮）。
 - `sample_embeddings` 索引在建样品时写入；以图搜图用确定性 cosine 相似度。
+- 寄样跟进智能体：建单 → 物流 → 跟进建议 → 等回复（interrupt）→ 回复识别 → 报价草稿。
+- 状态机非法跳转显式报错；工具失败进入 `FAILED` 并记录节点/错误码，不伪造成功。
+- 检查点持久化在 PostgreSQL，demo 演示跨进程中断与恢复。
 
-未做（后续步骤）：LangGraph 编排、完整审批队列、H5 / 小程序、Excel/CSV 导入、pgvector 索引与真实 embedding provider。
+未做（后续步骤）：完整审批队列、H5 / 小程序、Excel/CSV 导入、pgvector 索引与真实
+embedding / LLM / 物流 / 渠道 provider。

@@ -10,6 +10,12 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
   /** embedding provider：local-stub（默认，无需外部 key） */
   EMBEDDING_PROVIDER: z.string().min(1).default("local-stub"),
+  /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key） */
+  LLM_PROVIDER: z.string().min(1).default("local-rule"),
+  /** 物流 provider：local-deterministic（默认，本地确定性） */
+  LOGISTICS_PROVIDER: z.string().min(1).default("local-deterministic"),
+  /** 客户回复来源：local-scripted（默认，便于演示与测试） */
+  REPLY_SOURCE: z.string().min(1).default("local-scripted"),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });

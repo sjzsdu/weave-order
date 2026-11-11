@@ -1,5 +1,6 @@
 export * from "./common";
 export * from "./domain";
+export * from "./agent";
 export * from "./kernel";
 export * from "./tools/t001-search-fabric-by-image";
 export * from "./tools/t002-search-fabric-by-spec";

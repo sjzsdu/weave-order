@@ -29,6 +29,11 @@
       "cache": false,
       "persistent": true,
       "dependsOn": ["^build"]
+    },
+    "demo:followup": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
     }
   }
 }

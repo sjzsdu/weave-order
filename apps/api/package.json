@@ -10,9 +10,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "eslint src scripts test",
-    "demo": "tsx scripts/demo-kernel.ts"
+    "demo": "tsx scripts/demo-kernel.ts",
+    "demo:followup": "tsx scripts/demo-followup.ts"
   },
   "dependencies": {
+    "@langchain/core": "^1.4.0",
+    "@langchain/langgraph": "^1.7.3",
+    "@langchain/langgraph-checkpoint-postgres": "^1.1.2",
     "@nestjs/common": "^11.2.9",
     "@nestjs/core": "^11.2.9",
     "@nestjs/platform-express": "^11.2.9",

@@ -128,10 +128,7 @@ export class SearchService {
         ? or(...conditions)
         : and(
             or(...conditions),
-            ilikeLiteral(
-              samples.composition,
-              `%${escapeLikePattern(parsed.composition)}%`,
-            ),
+            ilikeLiteral(samples.composition, `%${escapeLikePattern(parsed.composition)}%`),
           );
 
     const rows = await this.db
@@ -157,9 +154,7 @@ export class SearchService {
 
     // 不变式：SQL 字面量匹配与 matchedOn 复核必须一致，返回行不得「零命中」。
     if (matches.some((match) => match.matchedOn.length === 0)) {
-      throw new Error(
-        "searchBySpec invariant violated: returned row has empty matchedOn",
-      );
+      throw new Error("searchBySpec invariant violated: returned row has empty matchedOn");
     }
 
     // 命中字段越多越靠前；同分按创建时间（已是倒序）。
