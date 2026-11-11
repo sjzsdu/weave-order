@@ -115,6 +115,44 @@ describe("HTTP 面（e2e）", () => {
     expect(confirmed.status).toBe("SENT");
   });
 
+  it("HTTP 复测：100%棉 按字面量匹配，matchedOn 非空", async (ctx) => {
+    const database = db;
+    if (!available || !database) {
+      ctx.skip();
+      return;
+    }
+    const kernel = createKernel(database);
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const sample = await kernel.samples.create(
+      { code: `E2E-LIKE-${id}`, name: "100%棉HTTP回归布", unit: "meter" },
+      HUMAN,
+    );
+
+    const response = await fetch(`${baseUrl}/api/tools/search-by-spec`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "100%棉", limit: 100 }),
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      ok: boolean;
+      data?: {
+        matches: {
+          sample: { id: string; name: string };
+          matchedOn: string[];
+          score: number;
+        }[];
+      };
+    };
+    expect(body.ok).toBe(true);
+    const matches = body.data?.matches ?? [];
+    expect(matches.map((match) => match.sample.id)).toContain(sample.id);
+    for (const match of matches) {
+      expect(match.matchedOn.length).toBeGreaterThan(0);
+      expect(match.sample.name.toLowerCase()).toContain("100%棉");
+    }
+  });
+
   it("参数匹配工具走 HTTP，非法输入返回 INVALID_INPUT 而不是 500", async (ctx) => {
     if (!available) ctx.skip();
     const response = await fetch(`${baseUrl}/api/tools/search-by-spec`, {

@@ -265,6 +265,70 @@ describe("确定性内核（集成）", () => {
     expect(reloaded.total.amount).toBe(30_000_000_000);
   }, 20_000);
 
+  it("找样 T-002 回归：LIKE 元字符按字面量匹配，matchedOn 与 SQL 语义一致", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const id = suffix();
+    const percent = await kernel.samples.create(
+      { code: `IT-LIKE-P-${id}`, name: "100%棉找样回归布", unit: "meter" },
+      HUMAN,
+    );
+    const decoy = await kernel.samples.create(
+      { code: `IT-LIKE-D-${id}`, name: "100 棉找样回归布", unit: "meter" },
+      HUMAN,
+    );
+    const underscore = await kernel.samples.create(
+      { code: `IT-LIKE-U-${id}`, name: "underscore_找样回归布", unit: "meter" },
+      HUMAN,
+    );
+    const percentCode = await kernel.samples.create(
+      { code: `SMP%REG-${id}`, name: "百分号编号回归布", unit: "meter" },
+      HUMAN,
+    );
+    const plainCode = await kernel.samples.create(
+      { code: `SMP-REG-${id}`, name: "普通编号回归布", unit: "meter" },
+      HUMAN,
+    );
+
+    const fieldValue = (
+      match: {
+        sample: { code: string; name: string; composition: string | null; weight: string | null };
+      },
+      field: "code" | "name" | "composition" | "weight",
+    ): string => {
+      if (field === "code") return match.sample.code;
+      if (field === "name") return match.sample.name;
+      if (field === "composition") return match.sample.composition ?? "";
+      return match.sample.weight ?? "";
+    };
+
+    const queries = ["100%棉", "_", "SMP%"];
+    for (const query of queries) {
+      const result = await kernel.search.searchBySpec({ query, limit: 100 });
+      for (const match of result.matches) {
+        // 任何返回行都必须有非空 matchedOn，且每个命中字段确实字面包含关键词。
+        expect(match.matchedOn.length).toBeGreaterThan(0);
+        for (const field of match.matchedOn) {
+          expect(fieldValue(match, field).toLowerCase()).toContain(query.toLowerCase());
+        }
+      }
+    }
+
+    const byPercent = await kernel.search.searchBySpec({ query: "100%棉", limit: 100 });
+    const percentIds = byPercent.matches.map((match) => match.sample.id);
+    expect(percentIds).toContain(percent.id);
+    expect(percentIds).not.toContain(decoy.id);
+    expect(byPercent.matches.length).toBeGreaterThan(0);
+
+    const byUnderscore = await kernel.search.searchBySpec({ query: "_", limit: 100 });
+    expect(byUnderscore.matches.map((match) => match.sample.id)).toContain(underscore.id);
+
+    const byCode = await kernel.search.searchBySpec({ query: "SMP%", limit: 100 });
+    const codeIds = byCode.matches.map((match) => match.sample.id);
+    expect(codeIds).toContain(percentCode.id);
+    expect(codeIds).not.toContain(plainCode.id);
+  }, 20_000);
+
   it("审计日志：数据库层面禁止 UPDATE / DELETE", async (ctx) => {
     if (!available) ctx.skip();
     const kernel = kernelOf();

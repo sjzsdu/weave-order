@@ -137,7 +137,7 @@ pnpm format       # Prettier
 - `src/domain.ts` — 领域实体：Customer、CustomerContext、FabricSample、SampleShipment、Money、Quantity、JsonValue 等。
 - `src/kernel.ts` — 内核输入契约与审计日志读取模型；全部 `.strict()`（未知字段一律拒绝）。
 - `src/tools/t001-search-fabric-by-image.ts` — 以图搜图输入 / 输出 / 相似度范围。
-- `src/tools/t002-search-fabric-by-spec.ts` — 参数匹配输入 / 输出 / `matchedOn`。
+- `src/tools/t002-search-fabric-by-spec.ts` — 参数匹配输入 / 输出 / `matchedOn`（关键词中的 `%` / `_` 按字面量匹配）。
 - `src/tools/t003-get-customer-history.ts` — 客户历史。
 - `src/tools/t004-generate-quote-draft.ts` — 报价草稿，`amountsComputedByKernel: true`。
 - `src/tools/t005-create-sample-shipment.ts` — 寄样单草稿 + 内核建议跟进时间。

@@ -3,11 +3,28 @@ import type { Db } from "@weave-order/db";
 import { T002SearchFabricBySpecInput } from "@weave-order/schema";
 import type { SpecMatch, T002SearchFabricBySpecData } from "@weave-order/schema";
 import type { EmbeddingProvider } from "../platform/embedding";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
 import { mapSample } from "./samples.service";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 
 type SampleRow = typeof samples.$inferSelect;
+
+/**
+ * 把用户输入里的 LIKE 元字符转义成字面量。
+ * `%` / `_` 是通配符，`\` 是转义符本身；三层顺序不能反，否则会双重转义。
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/**
+ * 字面量 ILIKE：转义后的模式 + 显式 ESCAPE '\'。
+ * 与 `matchedOn` 的 `String.includes` 复核语义一致：都按字面字符匹配。
+ */
+function ilikeLiteral(column: AnyColumn, pattern: string): SQL {
+  return sql`${column} ILIKE ${pattern} ESCAPE '\\'`;
+}
 
 function cosine(a: number[], b: number[]): number {
   const length = Math.min(a.length, b.length);
@@ -99,17 +116,23 @@ export class SearchService {
 
   async searchBySpec(input: unknown): Promise<T002SearchFabricBySpecData> {
     const parsed = T002SearchFabricBySpecInput.parse(input);
-    const term = `%${parsed.query}%`;
+    const term = `%${escapeLikePattern(parsed.query)}%`;
     const conditions = [
-      ilike(samples.code, term),
-      ilike(samples.name, term),
-      ilike(samples.composition, term),
-      ilike(samples.weight, term),
+      ilikeLiteral(samples.code, term),
+      ilikeLiteral(samples.name, term),
+      ilikeLiteral(samples.composition, term),
+      ilikeLiteral(samples.weight, term),
     ];
     const where =
       parsed.composition === undefined
         ? or(...conditions)
-        : and(or(...conditions), ilike(samples.composition, `%${parsed.composition}%`));
+        : and(
+            or(...conditions),
+            ilikeLiteral(
+              samples.composition,
+              `%${escapeLikePattern(parsed.composition)}%`,
+            ),
+          );
 
     const rows = await this.db
       .select()
@@ -131,6 +154,13 @@ export class SearchService {
         matchedOn,
       };
     });
+
+    // 不变式：SQL 字面量匹配与 matchedOn 复核必须一致，返回行不得「零命中」。
+    if (matches.some((match) => match.matchedOn.length === 0)) {
+      throw new Error(
+        "searchBySpec invariant violated: returned row has empty matchedOn",
+      );
+    }
 
     // 命中字段越多越靠前；同分按创建时间（已是倒序）。
     matches.sort((a, b) => b.score - a.score);
