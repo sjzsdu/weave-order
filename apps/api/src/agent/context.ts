@@ -10,3 +10,8 @@ export const FOLLOWUP_AGENT_CONTEXT = {
 };
 
 export type FollowupTools = Tools;
+
+/** 找样 / 报价智能体的身份：同样只通过 tools 动作。 */
+export const QUOTING_AGENT_CONTEXT = {
+  actor: { type: "AGENT" as const, id: "quoting-agent" },
+};

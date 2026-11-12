@@ -1,0 +1,148 @@
+import { z } from "zod";
+import { Currency, EntityId, FabricSample, Quantity } from "./domain";
+import { ImagePayload } from "./tools/t001-search-fabric-by-image";
+import { QuotePricingBasis } from "./tools/t006-suggest-line-price";
+import { QuoteDraft } from "./tools/t004-generate-quote-draft";
+
+/**
+ * 找样 / 报价智能体的公共契约。
+ *
+ * 约束（铁律 G2 / G9 / G10）：
+ * - agent 只调 tools；这里只有状态与建议，没有任何写账本字段。
+ * - 草稿永远 DRAFT；金额由内核计算，pricingBasis 只引用内核结果。
+ * - 对外模型只发脱敏后的文本与槽位，不发客户名单 / 成本底线。
+ */
+
+export const QuotingStage = z.enum([
+  "NEW",
+  "INTENT_PARSED",
+  "SAMPLES_FOUND",
+  "PRICED",
+  "DRAFTED",
+  "NEEDS_INPUT",
+  "DONE",
+  "FAILED",
+]);
+export type QuotingStage = z.infer<typeof QuotingStage>;
+
+export const MissingFieldCode = z.enum([
+  "CUSTOMER",
+  "SAMPLE",
+  "QUANTITY",
+  "COMPOSITION",
+  "WEIGHT",
+  "PRICE",
+  "CURRENCY",
+]);
+export type MissingFieldCode = z.infer<typeof MissingFieldCode>;
+
+export const MissingField = z
+  .object({
+    code: MissingFieldCode,
+    label: z.string().min(1).max(64),
+    prompt: z.string().min(1).max(255),
+    /** true = 缺少它就无法出草稿；false = 可以先出草稿再补。 */
+    blocking: z.boolean(),
+  })
+  .strict();
+export type MissingField = z.infer<typeof MissingField>;
+
+/** LLM 从客户原话里抽取的槽位；数字单位仍由确定性代码归一。 */
+export const QuoteIntentSlots = z
+  .object({
+    productKeywords: z.array(z.string().min(1).max(64)).max(20),
+    composition: z.string().max(100).nullable(),
+    weight: z.string().max(64).nullable(),
+    quantity: Quantity.nullable(),
+    priceRequested: z.boolean(),
+    deliveryDate: z.string().max(64).nullable(),
+  })
+  .strict();
+export type QuoteIntentSlots = z.infer<typeof QuoteIntentSlots>;
+
+export const QuoteIntentExtraction = z
+  .object({
+    slots: QuoteIntentSlots,
+    confidence: z.number().min(0).max(1),
+    provider: z.string().min(1).max(64),
+  })
+  .strict();
+export type QuoteIntentExtraction = z.infer<typeof QuoteIntentExtraction>;
+
+/** 客户原话入口：text 是用户粘贴的原文，可选带图（以图找样）。 */
+export const QuoteRequestInput = z
+  .object({
+    threadId: z.string().min(1).max(128).optional(),
+    rawText: z.string().min(1).max(4000),
+    /** 工作台当前选中的客户；没有时 agent 明确列为缺失项，不猜。 */
+    customerId: EntityId.optional(),
+    currency: Currency.default("CNY"),
+    image: ImagePayload.optional(),
+    topK: z.number().int().positive().max(10).default(3),
+  })
+  .strict();
+export type QuoteRequestInput = z.infer<typeof QuoteRequestInput>;
+
+export const CandidateSource = z.enum(["SPEC", "IMAGE", "COMBINED"]);
+export type CandidateSource = z.infer<typeof CandidateSource>;
+
+/** 一条候选样品 + 可解释的命中理由（理由来自确定性字段，不让 LLM 编）。 */
+export const QuoteSampleCandidate = z
+  .object({
+    sample: FabricSample,
+    score: z.number().min(0).max(1),
+    matchedOn: z.array(z.string().max(64)).max(10),
+    source: CandidateSource,
+    rationale: z.string().min(1).max(500),
+  })
+  .strict();
+export type QuoteSampleCandidate = z.infer<typeof QuoteSampleCandidate>;
+
+/** 报价 agent 的业务失败：停在哪一步、什么错误码，不伪造成功。 */
+export const QuoteAgentFailure = z
+  .object({
+    node: z.string().min(1).max(64),
+    code: z.string().min(1).max(64),
+    message: z.string().min(1).max(500),
+    stage: QuotingStage,
+  })
+  .strict();
+export type QuoteAgentFailure = z.infer<typeof QuoteAgentFailure>;
+
+/** 一次模型调用的用量回执（agent 透传给前端做「已记账」提示）。 */
+export const LlmCallReceipt = z
+  .object({
+    requestId: z.string().uuid(),
+    task: z.enum(["QUOTE_INTENT", "QUOTE_DRAFT", "FOLLOWUP_SUGGESTION", "REPLY_CLASSIFICATION"]),
+    model: z.string(),
+    provider: z.string(),
+    promptTokens: z.number().int().nonnegative(),
+    completionTokens: z.number().int().nonnegative(),
+    cachedTokens: z.number().int().nonnegative(),
+  })
+  .strict();
+export type LlmCallReceipt = z.infer<typeof LlmCallReceipt>;
+
+/**
+ * 找样/报价 agent 的最终产物。
+ * status = NEEDS_INPUT 时 draft 为 null，missingFields 告诉用户还差什么；
+ * status = DRAFTED 时 draft.status 恒为 DRAFT，人类确认后才可能 SENT。
+ */
+export const QuoteAgentResult = z
+  .object({
+    threadId: z.string(),
+    stage: QuotingStage,
+    status: z.enum(["DRAFTED", "NEEDS_INPUT", "FAILED"]),
+    intent: QuoteIntentExtraction.nullable(),
+    candidates: z.array(QuoteSampleCandidate).max(10),
+    selectedSampleId: EntityId.nullable(),
+    pricingBasis: QuotePricingBasis.nullable(),
+    draft: QuoteDraft.nullable(),
+    missingFields: z.array(MissingField).max(20),
+    explanation: z.string().max(2000),
+    provider: z.string().min(1).max(64),
+    usage: LlmCallReceipt.nullable(),
+    failure: QuoteAgentFailure.nullable(),
+  })
+  .strict();
+export type QuoteAgentResult = z.infer<typeof QuoteAgentResult>;

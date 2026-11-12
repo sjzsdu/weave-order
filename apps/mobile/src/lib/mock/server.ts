@@ -15,6 +15,7 @@ import type {
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
   T001SearchFabricByImageResult,
+  JsonValue,
 } from "@weave-order/schema";
 import {
   MOCK_CUSTOMERS,
@@ -153,6 +154,7 @@ function draftView(quote: QuoteRecord): T004GenerateQuoteDraftResult {
         customerId: quote.customerId,
         status: "DRAFT",
         currency: quote.currency,
+        version: quote.version,
         items: quote.items,
         subtotal: quote.subtotal,
         total: quote.total,
@@ -396,9 +398,12 @@ export function createMockServer(options: MockServerOptions): MockServer {
       entityId: quote.id,
       version: quote.version,
       patch: parsed.data.patch,
-      before,
-      after: quote.items,
-      provenance: { source: parsed.data.source, instruction: parsed.data.instruction },
+      before: before as unknown as JsonValue,
+      after: quote.items as unknown as JsonValue,
+      provenance: {
+        source: parsed.data.source,
+        instruction: parsed.data.instruction ?? null,
+      },
       actorType: "HUMAN",
       actorId: "mobile-user",
       createdAt: now().toISOString(),

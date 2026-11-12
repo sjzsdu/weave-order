@@ -116,3 +116,14 @@ export const scenarioTagEnum = pgEnum("scenario_tag", [
   "ORDER_FOLLOWUP",
   "RECONCILIATION",
 ]);
+
+/** LLM 配置作用域：全局参数 + 租户覆盖。 */
+export const llmScopeEnum = pgEnum("llm_scope", ["GLOBAL", "TENANT"]);
+
+/** LLM 任务标签：按任务路由与计量。 */
+export const llmTaskEnum = pgEnum("llm_task", [
+  "QUOTE_INTENT",
+  "QUOTE_DRAFT",
+  "FOLLOWUP_SUGGESTION",
+  "REPLY_CLASSIFICATION",
+]);

@@ -20,12 +20,14 @@ import {
   createSearchFabricBySpecTool,
   type SearchFabricBySpecTool,
 } from "./search-fabric-by-spec.tool";
+import { createSuggestLinePriceTool, type SuggestLinePriceTool } from "./suggest-line-price.tool";
 
 export interface Tools {
   searchFabricByImage: SearchFabricByImageTool;
   searchFabricBySpec: SearchFabricBySpecTool;
   getCustomerHistory: GetCustomerHistoryTool;
   generateQuoteDraft: GenerateQuoteDraftTool;
+  suggestLinePrice: SuggestLinePriceTool;
   createSampleShipment: CreateSampleShipmentTool;
 }
 
@@ -36,6 +38,7 @@ export function createTools(kernel: Kernel, imageFetcher?: ImageFetcher): Tools 
     searchFabricBySpec: createSearchFabricBySpecTool(kernel),
     getCustomerHistory: createGetCustomerHistoryTool(kernel),
     generateQuoteDraft: createGenerateQuoteDraftTool(kernel),
+    suggestLinePrice: createSuggestLinePriceTool(kernel),
     createSampleShipment: createCreateSampleShipmentTool(kernel),
   };
 }
