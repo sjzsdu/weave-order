@@ -254,7 +254,7 @@ async function main(): Promise<void> {
   }
 
   section("结论");
-  ok("打开页面：pnpm dev → http://localhost:5173（选样品、点一个按钮，看到 DRAFT 与审计流水）");
+  ok("打开三个窗口：pnpm dev → http://localhost:5173（任务派发 / 审批与异常分诊 / 全景只读）");
   ok("建客户 → 内核写入 → 审计日志有记录：同一条命令跑通");
   ok("智能体只能通过工具拿到 DRAFT，确认动作只能由人类触发（内核校验 actor.type）");
   ok("报价金额、成本底线由内核计算与拦截，不信任 LLM 输出");

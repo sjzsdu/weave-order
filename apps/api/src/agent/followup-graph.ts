@@ -1,6 +1,6 @@
 import { END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
-import { AgentFailure, RawCustomerReply } from "@weave-order/schema";
+import { AgentFailure, NO_TRACKING_NUMBER, RawCustomerReply } from "@weave-order/schema";
 import type { LlmProvider } from "../platform/llm";
 import type { LogisticsProvider } from "../platform/logistics";
 import type { ReplySource } from "../platform/reply-source";
@@ -48,6 +48,17 @@ export function createFollowupGraph(deps: FollowupGraphDeps) {
   const { tools, llm, logistics, replySource } = deps;
 
   const createShipment = async (state: State): Promise<FollowupUpdate> => {
+    // 包公记录项①：缺运单号在图入口即以明确业务码拒绝，不产生任何副作用。
+    // 否则会一路走到 trackLogistics，在 TrackingSnapshot 处抛出 Zod too_small 原文，
+    // 让整条旅程以 LOGISTICS_FAILED 失败、调用方拿不到可判别的业务错误码。
+    if (!state.trackingNumber.trim()) {
+      return fail(
+        state,
+        "createShipment",
+        NO_TRACKING_NUMBER,
+        "任务派发缺少运单号（trackingNumber）：寄样跟进需要运单号才能追踪物流，请在派发意图时提供。",
+      );
+    }
     try {
       const result = await tools.createSampleShipment.execute(
         {

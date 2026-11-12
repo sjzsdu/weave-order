@@ -26,6 +26,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/*.config.js",
       "**/*.config.mjs",
+      "**/*.config.cjs",
       "**/*.config.ts",
       "packages/db/drizzle/**",
     ],

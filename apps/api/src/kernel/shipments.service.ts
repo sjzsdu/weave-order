@@ -1,8 +1,8 @@
 import { sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { CreateSampleShipmentInput } from "@weave-order/schema";
+import { ApprovalItem, CreateSampleShipmentInput } from "@weave-order/schema";
 import type { SampleShipment, SampleShipmentItem } from "@weave-order/schema";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
@@ -191,5 +191,92 @@ export class ShipmentService {
     });
 
     return this.getById(shipmentId);
+  }
+
+  /** 审批队列 / 全景的只读视图：把账本里的寄样单映射成 ApprovalItem。 */
+  async list(limit = 50): Promise<ApprovalItem[]> {
+    const rows = await this.db
+      .select()
+      .from(sampleShipments)
+      .orderBy(desc(sampleShipments.createdAt))
+      .limit(limit);
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((row) => row.id);
+    const itemRows = await this.db
+      .select({ shipmentId: sampleShipmentItems.shipmentId })
+      .from(sampleShipmentItems)
+      .where(inArray(sampleShipmentItems.shipmentId, ids));
+    const countBy = new Map<string, number>();
+    for (const item of itemRows) {
+      countBy.set(item.shipmentId, (countBy.get(item.shipmentId) ?? 0) + 1);
+    }
+
+    return rows.map((row) => {
+      const logistics = [row.carrier, row.trackingNumber]
+        .filter((value): value is string => Boolean(value))
+        .join(" ");
+      return ApprovalItem.parse({
+        id: row.id,
+        kind: "sample_shipment",
+        title: `寄样单 · ${row.id.slice(0, 8)}`,
+        summary: `${countBy.get(row.id) ?? 0} 件样品 · ${logistics || "未填写承运/运单"}`,
+        status: row.status,
+        pending: row.status === "DRAFT",
+        amountCents: null,
+        currency: null,
+        customerId: row.customerId,
+        createdAt: toIso(row.createdAt),
+        confirmedBy: row.confirmedBy ?? null,
+      });
+    });
+  }
+
+  /**
+   * 人类在审批窗口驳回寄样单：DRAFT -> CANCELLED，同事务写审计。
+   * 智能体无权驳回；只有 DRAFT 能被驳回。
+   */
+  async reject(
+    shipmentId: string,
+    ctx: KernelContext,
+    note?: string,
+  ): Promise<{ status: "CANCELLED" }> {
+    if (ctx.actor.type !== "HUMAN") {
+      throw new KernelError(
+        "PERMISSION_DENIED",
+        "寄样单驳回必须由人类在审批窗口执行，智能体无权驳回",
+      );
+    }
+    const current = await this.getById(shipmentId);
+    if (current.status !== "DRAFT") {
+      throw new KernelError(
+        "KERNEL_REJECTED",
+        `寄样单当前状态为 ${current.status}，只有 DRAFT 可以驳回`,
+        { reason: "INVALID_STATE_TRANSITION" },
+      );
+    }
+
+    const cancelledAt = new Date();
+    await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(sampleShipments)
+        .set({ status: "CANCELLED", updatedAt: cancelledAt })
+        .where(eq(sampleShipments.id, shipmentId))
+        .returning();
+      if (!rows[0]) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
+          resourceType: "sample_shipment",
+          resourceId: shipmentId,
+        });
+      }
+      await appendAudit(tx, ctx, {
+        action: "SAMPLE_SHIPMENT_REJECTED",
+        entityType: "sample_shipment",
+        entityId: shipmentId,
+        before: { status: current.status },
+        after: { status: "CANCELLED", confirmedBy: ctx.actor.id, note: note ?? null },
+      });
+    });
+    return { status: "CANCELLED" };
   }
 }

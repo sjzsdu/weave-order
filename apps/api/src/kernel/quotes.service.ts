@@ -1,14 +1,14 @@
 import { quoteItems, quotes } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { T004GenerateQuoteDraftInput } from "@weave-order/schema";
+import { ApprovalItem, T004GenerateQuoteDraftInput } from "@weave-order/schema";
 import type { QuoteConfirmation, QuoteDraft, QuoteLineItem } from "@weave-order/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
-import { milliToQuantity, multiplyCents, quantityToMilli } from "./money";
-import { toIso } from "./mappers";
+import { formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
+import { currencyOf, toIso } from "./mappers";
 import type { SampleService } from "./samples.service";
 
 type QuoteRow = typeof quotes.$inferSelect;
@@ -243,5 +243,77 @@ export class QuoteService {
       confirmedBy: ctx.actor.id,
       confirmedAt: confirmedAt.toISOString(),
     };
+  }
+
+  /** 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。 */
+  async list(limit = 50): Promise<ApprovalItem[]> {
+    const rows = await this.db.select().from(quotes).orderBy(desc(quotes.createdAt)).limit(limit);
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((row) => row.id);
+    const itemRows = await this.db
+      .select({ quoteId: quoteItems.quoteId })
+      .from(quoteItems)
+      .where(inArray(quoteItems.quoteId, ids));
+    const countBy = new Map<string, number>();
+    for (const item of itemRows) {
+      countBy.set(item.quoteId, (countBy.get(item.quoteId) ?? 0) + 1);
+    }
+
+    return rows.map((row) =>
+      ApprovalItem.parse({
+        id: row.id,
+        kind: "quote",
+        title: `报价单 · ${row.id.slice(0, 8)}`,
+        summary: `${countBy.get(row.id) ?? 0} 行 · ${formatMoney({ amount: row.totalAmount, currency: currencyOf(row.currency) })}`,
+        status: row.status,
+        pending: row.status === "DRAFT",
+        amountCents: row.totalAmount,
+        currency: currencyOf(row.currency),
+        customerId: row.customerId,
+        createdAt: toIso(row.createdAt),
+        confirmedBy: row.confirmedBy ?? null,
+      }),
+    );
+  }
+
+  /**
+   * 人类在审批窗口驳回报价草稿：DRAFT -> REJECTED，同事务写审计。
+   * 智能体无权驳回；只有 DRAFT 能被驳回（getDraft 强制校验）。
+   */
+  async rejectDraft(
+    quoteId: string,
+    ctx: KernelContext,
+    note?: string,
+  ): Promise<{ status: "REJECTED" }> {
+    if (ctx.actor.type !== "HUMAN") {
+      throw new KernelError(
+        "PERMISSION_DENIED",
+        "报价驳回必须由人类在审批窗口执行，智能体无权驳回",
+      );
+    }
+    const current = await this.getDraft(quoteId);
+    const rejectedAt = new Date();
+    await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(quotes)
+        .set({ status: "REJECTED", updatedAt: rejectedAt })
+        .where(eq(quotes.id, quoteId))
+        .returning();
+      if (!rows[0]) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
+          resourceType: "quote",
+          resourceId: quoteId,
+        });
+      }
+      await appendAudit(tx, ctx, {
+        action: "QUOTE_REJECTED",
+        entityType: "quote",
+        entityId: quoteId,
+        before: { status: current.status, totalAmount: current.total.amount },
+        after: { status: "REJECTED", confirmedBy: ctx.actor.id, note: note ?? null },
+      });
+    });
+    return { status: "REJECTED" };
   }
 }

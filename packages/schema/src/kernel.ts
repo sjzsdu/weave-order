@@ -97,8 +97,10 @@ export const AuditAction = z.enum([
   "SAMPLE_CREATED",
   "SAMPLE_SHIPMENT_DRAFTED",
   "SAMPLE_SHIPMENT_CONFIRMED",
+  "SAMPLE_SHIPMENT_REJECTED",
   "QUOTE_DRAFT_GENERATED",
   "QUOTE_CONFIRMED",
+  "QUOTE_REJECTED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

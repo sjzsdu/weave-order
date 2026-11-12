@@ -1,4 +1,5 @@
 import { MemorySaver } from "@langchain/langgraph";
+import { NO_TRACKING_NUMBER } from "@weave-order/schema";
 import { describe, expect, it } from "vitest";
 import { createFollowupGraph } from "../src/agent";
 import type { FollowupStateType } from "../src/agent";
@@ -70,5 +71,33 @@ describe("寄样跟进图（工具失败分支，MemorySaver）", () => {
     const snapshot = await graph.getState(config);
     expect((snapshot.values as FollowupStateType).stage).toBe("FAILED");
     expect(snapshot.next).toEqual([]);
+  });
+});
+
+describe("寄样跟进图入口校验（包公记录项①：缺运单号）", () => {
+  it("空 / 全空白运单号在建单前即以 NO_TRACKING_NUMBER 拒绝，不调用工具", async () => {
+    // failingTools 一旦被调用会返回 RESOURCE_NOT_FOUND；断言 NO_TRACKING_NUMBER
+    // 即证明校验发生在图入口、建单工具根本没被调用，也没有残留 DRAFT。
+    for (const [index, trackingNumber] of ["", "   "].entries()) {
+      const graph = createFollowupGraph({
+        tools: failingTools,
+        llm: new LocalRuleLlmProvider(),
+        logistics: new LocalDeterministicLogisticsProvider(),
+        replySource: new LocalScriptedReplySource(),
+        checkpointer: new MemorySaver(),
+      });
+      const result = await graph.invoke(
+        { ...baseInput, trackingNumber },
+        { configurable: { thread_id: `unit-no-tracking-${index}` } },
+      );
+      expect(result.stage).toBe("FAILED");
+      expect(result.failure?.node).toBe("createShipment");
+      expect(result.failure?.code).toBe(NO_TRACKING_NUMBER);
+      expect(result.failure?.stage).toBe("NEW");
+      expect(result.failure?.message).toContain("运单号");
+      expect(result.shipment).toBeNull();
+      expect(result.quote).toBeNull();
+      expect(result.steps.some((step) => step.includes(NO_TRACKING_NUMBER))).toBe(true);
+    }
   });
 });

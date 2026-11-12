@@ -27,13 +27,13 @@ weave-order/
 │   │   ├── src/
 │   │   │   ├── kernel/      # 确定性内核：唯一可写业务表的代码（含找样检索）
 │   │   │   ├── tools/       # 工具接口层：智能体唯一可调用的入口
-│   │   │   ├── http/        # 最小 HTTP 面：目录、工具、确认、审计
+│   │   │   ├── http/        # HTTP 面：目录、工具、审批决策、全景、审计
 │   │   │   ├── platform/    # 配置、数据库、Redis、embedding provider
 │   │   │   ├── agent/       # 寄样跟进智能体（LangGraph，只调 tools）
-│   │   │   └── approval/    # 审批队列（后续）
+│   │   │   └── approval/    # 审批队列 / 决策 / 全景聚合（第五步）
 │   │   ├── scripts/         # demo-kernel / demo-followup 验收演示
 │   │   └── test/            # 边界 / 单元 / 内核集成 / HTTP e2e
-│   └── web/                 # React 18 + Vite（只读页面 + 一个按钮）
+│   └── web/                 # React 18 + Zustand + Radix + Tailwind + Vite（三个窗口）
 ├── packages/
 │   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源）
 │   └── db/                  # Drizzle Schema、连接、SQL 迁移
@@ -55,13 +55,14 @@ docker compose up -d
 # 3. 应用迁移 + 跑通内核演示（会写入演示客户/样品，页面需要这些数据）
 pnpm demo
 
-# 4. 打开能点的页面（API 3000 + Vite 5173）
+# 4. 打开三个窗口（API 3000 + Vite 5173）
 pnpm dev
 # → http://localhost:5173
 ```
 
-页面是**只读 + 一个按钮**：左侧选样品，点「让智能体生成报价草稿」，右侧出现
-`DRAFT` 报价卡片与审计流水。页面不会替人类确认 —— 这是有意的（铁律 #2）。
+页面是**三个窗口**（Radix Tabs 切换）：任务派发（Intent Bar）、审批与异常分诊
+（Review Queue）、业务全景只读（Read-Only Panorama）。智能体只出 `DRAFT` / 建议；
+批准 / 拒绝是审批窗口里人类唯一的决策入口，前端才会调内核 confirm 生效（铁律 #2）。
 
 `demo` 逐项展示：
 
@@ -122,16 +123,57 @@ pnpm format       # Prettier
 
 ### 最小 HTTP 面
 
-| 方法 | 路径                              | 说明                             |
-| ---- | --------------------------------- | -------------------------------- |
-| GET  | `/api/health`                     | 服务 + 数据库可用性              |
-| GET  | `/api/customers`                  | 客户列表（页面演示用）           |
-| GET  | `/api/samples`                    | 样品目录（只读）                 |
-| POST | `/api/tools/search-by-spec`       | T-002 参数匹配                   |
-| POST | `/api/tools/search-by-image`      | T-001 以图搜图（base64）         |
-| POST | `/api/tools/generate-quote-draft` | T-004 生成报价草稿（agent 身份） |
-| POST | `/api/quotes/:quoteId/confirm`    | 人类确认报价草稿（DRAFT → SENT） |
-| GET  | `/api/audit`                      | 审计流水（只读）                 |
+| 方法 | 路径                                | 身份 / 状态                   | 说明                                   |
+| ---- | ----------------------------------- | ----------------------------- | -------------------------------------- |
+| GET  | `/api/health`                       | 只读                          | 服务 + 数据库可用性                    |
+| GET  | `/api/customers`                    | 只读                          | 客户列表                               |
+| GET  | `/api/samples`                      | 只读                          | 样品目录                               |
+| GET  | `/api/audit`                        | 只读                          | 审计流水                               |
+| POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                         |
+| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）               |
+| POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                     |
+| POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                   |
+| POST | `/api/quotes/:quoteId/confirm`      | HUMAN（兼容旧演示）           | 人类确认报价草稿（DRAFT → SENT）       |
+| GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）   |
+| POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject    |
+| GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计） |
+
+> 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
+> 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由
+> `apps/api/src/approval` 调内核 `confirmDraft` / `confirm`（批准）或新增的
+> `rejectDraft` / `reject`（驳回），内核再校验 `actor.type === "HUMAN"` 兜底。
+
+### 三个窗口与审批 API（第五步）
+
+| 窗口                         | 职责                                                                 | 写操作                                   |
+| ---------------------------- | -------------------------------------------------------------------- | ---------------------------------------- |
+| ① Intent Bar（任务派发）     | 选上下文（客户 / 样品）、派发意图；智能体通过工具产出 `DRAFT` / 建议 | 仅工具调用（agent 身份），产出停在 DRAFT |
+| ② Review Queue（审批分诊）   | 列出 pending `DRAFT` 草稿；人类批准 / 拒绝；驳回可带分诊备注         | `/api/approvals/decide`（HUMAN）         |
+| ③ Read-Only Panorama（全景） | 账本状态、客户、样品、审计统计；异常 / 驳回分诊台账；纯只读          | 无                                       |
+
+端到端（`pnpm demo` 后 `pnpm dev` 可当场演示）：
+
+```
+Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/approvals 出现在队列
+  → 审批窗口点「批准 / 拒绝」→ POST /api/approvals/decide（HUMAN 上下文）
+  → kernel confirm / reject 同事务改状态 + 写审计
+  → 报价 DRAFT→SENT / 寄样单 DRAFT→CONFIRMED（批准），或 →REJECTED / →CANCELLED（驳回）
+  → GET /api/panorama 与审计流水立刻可见
+```
+
+技术栈：React 18 + Zustand（共享只读状态与审批队列实时刷新）+ Radix UI（Tabs / Dialog）
+
+- Tailwind CSS + Vite。状态、契约（输入 / 结果 / 只读视图）全部来自 `packages/schema`，
+  前端不重复定义任何业务结构。
+
+包公记录项处理：
+
+- **记录项①（已修）**：派发任务缺运单号曾让整条旅程在 `TrackingSnapshot` 处以 Zod
+  `too_small` 原文失败。现在图入口（`createShipment` 节点）即以明确业务错误码
+  `NO_TRACKING_NUMBER` 拒绝，不产生任何副作用；`packages/schema/src/agent.ts` 导出该常量，
+  `apps/api/test/agent-graph.test.ts` 有回归用例。
+- **记录项②（记录在案，无需改）**：本地规则意图识别「首个命中即返回」是演示口径，
+  接真实 LLM provider 后自然消失。
 
 ## 架构铁律（不可违反）
 
@@ -164,6 +206,8 @@ pnpm format       # Prettier
 - `src/common.ts` — 统一失败语义：以 `code` 区分的可判别联合，调用方可 `switch (error.code)` 精确分流。
 - `src/domain.ts` — 领域实体：Customer、CustomerContext、FabricSample、SampleShipment、Money、Quantity、JsonValue 等。
 - `src/kernel.ts` — 内核输入契约与审计日志读取模型；全部 `.strict()`（未知字段一律拒绝）。
+- `src/approval.ts` — 审批队列、决策入参 / 回执、业务全景只读快照的契约（第五步）。
+- `src/agent.ts` — 智能体状态 / 建议 / 信号契约，含 `NO_TRACKING_NUMBER` 业务错误码。
 - `src/tools/t001-search-fabric-by-image.ts` — 以图搜图输入 / 输出 / 相似度范围。
 - `src/tools/t002-search-fabric-by-spec.ts` — 参数匹配输入 / 输出 / `matchedOn`（关键词中的 `%` / `_` 按字面量匹配）。
 - `src/tools/t003-get-customer-history.ts` — 客户历史。
@@ -179,15 +223,15 @@ pnpm format       # Prettier
 
 ## 数据模型
 
-| 表                                           | 说明                                                                       |
-| -------------------------------------------- | -------------------------------------------------------------------------- |
-| `customers`                                  | 客户主表，`version` 支持乐观并发                                           |
-| `customer_contexts`                          | 客户私有上下文（护城河）：选样偏好、报价行为、付款行为、跟进偏好、决策增量 |
-| `samples`                                    | 面料样品，含报价成本底线（bigint 分）                                      |
-| `sample_shipments` / `sample_shipment_items` | 寄样单与明细，DRAFT → CONFIRMED                                            |
-| `quotes` / `quote_items`                     | 报价单与明细，金额 bigint，行金额/总额由内核计算                           |
-| `sample_embeddings`                          | 样品向量索引（model + dimension + `real[]`），创建样品时写入               |
-| `audit_log`                                  | 追加型审计日志，数据库触发器禁止 UPDATE / DELETE                           |
+| 表                                           | 说明                                                                         |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| `customers`                                  | 客户主表，`version` 支持乐观并发                                             |
+| `customer_contexts`                          | 客户私有上下文（护城河）：选样偏好、报价行为、付款行为、跟进偏好、决策增量   |
+| `samples`                                    | 面料样品，含报价成本底线（bigint 分）                                        |
+| `sample_shipments` / `sample_shipment_items` | 寄样单与明细，DRAFT → CONFIRMED                                              |
+| `quotes` / `quote_items`                     | 报价单与明细，金额 bigint，行金额/总额由内核计算                             |
+| `sample_embeddings`                          | 样品向量索引（model + dimension + `real[]`），创建样品时写入                 |
+| `audit_log`                                  | 追加型审计日志，数据库触发器禁止 UPDATE / DELETE                             |
 | LangGraph 检查点表                           | `checkpoints` / `checkpoint_blobs` / `checkpoint_writes`（saver setup 创建） |
 
 迁移在 `packages/db/drizzle/`，由 `drizzle-kit generate` 生成、`pnpm db:migrate` 应用。
@@ -195,15 +239,14 @@ pnpm format       # Prettier
 
 ## 本轮范围
 
-第四步（寄样跟进智能体 + LangGraph 编排）已完成，累计包含第三步能力：
+第五步（`apps/web` 三个窗口最小可用版 + 审批 API）已完成，累计包含前四步能力：
 
-- T-001 以图搜图、T-002 参数匹配两个找样工具；embedding provider 可替换，默认 local stub。
-- T-004 报价草稿接入 HTTP；金额改 `bigint` 并在契约层加 `.max()`。
-- 最小 HTTP 面（目录 / 工具 / 人类确认 / 审计）+ 只读页面（一个按钮）。
-- `sample_embeddings` 索引在建样品时写入；以图搜图用确定性 cosine 相似度。
-- 寄样跟进智能体：建单 → 物流 → 跟进建议 → 等回复（interrupt）→ 回复识别 → 报价草稿。
-- 状态机非法跳转显式报错；工具失败进入 `FAILED` 并记录节点/错误码，不伪造成功。
-- 检查点持久化在 PostgreSQL，demo 演示跨进程中断与恢复。
+- 确定性内核、工具接口层、LangGraph 编排、审计日志、目录边界 ESLint 规则（第一~四步）。
+- `apps/web` 三个窗口：Intent Bar / Review Queue / Read-Only Panorama（React 18 + Zustand + Radix + Tailwind）。
+- `apps/api/src/approval`：审批队列、批准 / 拒绝决策、业务全景聚合；只调用 kernel，禁止直连数据库。
+- 内核新增 `rejectDraft` / `reject`（DRAFT → REJECTED / CANCELLED），与 confirm 一样强制 HUMAN + 同事务审计。
+- 批准 / 拒绝端到端点得通：approval API → confirm / reject → 账本状态生效 → 全景 / 审计可见。
+- 包公记录项①：缺运单号改走明确业务错误码 `NO_TRACKING_NUMBER`（图入口校验）。
 
-未做（后续步骤）：完整审批队列、H5 / 小程序、Excel/CSV 导入、pgvector 索引与真实
+未做（后续步骤）：第六步 Excel/CSV 数据导入与冷启动；H5 / 小程序；pgvector 索引与真实
 embedding / LLM / 物流 / 渠道 provider。

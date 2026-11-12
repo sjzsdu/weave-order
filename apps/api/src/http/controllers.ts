@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import type { ApprovalService } from "../approval";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
 import { AGENT_CONTEXT, HUMAN_CONTEXT } from "./context";
-import { KERNEL, TOOLS } from "./tokens";
+import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
@@ -51,6 +52,12 @@ export class CatalogController {
   async searchByImage(@Body() body: unknown) {
     return this.tools.searchFabricByImage.execute(body, AGENT_CONTEXT);
   }
+
+  /** 意图派发（Intent Bar）：建寄样单只能得到 DRAFT，确认走审批窗口。 */
+  @Post("tools/create-sample-shipment")
+  async createSampleShipment(@Body() body: unknown) {
+    return this.tools.createSampleShipment.execute(body, AGENT_CONTEXT);
+  }
 }
 
 /** 报价草稿：智能体生成必须走工具，确认必须由人类走 confirm。 */
@@ -81,5 +88,38 @@ export class AuditController {
   async list(@Query("limit") limit?: string) {
     const entries = await this.kernel.audit.list(clampLimit(limit, 20, 200));
     return { entries };
+  }
+}
+
+/**
+ * 审批窗口（Review Queue）的 HTTP 面。
+ *
+ * 批准 / 拒绝是前端唯一的人类决策入口：控制器固定传入 HUMAN 上下文，
+ * 由 approval 服务落到内核 confirm / reject，内核再校验 actor.type === "HUMAN"。
+ * 前端拿不到内核句柄，也没有任何「直接改账本 / 绕过 tools」的端点。
+ */
+@Controller("api/approvals")
+export class ApprovalController {
+  constructor(@Inject(APPROVAL) private readonly approval: ApprovalService) {}
+
+  @Get()
+  async list() {
+    return this.approval.listPending();
+  }
+
+  @Post("decide")
+  async decide(@Body() body: unknown) {
+    return this.approval.decide(body, HUMAN_CONTEXT);
+  }
+}
+
+/** 业务全景（Read-Only Panorama）：一次只读聚合，前端纯展示，无任何写操作。 */
+@Controller("api")
+export class PanoramaController {
+  constructor(@Inject(APPROVAL) private readonly approval: ApprovalService) {}
+
+  @Get("panorama")
+  async panorama() {
+    return this.approval.panorama();
   }
 }

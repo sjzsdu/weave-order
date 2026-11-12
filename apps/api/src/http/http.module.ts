@@ -1,17 +1,21 @@
 import { Module } from "@nestjs/common";
 import type { Provider } from "@nestjs/common";
+import { createApprovalService } from "../approval";
+import type { ApprovalService } from "../approval";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
 import { createTools } from "../tools";
 import type { Tools } from "../tools";
 import {
+  ApprovalController,
   AuditController,
   CatalogController,
   HealthController,
+  PanoramaController,
   QuoteController,
 } from "./controllers";
 import { DatabaseProvider } from "./database.provider";
-import { KERNEL, TOOLS } from "./tokens";
+import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
   DatabaseProvider,
@@ -25,10 +29,22 @@ const providers: Provider[] = [
     useFactory: (kernel: Kernel): Tools => createTools(kernel),
     inject: [KERNEL],
   },
+  {
+    provide: APPROVAL,
+    useFactory: (kernel: Kernel): ApprovalService => createApprovalService(kernel),
+    inject: [KERNEL],
+  },
 ];
 
 @Module({
-  controllers: [HealthController, CatalogController, QuoteController, AuditController],
+  controllers: [
+    HealthController,
+    CatalogController,
+    QuoteController,
+    AuditController,
+    ApprovalController,
+    PanoramaController,
+  ],
   providers,
 })
 export class HttpModule {}

@@ -2,6 +2,13 @@ import { z } from "zod";
 import { EntityId, Timestamp } from "./domain";
 
 /**
+ * 图入口业务错误码（包公记录项①）：派发任务未提供运单号。
+ * 物流追踪需要运单号，缺失时在建单前即以明确业务码拒绝，
+ * 不再让旅程深入后在 TrackingSnapshot 处抛出 Zod too_small 原文。
+ */
+export const NO_TRACKING_NUMBER = "NO_TRACKING_NUMBER";
+
+/**
  * 寄样跟进智能体的契约。
  *
  * 这些结构是「智能体状态 / 建议 / 信号」的公共表示：
