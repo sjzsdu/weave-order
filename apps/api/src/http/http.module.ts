@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import type { Provider } from "@nestjs/common";
 import { createApprovalService } from "../approval";
 import type { ApprovalService } from "../approval";
+import { createQuoteExportService } from "../export";
+import type { QuoteExportService } from "../export";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
 import { createTools } from "../tools";
@@ -16,7 +18,8 @@ import {
   QuoteController,
 } from "./controllers";
 import { DatabaseProvider } from "./database.provider";
-import { APPROVAL, KERNEL, TOOLS } from "./tokens";
+import { QuoteExportController } from "./export.controller";
+import { APPROVAL, KERNEL, QUOTE_EXPORT, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
   DatabaseProvider,
@@ -35,6 +38,11 @@ const providers: Provider[] = [
     useFactory: (kernel: Kernel): ApprovalService => createApprovalService(kernel),
     inject: [KERNEL],
   },
+  {
+    provide: QUOTE_EXPORT,
+    useFactory: (kernel: Kernel): QuoteExportService => createQuoteExportService(kernel),
+    inject: [KERNEL],
+  },
 ];
 
 @Module({
@@ -46,6 +54,7 @@ const providers: Provider[] = [
     ApprovalController,
     PanoramaController,
     ImportController,
+    QuoteExportController,
   ],
   providers,
 })

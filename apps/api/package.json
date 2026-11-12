@@ -4,7 +4,7 @@
   "private": true,
   "description": "NestJS 后端（确定性内核 / 工具接口层 / 智能体编排 / 审批队列）",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsx scripts/copy-export-assets.ts",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -27,6 +27,7 @@
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "ioredis": "^5.8.1",
+    "pdfkit": "^0.20.2",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -34,6 +35,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/pdfkit": "^0.17.7",
     "@types/pg": "^8.15.5",
     "eslint": "^9.39.5",
     "tsx": "^4.20.6",

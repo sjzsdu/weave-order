@@ -31,4 +31,7 @@ export const quoteStatusEnum = pgEnum("quote_status", [
   "EXPIRED",
 ]);
 
+/** 报价发送渠道：阶段一只有「人工导出后自己转发」。 */
+export const quoteSendChannelEnum = pgEnum("quote_send_channel", ["MANUAL_EXPORT"]);
+
 export const actorTypeEnum = pgEnum("actor_type", ["AGENT", "HUMAN", "SYSTEM"]);

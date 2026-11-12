@@ -2,14 +2,18 @@ import {
   bigint,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import type { JsonValue } from "@weave-order/schema";
 import {
+  actorTypeEnum,
   currencyEnum,
+  quoteSendChannelEnum,
   quoteStatusEnum,
   shipmentChannelEnum,
   shipmentStatusEnum,
@@ -110,4 +114,42 @@ export const quoteItems = pgTable(
     lineTotalAmount: bigint("line_total_amount", { mode: "number" }).notNull(),
   },
   (table) => [index("quote_items_quote_idx").on(table.quoteId)],
+);
+
+/**
+ * 报价发送记录：一次「导出发给客户」就是一行，只增不改。
+ *
+ * 与 `quotes.status = SENT` 的区别：`SENT` 表示人已确认，本表才回答
+ * 「这份报价到底有没有交出去、交给谁、是哪一版内容」。
+ * `snapshot` 存发送时客户看到的内容快照（不可变），`snapshotHash` 是其 sha256，
+ * 用来把记录和某一版内容对上，也便于将来重放/比对。
+ * `receipt_status` / `receipt_at` / `external_ref` 为将来渠道回执预留，当前为空。
+ */
+export const quoteSends = pgTable(
+  "quote_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    quoteId: uuid("quote_id")
+      .notNull()
+      .references(() => quotes.id, { onDelete: "cascade" }),
+    channel: quoteSendChannelEnum("channel").notNull().default("MANUAL_EXPORT"),
+    format: varchar("format", { length: 16 }).notNull().default("PDF"),
+    actorType: actorTypeEnum("actor_type").notNull(),
+    actorId: varchar("actor_id", { length: 128 }).notNull(),
+    /** 发给谁：客户联系人 / 微信 / 邮箱，人工填写，可为空。 */
+    recipient: varchar("recipient", { length: 255 }),
+    note: text("note"),
+    /** 内容快照（客户实际看到的那一版）。 */
+    snapshot: jsonb("snapshot").$type<JsonValue>().notNull(),
+    snapshotHash: varchar("snapshot_hash", { length: 64 }).notNull(),
+    /** 预留：渠道回执。人工导出渠道不产生回执，保持为空。 */
+    receiptStatus: varchar("receipt_status", { length: 16 }),
+    receiptAt: timestamp("receipt_at", { withTimezone: true }),
+    externalRef: varchar("external_ref", { length: 128 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("quote_sends_quote_idx").on(table.quoteId),
+    index("quote_sends_created_at_idx").on(table.createdAt),
+  ],
 );

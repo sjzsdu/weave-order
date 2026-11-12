@@ -7,7 +7,12 @@
     "PORT",
     "IMPORT_XLSX",
     "IMPORT_CUSTOMERS",
-    "IMPORT_SAMPLES"
+    "IMPORT_SAMPLES",
+    "WEAVE_COMPANY_NAME",
+    "WEAVE_COMPANY_ADDRESS",
+    "WEAVE_COMPANY_PHONE",
+    "WEAVE_COMPANY_EMAIL",
+    "WEAVE_QUOTE_TERMS"
   ],
   "tasks": {
     "build": {

@@ -101,6 +101,7 @@ export const AuditAction = z.enum([
   "QUOTE_DRAFT_GENERATED",
   "QUOTE_CONFIRMED",
   "QUOTE_REJECTED",
+  "QUOTE_EXPORTED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
