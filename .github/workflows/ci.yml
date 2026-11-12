@@ -1,0 +1,133 @@
+name: CI
+
+# 分支保护建议只要求这两个 check：`quality`（lint / typecheck / test）与
+# `docker`（一键部署栈冒烟）。后者就是 README 里那份命令，CI 上原样跑一遍。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  quality:
+    name: Lint / Typecheck / Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave_order
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U weave -d weave_order"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    # 与 docker-compose.yml 对外端口一致（5433 / 6380），测试里的默认值可直接命中。
+    env:
+      DATABASE_URL: postgres://weave:weave@localhost:5433/weave_order
+      REDIS_URL: redis://localhost:6380
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Lint (含目录边界规则)
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Apply migrations (空库冷启动)
+        run: pnpm db:migrate
+
+      - name: Test
+        run: pnpm test
+
+  docker:
+    name: Docker 一键部署（compose 冷启动）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # 和用户拿到仓库后的操作完全一致：只跑 compose，不依赖宿主机上的 pnpm。
+      - name: Build images
+        run: docker compose build
+
+      - name: Start the stack on an empty database
+        run: docker compose up -d
+
+      - name: Wait for /api/health
+        run: |
+          for attempt in $(seq 1 60); do
+            if body=$(curl -fsS http://localhost:3000/api/health 2>/dev/null); then
+              echo "health: $body"
+              echo "$body" | grep -q '"database":"up"'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::120s 内 /api/health 未就绪"
+          docker compose ps
+          docker compose logs --no-color
+          exit 1
+
+      - name: Assert migrations ran automatically
+        run: |
+          applied=$(docker compose exec -T postgres psql -U weave -d weave_order -tAc \
+            "select count(*) from drizzle.__drizzle_migrations")
+          echo "applied migrations: $applied"
+          test "$applied" -gt 0
+
+      - name: Assert web gateway serves the app
+        run: curl -fsS http://localhost:8080/ | grep -q 'id="root"'
+
+      - name: Assert the web gateway proxies the API
+        run: curl -fsS http://localhost:8080/api/health | grep -q '"database":"up"'
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
