@@ -9,6 +9,12 @@
  *
  * 本脚本是「人类发起的运维动作」：固定 HUMAN 上下文，所有落库都经内核
  * ImportService，逐行用 packages/schema 契约严格校验、整批原子、同事务审计。
+ *
+ * 默认口径不变：库中已有同 code 行 => 整批拒绝（DUPLICATE_IN_DB），不会重复落库。
+ * 需要重导同一份 seed 时显式开启重置：
+ *   SEED_RESET=1 pnpm seed
+ * 同一事务内先删除同 code 的旧客户/样品及其报价、寄样引用，再整批写入；
+ * 任何一步失败都整批回滚，旧数据不会丢一半。
  */
 import path from "node:path";
 import { buildBatch, readRecords } from "../src/import";
@@ -60,8 +66,13 @@ async function main(): Promise<void> {
     console.log(`导入来源：${xlsx ?? `${customersPath} + ${samplesPath}`}`);
     console.log(`待导入：客户 ${batch.customers.length} 行 / 样品 ${batch.samples.length} 行`);
 
+    const resetExisting = process.env.SEED_RESET === "1" || process.env.SEED_RESET === "true";
+    if (resetExisting) {
+      console.log("重置模式：库中同 code 的旧客户/样品（含其报价、寄样引用）将先删除再导入");
+    }
+
     const kernel = createKernel(db);
-    const result = await kernel.importing.execute(batch, HUMAN);
+    const result = await kernel.importing.execute(batch, HUMAN, { resetExisting });
 
     console.log(
       `\n结果：committed=${result.committed} · 客户 ${result.importedCustomers} · 样品 ${result.importedSamples} · 回执 ${result.rows.length} 行`,

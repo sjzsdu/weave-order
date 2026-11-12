@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { customers, samples } from "@weave-order/db";
-import type { Db } from "@weave-order/db";
+import {
+  customerContexts,
+  customers,
+  quoteItems,
+  quotes,
+  sampleEmbeddings,
+  sampleShipmentItems,
+  sampleShipments,
+  samples,
+} from "@weave-order/db";
+import type { Db, Tx } from "@weave-order/db";
 import {
   CustomerImportRow,
   ImportBatch,
@@ -18,6 +27,7 @@ import type {
 } from "@weave-order/schema";
 import { ZodError } from "zod";
 import { inArray } from "drizzle-orm";
+import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
 import { errorChainMessage } from "./errors";
@@ -41,6 +51,17 @@ interface ValidatedSample {
 }
 
 type ValidatedRow = ValidatedCustomer | ValidatedSample;
+
+/** 导入选项：默认口径不变，只有显式开关才允许替换库中同 code 的旧行。 */
+export interface ImportOptions {
+  /**
+   * 重置已存在的同 code 行：在同一事务内先删除旧客户 / 样品（含客户上下文与
+   * 样品向量），以及引用它们的报价、寄样单与明细，再写入新行。默认关闭；
+   * 关闭时库中已有 code 仍按 `DUPLICATE_IN_DB` 整批拒绝。任何删除或写入失败
+   * 都会整批回滚，旧数据不会丢一半。
+   */
+  resetExisting?: boolean;
+}
 
 function issuesOf(error: ZodError): ZodIssueSummary[] {
   return error.issues.map((issue) => ({
@@ -102,7 +123,11 @@ export class ImportService {
     private readonly embedder: EmbeddingProvider,
   ) {}
 
-  async execute(input: unknown, ctx: KernelContext): Promise<ImportResult> {
+  async execute(
+    input: unknown,
+    ctx: KernelContext,
+    options: ImportOptions = {},
+  ): Promise<ImportResult> {
     // 导入写账本必须人类发起（与 confirm / reject 同一守卫）。
     if (ctx.actor.type !== "HUMAN") {
       return buildResult({
@@ -244,23 +269,27 @@ export class ImportService {
       for (const row of rows) existingSamples.set(row.code, row.id);
     }
     const checked: ValidatedRow[] = [];
+    const resetExisting = options.resetExisting === true;
     for (const entry of deduped) {
       const code = entry.kind === "customer" ? entry.customer.code : entry.sample.code;
       const map = entry.kind === "customer" ? existingCustomers : existingSamples;
       const existingId = map.get(code);
       if (existingId !== undefined) {
-        receipts.push({
-          ok: false,
-          kind: entry.kind,
-          row: entry.row,
-          key: entry.key,
-          error: {
-            code: "DUPLICATE_IN_DB",
-            message: `库中已存在同 code：${code}`,
-            existingId,
-          },
-        });
-        continue;
+        if (!resetExisting) {
+          receipts.push({
+            ok: false,
+            kind: entry.kind,
+            row: entry.row,
+            key: entry.key,
+            error: {
+              code: "DUPLICATE_IN_DB",
+              message: `库中已存在同 code：${code}`,
+              existingId,
+            },
+          });
+          continue;
+        }
+        // 重置模式：旧行在写入事务内先删后插，这里不再判为重复。
       }
       checked.push(entry);
     }
@@ -304,6 +333,9 @@ export class ImportService {
         }
       }
       await this.db.transaction(async (tx) => {
+        if (resetExisting) {
+          await this.resetWithin(tx, existingCustomers, existingSamples, fullCtx);
+        }
         for (const entry of checked) {
           if (entry.kind === "customer") {
             await this.customerService.insertWithin(tx, entry.customer, fullCtx, entry.context);
@@ -356,5 +388,95 @@ export class ImportService {
       importedSamples: checked.filter((entry) => entry.kind === "fabric_sample").length,
       correlationId,
     });
+  }
+
+  /**
+   * 重置模式：在同一事务内删除待替换的旧实体及其引用记录。
+   * 引用记录仅限「引用了这些客户 / 样品」的报价与寄样单（连同明细），
+   * 不触碰其它业务数据；每删一个旧实体都写同事务 `IMPORT_RESET` 审计。
+   * 任何删除失败 => 整个事务回滚，旧数据与新导入都不会半途落库。
+   */
+  private async resetWithin(
+    tx: Tx,
+    existingCustomers: Map<string, string>,
+    existingSamples: Map<string, string>,
+    ctx: KernelContext,
+  ): Promise<void> {
+    const customerIds = [...existingCustomers.values()];
+    const sampleIds = [...existingSamples.values()];
+    if (customerIds.length === 0 && sampleIds.length === 0) return;
+
+    const quoteIds = new Set<string>();
+    const shipmentIds = new Set<string>();
+    if (customerIds.length > 0) {
+      const quoteRows = await tx
+        .select({ id: quotes.id })
+        .from(quotes)
+        .where(inArray(quotes.customerId, customerIds));
+      for (const row of quoteRows) quoteIds.add(row.id);
+      const shipmentRows = await tx
+        .select({ id: sampleShipments.id })
+        .from(sampleShipments)
+        .where(inArray(sampleShipments.customerId, customerIds));
+      for (const row of shipmentRows) shipmentIds.add(row.id);
+    }
+    if (sampleIds.length > 0) {
+      const quoteRows = await tx
+        .select({ id: quoteItems.quoteId })
+        .from(quoteItems)
+        .where(inArray(quoteItems.sampleId, sampleIds));
+      for (const row of quoteRows) quoteIds.add(row.id);
+      const shipmentRows = await tx
+        .select({ id: sampleShipmentItems.shipmentId })
+        .from(sampleShipmentItems)
+        .where(inArray(sampleShipmentItems.sampleId, sampleIds));
+      for (const row of shipmentRows) shipmentIds.add(row.id);
+    }
+
+    // 先删引用记录（明细 → 主单），再删客户上下文 / 样品向量，最后删主实体。
+    if (quoteIds.size > 0) {
+      const ids = [...quoteIds];
+      await tx.delete(quoteItems).where(inArray(quoteItems.quoteId, ids));
+      await tx.delete(quotes).where(inArray(quotes.id, ids));
+      for (const id of ids) {
+        await appendAudit(tx, ctx, { action: "IMPORT_RESET", entityType: "quote", entityId: id });
+      }
+    }
+    if (shipmentIds.size > 0) {
+      const ids = [...shipmentIds];
+      await tx.delete(sampleShipmentItems).where(inArray(sampleShipmentItems.shipmentId, ids));
+      await tx.delete(sampleShipments).where(inArray(sampleShipments.id, ids));
+      for (const id of ids) {
+        await appendAudit(tx, ctx, {
+          action: "IMPORT_RESET",
+          entityType: "sample_shipment",
+          entityId: id,
+        });
+      }
+    }
+    if (customerIds.length > 0) {
+      await tx.delete(customerContexts).where(inArray(customerContexts.customerId, customerIds));
+      await tx.delete(customers).where(inArray(customers.id, customerIds));
+      for (const [code, id] of existingCustomers) {
+        await appendAudit(tx, ctx, {
+          action: "IMPORT_RESET",
+          entityType: "customer",
+          entityId: id,
+          before: { code },
+        });
+      }
+    }
+    if (sampleIds.length > 0) {
+      await tx.delete(sampleEmbeddings).where(inArray(sampleEmbeddings.sampleId, sampleIds));
+      await tx.delete(samples).where(inArray(samples.id, sampleIds));
+      for (const [code, id] of existingSamples) {
+        await appendAudit(tx, ctx, {
+          action: "IMPORT_RESET",
+          entityType: "fabric_sample",
+          entityId: id,
+          before: { code },
+        });
+      }
+    }
   }
 }

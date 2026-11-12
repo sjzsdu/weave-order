@@ -196,6 +196,7 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
 ```bash
 docker compose up -d
 pnpm seed          # = 迁移 + 导入 data/seed/customers.csv + samples.csv
+SEED_RESET=1 pnpm seed   # 数据已存在：同事务重置 seed 行后重导（见下）
 # 或换成 Excel 工作簿（含 customers / samples 两个 sheet）：
 IMPORT_XLSX=data/seed/weave-order-seed.xlsx pnpm seed
 pnpm demo          # 可选：内核演示 + 寄样跟进智能体（另造演示数据）
@@ -234,8 +235,16 @@ pnpm dev           # http://localhost:5173
 `http` 层唯一例外是组合根的两个文件：`http.module.ts`（把 `DatabaseProvider` 装配进 Nest DI）
 与 `database.provider.ts`（真正建连接），它们只允许 import `../platform/database`，
 `pg` / `drizzle-orm` / `@weave-order/db` 在例外内也照样被拦——例外范围就这两条，不向外扩。
-导入链路同样不出现 `any`（行内容用 `unknown` 承载，由契约逐行校验）。重复运行同一 seed 会因
-`DUPLICATE_IN_DB` 整批拒绝（不会重复落库），换一份 code 或清空对应表即可重导。
+导入链路同样不出现 `any`（行内容用 `unknown` 承载，由契约逐行校验）。默认重复运行同一 seed
+会因 `DUPLICATE_IN_DB` 整批拒绝（不会重复落库）；需要重导同一份 seed 时显式开启重置：
+
+```bash
+SEED_RESET=1 pnpm seed
+```
+
+重置仍在同一个事务内完成：先按本批 code 删除旧客户 / 样品（连同 `customer_contexts`、
+`sample_embeddings`，以及引用它们的报价、寄样单与明细），再整批写入，每删一个旧实体写
+`IMPORT_RESET` 审计。任何一步失败整批回滚，旧数据不会丢一半；引用记录之外的业务数据不受影响。
 
 **CustomerContext 确认**：P0 已有着落 —— `customer_contexts` 表、创建客户时内核自动
 写默认上下文、`getContext` / `getHistory` / `appendDecisionDelta` 读写。导入客户时同样

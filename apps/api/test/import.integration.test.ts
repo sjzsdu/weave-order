@@ -1,5 +1,12 @@
 import { eq, inArray } from "drizzle-orm";
-import { auditLog, customers, samples } from "@weave-order/db";
+import {
+  auditLog,
+  customerContexts,
+  customers,
+  quotes,
+  sampleShipments,
+  samples,
+} from "@weave-order/db";
 import { createDb } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { CustomerContext } from "@weave-order/schema";
@@ -310,6 +317,108 @@ describe("数据导入（集成，整批原子 / 单事务回滚）", () => {
     // 同事务审计也一并回滚，不留脏记录
     expect(auditAfter.length).toBe(auditBefore.length);
   }, 20_000);
+
+  it("resetExisting：同 code 旧行连同上下文 / 引用报价与寄样被替换，并留 IMPORT_RESET 审计", async (ctx) => {
+    const database = db;
+    const importer = service;
+    if (!available || !database || !importer) {
+      ctx.skip();
+      return;
+    }
+    const s = suffix();
+    const customerCode = `IT-IMP-RESET-C-${s}`;
+    const sampleCode = `IT-IMP-RESET-S-${s}`;
+    const kernel = createKernel(database);
+    const oldCustomer = await kernel.customers.create(
+      { code: customerCode, name: "重置前客户" },
+      HUMAN,
+    );
+    const oldSample = await kernel.samples.create(
+      {
+        code: sampleCode,
+        name: "重置前面料",
+        unit: "meter",
+        costFloor: { amount: 1200, currency: "CNY" },
+      },
+      HUMAN,
+    );
+    const quote = await kernel.quotes.generateDraft(
+      {
+        customerId: oldCustomer.id,
+        currency: "CNY",
+        validityDays: 30,
+        items: [
+          {
+            fabricSampleId: oldSample.id,
+            quantity: { value: 2, unit: "meter" },
+            unitPrice: { amount: 1500, currency: "CNY" },
+          },
+        ],
+      },
+      HUMAN,
+    );
+    const shipment = await kernel.shipments.createDraft(
+      {
+        customerId: oldCustomer.id,
+        items: [{ sampleId: oldSample.id, quantity: { value: 1, unit: "meter" } }],
+      },
+      HUMAN,
+    );
+
+    // 默认口径不受影响：同 code 仍然整批拒绝
+    const rejected = await importer.execute(
+      { customers: [customerRow(customerCode, { name: "重置后客户" })] },
+      HUMAN,
+    );
+    expect(rejected.committed).toBe(false);
+    expect(rejected.batchError?.code).toBe("BATCH_REJECTED");
+
+    const result = await importer.execute(
+      {
+        customers: [
+          customerRow(customerCode, {
+            name: "重置后客户",
+            context: { preferenceNotes: ["新偏好"] },
+          }),
+        ],
+        samples: [sampleRow(sampleCode, { name: "重置后面料" })],
+      },
+      HUMAN,
+      { resetExisting: true },
+    );
+    expect(result.committed).toBe(true);
+    expect(result.importedCustomers).toBe(1);
+    expect(result.importedSamples).toBe(1);
+    const correlationId = result.correlationId;
+    expect(correlationId).not.toBeNull();
+    if (correlationId === null) return;
+
+    const newCustomerId = await customerIdByCode(customerCode);
+    expect(newCustomerId).toBeDefined();
+    expect(newCustomerId).not.toBe(oldCustomer.id);
+    // 旧客户上下文随旧客户一起删除，新上下文是新行
+    const staleContext = await database
+      .select()
+      .from(customerContexts)
+      .where(eq(customerContexts.customerId, oldCustomer.id));
+    expect(staleContext).toHaveLength(0);
+    if (!newCustomerId) return;
+    const context = await kernel.customers.getContext(newCustomerId);
+    expect(context.preferenceNotes).toEqual(["新偏好"]);
+
+    // 引用旧客户 / 样品的报价与寄样单被连带清理
+    expect(await database.select().from(quotes).where(eq(quotes.id, quote.id))).toHaveLength(0);
+    expect(
+      await database.select().from(sampleShipments).where(eq(sampleShipments.id, shipment.id)),
+    ).toHaveLength(0);
+
+    // 同一 correlationId 下四类旧实体都有 IMPORT_RESET 审计
+    const audits = await database
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.correlationId, correlationId));
+    expect(audits.filter((entry) => entry.action === "IMPORT_RESET")).toHaveLength(4);
+  }, 30_000);
 
   it("非 HUMAN 上下文 / 非法信封 → 可判别拒绝、零写入", async (ctx) => {
     const importer = service;
