@@ -36,6 +36,18 @@ export const RevisionReason = z
   .strict();
 export type RevisionReason = z.infer<typeof RevisionReason>;
 
+/** 新建结构化改稿/驳回原因（价格/交期/规格/客户要求/其他）。 */
+export const CreateRevisionReasonInput = z
+  .object({
+    code: z.string().min(1).max(64),
+    label: z.string().min(1).max(255),
+    appliesTo: z.array(RevisionEntityType).min(1),
+    active: z.boolean().default(true),
+    sortOrder: z.number().int().default(0),
+  })
+  .strict();
+export type CreateRevisionReasonInput = z.infer<typeof CreateRevisionReasonInput>;
+
 /**
  * 草稿修订版本：保存 before/after/patch/provenance。
  * `version` 在同一实体上单调递增，用于并发冲突检测。
@@ -114,6 +126,10 @@ export const RevisionDiff = z
     field: z.string().min(1).max(255),
     before: JsonValueSchema,
     after: JsonValueSchema,
+    /** 报价行改价时为 0-based 行号；单据级字段为 null。 */
+    lineIndex: z.number().int().nonnegative().nullable().optional(),
+    /** 人类可读字段名，如「单价」「数量」。 */
+    label: z.string().max(128).nullable().optional(),
   })
   .strict();
 export type RevisionDiff = z.infer<typeof RevisionDiff>;

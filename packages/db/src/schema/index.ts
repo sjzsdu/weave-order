@@ -6,6 +6,8 @@ export * from "./tenants";
 export * from "./orders";
 export * from "./receivables";
 export * from "./revisions";
+export * from "./pricing";
+export * from "./decision-deltas";
 export * from "./shares";
 export * from "./audit";
 export * from "./embeddings";

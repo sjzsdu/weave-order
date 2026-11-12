@@ -37,6 +37,7 @@ export const CreateSampleInput = z
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
     composition: z.string().max(255).nullable().optional(),
+    category: z.string().max(64).nullable().optional(),
     weight: z.string().max(64).nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
@@ -75,7 +76,13 @@ export const ConfirmSampleShipmentInput = z.object({ shipmentId: EntityId }).str
 export type ConfirmSampleShipmentInput = z.infer<typeof ConfirmSampleShipmentInput>;
 
 /** 人工确认报价草稿（DRAFT -> SENT）。 */
-export const ConfirmQuoteInput = z.object({ quoteId: EntityId }).strict();
+export const ConfirmQuoteInput = z
+  .object({
+    quoteId: EntityId,
+    /** 可选乐观锁：审批人看到的是哪一版就确认哪一版。 */
+    baseVersion: z.number().int().positive().optional(),
+  })
+  .strict();
 export type ConfirmQuoteInput = z.infer<typeof ConfirmQuoteInput>;
 
 /** 人类确认报价后的回执：状态只可能是 SENT。 */
@@ -85,6 +92,7 @@ export const QuoteConfirmation = z
     status: z.literal("SENT"),
     confirmedBy: z.string().min(1).max(128),
     confirmedAt: Timestamp,
+    version: z.number().int().positive().optional(),
   })
   .strict();
 export type QuoteConfirmation = z.infer<typeof QuoteConfirmation>;
@@ -99,6 +107,9 @@ export const AuditAction = z.enum([
   "SAMPLE_SHIPMENT_CONFIRMED",
   "SAMPLE_SHIPMENT_REJECTED",
   "QUOTE_DRAFT_GENERATED",
+  "QUOTE_DRAFT_REVISED",
+  "QUOTE_REVISION_PROPOSED",
+  "QUOTE_APPROVAL_ESCALATED",
   "QUOTE_CONFIRMED",
   "QUOTE_REJECTED",
   "TENANT_CREATED",
@@ -113,6 +124,10 @@ export const AuditAction = z.enum([
   "QUOTE_SHARE_REVOKED",
   "REVISION_REQUESTED",
   "REVISION_RESOLVED",
+  "DECISION_DELTA_RECORDED",
+  "PRICING_POLICY_CREATED",
+  "PRICING_POLICY_UPDATED",
+  "LLM_SETTINGS_UPDATED",
   // 身份/凭据类动作（网关与打印代理会写入，保持审计动作集合封闭）
   "USER_CREATED",
   "API_TOKEN_CREATED",

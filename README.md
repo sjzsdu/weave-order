@@ -101,6 +101,22 @@ pnpm seed         # 迁移 + 导入样例客户/样品（Excel/CSV，冷启动�
 pnpm format       # Prettier
 ```
 
+### 内核与审批（Track A）
+
+报价全链路已在内核落地：建客户 → 建样品 → 报价草稿（DRAFT）→ 改价
+（版本 +1、重算、逐行 diff）→ 改幅/金额超阈值自动升级审批 → 人类批准 → confirm。
+
+- 定价继承：系统 → 公司 → 团队/客户/品类 → 个人；管控类（`locked`）只能收紧，
+  解析结果同时返回「生效值 + 来源」。
+- 审批阈值：默认 5 万 / 20 万 / 无上限；改幅超过 5% 或 1 万元自动升级主管。
+- 审批角色从登录态 membership 注入（生产缺令牌 401、缺角色 fail-closed），
+  不再硬编码 OWNER。
+- 改稿 / 驳回同事务写 `audit_log`、`revision_requests`、`draft_revisions`、
+  `decision_deltas`，AI 只能产出 Patch，改账本必须 HUMAN。
+
+接口与验收细节见 `docs/track-a-kernel.md`；常驻用例：
+`apps/api/test/track-a.integration.test.ts`、`apps/api/test/track-a.e2e.test.ts`。
+
 ### 智能体编排（第四步）
 
 寄样跟进智能体的完整旅程，由 LangGraph 状态机编排、检查点存 PostgreSQL：

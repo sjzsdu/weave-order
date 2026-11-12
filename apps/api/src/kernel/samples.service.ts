@@ -19,6 +19,7 @@ export function mapSample(row: SampleRow): FabricSample {
     code: row.code,
     name: row.name,
     composition: row.composition,
+    category: row.category,
     weight: row.weight,
     unit: row.unit,
     costFloor:
@@ -46,6 +47,7 @@ export class SampleService {
         code: parsed.code,
         name: parsed.name,
         composition: parsed.composition ?? null,
+        category: parsed.category ?? null,
         weight: parsed.weight ?? null,
       }),
     );
@@ -110,6 +112,7 @@ export class SampleService {
           code: row.code,
           name: row.name,
           unit: row.unit,
+          category: row.category,
           costFloorAmount: row.costFloorAmount,
         },
       },

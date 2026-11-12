@@ -1,14 +1,19 @@
 import { auditLog, DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { AuditLogEntry } from "@weave-order/schema";
-import type { AuditAction, JsonValue } from "@weave-order/schema";
+import type { AuditAction, JsonValue, MemberRole } from "@weave-order/schema";
 import { desc, eq } from "drizzle-orm";
 
 /** 谁在写账本：智能体 / 人类 / 系统任务。 */
 export type ActorType = "AGENT" | "HUMAN" | "SYSTEM";
 
 export interface KernelContext {
-  actor: { type: ActorType; id: string };
+  actor: {
+    type: ActorType;
+    id: string;
+    /** 人类成员角色，用于审批金额阈值；缺省按 OWNER 处理（本地/测试兼容）。 */
+    role?: MemberRole;
+  };
   /** 同一次业务动作引发的多条审计记录用同一个 correlationId 串起来。 */
   correlationId?: string;
   /** 网关注入的租户；内核调用不传时使用内核绑定的租户（仅演示/测试路径）。 */

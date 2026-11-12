@@ -5,7 +5,11 @@ import type { EmbeddingProvider } from "../platform/embedding";
 import { listAuditLog } from "./audit";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
+import { OrderService } from "./orders.service";
+import { PricingService } from "./pricing.service";
 import { QuoteService } from "./quotes.service";
+import { ReceivableService } from "./receivables.service";
+import { RevisionService } from "./revisions.service";
 import { SampleService } from "./samples.service";
 import { SearchService } from "./search.service";
 import { ShipmentService } from "./shipments.service";
@@ -36,8 +40,12 @@ export function createKernel(
   const tenantId = options.tenantId ?? DEFAULT_TENANT_ID;
   const customers = new CustomerService(db, tenantId);
   const samples = new SampleService(db, embedder, tenantId);
+  const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
-  const quotes = new QuoteService(db, customers, samples, tenantId);
+  const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
+  const orders = new OrderService(db, customers, pricing, tenantId);
+  const receivables = new ReceivableService(db, tenantId);
+  const revisions = new RevisionService(db, tenantId);
   const search = new SearchService(db, embedder, tenantId);
   const importing = new ImportService(db, customers, samples, embedder, tenantId);
   const tenancy = new TenancyService(db);
@@ -46,8 +54,12 @@ export function createKernel(
     tenantId,
     customers,
     samples,
+    pricing,
     shipments,
     quotes,
+    orders,
+    receivables,
+    revisions,
     search,
     importing,
     tenancy,
