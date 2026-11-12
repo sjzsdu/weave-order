@@ -1,6 +1,6 @@
 # 织序 WeaveOrder · 整体架构设计与技术选型
 
-> 版本：v1.1 ｜ 日期：2026-11-12 ｜ 作者：鲁班（首席架构师）
+> 版本：v1.2 ｜ 日期：2026-11-12 ｜ 作者：鲁班（首席架构师）
 > 依据：`docs/product-design.md`（v1.8）。本文只做架构与技术选型，不沿用任何既有代码实现；与产品文档冲突处以产品决策为准。
 > 设计原则：KISS、一个产品一个仓库、managed service 优先、单人可维护、基础设施成本可控。
 
@@ -59,17 +59,44 @@
 
 ## 3. 各端技术选型（详细）
 
-### E1 + E2 租户端（桌面 + 移动，一套代码两套布局）
+### E1 租户端 · 桌面（浏览器 Web + 桌面软件，两种形态并存）
 
-- **框架**：Next.js 15 App Router + React 19。桌面路由与移动路由分层：
-  - 桌面：`/` 起，3 个业务窗口（工作台 ⌘1 / 审批 ⌘2 / 全景 ⌘3）+ 1 个管理面（组织与设置 ⌘,），顶栏 + 全局打印抽屉。
-  - 移动：`/m/*` 独立路由组，底部 5 入口（今日 / 审批 / 相机 / 客户 / 更多），独立组件密度，**不做响应式压缩**。
-- **PWA**：`@serwist/next`（Service Worker + 离线缓存 + manifest）。离线队列落 IndexedDB，恢复后按时间序提交，冲突以「服务端版本 + 人工确认」解决。
-- **状态**：TanStack Query（服务端状态）+ Zustand（UI/会话态）。
-- **数据契约**：`packages/schema` 的 Zod 契约作为前后端唯一来源（工具、内核、HTTP、env）。
-- **设计系统**：TailwindCSS + shadcn/ui 底座，落地 §9 的 16 个首批组件（`DraftCard` / `ApprovalSheet` / `DiffRow` / `ProvenanceChip` / …）与「草稿态」视觉（浅底虚线边 + 版本号）。
-- **移动端能力**：相机 6 模式（找样/扫运单/拍签收/拍大货/建样品/名片）、语音转写、Face ID 大额二次验证、图片压缩（长边 1600px / ≤1MB）后直传对象存储。
-- **桌面外设壳（P3）**：Tauri 2 只暴露 `print / scan / readFile / 电子秤` 四类原生能力，业务 UI 仍从 Web 加载。
+| 形态 | 技术栈 | 定位 | 阶段 |
+| --- | --- | --- | --- |
+| 浏览器 Web | Next.js 15（App Router）+ React 19，`/` 桌面路由 | 主形态，零安装、随浏览器访问 | P0 |
+| 桌面软件 | Tauri 2 包裹同一 Web 业务 UI | 外设能力增强，非第二套界面 | P3 |
+
+- **同一套 Web 业务 UI，两处加载**：浏览器直接访问 `app.weaveorder.cn`；桌面软件 = Tauri 2 的 WebView 加载**同一个 Web 应用**，只额外注入原生外设桥。**业务 UI 始终从 Web 加载，不为桌面软件重写界面**（§6 铁律，避免两套界面维护）。
+- **原生外设桥**：Tauri 2 通过 IPC 暴露 `print / scan / readFile / 电子秤` 四类能力给 Web（`invoke('print')` 等），Web 内用 capability 检测降级：无 Tauri 环境时退回浏览器打印 / 文件上传。
+- **桌面路由与 IA**：`/` 起，3 个业务窗口（工作台 ⌘1 / 审批 ⌘2 / 全景 ⌘3）+ 1 个管理面（组织与设置 ⌘,），顶栏 + 全局打印抽屉。
+
+### E2 租户端 · 移动（PWA + 小程序 + App，三种形态并存）
+
+| 形态 | 技术栈 | 定位 | 阶段 |
+| --- | --- | --- | --- |
+| PWA（H5） | Next.js `/m/*` 路由 + `@serwist/next` | 主形态，覆盖 90%「手机上批一下」 | P0 |
+| 小程序 | Taro（React）+ 微信优先（后续支付宝/抖音） | 客户自助 / 分享传播场景 | P3（按需） |
+| App | Capacitor 包裹同一 H5 + 原生插件 | Face ID / 蓝牙打印 / 推送刚需 | P3（按需） |
+
+**一套代码、三端复用的分层策略**（单人可维护的核心）：
+
+| 层 | 内容 | 复用率 |
+| --- | --- | --- |
+| `packages/core` | 业务逻辑、TanStack Query hooks、API client、离线队列、Zod 契约 | 100% 复用 |
+| `packages/ui-mobile` | 设计 tokens + 组件 API 一致；渲染层按端适配（DOM / 小程序 WXML） | ~70% 复用 |
+| 各端薄壳 | 路由、打包、PWA manifest、原生桥接、发布 | ~5%（各自独立） |
+
+**各形态技术细节**：
+
+- **PWA（H5，P0 主形态）**：Next.js `/m/*` 独立路由组，底部 5 入口（今日 / 审批 / 相机 / 客户 / 更多），独立组件密度。`@serwist/next` 做 Service Worker + manifest + 离线缓存；离线队列落 IndexedDB，恢复后按时间序提交，冲突「服务端版本 + 人工确认」。相机 6 模式、语音转写、图片压缩（长边 1600px / ≤1MB）直传对象存储。
+- **小程序（P3，按需）**：**Taro（React 语法）** 编译到微信小程序，与桌面端同栈、可复用 `packages/core` 与大部分 hooks。差异点：小程序无 DOM / Service Worker，故离线队列走 `Taro.setStorage`（非 IndexedDB）、相机/扫码走 Taro 原生 API、渲染组件用 Taro 组件库（风格对齐设计 tokens）。选 Taro 而非 uni-app 是因为团队用 React（与桌面同栈）；选 Taro 而非独立原生，是因为单人无法同时维护两套原生小程序。
+- **App（P3，按需）**：**Capacitor** 包裹同一份 H5（Next.js 静态导出），提供 Face ID / Touch ID（大额审批二次验证）、蓝牙标签打印、推送（腾讯 TPNS / 极光）、相机增强。App 与 PWA 共享 UI，只多一层原生能力桥，不引入 React Native 第二套运行时。
+
+**为什么 H5/App 共用 Next.js，小程序单独 Taro**：H5 是基线与主形态，App 是它的原生壳（Capacitor 成本极低）；小程序受微信渲染层（WXML）限制无法直接复用 DOM 组件，但业务逻辑层（`packages/core`）仍 100% 复用，代价被压到 UI 渲染层。三者共享设计系统 tokens，视觉与交互一致。
+
+**移动端能力清单**（§5.2）：相机 6 模式、语音转写、扫码录运单/盘点、Face ID 大额审批、离线队列、拜访签到、拍回款凭证等，在各形态按能力矩阵开放。
+
+**状态与契约**：TanStack Query（服务端状态）+ Zustand（UI/会话态）；`packages/schema` 的 Zod 契约作为前后端唯一来源（工具、内核、HTTP、env）。设计系统 TailwindCSS + shadcn/ui 底座，落地 §9 的 16 个首批组件与「草稿态」视觉。
 
 ### E3 客户报价链接页（无登录只读）
 
