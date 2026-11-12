@@ -13,8 +13,10 @@
     "PUBLIC_APP_URL",
     "MEDIA_ALLOWED_HOSTS",
     "MEDIA_MAX_BYTES",
+    "LLM_PROVIDER",
     "LITELLM_BASE_URL",
     "LITELLM_MASTER_KEY",
+    "LITELLM_TIMEOUT_MS",
     "IMPORT_XLSX",
     "IMPORT_CUSTOMERS",
     "IMPORT_SAMPLES"
@@ -54,6 +56,11 @@
       "dependsOn": ["^build"]
     },
     "demo:followup": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "demo:quote": {
       "dependsOn": ["^build"],
       "cache": false,
       "outputs": []

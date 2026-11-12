@@ -107,6 +107,7 @@ pnpm db:generate  # 改完 Drizzle Schema 后生成 SQL 迁移
 pnpm db:migrate   # 应用迁移
 pnpm demo         # 迁移 + 内核演示 + 寄样跟进智能体（含检查点续跑）
 pnpm demo:followup # 只跑寄样跟进智能体演示
+pnpm demo:quote    # 客户原话 → 候选样品 → 定价依据 → 报价 DRAFT（+ token 计量）
 pnpm seed         # 迁移 + 导入样例客户/样品（Excel/CSV，冷启动）
 pnpm format       # Prettier
 ```
@@ -156,21 +157,22 @@ pnpm format       # Prettier
 
 ### 最小 HTTP 面
 
-| 方法 | 路径                                | 身份 / 状态                   | 说明                                    |
-| ---- | ----------------------------------- | ----------------------------- | --------------------------------------- |
-| GET  | `/api/health`                       | 只读                          | 服务 + 数据库可用性                     |
-| GET  | `/api/customers`                    | 只读                          | 客户列表                                |
-| GET  | `/api/samples`                      | 只读                          | 样品目录                                |
-| GET  | `/api/audit`                        | 只读                          | 审计流水                                |
-| POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
-| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64 / imageUrl）     |
-| POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
-| POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
-| POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
-| GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）    |
-| GET  | `/api/approvals/:id?kind=quote`     | 只读                          | 审批卡详情：出处 / diff / 草稿态        |
-| GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）  |
-| POST | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品 |
+| 方法 | 路径                                | 身份 / 状态                   | 说明                                            |
+| ---- | ----------------------------------- | ----------------------------- | ----------------------------------------------- |
+| GET  | `/api/health`                       | 只读                          | 服务 + 数据库可用性                             |
+| GET  | `/api/customers`                    | 只读                          | 客户列表                                        |
+| GET  | `/api/samples`                      | 只读                          | 样品目录                                        |
+| GET  | `/api/audit`                        | 只读                          | 审计流水                                        |
+| POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                                  |
+| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64 / imageUrl）             |
+| POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                              |
+| POST | `/api/agents/quote`                 | agent                         | 粘贴客户原话 → 候选 + 定价依据 + DRAFT + 缺失项 |
+| POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                            |
+| POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject             |
+| GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）            |
+| GET  | `/api/approvals/:id?kind=quote`     | 只读                          | 审批卡详情：出处 / diff / 草稿态                |
+| GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）          |
+| POST | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品         |
 
 > 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
 > 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由
@@ -325,6 +327,9 @@ SEED_RESET=1 pnpm seed
 - `src/tools/t003-get-customer-history.ts` — 客户历史。
 - `src/tools/t004-generate-quote-draft.ts` — 报价草稿，`amountsComputedByKernel: true`。
 - `src/tools/t005-create-sample-shipment.ts` — 寄样单草稿 + 内核建议跟进时间。
+- `src/tools/t006-suggest-line-price.ts` — 确定性建议单价 + 可点开的定价依据（成本底线 / 等级加价 / 取整）。
+- `src/quoting.ts` — 找样 / 报价 agent 的槽位、候选、缺失项、最终结果契约。
+- `src/llm.ts` — LLM 设置（全局 + 租户覆盖）、token 用量、月度汇总、预算状态。
 
 关键约束：
 
@@ -389,3 +394,19 @@ pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
 - **本地基础设施**：`docker compose up -d` 增加 LiteLLM（`:4000`），配置在 `infra/litellm/config.yaml`。
 
 契约与各 Track 开工约定详见 `docs/t0-foundation.md`。
+
+## Track B · 找样 / 报价智能体 + LiteLLM（WAN-84）
+
+在 T0 契约之上新增：
+
+- **agent**：`apps/api/src/agent/quoting-graph.ts`，客户原话 → 槽位 → 候选样品（确定性命中理由）
+  → 内核定价 → `DRAFT`；缺客户 / 数量 / 样品 / 定价依据时返回 `NEEDS_INPUT` 并列出缺失项。
+- **工具**：T-006 `suggest_line_price`（只调内核，复用 Track A 的定价继承与管控夹取），与既有 T-001/T-002/T-003/T-004/T-005 一起通过 Zod 校验。
+- **LiteLLM**：`platform/llm.ts` 的 `LiteLlmProvider` 只请求 `LITELLM_BASE_URL/chat/completions`；
+  `key_ref` 解析每租户虚拟 Key，模型白名单 + 日/月 token 预算在调用前拦截；手机号/邮箱/银行账号出网前脱敏。
+- **计量**：`token_usage`（`request_id` 唯一，幂等）+ `usage_monthly`（按月份 × 模型 × 任务累加）；
+  prompt 只落 SHA-256，默认不落原文。
+- **设置**：`llm_settings` 一行 GLOBAL + 每租户覆盖；默认 `deepseek-chat`（日常）/ `deepseek-reasoner`（复杂）。
+- **验收**：`pnpm demo:quote` 与 `apps/api/test/{quote-agent,llm-litellm,quote.integration}.test.ts`。
+
+详见 `docs/track-b-agents.md`。

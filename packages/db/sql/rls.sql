@@ -44,6 +44,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   decision_deltas,
   quote_shares,
   quote_share_events,
+  llm_settings,
+  token_usage,
+  usage_monthly,
   audit_log
 TO weave_app;
 
@@ -76,6 +79,8 @@ DECLARE
     'decision_deltas',
     'quote_shares',
     'quote_share_events',
+    'token_usage',
+    'usage_monthly',
     'audit_log'
   ];
 BEGIN
@@ -91,6 +96,23 @@ BEGIN
     );
   END LOOP;
 END $$;
+
+-- LLM 配置：租户可读全局默认 + 自己的覆盖；只能写自己的覆盖。
+-- GLOBAL 行由平台控制面（owner / 专用角色）维护，应用角色不可写。
+ALTER TABLE public.llm_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.llm_settings FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS llm_settings_tenant_read ON public.llm_settings;
+CREATE POLICY llm_settings_tenant_read ON public.llm_settings
+  FOR SELECT
+  USING (
+    scope = 'GLOBAL'
+    OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+  );
+DROP POLICY IF EXISTS llm_settings_tenant_write ON public.llm_settings;
+CREATE POLICY llm_settings_tenant_write ON public.llm_settings
+  FOR ALL
+  USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+  WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 -- 租户表本身以主键作为隔离键（开通租户时会话已切到新租户 id）。
 ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;

@@ -3,6 +3,9 @@ import type { Db } from "@weave-order/db";
 import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { listAuditLog } from "./audit";
+import { LlmSettingsService } from "./llm-settings.service";
+import { QuotePricingService } from "./quote-pricing.service";
+import { UsageService } from "./usage.service";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
 import { OrderService } from "./orders.service";
@@ -49,6 +52,9 @@ export function createKernel(
   const search = new SearchService(db, embedder, tenantId);
   const importing = new ImportService(db, customers, samples, embedder, tenantId);
   const tenancy = new TenancyService(db);
+  const quotePricing = new QuotePricingService(customers, samples, pricing);
+  const llmSettings = new LlmSettingsService(db, tenantId);
+  const usage = new UsageService(db, tenantId);
 
   return {
     tenantId,
@@ -63,6 +69,9 @@ export function createKernel(
     search,
     importing,
     tenancy,
+    quotePricing,
+    llmSettings,
+    usage,
     audit: {
       list: (limit?: number) => listAuditLog(db, limit, tenantId),
     },

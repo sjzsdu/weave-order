@@ -400,7 +400,10 @@ export function createMockServer(options: MockServerOptions): MockServer {
       patch: parsed.data.patch,
       before: before as unknown as JsonValue,
       after: quote.items as unknown as JsonValue,
-      provenance: { source: parsed.data.source, instruction: parsed.data.instruction },
+      provenance: {
+        source: parsed.data.source,
+        instruction: parsed.data.instruction ?? null,
+      },
       actorType: "HUMAN",
       actorId: "mobile-user",
       createdAt: now().toISOString(),

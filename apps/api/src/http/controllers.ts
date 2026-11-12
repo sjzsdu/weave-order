@@ -16,12 +16,13 @@ import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { createApprovalService } from "../approval";
 import { isKernelError } from "../kernel";
+import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
 import { toToolError } from "../tools/errors";
 import { AGENT_CONTEXT, HUMAN_CONTEXT } from "./context";
 import type { HumanActorService } from "./human-actor.service";
-import { HUMAN_ACTOR, KERNEL, TOOLS } from "./tokens";
+import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
@@ -438,5 +439,19 @@ export class PanoramaController {
     return this.human.run(authorization, this.kernel, async (kernel) =>
       createApprovalService(kernel).panorama(),
     );
+  }
+}
+
+/**
+ * 找样 / 报价 agent：粘贴客户原话，返回候选样品 + 定价依据 + DRAFT + 缺失项。
+ * 这里没有「确认」入口 —— 草稿确认永远走审批窗口。
+ */
+@Controller("api/agents")
+export class QuoteAgentController {
+  constructor(@Inject(QUOTE_AGENT) private readonly agent: QuoteAgentService) {}
+
+  @Post("quote")
+  async quote(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.agent.run(authorization, body);
   }
 }

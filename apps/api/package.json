@@ -12,6 +12,7 @@
     "lint": "eslint src scripts test",
     "demo": "tsx scripts/demo-kernel.ts",
     "demo:followup": "tsx scripts/demo-followup.ts",
+    "demo:quote": "tsx scripts/demo-quote.ts",
     "seed": "tsx scripts/import-data.ts"
   },
   "dependencies": {
