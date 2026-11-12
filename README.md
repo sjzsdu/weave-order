@@ -137,7 +137,7 @@ pnpm format       # Prettier
 | GET  | `/api/samples`                      | 只读                          | 样品目录                                |
 | GET  | `/api/audit`                        | 只读                          | 审计流水                                |
 | POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
-| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）                |
+| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64 / imageUrl）     |
 | POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
 | POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
 | POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
@@ -351,8 +351,11 @@ pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
 - **前端骨架**：`apps/mobile`（Taro 五 Tab：今日/审批/相机/客户/更多）、
   `packages/core`（API client / TanStack Query hooks / 离线队列）、
   `packages/ui`（设计 tokens + 基础组件）。
+- **移动端 P0（Track D）**：Taro 一套代码输出 H5/PWA；手机「粘贴原话 → 改价 → 批准 → 分享链接」主链路、
+  离线队列（IndexedDB / Taro Storage，冲突人工确认）、图片压缩后直传对象存储、语音批注与 PWA 安装。
+  演示：`pnpm --filter @weave-order/mobile dev`（本地 mock，无需后端）；真后端见 `apps/mobile/README.md`。
 - **验收**：`apps/api/test/tenancy.integration.test.ts` 覆盖「建租户→建成员→建客户→建样品→出报价草稿
-  + 审计同事务」与跨租户 RLS 拦截；CI `.github/workflows/ci.yml` 常驻执行。
+  - 审计同事务」与跨租户 RLS 拦截；CI `.github/workflows/ci.yml` 常驻执行。
 - **本地基础设施**：`docker compose up -d` 增加 LiteLLM（`:4000`），配置在 `infra/litellm/config.yaml`。
 
 契约与各 Track 开工约定详见 `docs/t0-foundation.md`。

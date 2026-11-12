@@ -1,0 +1,26 @@
+{
+  "name": "织序 WeaveOrder · 移动",
+  "short_name": "织序",
+  "description": "纺织贸易的智能体原生业务操作系统：手机粘贴原话、改价、批单、分享报价链接。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f7f5",
+  "theme_color": "#1f6f5c",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

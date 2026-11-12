@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Kernel } from "../src/kernel";
 import { createGenerateQuoteDraftTool } from "../src/tools/generate-quote-draft.tool";
 import { createGetCustomerHistoryTool } from "../src/tools/get-customer-history.tool";
+import { createSearchFabricByImageTool } from "../src/tools/search-fabric-by-image.tool";
+import type { ImageFetcher } from "../src/platform/media";
 import type { KernelContext } from "../src/kernel";
 
 const AGENT: KernelContext = { actor: { type: "AGENT", id: "test-agent" } };
@@ -53,6 +55,71 @@ describe("工具层：输入校验与失败语义封闭", () => {
       expect(result.error.code).toBe("INVALID_INPUT");
       if (result.error.code === "INVALID_INPUT") {
         expect(result.error.issues.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("T-001 imageUrl：先白名单取图，再走同一条 embedding 检索", async () => {
+    const searchByImage = vi.fn(() =>
+      Promise.resolve({
+        embeddingModel: "local-stub-v1",
+        dimension: 16,
+        matches: [],
+      }),
+    );
+    const kernel = { search: { searchByImage } } as unknown as Kernel;
+    const fetchImage = vi.fn(() =>
+      Promise.resolve({
+        mimeType: "image/jpeg" as const,
+        base64: "ZmV0Y2hlZA==",
+      }),
+    );
+    const fetcher: ImageFetcher = { fetchImage };
+    const tool = createSearchFabricByImageTool(kernel, fetcher);
+
+    const result = await tool.execute(
+      { imageUrl: "https://cdn.weaveorder.cn/fabric/a.jpg" },
+      AGENT,
+    );
+    expect(result.ok).toBe(true);
+    expect(fetchImage).toHaveBeenCalledWith("https://cdn.weaveorder.cn/fabric/a.jpg");
+    expect(searchByImage).toHaveBeenCalledWith(
+      { mimeType: "image/jpeg", base64: "ZmV0Y2hlZA==" },
+      5,
+      0.5,
+    );
+  });
+
+  it("T-001 base64 兼容路径不触达取图器", async () => {
+    const searchByImage = vi.fn(() =>
+      Promise.resolve({
+        embeddingModel: "local-stub-v1",
+        dimension: 16,
+        matches: [],
+      }),
+    );
+    const kernel = { search: { searchByImage } } as unknown as Kernel;
+    const fetchImage = vi.fn();
+    const tool = createSearchFabricByImageTool(kernel, { fetchImage });
+    const result = await tool.execute(
+      { image: { mimeType: "image/png", base64: "aGVsbG8=" } },
+      AGENT,
+    );
+    expect(result.ok).toBe(true);
+    expect(fetchImage).not.toHaveBeenCalled();
+  });
+
+  it("T-001 取图失败 -> UPSTREAM_UNAVAILABLE（不是 INTERNAL）", async () => {
+    const kernel = { search: { searchByImage: vi.fn() } } as unknown as Kernel;
+    const tool = createSearchFabricByImageTool(kernel, {
+      fetchImage: () => Promise.reject(new Error("主机不在白名单")),
+    });
+    const result = await tool.execute({ imageUrl: "https://evil.example.com/a.jpg" }, AGENT);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("UPSTREAM_UNAVAILABLE");
+      if (result.error.code === "UPSTREAM_UNAVAILABLE") {
+        expect(result.error.dependency).toBe("object_storage");
       }
     }
   });
