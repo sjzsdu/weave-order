@@ -450,7 +450,7 @@
     </div>
     <div class="page-meta">
       <span class="pill"><span class="dot"></span>可点击：左侧导航 / 审批 / 手机 Tab</span>
-      <span class="pill">v1.2 · 2026-11-12</span>
+      <span class="pill">v1.3 · 2026-11-12</span>
     </div>
   </div>
 
@@ -1041,6 +1041,12 @@
             <div class="pd-label">标签模板</div>
             <div class="tpl-row"><div class="tp label">100²</div><div><b>箱唛 · v2</b><span>中英双语 · QR + Code128</span></div><span class="badge good" style="margin-left:auto">启用</span></div>
             <div class="tpl-row"><div class="tp label">50×30</div><div><b>样品标签 · v1</b><span>品名/克重/色号/二维码</span></div><span class="badge good" style="margin-left:auto">启用</span></div>
+            <div class="tpl-row"><div class="tp">＋</div><div><b>自定义字段 · 6 个</b><span>英文品名 / HS Code / 唛头 / 毛重 …</span></div><span class="badge gray" style="margin-left:auto">白名单</span></div>
+            <div class="card" style="padding:12px;background:var(--indigo-soft);border-color:#CFDFEA;margin-top:12px">
+              <div class="eyebrow" style="color:var(--indigo)">AI 识样张</div>
+              <div style="font-size:11px;line-height:1.55;color:var(--ink2);margin-top:5px">上传一张旧发货单或箱唛，自动识别字段与版式，生成可编辑模板；确认变量后打测试页。</div>
+              <button class="btn primary sm" style="margin-top:8px">上传样张生成模板</button>
+            </div>
             <div class="admin-note">模板变量只来自后端白名单；改动保存为新版本，已打单据仍用原版本补打。</div>
           </div>
 
@@ -1056,7 +1062,7 @@
               <button>打印测试页</button>
               <button>重新发现设备</button>
             </div>
-            <div class="admin-note">代理必须独立于个人电脑常驻；离线时任务排队，恢复后自动补打。</div>
+            <div class="admin-note">代理 v1.4.2 · 已签名 · 自动更新 · 离线任务排队。代理必须独立于个人电脑常驻；本地只保留任务 ≤24 小时。</div>
           </div>
         </div>
       </aside>
@@ -1383,7 +1389,8 @@
             <button><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>租户 <span class="count">42</span></button>
             <button><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>订阅账单</button>
             <button><svg viewBox="0 0 24 24"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>用量</button>
-            <button><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/></svg>套餐</button>
+            <button><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/></svg>套餐与价格</button>
+            <button><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>开票设置</button>
             <button><svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>功能开关</button>
             <button><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>支持</button>
             <button><svg viewBox="0 0 24 24"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>平台审计</button>
@@ -1442,13 +1449,29 @@
 
               <div>
                 <div class="card pad">
-                  <div class="eyebrow" style="margin-bottom:6px">套餐结构</div>
+                  <div class="between" style="margin-bottom:6px">
+                    <div class="eyebrow">套餐与价格 · v1 生效</div>
+                    <button class="btn ghost sm" style="padding:3px 8px">编辑</button>
+                  </div>
                   <div class="plan-mini"><span>Starter · ¥299</span><span class="num">24 家</span></div>
                   <div class="bar" style="margin:5px 0 9px"><i style="width:57%"></i></div>
                   <div class="plan-mini"><span>Pro · ¥499</span><span class="num">15 家</span></div>
                   <div class="bar" style="margin:5px 0 9px"><i style="width:36%"></i></div>
                   <div class="plan-mini"><span>Enterprise</span><span class="num">3 家</span></div>
                   <div class="bar" style="margin:5px 0 0"><i style="width:7%"></i></div>
+                  <div class="tiny muted" style="margin-top:9px;line-height:1.5">租户合同价 3 家（青禾锁价 ¥449）· 改价需 owner + 财务复核</div>
+                </div>
+
+                <div class="card pad" style="margin-top:14px">
+                  <div class="between" style="margin-bottom:6px">
+                    <div class="eyebrow">开票设置</div>
+                    <span class="badge good">默认 6% 专票</span>
+                  </div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">发票类型</span><span>电子增值税专用发票</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">价格展示</span><span>价税分离</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">开票时机</span><span>收款后 3 个工作日</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">可按租户覆盖</span><span class="num">2 家</span></div>
+                  <div class="tiny muted" style="margin-top:7px">类型 / 税率 / 主体 / 时机均可配；改税率需财务复核。</div>
                 </div>
 
                 <div class="card pad" style="margin-top:14px">
@@ -1626,6 +1649,11 @@
   const pParam = new URLSearchParams(location.search).get('p');
   if (pParam) setPhone('p-' + pParam);
   if (new URLSearchParams(location.search).get('print') === '1') openPrint(true);
+  const pdParam = new URLSearchParams(location.search).get('pd');
+  if (pdParam) {
+    const tabBtn = document.querySelector('#pdTabs [data-pdtab="pd-' + pdParam + '"]');
+    if (tabBtn) tabBtn.click();
+  }
   const scrollParam = (new URLSearchParams(location.search).get('scroll') || '').trim();
   if (scrollParam) {
     const target = document.getElementById(scrollParam) || document.querySelector('#' + scrollParam);
