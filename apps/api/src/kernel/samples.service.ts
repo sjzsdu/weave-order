@@ -1,5 +1,5 @@
 import { sampleEmbeddings, samples } from "@weave-order/db";
-import type { Db } from "@weave-order/db";
+import type { Db, Tx } from "@weave-order/db";
 import { CreateSampleInput } from "@weave-order/schema";
 import type { FabricSample } from "@weave-order/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -48,46 +48,7 @@ export class SampleService {
       }),
     );
     try {
-      return await this.db.transaction(async (tx) => {
-        const rows = await tx
-          .insert(samples)
-          .values({
-            code: parsed.code,
-            name: parsed.name,
-            composition: parsed.composition ?? null,
-            weight: parsed.weight ?? null,
-            unit: parsed.unit,
-            costFloorAmount: parsed.costFloor?.amount ?? null,
-            costFloorCurrency: parsed.costFloor?.currency ?? null,
-            status: parsed.status,
-          })
-          .returning();
-        const row = rows[0];
-        if (!row) {
-          throw new KernelError("KERNEL_REJECTED", "样品写入未返回记录", {
-            reason: "INSERT_RETURNED_NO_ROW",
-          });
-        }
-        await tx.insert(sampleEmbeddings).values({
-          sampleId: row.id,
-          model: this.embedder.name,
-          dimension: this.embedder.dimension,
-          embedding,
-        });
-        await appendAudit(tx, ctx, {
-          action: "SAMPLE_CREATED",
-          entityType: "sample",
-          entityId: row.id,
-          before: null,
-          after: {
-            code: row.code,
-            name: row.name,
-            unit: row.unit,
-            costFloorAmount: row.costFloorAmount,
-          },
-        });
-        return mapSample(row);
-      });
+      return await this.db.transaction((tx) => this.insertWithin(tx, parsed, ctx, embedding));
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new KernelError("KERNEL_REJECTED", `样品编号已存在：${parsed.code}`, {
@@ -96,6 +57,56 @@ export class SampleService {
       }
       throw error;
     }
+  }
+
+  /**
+   * 在外部事务内插入样品 + 向量 + 同事务审计，不自行开事务。
+   * 单条 create 与批量导入共用这一处写逻辑；embedding 由调用方在事务前算好。
+   */
+  async insertWithin(
+    tx: Tx,
+    parsed: CreateSampleInput,
+    ctx: KernelContext,
+    embedding: number[],
+  ): Promise<FabricSample> {
+    const rows = await tx
+      .insert(samples)
+      .values({
+        code: parsed.code,
+        name: parsed.name,
+        composition: parsed.composition ?? null,
+        weight: parsed.weight ?? null,
+        unit: parsed.unit,
+        costFloorAmount: parsed.costFloor?.amount ?? null,
+        costFloorCurrency: parsed.costFloor?.currency ?? null,
+        status: parsed.status,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) {
+      throw new KernelError("KERNEL_REJECTED", "样品写入未返回记录", {
+        reason: "INSERT_RETURNED_NO_ROW",
+      });
+    }
+    await tx.insert(sampleEmbeddings).values({
+      sampleId: row.id,
+      model: this.embedder.name,
+      dimension: this.embedder.dimension,
+      embedding,
+    });
+    await appendAudit(tx, ctx, {
+      action: "SAMPLE_CREATED",
+      entityType: "sample",
+      entityId: row.id,
+      before: null,
+      after: {
+        code: row.code,
+        name: row.name,
+        unit: row.unit,
+        costFloorAmount: row.costFloorAmount,
+      },
+    });
+    return mapSample(row);
   }
 
   async getById(sampleId: string): Promise<FabricSample> {

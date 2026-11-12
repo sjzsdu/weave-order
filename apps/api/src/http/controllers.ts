@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Query } from "@nestjs/common";
 import type { ApprovalService } from "../approval";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
@@ -60,22 +60,33 @@ export class CatalogController {
   }
 }
 
-/** 报价草稿：智能体生成必须走工具，确认必须由人类走 confirm。 */
+/**
+ * 报价草稿：智能体生成必须走工具。
+ * 确认统一收口到审批窗口 `POST /api/approvals/decide` —— HTTP 面不再有
+ * 第二个 HUMAN 上下文写路由，让「decide 是唯一入口」字面成立。
+ */
 @Controller("api")
 export class QuoteController {
-  constructor(
-    @Inject(KERNEL) private readonly kernel: Kernel,
-    @Inject(TOOLS) private readonly tools: Tools,
-  ) {}
+  constructor(@Inject(TOOLS) private readonly tools: Tools) {}
 
   @Post("tools/generate-quote-draft")
   async generateDraft(@Body() body: unknown) {
     return this.tools.generateQuoteDraft.execute(body, AGENT_CONTEXT);
   }
+}
 
-  @Post("quotes/:quoteId/confirm")
-  async confirm(@Param("quoteId") quoteId: string) {
-    return this.kernel.quotes.confirmDraft(quoteId, HUMAN_CONTEXT);
+/**
+ * 数据导入（第六步）：Excel/CSV 冷启动的 HTTP 入口。
+ * 入参是结构化 `ImportBatch`，每行由内核用 `packages/schema` 契约严格校验；
+ * 控制器只固定传 HUMAN 上下文，不碰数据库、不写业务表、不绕过 kernel。
+ */
+@Controller("api")
+export class ImportController {
+  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+
+  @Post("import")
+  async importBatch(@Body() body: unknown) {
+    return this.kernel.importing.execute(body, HUMAN_CONTEXT);
   }
 }
 

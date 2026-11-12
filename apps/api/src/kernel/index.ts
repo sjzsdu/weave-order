@@ -3,6 +3,7 @@ import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { listAuditLog } from "./audit";
 import { CustomerService } from "./customers.service";
+import { ImportService } from "./import.service";
 import { QuoteService } from "./quotes.service";
 import { SampleService } from "./samples.service";
 import { SearchService } from "./search.service";
@@ -20,6 +21,7 @@ export function createKernel(db: Db, embedder: EmbeddingProvider = createEmbeddi
   const shipments = new ShipmentService(db, customers);
   const quotes = new QuoteService(db, customers, samples);
   const search = new SearchService(db, embedder);
+  const importing = new ImportService(db, customers, samples, embedder);
 
   return {
     customers,
@@ -27,6 +29,7 @@ export function createKernel(db: Db, embedder: EmbeddingProvider = createEmbeddi
     shipments,
     quotes,
     search,
+    importing,
     audit: {
       list: (limit?: number) => listAuditLog(db, limit),
     },

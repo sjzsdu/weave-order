@@ -25,18 +25,20 @@ weave-order/
 ├── apps/
 │   ├── api/
 │   │   ├── src/
-│   │   │   ├── kernel/      # 确定性内核：唯一可写业务表的代码（含找样检索）
+│   │   │   ├── kernel/      # 确定性内核：唯一可写业务表（含 import.service.ts 批量导入）
 │   │   │   ├── tools/       # 工具接口层：智能体唯一可调用的入口
-│   │   │   ├── http/        # HTTP 面：目录、工具、审批决策、全景、审计
+│   │   │   ├── http/        # HTTP 面：目录、工具、审批决策、全景、审计、导入
 │   │   │   ├── platform/    # 配置、数据库、Redis、embedding provider
 │   │   │   ├── agent/       # 寄样跟进智能体（LangGraph，只调 tools）
-│   │   │   └── approval/    # 审批队列 / 决策 / 全景聚合（第五步）
-│   │   ├── scripts/         # demo-kernel / demo-followup 验收演示
-│   │   └── test/            # 边界 / 单元 / 内核集成 / HTTP e2e
+│   │   │   ├── approval/    # 审批队列 / 决策 / 全景聚合（第五步）
+│   │   │   └── import/      # Excel/CSV 文件解析适配器（只解析、不写库，第六步）
+│   │   ├── scripts/         # demo / demo-followup / import-data 冷启动
+│   │   └── test/            # 边界 / 单元 / 内核集成 / HTTP e2e / 导入集成
 │   └── web/                 # React 18 + Zustand + Radix + Tailwind + Vite（三个窗口）
 ├── packages/
-│   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源）
+│   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源，含 import.ts）
 │   └── db/                  # Drizzle Schema、连接、SQL 迁移
+├── data/seed/               # 冷启动样例数据（customers.csv / samples.csv / .xlsx）
 ├── docker-compose.yml       # PostgreSQL + pgvector、Redis
 ├── turbo.json
 └── pnpm-workspace.yaml
@@ -52,8 +54,9 @@ pnpm install
 # 2. 起本地 PG + Redis（端口 5433 / 6380，避免与本机已有服务冲突）
 docker compose up -d
 
-# 3. 应用迁移 + 跑通内核演示（会写入演示客户/样品，页面需要这些数据）
-pnpm demo
+# 3. 应用迁移 + 冷启动导入样例数据（Excel/CSV），或直接跑内核演示
+pnpm seed          # 迁移 + 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
+pnpm demo          # 可选：迁移 + 内核演示 + 寄样跟进智能体（另造演示数据）
 
 # 4. 打开三个窗口（API 3000 + Vite 5173）
 pnpm dev
@@ -91,6 +94,7 @@ pnpm db:generate  # 改完 Drizzle Schema 后生成 SQL 迁移
 pnpm db:migrate   # 应用迁移
 pnpm demo         # 迁移 + 内核演示 + 寄样跟进智能体（含检查点续跑）
 pnpm demo:followup # 只跑寄样跟进智能体演示
+pnpm seed         # 迁移 + 导入样例客户/样品（Excel/CSV，冷启动）
 pnpm format       # Prettier
 ```
 
@@ -123,25 +127,27 @@ pnpm format       # Prettier
 
 ### 最小 HTTP 面
 
-| 方法 | 路径                                | 身份 / 状态                   | 说明                                   |
-| ---- | ----------------------------------- | ----------------------------- | -------------------------------------- |
-| GET  | `/api/health`                       | 只读                          | 服务 + 数据库可用性                    |
-| GET  | `/api/customers`                    | 只读                          | 客户列表                               |
-| GET  | `/api/samples`                      | 只读                          | 样品目录                               |
-| GET  | `/api/audit`                        | 只读                          | 审计流水                               |
-| POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                         |
-| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）               |
-| POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                     |
-| POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                   |
-| POST | `/api/quotes/:quoteId/confirm`      | HUMAN（兼容旧演示）           | 人类确认报价草稿（DRAFT → SENT）       |
-| GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）   |
-| POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject    |
-| GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计） |
+| 方法 | 路径                                | 身份 / 状态                   | 说明                                    |
+| ---- | ----------------------------------- | ----------------------------- | --------------------------------------- |
+| GET  | `/api/health`                       | 只读                          | 服务 + 数据库可用性                     |
+| GET  | `/api/customers`                    | 只读                          | 客户列表                                |
+| GET  | `/api/samples`                      | 只读                          | 样品目录                                |
+| GET  | `/api/audit`                        | 只读                          | 审计流水                                |
+| POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
+| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）                |
+| POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
+| POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
+| POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
+| GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）    |
+| GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）  |
+| POST | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品 |
 
 > 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
 > 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由
-> `apps/api/src/approval` 调内核 `confirmDraft` / `confirm`（批准）或新增的
+> `apps/api/src/approval` 调内核 `confirmDraft` / `confirm`（批准）或
 > `rejectDraft` / `reject`（驳回），内核再校验 `actor.type === "HUMAN"` 兜底。
+> 第三步遗留的旧路由 `POST /api/quotes/:quoteId/confirm` 已在第六步删除，
+> HTTP 面不再有第二个 HUMAN 上下文写路由 —— `decide` 是唯一入口。
 
 ### 三个窗口与审批 API（第五步）
 
@@ -175,6 +181,58 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
 - **记录项②（记录在案，无需改）**：本地规则意图识别「首个命中即返回」是演示口径，
   接真实 LLM provider 后自然消失。
 
+### 数据导入与冷启动（第六步）
+
+干净 clone 起服务后，导入一份样例客户 / 样品数据即可直接跑通 demo 与审批流：
+
+```bash
+docker compose up -d
+pnpm seed          # = 迁移 + 导入 data/seed/customers.csv + samples.csv
+# 或换成 Excel 工作簿（含 customers / samples 两个 sheet）：
+IMPORT_XLSX=data/seed/weave-order-seed.xlsx pnpm seed
+pnpm demo          # 可选：内核演示 + 寄样跟进智能体（另造演示数据）
+pnpm dev           # http://localhost:5173
+```
+
+- 来源：`data/seed/customers.csv` + `samples.csv`（CSV），或 `weave-order-seed.xlsx`
+  （Excel，两个 sheet）。环境变量 `IMPORT_CUSTOMERS` / `IMPORT_SAMPLES` / `IMPORT_XLSX`
+  可覆盖（见 `.env.example`）；解析在 `apps/api/src/import/parse.ts`（CSV: `csv-parse`，
+  XLSX: `exceljs`），CLI 在 `apps/api/scripts/import-data.ts`。
+- HTTP 入口：`POST /api/import` 收结构化 `ImportBatch`（HUMAN 上下文），与 CLI 共用同一
+  内核 `ImportService`。前端三个窗口不提供导入表单（逐条录入是明令禁止的），导入是
+  **人类运维动作**：CLI 或 HTTP 都可发起，但一律落到内核。
+
+**口径：整批原子、全量校验、单事务回滚（all-or-nothing）** —— 不做「逐行提交、
+坏的跳过」，因为那会半途留脏数据。四步：
+
+1. 信封 + **每行**用 `packages/schema` 的 `CustomerImportRow` / `SampleImportRow`
+   （复用内核 `CreateCustomerInput` / `CreateSampleInput`，`.strict()`）校验，纯阶段零写入；
+2. 批内 `code` 重复（`DUPLICATE_IN_BATCH`）、库中已有 `code`（`DUPLICATE_IN_DB`，只读预检）
+   都给逐行可判别回执；
+3. 任一行被拒 → 整批不提交（`BATCH_REJECTED`），**一行不落**；合法行也各有 `ok` 回执，
+   便于修正后重导；
+4. 全部通过 → 一个 `db.transaction` 写入客户（+ 私有上下文）、样品（+ 向量）与
+   **同事务 HUMAN 审计**（共用 `correlationId`）；任何写入抛错（含唯一约束并发兜底）
+   整个事务回滚 → `WRITE_FAILED`，仍是一行不落。
+
+`ImportBatchResult` 的失败语义全部是封闭可判别联合：批次级
+`PERMISSION_DENIED` / `INVALID_BATCH` / `BATCH_REJECTED` / `WRITE_FAILED`，行级
+`INVALID_INPUT`（带逐字段 issues）/ `DUPLICATE_IN_BATCH` / `DUPLICATE_IN_DB` /
+`WRITE_FAILED`。`committed=true` 才代表全批落库；否则导入计数恒为 0。
+
+架构铁律照旧：导入写业务表**只经内核 service**（`kernel/import.service.ts` 是唯一
+批量写入者，单条 `create` 与批量导入共用 `insertWithin` 一处写逻辑）；`http` / 工具层 /
+`import` 适配层都禁止直连数据库（ESLint `no-restricted-imports` + `boundary.test.ts`）；
+无 `any`（行内容用 `unknown` 承载，由契约逐行校验）。重复运行同一 seed 会因
+`DUPLICATE_IN_DB` 整批拒绝（不会重复落库），换一份 code 或清空对应表即可重导。
+
+**CustomerContext 确认**：P0 已有着落 —— `customer_contexts` 表、创建客户时内核自动
+写默认上下文、`getContext` / `getHistory` / `appendDecisionDelta` 读写。导入客户时同样
+按契约初始化；可选 `context` 字段（`preferenceNotes` / `pricingBehavior` /
+`paymentPattern` / `followupPreference`，复用领域契约）会一并校验并落库，
+`decisionDeltas` / `customerId` / `updatedAt` 仍由内核管理、不接受导入。
+集成测试断言导入后 `getContext` 读得回带去的私有字段。
+
 ## 架构铁律（不可违反）
 
 1. **确定性内核与智能体外壳分离**：智能体永远不直接修改库存数量、应收金额、合同状态等业务账本；所有涉及账本和资金的动作必须通过确定性内核的工具接口执行，并写入审计日志。
@@ -184,22 +242,24 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
 
 ### 铁律在代码与数据库里的落点
 
-| 铁律           | 落地方式                                                                                                       | 可验证点                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| 智能体不改账本 | 只有 `apps/api/src/kernel` 能写入业务表；工具层只拿到 `Kernel` 对象，拿不到 `Db`                               | `eslint.config.mjs` + `apps/api/test/boundary.test.ts` |
-| 越权路径封死   | agent 禁止 import kernel / drizzle-orm / pg / `@weave-order/db`；tools / approval 禁止直连数据库               | 同上，含裸 barrel `../kernel`                          |
-| 输出必须是草稿 | 内核 `createDraft` 强制 `DRAFT`；`confirm*` 校验 `actor.type === "HUMAN"`                                      | demo、内核/HTTP 集成测试                               |
-| 金额不可伪造   | 金额一律整数「分」，PG `bigint` 存储；行金额用 BigInt 计算再一次 half-up；契约层 `Money.max(MAX_SAFE_INTEGER)` | `packages/schema`、`apps/api/src/kernel/money.ts`      |
-| 改账必须留痕   | 业务写入与审计写入同一事务；`audit_log` 由数据库触发器禁止 UPDATE / DELETE                                     | demo、内核集成测试                                     |
-| 契约唯一来源   | 所有 Zod Schema 只在 `packages/schema`；数据库枚举与契约枚举由测试比对                                         | `apps/api/test/schema-parity.test.ts`                  |
-| 检索可替换     | embedding 是 provider 接口，默认 local stub，不需要模型 key                                                    | `apps/api/src/platform/embedding.ts`                   |
+| 铁律           | 落地方式                                                                                                        | 可验证点                                               |
+| -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| 智能体不改账本 | 只有 `apps/api/src/kernel` 能写入业务表；工具层只拿到 `Kernel` 对象，拿不到 `Db`                                | `eslint.config.mjs` + `apps/api/test/boundary.test.ts` |
+| 越权路径封死   | agent 禁止 import kernel / drizzle-orm / pg / `@weave-order/db`；tools / approval / import 适配层禁止直连数据库 | 同上，含裸 barrel `../kernel`                          |
+| 输出必须是草稿 | 内核 `createDraft` 强制 `DRAFT`；`confirm*` / `reject*` 校验 `actor.type === "HUMAN"`                           | demo、内核/HTTP 集成测试                               |
+| 金额不可伪造   | 金额一律整数「分」，PG `bigint` 存储；行金额用 BigInt 计算再一次 half-up；契约层 `Money.max(MAX_SAFE_INTEGER)`  | `packages/schema`、`apps/api/src/kernel/money.ts`      |
+| 改账必须留痕   | 业务写入与审计写入同一事务；`audit_log` 由数据库触发器禁止 UPDATE / DELETE                                      | demo、内核集成测试                                     |
+| 导入整批原子   | 全量逐行 Zod 校验 → 任一坏行/重复整批不提交 → 单事务写入 + HUMAN 审计；失败整批回滚、零脏数据                   | `apps/api/test/import.integration.test.ts`             |
+| 契约唯一来源   | 所有 Zod Schema 只在 `packages/schema`；数据库枚举与契约枚举由测试比对                                          | `apps/api/test/schema-parity.test.ts`                  |
+| 检索可替换     | embedding 是 provider 接口，默认 local stub，不需要模型 key                                                     | `apps/api/src/platform/embedding.ts`                   |
 
 ## 目录边界铁律
 
 - `apps/api/src/kernel/` 下的 service 是唯一可以写业务表的代码。
 - `apps/api/src/tools/` 只调用 kernel 的 service，不直接连数据库。
-- `apps/api/src/agent/` 只调用 tools/ 的接口，不 import kernel/ 的任何模块，也不触达数据库。**已用 ESLint `no-restricted-imports` 强制**（`eslint.config.mjs`），并有常驻回归测试（`apps/api/test/boundary.test.ts`）锁定。
-- `packages/schema/` 的 Zod Schema 是前后端和工具层的唯一契约来源，不重复定义。
+- `apps/api/src/import/` 只做 Excel/CSV 解析（列 → 字段映射），不写业务表、不连数据库。
+- `apps/api/src/agent/` 只调用 tools/ 的接口，不 import kernel/ 的任何模块，也不触达数据库。**已用 ESLint `no-restricted-imports` 强制**（`eslint.config.mjs`），tools / approval / import 适配层同样禁止直连数据库，并有常驻回归测试（`apps/api/test/boundary.test.ts`）锁定。
+- `packages/schema/` 的 Zod Schema 是前后端、工具层、内核、导入的唯一契约来源，不重复定义。
 
 ## 契约设计（packages/schema）
 
@@ -207,6 +267,7 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
 - `src/domain.ts` — 领域实体：Customer、CustomerContext、FabricSample、SampleShipment、Money、Quantity、JsonValue 等。
 - `src/kernel.ts` — 内核输入契约与审计日志读取模型；全部 `.strict()`（未知字段一律拒绝）。
 - `src/approval.ts` — 审批队列、决策入参 / 回执、业务全景只读快照的契约（第五步）。
+- `src/import.ts` — 导入批次 / 逐行契约（复用内核 Create 输入）、可判别失败码与回执、`CustomerContextImport`（第六步）。
 - `src/agent.ts` — 智能体状态 / 建议 / 信号契约，含 `NO_TRACKING_NUMBER` 业务错误码。
 - `src/tools/t001-search-fabric-by-image.ts` — 以图搜图输入 / 输出 / 相似度范围。
 - `src/tools/t002-search-fabric-by-spec.ts` — 参数匹配输入 / 输出 / `matchedOn`（关键词中的 `%` / `_` 按字面量匹配）。
@@ -239,14 +300,16 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
 
 ## 本轮范围
 
-第五步（`apps/web` 三个窗口最小可用版 + 审批 API）已完成，累计包含前四步能力：
+六步全部完成（P0 收尾）。第六步（Excel/CSV 导入 + 冷启动）已完成，累计包含前五步能力：
 
 - 确定性内核、工具接口层、LangGraph 编排、审计日志、目录边界 ESLint 规则（第一~四步）。
 - `apps/web` 三个窗口：Intent Bar / Review Queue / Read-Only Panorama（React 18 + Zustand + Radix + Tailwind）。
-- `apps/api/src/approval`：审批队列、批准 / 拒绝决策、业务全景聚合；只调用 kernel，禁止直连数据库。
-- 内核新增 `rejectDraft` / `reject`（DRAFT → REJECTED / CANCELLED），与 confirm 一样强制 HUMAN + 同事务审计。
-- 批准 / 拒绝端到端点得通：approval API → confirm / reject → 账本状态生效 → 全景 / 审计可见。
-- 包公记录项①：缺运单号改走明确业务错误码 `NO_TRACKING_NUMBER`（图入口校验）。
+- `apps/api/src/approval`：审批队列、批准 / 拒绝决策、业务全景聚合；只调用 kernel。
+- 批准 / 拒绝端到端：approval API → confirm / reject → 账本状态生效 → 全景 / 审计可见。
+- 包公记录项①：缺运单号改走明确业务错误码 `NO_TRACKING_NUMBER`（图入口校验）；记录项②仅在案未改。
+- 第六步：Excel/CSV 导入（`csv-parse` + `exceljs`）、`data/seed` 样例数据、`pnpm seed` 冷启动、
+  内核 `ImportService` 整批原子 / 单事务回滚、逐行可判别回执、HUMAN 审计、CustomerContext 按契约处理。
+- 收掉遗留旧路由 `POST /api/quotes/:quoteId/confirm`：`decide` 成为 HUMAN 上下文唯一入口（HTTP e2e 断言旧路由 404）。
 
-未做（后续步骤）：第六步 Excel/CSV 数据导入与冷启动；H5 / 小程序；pgvector 索引与真实
-embedding / LLM / 物流 / 渠道 provider。
+未做（P1 及以后，本步严格未外溢）：跟单异常 / 对账智能体、H5 / 小程序、ERP 集成、
+pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。

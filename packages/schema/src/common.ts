@@ -11,7 +11,7 @@ import { z } from "zod";
  */
 
 /** Zod 校验失败时携带的 issue 摘要（剔除 zod 内部实现细节，保持契约稳定）。 */
-const ZodIssueSummary = z.object({
+export const ZodIssueSummary = z.object({
   /** 问题所在的 JSON 路径，如 ["items", 0, "unitPrice", "amount"] */
   path: z.array(z.union([z.string(), z.number()])),
   /** 问题类型，如 "too_small" / "invalid_type" */

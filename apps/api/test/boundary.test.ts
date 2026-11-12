@@ -48,17 +48,23 @@ async function approvalRule(): Promise<RuleEntry | undefined> {
   return (await resolvedRules("apps/api/src/approval/foo.ts"))["no-restricted-imports"];
 }
 
+async function importRule(): Promise<RuleEntry | undefined> {
+  return (await resolvedRules("apps/api/src/import/parse.ts"))["no-restricted-imports"];
+}
+
 describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", () => {
-  it("规则只作用于 agent / tools / approval，kernel 与其余包不生效（files 作用域）", async () => {
+  it("规则只作用于 agent / tools / approval / import，kernel 与其余包不生效（files 作用域）", async () => {
     const agentRules = await resolvedRules("apps/api/src/agent/foo.ts");
     const toolsRules = await resolvedRules("apps/api/src/tools/foo.ts");
     const approvalRules = await resolvedRules("apps/api/src/approval/foo.ts");
+    const importRules = await resolvedRules("apps/api/src/import/parse.ts");
     const kernelRules = await resolvedRules("apps/api/src/kernel/foo.ts");
     const schemaRules = await resolvedRules("packages/schema/src/index.ts");
 
     expect(agentRules["no-restricted-imports"]).toBeDefined();
     expect(toolsRules["no-restricted-imports"]).toBeDefined();
     expect(approvalRules["no-restricted-imports"]).toBeDefined();
+    expect(importRules["no-restricted-imports"]).toBeDefined();
     expect(kernelRules["no-restricted-imports"]).toBeUndefined();
     expect(schemaRules["no-restricted-imports"]).toBeUndefined();
   });
@@ -118,6 +124,15 @@ describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", (
     expect(
       restrictedRuleIds("apps/api/src/approval/foo.ts", 'import { x } from "../kernel";', rule),
     ).not.toContain("no-restricted-imports");
+  });
+
+  it("import 适配器绕过内核直连数据库被拦（第六步）", async () => {
+    const rule = await importRule();
+    for (const source of ["drizzle-orm", "@weave-order/db", "pg", "../platform/database"]) {
+      expect(
+        restrictedRuleIds("apps/api/src/import/parse.ts", `import x from "${source}";`, rule),
+      ).toContain("no-restricted-imports");
+    }
   });
 
   it("非 kernel 路径（../tools）不误伤 agent", async () => {

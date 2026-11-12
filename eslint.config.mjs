@@ -5,8 +5,8 @@ import tseslint from "typescript-eslint";
 /**
  * 目录边界铁律（机器强制，不靠自觉）：
  * 1. apps/api/src/agent 只能 import tools，禁止 import kernel，也禁止触达数据库。
- * 2. apps/api/src/tools、approval 只能调用 kernel service，禁止直连数据库。
- * 3. 只有 kernel / platform 可以拥有数据库连接。
+ * 2. apps/api/src/tools、approval、import 只能调用 kernel service / 做解析，禁止直连数据库。
+ * 3. 只有 kernel / platform（及 http 的 DatabaseProvider）可以拥有数据库连接。
  */
 const DATABASE_PATTERNS = [
   "drizzle-orm",
@@ -72,7 +72,11 @@ export default tseslint.config(
   },
   {
     // 工具层只能调用 kernel service，不得自己连数据库。
-    files: ["apps/api/src/tools/**/*.ts", "apps/api/src/approval/**/*.ts"],
+    files: [
+      "apps/api/src/tools/**/*.ts",
+      "apps/api/src/approval/**/*.ts",
+      "apps/api/src/import/**/*.ts",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -80,7 +84,8 @@ export default tseslint.config(
           patterns: [
             {
               group: DATABASE_PATTERNS,
-              message: "目录边界铁律：tools/approval 只调用 kernel service，禁止直连数据库。",
+              message:
+                "目录边界铁律：tools/approval/import 只做编排与解析，禁止直连数据库；写业务表只能经 kernel service。",
             },
           ],
         },

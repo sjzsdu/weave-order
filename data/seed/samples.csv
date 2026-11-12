@@ -1,0 +1,7 @@
+﻿code,name,composition,weight,unit,costFloorAmount,costFloorCurrency,status
+S-SEED-001,高支棉 220g,100% 棉,220g/m2,meter,1200,CNY,ACTIVE
+S-SEED-002,涤纶平纹,100% polyester,150g/m2,meter,900,CNY,ACTIVE
+S-SEED-003,棉麻混纺,55% 麻 45% 棉,180g/m2,meter,1500,CNY,ACTIVE
+S-SEED-004,真丝素绉缎,100% 桑蚕丝,80g/m2,meter,4200,CNY,ACTIVE
+S-SEED-005,尼龙塔丝隆,100% nylon,110g/m2,meter,1100,CNY,ACTIVE
+S-SEED-006,精梳棉纱卡,100% 棉,260g/m2,kilogram,1800,CNY,ACTIVE

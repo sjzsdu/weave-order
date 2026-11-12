@@ -11,6 +11,7 @@ import {
   AuditController,
   CatalogController,
   HealthController,
+  ImportController,
   PanoramaController,
   QuoteController,
 } from "./controllers";
@@ -44,6 +45,7 @@ const providers: Provider[] = [
     AuditController,
     ApprovalController,
     PanoramaController,
+    ImportController,
   ],
   providers,
 })

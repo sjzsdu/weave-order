@@ -2,9 +2,12 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ImportBatchResult } from "@weave-order/schema";
+import { auditLog } from "@weave-order/db";
 import { createDb } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
@@ -65,7 +68,7 @@ describe("HTTP 面（e2e）", () => {
     expect(auditBody.entries.length).toBeLessThanOrEqual(3);
   });
 
-  it("通过 HTTP 走 T-004 生成 DRAFT，智能体不能确认", async (ctx) => {
+  it("通过 HTTP 走 T-004 生成 DRAFT，确认只经 /api/approvals/decide（HUMAN 唯一入口）", async (ctx) => {
     const database = db;
     if (!available || !database) {
       ctx.skip();
@@ -105,14 +108,27 @@ describe("HTTP 面（e2e）", () => {
     expect(body.ok).toBe(true);
     expect(body.data?.draft.status).toBe("DRAFT");
     expect(body.data?.draft.total.amount).toBe(180750);
+    const quoteId = body.data?.draft.id;
+    expect(quoteId).toBeDefined();
 
-    // 人类确认走另一个接口：状态转 SENT
-    const confirm = await fetch(`${baseUrl}/api/quotes/${body.data?.draft.id}/confirm`, {
+    // 旧路由 POST /api/quotes/:id/confirm 已删除：不存在第二个 HUMAN 写入口。
+    const legacy = await fetch(`${baseUrl}/api/quotes/${quoteId}/confirm`, { method: "POST" });
+    expect(legacy.status).toBe(404);
+
+    // 人类确认统一走审批窗口 decide：状态转 SENT，且 actorType 固定 HUMAN。
+    const decide = await fetch(`${baseUrl}/api/approvals/decide`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: quoteId, kind: "quote", decision: "APPROVE" }),
     });
-    expect(confirm.status).toBe(201);
-    const confirmed = (await confirm.json()) as { status: string };
-    expect(confirmed.status).toBe("SENT");
+    expect(decide.status).toBe(201);
+    const decided = (await decide.json()) as {
+      ok: boolean;
+      data?: { status: string; actorType: string };
+    };
+    expect(decided.ok).toBe(true);
+    expect(decided.data?.status).toBe("SENT");
+    expect(decided.data?.actorType).toBe("HUMAN");
   });
 
   it("HTTP 复测：100%棉 按字面量匹配，matchedOn 非空", async (ctx) => {
@@ -151,6 +167,65 @@ describe("HTTP 面（e2e）", () => {
       expect(match.matchedOn.length).toBeGreaterThan(0);
       expect(match.sample.name.toLowerCase()).toContain("100%棉");
     }
+  });
+
+  it("POST /api/import：冷启动导入整批落库，审计固定 HUMAN 上下文", async (ctx) => {
+    const database = db;
+    if (!available || !database) {
+      ctx.skip();
+      return;
+    }
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const code = `E2E-IMP-C-${suffix}`;
+    const sampleCode = `E2E-IMP-S-${suffix}`;
+    const response = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customers: [{ code, name: "HTTP 导入客户" }],
+        samples: [
+          {
+            code: sampleCode,
+            name: "HTTP 导入面料",
+            unit: "meter",
+            costFloor: { amount: 1200, currency: "CNY" },
+          },
+        ],
+      }),
+    });
+    expect(response.status).toBe(201);
+    const result = ImportBatchResult.parse(await response.json());
+    expect(result.committed).toBe(true);
+    expect(result.importedCustomers).toBe(1);
+    expect(result.importedSamples).toBe(1);
+    expect(result.correlationId).not.toBeNull();
+
+    const entries = await database
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.correlationId, result.correlationId ?? ""));
+    expect(entries).toHaveLength(2);
+    expect(entries.every((entry) => entry.actorType === "HUMAN")).toBe(true);
+  });
+
+  it("POST /api/import：坏行整批拒绝、零写入（HTTP 面同样可判别）", async (ctx) => {
+    if (!available) {
+      ctx.skip();
+      return;
+    }
+    const response = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customers: [{ code: "", name: "", tier: "MADE_UP" }],
+        samples: [],
+      }),
+    });
+    expect(response.status).toBe(201);
+    const result = ImportBatchResult.parse(await response.json());
+    expect(result.committed).toBe(false);
+    expect(result.batchError?.code).toBe("BATCH_REJECTED");
+    expect(result.importedCustomers).toBe(0);
   });
 
   it("参数匹配工具走 HTTP，非法输入返回 INVALID_INPUT 而不是 500", async (ctx) => {

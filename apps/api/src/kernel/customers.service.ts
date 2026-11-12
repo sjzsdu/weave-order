@@ -6,11 +6,12 @@ import {
   sampleShipments,
   samples,
 } from "@weave-order/db";
-import type { Db } from "@weave-order/db";
+import type { Db, Tx } from "@weave-order/db";
 import { CreateCustomerInput } from "@weave-order/schema";
 import type {
   Customer,
   CustomerContext,
+  CustomerContextImport,
   DecisionDelta,
   FabricSampleSummary,
   FollowupPreference,
@@ -83,41 +84,7 @@ export class CustomerService {
   async create(input: unknown, ctx: KernelContext): Promise<Customer> {
     const parsed = CreateCustomerInput.parse(input);
     try {
-      return await this.db.transaction(async (tx) => {
-        const rows = await tx
-          .insert(customers)
-          .values({
-            code: parsed.code,
-            name: parsed.name,
-            tier: parsed.tier,
-            contactName: parsed.contactName ?? null,
-            contactPhone: parsed.contactPhone ?? null,
-            contactEmail: parsed.contactEmail ?? null,
-          })
-          .returning();
-        const row = rows[0];
-        if (!row) {
-          throw new KernelError("KERNEL_REJECTED", "客户写入未返回记录", {
-            reason: "INSERT_RETURNED_NO_ROW",
-          });
-        }
-        await tx.insert(customerContexts).values({
-          customerId: row.id,
-          preferenceNotes: [],
-          pricingBehavior: DEFAULT_PRICING_BEHAVIOR,
-          paymentPattern: DEFAULT_PAYMENT_PATTERN,
-          followupPreference: DEFAULT_FOLLOWUP_PREFERENCE,
-          decisionDeltas: [] as DecisionDelta[],
-        });
-        await appendAudit(tx, ctx, {
-          action: "CUSTOMER_CREATED",
-          entityType: "customer",
-          entityId: row.id,
-          before: null,
-          after: { code: row.code, name: row.name, tier: row.tier },
-        });
-        return mapCustomer(row);
-      });
+      return await this.db.transaction((tx) => this.insertWithin(tx, parsed, ctx));
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new KernelError("KERNEL_REJECTED", `客户编号已存在：${parsed.code}`, {
@@ -126,6 +93,52 @@ export class CustomerService {
       }
       throw error;
     }
+  }
+
+  /**
+   * 在外部事务内插入客户 + 私有上下文 + 同事务审计，不自行开事务。
+   * 单条 create 与批量导入共用这一处写逻辑，避免两套落库路径漂移；
+   * `context` 为导入时可选的私有上下文（缺省字段用内核默认值补齐）。
+   */
+  async insertWithin(
+    tx: Tx,
+    parsed: CreateCustomerInput,
+    ctx: KernelContext,
+    context?: CustomerContextImport,
+  ): Promise<Customer> {
+    const rows = await tx
+      .insert(customers)
+      .values({
+        code: parsed.code,
+        name: parsed.name,
+        tier: parsed.tier,
+        contactName: parsed.contactName ?? null,
+        contactPhone: parsed.contactPhone ?? null,
+        contactEmail: parsed.contactEmail ?? null,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) {
+      throw new KernelError("KERNEL_REJECTED", "客户写入未返回记录", {
+        reason: "INSERT_RETURNED_NO_ROW",
+      });
+    }
+    await tx.insert(customerContexts).values({
+      customerId: row.id,
+      preferenceNotes: context?.preferenceNotes ?? [],
+      pricingBehavior: context?.pricingBehavior ?? DEFAULT_PRICING_BEHAVIOR,
+      paymentPattern: context?.paymentPattern ?? DEFAULT_PAYMENT_PATTERN,
+      followupPreference: context?.followupPreference ?? DEFAULT_FOLLOWUP_PREFERENCE,
+      decisionDeltas: [] as DecisionDelta[],
+    });
+    await appendAudit(tx, ctx, {
+      action: "CUSTOMER_CREATED",
+      entityType: "customer",
+      entityId: row.id,
+      before: null,
+      after: { code: row.code, name: row.name, tier: row.tier },
+    });
+    return mapCustomer(row);
   }
 
   async getById(customerId: string): Promise<Customer> {

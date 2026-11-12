@@ -1,6 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["DATABASE_URL", "REDIS_URL", "NODE_ENV", "PORT"],
+  "globalEnv": [
+    "DATABASE_URL",
+    "REDIS_URL",
+    "NODE_ENV",
+    "PORT",
+    "IMPORT_XLSX",
+    "IMPORT_CUSTOMERS",
+    "IMPORT_SAMPLES"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -21,6 +29,11 @@
       "outputs": []
     },
     "demo": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "seed": {
       "dependsOn": ["^build"],
       "cache": false,
       "outputs": []

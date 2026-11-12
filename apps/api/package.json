@@ -11,7 +11,8 @@
     "test": "vitest run",
     "lint": "eslint src scripts test",
     "demo": "tsx scripts/demo-kernel.ts",
-    "demo:followup": "tsx scripts/demo-followup.ts"
+    "demo:followup": "tsx scripts/demo-followup.ts",
+    "seed": "tsx scripts/import-data.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.4.0",
@@ -22,7 +23,9 @@
     "@nestjs/platform-express": "^11.2.9",
     "@weave-order/db": "workspace:*",
     "@weave-order/schema": "workspace:*",
+    "csv-parse": "^6.2.1",
     "drizzle-orm": "^0.45.4",
+    "exceljs": "^4.4.0",
     "ioredis": "^5.8.1",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
