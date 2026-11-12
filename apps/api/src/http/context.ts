@@ -5,11 +5,9 @@ export const AGENT_CONTEXT: KernelContext = {
   actor: { type: "AGENT", id: "quote-agent" },
 };
 
-/**
- * 人类确认动作的调用方。
- * 生产环境这里应来自登录态（Casdoor OIDC），MVP 先用固定审批人标识。
+/*
+ * 人类动作没有静态上下文。
+ * 审批 / 改稿 / 导入等 HUMAN 写路由一律经 `HumanActorService`：
+ * 生产态从 OIDC membership 注入真实 actor.id 与 role，缺令牌直接 401；
+ * 仅本地/测试在无令牌时回退 `DEV_HUMAN_CONTEXT`（见 human-actor.service.ts）。
  */
-export const HUMAN_CONTEXT: KernelContext = {
-  // 本地/演示环境没有网关登录态：固定为 owner。生产必须从 RequestContext 注入真实角色。
-  actor: { type: "HUMAN", id: "web-approver", role: "OWNER" },
-};

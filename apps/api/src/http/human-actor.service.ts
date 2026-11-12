@@ -2,11 +2,12 @@ import { ForbiddenException, Inject, Injectable, UnauthorizedException } from "@
 import type { AuthClaims, Membership } from "@weave-order/schema";
 import { AuthService } from "../gateway/auth.service";
 import type { Kernel, KernelContext } from "../kernel";
-import { loadEnv } from "../platform/env";
+import { isProductionLike } from "../platform/runtime-mode";
 
 /**
  * 本地/演示的人类上下文。
- * 只有非生产环境且请求没有 Bearer 令牌时才会使用；生产环境缺令牌直接 401。
+ * 只有非生产态（NODE_ENV≠production 且 AUTH_MODE≠oidc）且请求没有 Bearer 令牌时才会使用；
+ * 生产态缺令牌直接 401，绝不静默按 OWNER 运行。
  */
 export const DEV_HUMAN_CONTEXT: KernelContext = {
   actor: { type: "HUMAN", id: "web-approver", role: "OWNER" },
@@ -19,7 +20,7 @@ export const DEV_HUMAN_CONTEXT: KernelContext = {
  *   Authorization → AuthService.verify → membership.role → KernelContext.actor.role
  * 并用 `openScope` 打开该租户的 RLS 会话，审批 / 改稿 / 收款都写在正确租户里。
  *
- * 本地路径（无令牌、非 production）：回退固定 OWNER 并复用默认租户内核，
+ * 本地路径（无令牌、非生产态）：回退固定 OWNER 并复用默认租户内核，
  * 仅用于 demo / 既有集成测试，不进入生产。
  */
 @Injectable()
@@ -53,7 +54,7 @@ export class HumanActorService {
       }
     }
 
-    if (loadEnv().NODE_ENV === "production") {
+    if (isProductionLike()) {
       throw new UnauthorizedException("缺少 Bearer 令牌");
     }
     return fn(fallbackKernel, DEV_HUMAN_CONTEXT);
