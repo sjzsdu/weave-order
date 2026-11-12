@@ -27,6 +27,7 @@ export const sampleShipments = pgTable(
   "sample_shipments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
@@ -43,7 +44,7 @@ export const sampleShipments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("sample_shipments_customer_idx").on(table.customerId),
+    index("sample_shipments_tenant_customer_idx").on(table.tenantId, table.customerId),
     index("sample_shipments_status_idx").on(table.status),
   ],
 );
@@ -53,6 +54,7 @@ export const sampleShipmentItems = pgTable(
   "sample_shipment_items",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     shipmentId: uuid("shipment_id")
       .notNull()
       .references(() => sampleShipments.id, { onDelete: "cascade" }),
@@ -70,6 +72,7 @@ export const quotes = pgTable(
   "quotes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
@@ -86,8 +89,8 @@ export const quotes = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("quotes_customer_idx").on(table.customerId),
-    index("quotes_status_idx").on(table.status),
+    index("quotes_tenant_customer_idx").on(table.tenantId, table.customerId),
+    index("quotes_tenant_status_created_idx").on(table.tenantId, table.status, table.createdAt),
   ],
 );
 
@@ -96,6 +99,7 @@ export const quoteItems = pgTable(
   "quote_items",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     quoteId: uuid("quote_id")
       .notNull()
       .references(() => quotes.id, { onDelete: "cascade" }),

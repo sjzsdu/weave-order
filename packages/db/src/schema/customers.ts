@@ -7,6 +7,7 @@ import {
   text,
   timestamp,
   uuid,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 import type {
@@ -22,7 +23,10 @@ export const customers = pgTable(
   "customers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    code: varchar("code", { length: 64 }).notNull().unique(),
+    tenantId: uuid("tenant_id").notNull(),
+    /** 客户负责人；为空表示全公司可见（兼容演示数据）。 */
+    ownerId: uuid("owner_id"),
+    code: varchar("code", { length: 64 }).notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     tier: customerTierEnum("tier").notNull().default("REGULAR"),
     contactName: varchar("contact_name", { length: 255 }),
@@ -33,7 +37,11 @@ export const customers = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("customers_name_idx").on(table.name)],
+  (table) => [
+    uniqueIndex("customers_tenant_code_idx").on(table.tenantId, table.code),
+    index("customers_tenant_owner_idx").on(table.tenantId, table.ownerId),
+    index("customers_name_idx").on(table.name),
+  ],
 );
 
 /**
@@ -44,6 +52,7 @@ export const customerContexts = pgTable("customer_contexts", {
   customerId: uuid("customer_id")
     .primaryKey()
     .references(() => customers.id, { onDelete: "restrict" }),
+  tenantId: uuid("tenant_id").notNull(),
   preferenceNotes: text("preference_notes")
     .array()
     .notNull()

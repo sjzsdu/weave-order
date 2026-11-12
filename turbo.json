@@ -2,9 +2,17 @@
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": [
     "DATABASE_URL",
+    "APP_DATABASE_URL",
     "REDIS_URL",
     "NODE_ENV",
     "PORT",
+    "AUTH_MODE",
+    "CASDOOR_ISSUER",
+    "CASDOOR_AUDIENCE",
+    "CASDOOR_JWKS_URI",
+    "PUBLIC_APP_URL",
+    "LITELLM_BASE_URL",
+    "LITELLM_MASTER_KEY",
     "IMPORT_XLSX",
     "IMPORT_CUSTOMERS",
     "IMPORT_SAMPLES"

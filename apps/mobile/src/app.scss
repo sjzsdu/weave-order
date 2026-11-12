@@ -1,0 +1,49 @@
+page {
+  background: #f7f7f5;
+  color: #16181d;
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 28px;
+}
+
+.wrap {
+  padding: 24px;
+}
+
+.title {
+  font-size: 40px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.muted {
+  color: #5f646d;
+  font-size: 24px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e3e3df;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.draft {
+  border-style: dashed;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.action {
+  background: #1f6f5c;
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 12px 28px;
+  font-size: 26px;
+}

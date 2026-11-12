@@ -7,7 +7,7 @@ import {
   sampleShipments,
   samples,
 } from "@weave-order/db";
-import { createDb } from "@weave-order/db";
+import { createDb, DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { CustomerContext } from "@weave-order/schema";
 import type { CreateSampleInput, FabricSample } from "@weave-order/schema";
@@ -53,9 +53,10 @@ beforeAll(async () => {
     const embedder = createEmbeddingProvider();
     service = new ImportService(
       handle.db,
-      new CustomerService(handle.db),
-      new SampleService(handle.db, embedder),
+      new CustomerService(handle.db, DEFAULT_TENANT_ID),
+      new SampleService(handle.db, embedder, DEFAULT_TENANT_ID),
       embedder,
+      DEFAULT_TENANT_ID,
     );
   }
 });
@@ -284,9 +285,10 @@ describe("数据导入（集成，整批原子 / 单事务回滚）", () => {
     const embedder = createEmbeddingProvider();
     const faulty = new ImportService(
       database,
-      new CustomerService(database),
-      new FaultySampleService(database, embedder),
+      new CustomerService(database, DEFAULT_TENANT_ID),
+      new FaultySampleService(database, embedder, DEFAULT_TENANT_ID),
       embedder,
+      DEFAULT_TENANT_ID,
     );
 
     // 只看本文件专用的 actorId，避免与并行其它测试文件的写入互相干扰。

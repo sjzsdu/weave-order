@@ -33,6 +33,7 @@ describe("本地确定性 LLM provider", () => {
   it("跟进建议确定性复现，按物流状态组织话术", async () => {
     const shipment = {
       id: "123e4567-e89b-12d3-a456-426614174000",
+      tenantId: "00000000-0000-0000-0000-000000000001",
       customerId: "123e4567-e89b-12d3-a456-426614174001",
       status: "DRAFT" as const,
       channel: "COURIER" as const,

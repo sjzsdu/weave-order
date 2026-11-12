@@ -32,3 +32,69 @@ export const quoteStatusEnum = pgEnum("quote_status", [
 ]);
 
 export const actorTypeEnum = pgEnum("actor_type", ["AGENT", "HUMAN", "SYSTEM"]);
+
+export const tenantStatusEnum = pgEnum("tenant_status", ["ACTIVE", "TRIAL", "SUSPENDED", "CLOSED"]);
+
+export const isolationModeEnum = pgEnum("isolation_mode", ["SHARED_RLS", "SCHEMA", "DATABASE"]);
+
+export const memberRoleEnum = pgEnum("member_role", [
+  "OWNER",
+  "MANAGER",
+  "SALES",
+  "MERCHANDISER",
+  "SAMPLE_ADMIN",
+  "FINANCE",
+  "VIEWER",
+]);
+
+export const dataScopeEnum = pgEnum("data_scope", ["ALL", "TEAM", "OWN"]);
+
+export const membershipStatusEnum = pgEnum("membership_status", ["ACTIVE", "INVITED", "DISABLED"]);
+
+export const orderStatusEnum = pgEnum("order_status", [
+  "DRAFT",
+  "CONFIRMED",
+  "IN_PRODUCTION",
+  "SHIPPED",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
+export const orderShipmentStatusEnum = pgEnum("order_shipment_status", [
+  "DRAFT",
+  "PACKED",
+  "SHIPPED",
+  "DELIVERED",
+  "CANCELLED",
+]);
+
+export const receivableStatusEnum = pgEnum("receivable_status", [
+  "PENDING",
+  "PARTIAL",
+  "PAID",
+  "OVERDUE",
+  "CANCELLED",
+]);
+
+export const revisionEntityTypeEnum = pgEnum("revision_entity_type", [
+  "quote",
+  "order",
+  "sample_shipment",
+]);
+
+export const revisionSourceEnum = pgEnum("revision_source", ["INLINE", "FORM", "CHAT"]);
+
+export const revisionRequestStatusEnum = pgEnum("revision_request_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "WITHDRAWN",
+]);
+
+export const quoteShareEventEnum = pgEnum("quote_share_event", [
+  "VIEWED",
+  "PDF_DOWNLOADED",
+  "ACCEPTED",
+  "QUESTION_ASKED",
+  "REVOKED",
+]);

@@ -2,7 +2,7 @@ import { sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { ApprovalItem, CreateSampleShipmentInput } from "@weave-order/schema";
 import type { SampleShipment, SampleShipmentItem } from "@weave-order/schema";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
@@ -16,6 +16,7 @@ type ItemRow = typeof sampleShipmentItems.$inferSelect;
 function mapShipment(row: ShipmentRow, items: SampleShipmentItem[]): SampleShipment {
   return {
     id: row.id,
+    tenantId: row.tenantId,
     customerId: row.customerId,
     status: row.status,
     channel: row.channel,
@@ -40,6 +41,7 @@ export class ShipmentService {
   constructor(
     private readonly db: Db,
     private readonly customers: CustomerService,
+    private readonly tenantId: string,
   ) {}
 
   async createDraft(input: unknown, ctx: KernelContext): Promise<SampleShipment> {
@@ -47,7 +49,10 @@ export class ShipmentService {
     await this.customers.getById(parsed.customerId);
 
     const sampleIds = parsed.items.map((item) => item.sampleId);
-    const sampleRows = await this.db.select().from(samples).where(inArray(samples.id, sampleIds));
+    const sampleRows = await this.db
+      .select()
+      .from(samples)
+      .where(and(inArray(samples.id, sampleIds), eq(samples.tenantId, this.tenantId)));
     const samplesById = new Map(sampleRows.map((row) => [row.id, row]));
 
     for (const item of parsed.items) {
@@ -71,6 +76,7 @@ export class ShipmentService {
       const rows = await tx
         .insert(sampleShipments)
         .values({
+          tenantId: this.tenantId,
           customerId: parsed.customerId,
           status: "DRAFT",
           channel: parsed.channel,
@@ -90,6 +96,7 @@ export class ShipmentService {
         .insert(sampleShipmentItems)
         .values(
           parsed.items.map((item) => ({
+            tenantId: this.tenantId,
             shipmentId: shipmentRow.id,
             sampleId: item.sampleId,
             quantityMilli: quantityToMilli(item.quantity.value),
@@ -103,17 +110,22 @@ export class ShipmentService {
         quantity: { value: milliToQuantity(item.quantityMilli), unit: item.unit },
       }));
 
-      await appendAudit(tx, ctx, {
-        action: "SAMPLE_SHIPMENT_DRAFTED",
-        entityType: "sample_shipment",
-        entityId: shipmentRow.id,
-        before: null,
-        after: {
-          customerId: shipmentRow.customerId,
-          status: shipmentRow.status,
-          itemCount: items.length,
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "SAMPLE_SHIPMENT_DRAFTED",
+          entityType: "sample_shipment",
+          entityId: shipmentRow.id,
+          before: null,
+          after: {
+            customerId: shipmentRow.customerId,
+            status: shipmentRow.status,
+            itemCount: items.length,
+          },
         },
-      });
+        this.tenantId,
+      );
 
       return mapShipment(shipmentRow, items);
     });
@@ -123,7 +135,7 @@ export class ShipmentService {
     const rows = await this.db
       .select()
       .from(sampleShipments)
-      .where(eq(sampleShipments.id, shipmentId))
+      .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
       .limit(1);
     const row = rows[0];
     if (!row) {
@@ -173,7 +185,7 @@ export class ShipmentService {
           confirmedAt,
           updatedAt: confirmedAt,
         })
-        .where(eq(sampleShipments.id, shipmentId))
+        .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
         .returning();
       if (!rows[0]) {
         throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
@@ -181,13 +193,18 @@ export class ShipmentService {
           resourceId: shipmentId,
         });
       }
-      await appendAudit(tx, ctx, {
-        action: "SAMPLE_SHIPMENT_CONFIRMED",
-        entityType: "sample_shipment",
-        entityId: shipmentId,
-        before: { status: current.status },
-        after: { status: "CONFIRMED", confirmedBy: ctx.actor.id },
-      });
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "SAMPLE_SHIPMENT_CONFIRMED",
+          entityType: "sample_shipment",
+          entityId: shipmentId,
+          before: { status: current.status },
+          after: { status: "CONFIRMED", confirmedBy: ctx.actor.id },
+        },
+        this.tenantId,
+      );
     });
 
     return this.getById(shipmentId);
@@ -198,6 +215,7 @@ export class ShipmentService {
     const rows = await this.db
       .select()
       .from(sampleShipments)
+      .where(eq(sampleShipments.tenantId, this.tenantId))
       .orderBy(desc(sampleShipments.createdAt))
       .limit(limit);
     if (rows.length === 0) return [];
@@ -261,7 +279,7 @@ export class ShipmentService {
       const rows = await tx
         .update(sampleShipments)
         .set({ status: "CANCELLED", updatedAt: cancelledAt })
-        .where(eq(sampleShipments.id, shipmentId))
+        .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
         .returning();
       if (!rows[0]) {
         throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
@@ -269,13 +287,18 @@ export class ShipmentService {
           resourceId: shipmentId,
         });
       }
-      await appendAudit(tx, ctx, {
-        action: "SAMPLE_SHIPMENT_REJECTED",
-        entityType: "sample_shipment",
-        entityId: shipmentId,
-        before: { status: current.status },
-        after: { status: "CANCELLED", confirmedBy: ctx.actor.id, note: note ?? null },
-      });
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "SAMPLE_SHIPMENT_REJECTED",
+          entityType: "sample_shipment",
+          entityId: shipmentId,
+          before: { status: current.status },
+          after: { status: "CANCELLED", confirmedBy: ctx.actor.id, note: note ?? null },
+        },
+        this.tenantId,
+      );
     });
     return { status: "CANCELLED" };
   }

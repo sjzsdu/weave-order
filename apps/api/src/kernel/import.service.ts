@@ -26,7 +26,7 @@ import type {
   ZodIssueSummary,
 } from "@weave-order/schema";
 import { ZodError } from "zod";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
@@ -121,6 +121,7 @@ export class ImportService {
     private readonly customerService: CustomerService,
     private readonly sampleService: SampleService,
     private readonly embedder: EmbeddingProvider,
+    private readonly tenantId: string,
   ) {}
 
   async execute(
@@ -258,14 +259,14 @@ export class ImportService {
       const rows = await this.db
         .select({ id: customers.id, code: customers.code })
         .from(customers)
-        .where(inArray(customers.code, customerCodes));
+        .where(and(inArray(customers.code, customerCodes), eq(customers.tenantId, this.tenantId)));
       for (const row of rows) existingCustomers.set(row.code, row.id);
     }
     if (sampleCodes.length > 0) {
       const rows = await this.db
         .select({ id: samples.id, code: samples.code })
         .from(samples)
-        .where(inArray(samples.code, sampleCodes));
+        .where(and(inArray(samples.code, sampleCodes), eq(samples.tenantId, this.tenantId)));
       for (const row of rows) existingSamples.set(row.code, row.id);
     }
     const checked: ValidatedRow[] = [];
@@ -412,12 +413,17 @@ export class ImportService {
       const quoteRows = await tx
         .select({ id: quotes.id })
         .from(quotes)
-        .where(inArray(quotes.customerId, customerIds));
+        .where(and(inArray(quotes.customerId, customerIds), eq(quotes.tenantId, this.tenantId)));
       for (const row of quoteRows) quoteIds.add(row.id);
       const shipmentRows = await tx
         .select({ id: sampleShipments.id })
         .from(sampleShipments)
-        .where(inArray(sampleShipments.customerId, customerIds));
+        .where(
+          and(
+            inArray(sampleShipments.customerId, customerIds),
+            eq(sampleShipments.tenantId, this.tenantId),
+          ),
+        );
       for (const row of shipmentRows) shipmentIds.add(row.id);
     }
     if (sampleIds.length > 0) {
@@ -439,7 +445,12 @@ export class ImportService {
       await tx.delete(quoteItems).where(inArray(quoteItems.quoteId, ids));
       await tx.delete(quotes).where(inArray(quotes.id, ids));
       for (const id of ids) {
-        await appendAudit(tx, ctx, { action: "IMPORT_RESET", entityType: "quote", entityId: id });
+        await appendAudit(
+          tx,
+          ctx,
+          { action: "IMPORT_RESET", entityType: "quote", entityId: id },
+          this.tenantId,
+        );
       }
     }
     if (shipmentIds.size > 0) {
@@ -447,35 +458,50 @@ export class ImportService {
       await tx.delete(sampleShipmentItems).where(inArray(sampleShipmentItems.shipmentId, ids));
       await tx.delete(sampleShipments).where(inArray(sampleShipments.id, ids));
       for (const id of ids) {
-        await appendAudit(tx, ctx, {
-          action: "IMPORT_RESET",
-          entityType: "sample_shipment",
-          entityId: id,
-        });
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: "IMPORT_RESET",
+            entityType: "sample_shipment",
+            entityId: id,
+          },
+          this.tenantId,
+        );
       }
     }
     if (customerIds.length > 0) {
       await tx.delete(customerContexts).where(inArray(customerContexts.customerId, customerIds));
       await tx.delete(customers).where(inArray(customers.id, customerIds));
       for (const [code, id] of existingCustomers) {
-        await appendAudit(tx, ctx, {
-          action: "IMPORT_RESET",
-          entityType: "customer",
-          entityId: id,
-          before: { code },
-        });
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: "IMPORT_RESET",
+            entityType: "customer",
+            entityId: id,
+            before: { code },
+          },
+          this.tenantId,
+        );
       }
     }
     if (sampleIds.length > 0) {
       await tx.delete(sampleEmbeddings).where(inArray(sampleEmbeddings.sampleId, sampleIds));
       await tx.delete(samples).where(inArray(samples.id, sampleIds));
       for (const [code, id] of existingSamples) {
-        await appendAudit(tx, ctx, {
-          action: "IMPORT_RESET",
-          entityType: "fabric_sample",
-          entityId: id,
-          before: { code },
-        });
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: "IMPORT_RESET",
+            entityType: "fabric_sample",
+            entityId: id,
+            before: { code },
+          },
+          this.tenantId,
+        );
       }
     }
   }

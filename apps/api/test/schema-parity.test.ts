@@ -2,16 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   Currency,
   CustomerTier,
+  DataScope,
+  IsolationMode,
+  MemberRole,
+  MembershipStatus,
+  OrderStatus,
   QuoteStatus,
+  QuoteShareEventType,
+  ReceivableStatus,
+  RevisionRequestStatus,
+  RevisionSource,
   SampleShipmentStatus,
+  ShipmentStatus,
+  TenantStatus,
   Unit,
 } from "@weave-order/schema";
 import {
   actorTypeEnum,
   currencyEnum,
   customerTierEnum,
+  dataScopeEnum,
+  isolationModeEnum,
+  memberRoleEnum,
+  membershipStatusEnum,
+  orderShipmentStatusEnum,
+  orderStatusEnum,
   quoteStatusEnum,
+  quoteShareEventEnum,
+  receivableStatusEnum,
+  revisionRequestStatusEnum,
+  revisionSourceEnum,
   shipmentStatusEnum,
+  tenantStatusEnum,
   unitEnum,
 } from "@weave-order/db";
 
@@ -42,5 +64,25 @@ describe("数据库枚举与契约枚举一致", () => {
 
   it("审计 actor 类型", () => {
     expect(actorTypeEnum.enumValues).toEqual(["AGENT", "HUMAN", "SYSTEM"]);
+  });
+
+  it("租户 / 成员", () => {
+    expect(tenantStatusEnum.enumValues).toEqual(TenantStatus.options);
+    expect(isolationModeEnum.enumValues).toEqual(IsolationMode.options);
+    expect(memberRoleEnum.enumValues).toEqual(MemberRole.options);
+    expect(dataScopeEnum.enumValues).toEqual(DataScope.options);
+    expect(membershipStatusEnum.enumValues).toEqual(MembershipStatus.options);
+  });
+
+  it("订单 / 发货 / 应收", () => {
+    expect(orderStatusEnum.enumValues).toEqual(OrderStatus.options);
+    expect(orderShipmentStatusEnum.enumValues).toEqual(ShipmentStatus.options);
+    expect(receivableStatusEnum.enumValues).toEqual(ReceivableStatus.options);
+  });
+
+  it("改稿 / 分享", () => {
+    expect(revisionSourceEnum.enumValues).toEqual(RevisionSource.options);
+    expect(revisionRequestStatusEnum.enumValues).toEqual(RevisionRequestStatus.options);
+    expect(quoteShareEventEnum.enumValues).toEqual(QuoteShareEventType.options);
   });
 });

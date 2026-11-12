@@ -20,7 +20,7 @@ import type {
   QuoteSummary,
   T003GetCustomerHistoryData,
 } from "@weave-order/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
@@ -53,6 +53,7 @@ type ContextRow = typeof customerContexts.$inferSelect;
 function mapCustomer(row: CustomerRow): Customer {
   return {
     id: row.id,
+    tenantId: row.tenantId,
     code: row.code,
     name: row.name,
     tier: row.tier,
@@ -79,7 +80,10 @@ function mapContext(row: ContextRow): CustomerContext {
  * 唯一写入 customers / customer_contexts 的入口，每次写入都带同事务审计。
  */
 export class CustomerService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly tenantId: string,
+  ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<Customer> {
     const parsed = CreateCustomerInput.parse(input);
@@ -109,6 +113,7 @@ export class CustomerService {
     const rows = await tx
       .insert(customers)
       .values({
+        tenantId: this.tenantId,
         code: parsed.code,
         name: parsed.name,
         tier: parsed.tier,
@@ -125,19 +130,25 @@ export class CustomerService {
     }
     await tx.insert(customerContexts).values({
       customerId: row.id,
+      tenantId: this.tenantId,
       preferenceNotes: context?.preferenceNotes ?? [],
       pricingBehavior: context?.pricingBehavior ?? DEFAULT_PRICING_BEHAVIOR,
       paymentPattern: context?.paymentPattern ?? DEFAULT_PAYMENT_PATTERN,
       followupPreference: context?.followupPreference ?? DEFAULT_FOLLOWUP_PREFERENCE,
       decisionDeltas: [] as DecisionDelta[],
     });
-    await appendAudit(tx, ctx, {
-      action: "CUSTOMER_CREATED",
-      entityType: "customer",
-      entityId: row.id,
-      before: null,
-      after: { code: row.code, name: row.name, tier: row.tier },
-    });
+    await appendAudit(
+      tx,
+      ctx,
+      {
+        action: "CUSTOMER_CREATED",
+        entityType: "customer",
+        entityId: row.id,
+        before: null,
+        after: { code: row.code, name: row.name, tier: row.tier },
+      },
+      this.tenantId,
+    );
     return mapCustomer(row);
   }
 
@@ -145,7 +156,7 @@ export class CustomerService {
     const rows = await this.db
       .select()
       .from(customers)
-      .where(eq(customers.id, customerId))
+      .where(and(eq(customers.id, customerId), eq(customers.tenantId, this.tenantId)))
       .limit(1);
     const row = rows[0];
     if (!row) {
@@ -163,7 +174,12 @@ export class CustomerService {
     const contextRows = await this.db
       .select()
       .from(customerContexts)
-      .where(eq(customerContexts.customerId, customerId))
+      .where(
+        and(
+          eq(customerContexts.customerId, customerId),
+          eq(customerContexts.tenantId, this.tenantId),
+        ),
+      )
       .limit(1);
     const contextRow = contextRows[0];
     if (!contextRow) {
@@ -175,7 +191,7 @@ export class CustomerService {
     const quoteRows = await this.db
       .select()
       .from(quotes)
-      .where(eq(quotes.customerId, customerId))
+      .where(and(eq(quotes.customerId, customerId), eq(quotes.tenantId, this.tenantId)))
       .orderBy(desc(quotes.createdAt))
       .limit(limit);
 
@@ -192,7 +208,12 @@ export class CustomerService {
       .from(sampleShipmentItems)
       .innerJoin(sampleShipments, eq(sampleShipmentItems.shipmentId, sampleShipments.id))
       .innerJoin(samples, eq(sampleShipmentItems.sampleId, samples.id))
-      .where(eq(sampleShipments.customerId, customerId))
+      .where(
+        and(
+          eq(sampleShipments.customerId, customerId),
+          eq(sampleShipments.tenantId, this.tenantId),
+        ),
+      )
       .orderBy(desc(samples.createdAt))
       .limit(limit);
 
@@ -225,7 +246,12 @@ export class CustomerService {
       const rows = await tx
         .update(customerContexts)
         .set({ decisionDeltas: nextDeltas, updatedAt: new Date() })
-        .where(eq(customerContexts.customerId, customerId))
+        .where(
+          and(
+            eq(customerContexts.customerId, customerId),
+            eq(customerContexts.tenantId, this.tenantId),
+          ),
+        )
         .returning();
       const row = rows[0];
       if (!row) {
@@ -233,13 +259,18 @@ export class CustomerService {
           customerId,
         });
       }
-      await appendAudit(tx, ctx, {
-        action: "CUSTOMER_CONTEXT_UPDATED",
-        entityType: "customer_context",
-        entityId: customerId,
-        before: { decisionDeltaCount: current.decisionDeltas.length },
-        after: { decisionDeltaCount: nextDeltas.length, field: delta.field },
-      });
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "CUSTOMER_CONTEXT_UPDATED",
+          entityType: "customer_context",
+          entityId: customerId,
+          before: { decisionDeltaCount: current.decisionDeltas.length },
+          after: { decisionDeltaCount: nextDeltas.length, field: delta.field },
+        },
+        this.tenantId,
+      );
       return mapContext(row);
     });
   }
@@ -249,6 +280,7 @@ export class CustomerService {
     const rows = await this.db
       .select()
       .from(customers)
+      .where(eq(customers.tenantId, this.tenantId))
       .orderBy(desc(customers.createdAt))
       .limit(limit);
     return rows.map(mapCustomer);
@@ -258,7 +290,12 @@ export class CustomerService {
     const rows = await this.db
       .select()
       .from(customerContexts)
-      .where(eq(customerContexts.customerId, customerId))
+      .where(
+        and(
+          eq(customerContexts.customerId, customerId),
+          eq(customerContexts.tenantId, this.tenantId),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     if (!row) {

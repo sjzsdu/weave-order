@@ -12,6 +12,7 @@ const NOW = "2026-11-11T11:00:00.000Z";
 
 const sample = {
   id: UUID_A,
+  tenantId: UUID_A,
   code: "SMP-001",
   name: "高支棉 220g",
   composition: "100% 棉",

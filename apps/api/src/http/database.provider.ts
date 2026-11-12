@@ -1,24 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import type { OnApplicationShutdown } from "@nestjs/common";
-import { connectDatabase } from "../platform/database";
-import type { DatabaseHandle } from "../platform/database";
-import { loadEnv } from "../platform/env";
-
 /**
- * 应用级数据库连接。
- *
- * 只有 platform / kernel 能拿到它；HTTP 控制器通过 kernel / tools 间接访问，
- * agent 层连 import 都不允许（ESLint 边界）。
+ * 兼容导出：连接提供者已上移到 platform（网关与 HTTP 共用）。
+ * 保留此文件避免既有 import 路径断裂；边界规则仍只放开 platform 连接句柄。
  */
-@Injectable()
-export class DatabaseProvider implements OnApplicationShutdown {
-  readonly handle: DatabaseHandle;
-
-  constructor() {
-    this.handle = connectDatabase(loadEnv().DATABASE_URL);
-  }
-
-  async onApplicationShutdown(): Promise<void> {
-    await this.handle.pool.end();
-  }
-}
+export { DatabaseProvider } from "../platform/database.provider";

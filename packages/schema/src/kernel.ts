@@ -10,7 +10,6 @@ import {
   Timestamp,
   Unit,
 } from "./domain";
-
 /**
  * 确定性内核的输入契约。
  *
@@ -102,6 +101,22 @@ export const AuditAction = z.enum([
   "QUOTE_DRAFT_GENERATED",
   "QUOTE_CONFIRMED",
   "QUOTE_REJECTED",
+  "TENANT_CREATED",
+  "MEMBERSHIP_CREATED",
+  "ORDER_CREATED",
+  "ORDER_CONFIRMED",
+  "SHIPMENT_CREATED",
+  "SHIPMENT_CONFIRMED",
+  "RECEIVABLE_CREATED",
+  "RECEIVABLE_PAYMENT_RECORDED",
+  "QUOTE_SHARE_CREATED",
+  "QUOTE_SHARE_REVOKED",
+  "REVISION_REQUESTED",
+  "REVISION_RESOLVED",
+  // 身份/凭据类动作（网关与打印代理会写入，保持审计动作集合封闭）
+  "USER_CREATED",
+  "API_TOKEN_CREATED",
+  "API_TOKEN_REVOKED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -109,6 +124,7 @@ export type AuditAction = z.infer<typeof AuditAction>;
 export const AuditLogEntry = z
   .object({
     id: EntityId,
+    tenantId: EntityId,
     seq: z.number().int().positive(),
     actorType: z.enum(["AGENT", "HUMAN", "SYSTEM"]),
     actorId: z.string().min(1).max(128),

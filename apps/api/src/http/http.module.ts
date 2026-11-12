@@ -4,6 +4,8 @@ import { createApprovalService } from "../approval";
 import type { ApprovalService } from "../approval";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
+import { DatabaseProvider } from "../platform/database.provider";
+import { DatabaseModule } from "../platform/database.module";
 import { createTools } from "../tools";
 import type { Tools } from "../tools";
 import {
@@ -15,11 +17,9 @@ import {
   PanoramaController,
   QuoteController,
 } from "./controllers";
-import { DatabaseProvider } from "./database.provider";
 import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
-  DatabaseProvider,
   {
     provide: KERNEL,
     useFactory: (database: DatabaseProvider): Kernel => createKernel(database.handle.db),
@@ -38,6 +38,7 @@ const providers: Provider[] = [
 ];
 
 @Module({
+  imports: [DatabaseModule],
   controllers: [
     HealthController,
     CatalogController,

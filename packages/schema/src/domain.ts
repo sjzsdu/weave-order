@@ -44,6 +44,8 @@ export type CustomerTier = z.infer<typeof CustomerTier>;
 
 export const Customer = z.object({
   id: EntityId,
+  /** 数据归属租户；由网关注入、内核落账，前端不得传。 */
+  tenantId: EntityId,
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   tier: CustomerTier,
@@ -161,6 +163,7 @@ export type SampleStatus = z.infer<typeof SampleStatus>;
 /** 面料样品（完整实体，内核读写）。 */
 export const FabricSample = z.object({
   id: EntityId,
+  tenantId: EntityId,
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   composition: z.string().max(255).nullable(),
@@ -197,6 +200,7 @@ export type SampleShipmentItem = z.infer<typeof SampleShipmentItem>;
 /** 寄样单（完整实体，内核读写）。 */
 export const SampleShipment = z.object({
   id: EntityId,
+  tenantId: EntityId,
   customerId: EntityId,
   status: SampleShipmentStatus,
   channel: ShipmentChannel,
