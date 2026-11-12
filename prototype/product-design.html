@@ -45,7 +45,7 @@
   /* ---------- desktop app frame ---------- */
   .desk{
     width:100%;max-width:1120px;background:var(--surface);border:1px solid var(--line);
-    border-radius:16px;box-shadow:var(--shadow);overflow:hidden;
+    border-radius:16px;box-shadow:var(--shadow);overflow:hidden;position:relative;
   }
   .chrome{height:38px;background:#EEE9DF;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 14px;gap:12px}
   .lights{display:flex;gap:6px}
@@ -188,6 +188,78 @@
   .revise input{width:110px;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit;font-variant-numeric:tabular-nums}
   .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,14px);background:var(--ink);color:#fff;font-size:12.5px;padding:10px 18px;border-radius:9px;opacity:0;pointer-events:none;transition:.22s;z-index:99}
   .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* ---------- print drawer ---------- */
+  .print-backdrop{position:absolute;inset:38px 0 0;background:rgba(20,32,43,.28);opacity:0;pointer-events:none;transition:.2s;z-index:20}
+  .print-backdrop.show{opacity:1;pointer-events:auto}
+  .print-drawer{position:absolute;top:38px;right:0;bottom:0;width:468px;background:var(--paper);border-left:1px solid var(--line);transform:translateX(101%);transition:transform .22s ease;z-index:21;display:flex;flex-direction:column;box-shadow:-12px 0 32px rgba(20,32,43,.12)}
+  .print-drawer.show{transform:none}
+  .pd-head{padding:18px 20px 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+  .pd-head .between h3{margin:0;font-size:17px;letter-spacing:.3px}
+  .pd-tabs{display:flex;gap:4px;margin-top:14px}
+  .pd-tabs button{all:unset;cursor:pointer;font-size:11.5px;padding:5px 11px;border-radius:999px;color:var(--ink2);border:1px solid transparent}
+  .pd-tabs button.on{background:var(--ink);color:#fff}
+  .pd-body{flex:1;overflow:auto;padding:10px 18px 14px}
+  .pd-label{font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:12px 0 8px}
+  .job{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:8px}
+  .job .jt{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .job .jm{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+  .job .prog{height:5px;border-radius:99px;background:#EDE8DE;margin-top:8px;overflow:hidden}
+  .job .prog i{display:block;height:100%;background:var(--moss);border-radius:99px}
+  .job .prog.warn i{background:var(--amber)}
+  .job .jact{margin-left:auto;font-size:10.5px;color:var(--indigo);font-weight:600;white-space:nowrap}
+  .tpl-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F1EDE5;font-size:11.5px}
+  .tpl-row:last-child{border-bottom:0}
+  .tpl-row .tp{width:30px;height:38px;border-radius:4px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-size:8px;color:var(--muted);flex:none;box-shadow:0 1px 2px rgba(20,32,43,.06)}
+  .tpl-row .tp.label{width:38px;height:30px;border:1px dashed #B9CBD8;background:#F8FAFC;color:var(--indigo)}
+  .tpl-row b{font-size:11.5px;display:block;font-weight:600}
+  .tpl-row span{font-size:10px;color:var(--muted)}
+  .device-row{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid #F1EDE5;font-size:11.5px}
+  .device-row:last-child{border-bottom:0}
+  .device-row .dot{width:7px;height:7px;border-radius:50%;background:var(--moss);flex:none}
+  .device-row .dot.off{background:#B9B2A5}
+  .device-row b{font-weight:600}
+  .device-row .r{margin-left:auto;color:var(--muted);font-size:10px}
+  .quick{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:4px}
+  .quick button{all:unset;cursor:pointer;text-align:center;padding:8px 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11.5px;font-weight:600;color:var(--ink2)}
+  .quick button:hover{border-color:#B9CBD8;color:var(--indigo)}
+  .label-preview{width:100%;height:104px;border:1px dashed #B9CBD8;border-radius:8px;background:#fff;margin-top:6px;padding:8px;display:flex;gap:10px;align-items:center}
+  .label-preview .qr{width:52px;height:52px;background:repeating-conic-gradient(var(--ink) 0 25%, #fff 0 50%) 0 0/6px 6px;border:3px solid #fff;outline:1px solid var(--line);flex:none}
+  .label-preview .lb{font-size:9px;line-height:1.5;color:var(--ink2)}
+  .label-preview .lb b{display:block;font-size:12px;color:var(--ink);margin-bottom:3px}
+
+  /* ---------- platform console ---------- */
+  .admin-wrap{max-width:1560px;margin:44px auto 0}
+  .admin-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:14px;flex-wrap:wrap}
+  .admin-head h2{font-size:19px;margin:0;letter-spacing:.4px}
+  .admin-head p{margin:4px 0 0;color:var(--muted);font-size:12.5px}
+  .console{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  .console .app{grid-template-columns:176px minmax(0,1fr);height:740px}
+  .console .side{background:#0F1B24}
+  .cbody{padding:22px 24px;overflow:auto;min-height:0}
+  .cbody::-webkit-scrollbar{width:8px}.cbody::-webkit-scrollbar-thumb{background:#DCD5C8;border-radius:8px}
+  .ckpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .ckpi{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:13px 14px}
+  .ckpi .k{font-size:10.5px;color:var(--muted);letter-spacing:.4px}
+  .ckpi .v{font-size:23px;font-weight:750;margin-top:5px;letter-spacing:-.3px}
+  .ckpi .d{font-size:10.5px;margin-top:3px;color:var(--moss)}
+  .ckpi .d.bad{color:var(--verm)}
+  .cgrid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr);gap:14px;align-items:start}
+  .chart{height:120px;display:flex;align-items:flex-end;gap:7px;padding-top:8px}
+  .chart i{flex:1;background:var(--indigo-soft);border-radius:4px 4px 0 0;position:relative}
+  .chart i b{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:8.5px;color:var(--muted);font-weight:400}
+  .chart i.hot{background:var(--indigo)}
+  .tenant-tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+  .tenant-tbl th{font-size:9.5px;letter-spacing:.4px;color:var(--muted);text-align:left;font-weight:600;padding:6px 6px;border-bottom:1px solid var(--line)}
+  .tenant-tbl td{padding:8px 6px;border-bottom:1px solid #F3EFE7}
+  .tenant-tbl .r{text-align:right;font-variant-numeric:tabular-nums}
+  .tenant-tbl .nm{font-weight:600;color:var(--ink)}
+  .tenant-tbl .sub{display:block;font-size:9.5px;color:var(--muted);font-weight:400}
+  .plan-mini{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #F3EFE7;font-size:11.5px}
+  .plan-mini:last-child{border-bottom:0}
+  .plan-mini .bar{width:80px;height:5px;background:#EDE8DE;border-radius:99px;overflow:hidden;margin:0}
+  .plan-mini .bar i{display:block;height:100%;background:var(--indigo)}
+  .admin-note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6}
 
   /* panorama */
   .pano-head{display:flex;align-items:center;gap:14px;margin-bottom:16px}
@@ -378,7 +450,7 @@
     </div>
     <div class="page-meta">
       <span class="pill"><span class="dot"></span>可点击：左侧导航 / 审批 / 手机 Tab</span>
-      <span class="pill">v1.1 · 2026-11-12</span>
+      <span class="pill">v1.2 · 2026-11-12</span>
     </div>
   </div>
 
@@ -423,6 +495,7 @@
           <div class="topbar">
             <div class="cmd">⌘K 说点什么… 例如「青禾问 220g 棉 500 米什么价」<kbd>⌘K</kbd></div>
             <div class="top-right">
+              <button class="btn ghost sm" data-print style="padding:6px 10px">打印中心 <span class="badge gray" style="padding:1px 5px;font-size:9.5px">3</span></button>
               <div class="icon-btn" title="通知"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></div>
               <span>11月12日 周三</span>
             </div>
@@ -862,6 +935,23 @@
 
                 <div class="rail">
                   <div class="card pad">
+                    <div class="between" style="margin-bottom:6px">
+                      <div class="eyebrow">订阅与用量</div>
+                      <span class="badge">专业版 Pro</span>
+                    </div>
+                    <div class="between" style="font-size:12px;padding:4px 0"><span class="muted">席位</span><b class="num">8 / 10</b></div>
+                    <div class="track"><i style="width:80%"></i></div>
+                    <div class="between" style="font-size:12px;padding:10px 0 4px"><span class="muted">本月 agent 动作</span><b class="num">3,240 / 5,000</b></div>
+                    <div class="track"><i style="width:65%"></i></div>
+                    <div class="between" style="font-size:12px;padding:10px 0 0"><span class="muted">下次扣费</span><span class="num">2027-03-01 · ¥39,920</span></div>
+                    <div class="between" style="margin-top:10px;gap:7px">
+                      <button class="btn ghost sm" style="flex:1">发票</button>
+                      <button class="btn primary sm" style="flex:1">升级 / 增席位</button>
+                    </div>
+                    <div class="tiny muted" style="margin-top:7px">老板/只读审批席位不计费 · 超额可买动作包</div>
+                  </div>
+
+                  <div class="card pad">
                     <div class="between" style="margin-bottom:8px"><div class="eyebrow">智能体成员</div><span class="tiny muted">4 个</span></div>
                     <div class="agent-card">
                       <div class="top"><span class="agent a1"><i>织</i></span><b>小织 · 报价</b><span class="badge" style="margin-left:auto">L1 草稿</span></div>
@@ -895,6 +985,81 @@
           </div>
         </div>
       </div>
+
+      <!-- print center drawer -->
+      <div class="print-backdrop" id="printBackdrop"></div>
+      <aside class="print-drawer" id="printDrawer" aria-label="打印中心">
+        <div class="pd-head">
+          <div class="between">
+            <h3>打印中心</h3>
+            <button class="btn ghost sm" id="printClose" style="padding:4px 8px">✕</button>
+          </div>
+          <div class="pd-tabs" id="pdTabs">
+            <button class="on" data-pdtab="pd-queue">队列 3</button>
+            <button data-pdtab="pd-tpl">模板</button>
+            <button data-pdtab="pd-dev">设备 2</button>
+          </div>
+        </div>
+        <div class="pd-body">
+          <div class="pd-pane" id="pd-queue">
+            <div class="pd-label">待打与进行中</div>
+            <div class="job">
+              <div class="jt">发货单 DN-2418-01 <span class="badge good" style="margin-left:auto">生成中</span></div>
+              <div class="jm">A4 · 客户联 + 回单联 · 2 份 · 青禾服饰<br/>办公室 A4（在线）</div>
+            </div>
+            <div class="job">
+              <div class="jt">箱唛 ×20 <span class="badge warn" style="margin-left:auto">12 / 20</span></div>
+              <div class="jm">100×100 热敏 · 组任务 DN-2418-01 · 仓库 ZPL<br/>1 张缺纸失败，补纸后自动重试</div>
+              <div class="prog"><i style="width:60%"></i></div>
+            </div>
+            <div class="job">
+              <div class="jt">拣货单 <span class="badge" style="margin-left:auto">待打印</span></div>
+              <div class="jm">A4 · 1 份 · 2 行缺货位（已标黄）<br/>建议补完货位再打</div>
+            </div>
+
+            <div class="pd-label">快捷打印</div>
+            <div class="quick">
+              <button>发货全套</button>
+              <button>箱唛</button>
+              <button>样品标签</button>
+              <button>对账单</button>
+            </div>
+
+            <div class="pd-label">箱唛预览 · 100×100</div>
+            <div class="label-preview">
+              <div class="qr"></div>
+              <div class="lb"><b>青禾服饰</b>杭州 · 周敏<br/>DN-2418-01 · BOX 02 / 20<br/>32S 精梳棉 220g · 30m<br/>毛重 12.4kg</div>
+            </div>
+            <div class="admin-note">打印代理：仓库小主机在线 · 办公室 A4 在线 · 蓝牙机未连接。重打需选原因，记录进审计。</div>
+          </div>
+
+          <div class="pd-pane" id="pd-tpl" style="display:none">
+            <div class="pd-label">单据模板</div>
+            <div class="tpl-row"><div class="tp">A4</div><div><b>发货单 · 公司模板 v3</b><span>客户联 + 回单联 · 含价格开关</span></div><span class="badge good" style="margin-left:auto">启用</span></div>
+            <div class="tpl-row"><div class="tp">A4</div><div><b>报价单 · 公司模板 v2</b><span>含条款与银行账号</span></div><span class="badge good" style="margin-left:auto">启用</span></div>
+            <div class="tpl-row"><div class="tp">A4</div><div><b>对账单 · 系统模板</b><span>按期间汇总 · 差异标黄</span></div><span class="badge gray" style="margin-left:auto">系统</span></div>
+            <div class="pd-label">标签模板</div>
+            <div class="tpl-row"><div class="tp label">100²</div><div><b>箱唛 · v2</b><span>中英双语 · QR + Code128</span></div><span class="badge good" style="margin-left:auto">启用</span></div>
+            <div class="tpl-row"><div class="tp label">50×30</div><div><b>样品标签 · v1</b><span>品名/克重/色号/二维码</span></div><span class="badge good" style="margin-left:auto">启用</span></div>
+            <div class="admin-note">模板变量只来自后端白名单；改动保存为新版本，已打单据仍用原版本补打。</div>
+          </div>
+
+          <div class="pd-pane" id="pd-dev" style="display:none">
+            <div class="pd-label">打印代理</div>
+            <div class="device-row"><span class="dot"></span><b>仓库小主机 · v1.4.2</b><span class="r">心跳 12s 前</span></div>
+            <div class="device-row"><span class="dot"></span><b>办公室前台 · v1.4.2</b><span class="r">心跳 40s 前</span></div>
+            <div class="pd-label">打印机</div>
+            <div class="device-row"><span class="dot"></span><b>办公室 A4 · 激光</b><span class="r">A4 · 正常</span></div>
+            <div class="device-row"><span class="dot"></span><b>仓库热敏 · ZPL</b><span class="r">100×100 · 缺纸</span></div>
+            <div class="device-row"><span class="dot off"></span><b>蓝牙便携 · TSPL</b><span class="r">未连接</span></div>
+            <div class="quick" style="margin-top:10px">
+              <button>打印测试页</button>
+              <button>重新发现设备</button>
+            </div>
+            <div class="admin-note">代理必须独立于个人电脑常驻；离线时任务排队，恢复后自动补打。</div>
+          </div>
+        </div>
+      </aside>
     </div>
 
     <!-- ================= PHONE ================= -->
@@ -1076,6 +1241,8 @@
                 <div class="tool-row"><span class="ic">访</span><b>客户拜访签到</b><span class="r">今日 2 家</span></div>
                 <div class="tool-row"><span class="ic">片</span><b>名片 / 微信截图建客户</b><span class="r">OCR</span></div>
                 <div class="tool-row"><span class="ic">产</span><b>拍大货进度</b><span class="r">跟单</span></div>
+                <div class="tool-row"><span class="ic">唛</span><b>扫箱唛重打</b><span class="r">蓝牙 / 仓库</span></div>
+                <div class="tool-row"><span class="ic">印</span><b>打样品标签 / 箱唛</b><span class="r">蓝牙机</span></div>
                 <div class="tool-row"><span class="ic">款</span><b>拍回款凭证</b><span class="r">财务</span></div>
               </div>
               <div class="pcard" style="margin-top:12px;padding:12px 13px">
@@ -1189,12 +1356,132 @@
     </div>
   </div>
 
+  <!-- ================= PLATFORM ADMIN ================= -->
+  <section class="admin-wrap">
+    <div class="admin-head">
+      <div>
+        <div class="eyebrow">SaaS 控制面 · 独立产品</div>
+        <h2>平台总管理端</h2>
+        <p>管理 SaaS 用户、公司、套餐、账单与用量。默认看不到租户业务数据，需要 break-glass 且由租户同意。</p>
+      </div>
+      <span class="pill">admin.weaveorder.cn</span>
+    </div>
+
+    <div class="console" id="adminConsole">
+      <div class="chrome">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="addr">admin.weaveorder.cn / overview</div>
+      </div>
+      <div class="app">
+        <aside class="side">
+          <div class="logo">
+            <div class="m">织</div>
+            <div><b>织序 · 平台</b><span>Control Plane</span></div>
+          </div>
+          <nav class="nav">
+            <button class="on"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>总览</button>
+            <button><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>租户 <span class="count">42</span></button>
+            <button><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>订阅账单</button>
+            <button><svg viewBox="0 0 24 24"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>用量</button>
+            <button><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/></svg>套餐</button>
+            <button><svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>功能开关</button>
+            <button><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>支持</button>
+            <button><svg viewBox="0 0 24 24"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>平台审计</button>
+          </nav>
+          <div class="who">
+            <div class="avatar" style="background:#2C6496">平</div>
+            <div><b>平台运营</b><span>platform_owner</span></div>
+          </div>
+        </aside>
+
+        <div class="main">
+          <div class="topbar">
+            <div class="cmd">搜索公司 / 管理员 / 账单号…<kbd>⌘K</kbd></div>
+            <div class="top-right"><span>2026-11-12</span></div>
+          </div>
+          <div class="cbody">
+            <div class="between" style="margin-bottom:14px">
+              <div>
+                <div class="eyebrow">总览</div>
+                <div style="font-size:21px;font-weight:750;margin-top:4px">一门生意，一张桌子</div>
+              </div>
+              <button class="btn primary sm">+ 开通新公司</button>
+            </div>
+
+            <div class="ckpis">
+              <div class="ckpi"><div class="k">MRR</div><div class="v num">¥86,400</div><div class="d">↑ 12.4% 环比</div></div>
+              <div class="ckpi"><div class="k">付费租户</div><div class="v num">42</div><div class="d">本月 +3</div></div>
+              <div class="ckpi"><div class="k">试用中</div><div class="v num">9</div><div class="d">转化率 22%</div></div>
+              <div class="ckpi"><div class="k">月度毛流失</div><div class="v num">0.8%</div><div class="d">目标 ≤ 2%</div></div>
+            </div>
+
+            <div class="cgrid">
+              <div>
+                <div class="card pad">
+                  <div class="between"><div class="eyebrow">MRR · 近 8 个月</div><span class="tiny muted">ARR ¥1.04M</span></div>
+                  <div class="chart">
+                    <i style="height:38%"><b>4月</b></i><i style="height:46%"><b>5月</b></i><i style="height:52%"><b>6月</b></i><i style="height:58%"><b>7月</b></i><i style="height:66%"><b>8月</b></i><i style="height:74%"><b>9月</b></i><i style="height:88%"><b>10月</b></i><i class="hot" style="height:100%"><b>11月</b></i>
+                  </div>
+                  <div style="height:16px"></div>
+                </div>
+
+                <div class="card pad" style="margin-top:14px">
+                  <div class="between" style="margin-bottom:4px"><div class="eyebrow">租户</div><span class="tiny muted">按到期日排序 · 42 家</span></div>
+                  <table class="tenant-tbl">
+                    <thead><tr><th>公司</th><th class="r">套餐</th><th class="r">席位</th><th class="r">本月动作</th><th class="r">到期</th><th class="r">状态</th></tr></thead>
+                    <tbody>
+                      <tr><td><span class="nm">青禾纺织</span><span class="sub">杭州 · 周敏</span></td><td class="r">Pro</td><td class="r num">8 / 10</td><td class="r num">3,240 / 5,000</td><td class="r num">2027-03-01</td><td class="r"><span class="badge good">正常</span></td></tr>
+                      <tr><td><span class="nm">华瑞制衣</span><span class="sub">宁波 · 王强</span></td><td class="r">Starter</td><td class="r num">5 / 5</td><td class="r num" style="color:var(--amber)">1,120 / 1,000</td><td class="r num">2026-12-01</td><td class="r"><span class="badge warn">超额</span></td></tr>
+                      <tr><td><span class="nm">南通锦程</span><span class="sub">南通 · 陈雨</span></td><td class="r">试用</td><td class="r num">3 / 3</td><td class="r num">180 / 100</td><td class="r num">剩 12 天</td><td class="r"><span class="badge">试用</span></td></tr>
+                      <tr><td><span class="nm">广州衣源</span><span class="sub">广州 · 李娜</span></td><td class="r">Pro</td><td class="r num">12 / 15</td><td class="r num">4,800 / 5,000</td><td class="r num">2026-11-30</td><td class="r"><span class="badge warn">待续费</span></td></tr>
+                    </tbody>
+                  </table>
+                  <div class="admin-note">点击公司进入租户详情：套餐、席位、用量、账单、健康度、功能开关、备注。默认不展示报价/样品/客户明细。</div>
+                </div>
+              </div>
+
+              <div>
+                <div class="card pad">
+                  <div class="eyebrow" style="margin-bottom:6px">套餐结构</div>
+                  <div class="plan-mini"><span>Starter · ¥299</span><span class="num">24 家</span></div>
+                  <div class="bar" style="margin:5px 0 9px"><i style="width:57%"></i></div>
+                  <div class="plan-mini"><span>Pro · ¥499</span><span class="num">15 家</span></div>
+                  <div class="bar" style="margin:5px 0 9px"><i style="width:36%"></i></div>
+                  <div class="plan-mini"><span>Enterprise</span><span class="num">3 家</span></div>
+                  <div class="bar" style="margin:5px 0 0"><i style="width:7%"></i></div>
+                </div>
+
+                <div class="card pad" style="margin-top:14px">
+                  <div class="eyebrow" style="margin-bottom:6px">今天要处理</div>
+                  <div class="between" style="font-size:11.5px;padding:7px 0;border-bottom:1px solid #F3EFE7"><span>逾期账单</span><span class="badge bad">3</span></div>
+                  <div class="between" style="font-size:11.5px;padding:7px 0;border-bottom:1px solid #F3EFE7"><span>试用到期</span><span class="badge warn">2</span></div>
+                  <div class="between" style="font-size:11.5px;padding:7px 0;border-bottom:1px solid #F3EFE7"><span>break-glass 申请</span><span class="badge">1</span></div>
+                  <div class="between" style="font-size:11.5px;padding:7px 0"><span>用量异常（华瑞）</span><span class="badge warn">1</span></div>
+                  <button class="btn ghost sm" style="width:100%;margin-top:8px">全部处理</button>
+                </div>
+
+                <div class="card pad" style="margin-top:14px;background:var(--indigo-soft);border-color:#CFDFEA">
+                  <div class="eyebrow" style="color:var(--indigo)">控制面边界</div>
+                  <div style="font-size:11.5px;line-height:1.65;margin-top:6px;color:var(--ink2)">
+                    平台只看账号、订阅、用量聚合与账单。要看业务单据必须走 break-glass：租户同意、≤60 分钟、全程审计、不可导出。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <div class="legend">
     <span><b>草稿态</b> 虚线边 + 版本号，批准后才变实底</span>
     <span><b>出处</b> 每个数字可点开看来源</span>
     <span><b>Diff</b> 人改过的草稿按行对比</span>
     <span><b>自主等级</b> L1 出草稿 / L2 执行后告知</span>
     <span><b>客户链接</b> 无登录可看 / 可问 / 可接受</span>
+    <span><b>打印中心</b> 队列 / 模板 / 设备 / 一单一码</span>
+    <span><b>平台端</b> 租户 / 套餐 / 账单 / 用量</span>
   </div>
 </div>
 
@@ -1248,6 +1535,25 @@
     $('#cvMain').style.display = 'none';
     $('#cvAccepted').classList.add('show');
     toast('已收到接受 · 已通知李娜 · 转订单草稿待确认');
+  });
+
+  // print center drawer
+  const printDrawer = $('#printDrawer');
+  const printBackdrop = $('#printBackdrop');
+  function openPrint(force) {
+    const on = force === undefined ? !printDrawer.classList.contains('show') : force;
+    printDrawer.classList.toggle('show', on);
+    printBackdrop.classList.toggle('show', on);
+  }
+  $$('[data-print]').forEach(b => b.addEventListener('click', () => openPrint()));
+  if (printBackdrop) printBackdrop.addEventListener('click', () => openPrint(false));
+  const printClose = $('#printClose');
+  if (printClose) printClose.addEventListener('click', () => openPrint(false));
+  $$('#pdTabs button').forEach(b => {
+    b.addEventListener('click', () => {
+      $$('#pdTabs button').forEach(x => x.classList.toggle('on', x === b));
+      $$('.pd-pane').forEach(p => p.style.display = p.id === b.dataset.pdtab ? 'block' : 'none');
+    });
   });
 
   // toast
@@ -1319,6 +1625,7 @@
   if (location.hash) showScreen(location.hash.slice(1));
   const pParam = new URLSearchParams(location.search).get('p');
   if (pParam) setPhone('p-' + pParam);
+  if (new URLSearchParams(location.search).get('print') === '1') openPrint(true);
   const scrollParam = (new URLSearchParams(location.search).get('scroll') || '').trim();
   if (scrollParam) {
     const target = document.getElementById(scrollParam) || document.querySelector('#' + scrollParam);
@@ -1328,6 +1635,11 @@
       const sr = scroller.getBoundingClientRect();
       scroller.scrollTop += tr.top - sr.top - 16;
     }
+  }
+  const scrollWin = (new URLSearchParams(location.search).get('scrollWin') || '').trim();
+  if (scrollWin) {
+    const target = document.getElementById(scrollWin);
+    if (target) window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - 16);
   }
 </script>
 </body>
