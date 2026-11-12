@@ -11,3 +11,4 @@ export * from "./decision-deltas";
 export * from "./shares";
 export * from "./audit";
 export * from "./embeddings";
+export * from "./llm";

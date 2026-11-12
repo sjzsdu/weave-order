@@ -4,6 +4,8 @@ import {
   CustomerTier,
   DataScope,
   IsolationMode,
+  LlmScope,
+  LlmTask,
   MemberRole,
   MembershipStatus,
   OrderStatus,
@@ -23,6 +25,8 @@ import {
   customerTierEnum,
   dataScopeEnum,
   isolationModeEnum,
+  llmScopeEnum,
+  llmTaskEnum,
   memberRoleEnum,
   membershipStatusEnum,
   orderShipmentStatusEnum,
@@ -84,5 +88,10 @@ describe("数据库枚举与契约枚举一致", () => {
     expect(revisionSourceEnum.enumValues).toEqual(RevisionSource.options);
     expect(revisionRequestStatusEnum.enumValues).toEqual(RevisionRequestStatus.options);
     expect(quoteShareEventEnum.enumValues).toEqual(QuoteShareEventType.options);
+  });
+
+  it("LLM 配置 / 任务", () => {
+    expect(llmScopeEnum.enumValues).toEqual(LlmScope.options);
+    expect(llmTaskEnum.enumValues).toEqual(LlmTask.options);
   });
 });

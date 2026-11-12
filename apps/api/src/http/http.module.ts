@@ -6,6 +6,7 @@ import type { Kernel } from "../kernel";
 import { DatabaseProvider } from "../platform/database.provider";
 import { DatabaseModule } from "../platform/database.module";
 import { createTools } from "../tools";
+import { QuoteAgentService } from "./quote-agent.service";
 import type { Tools } from "../tools";
 import {
   ApprovalController,
@@ -18,9 +19,10 @@ import {
   PricingController,
   QuoteController,
   RevisionController,
+  QuoteAgentController,
 } from "./controllers";
 import { HumanActorService } from "./human-actor.service";
-import { HUMAN_ACTOR, KERNEL, TOOLS } from "./tokens";
+import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
   {
@@ -38,6 +40,12 @@ const providers: Provider[] = [
     provide: HUMAN_ACTOR,
     useExisting: HumanActorService,
   },
+  QuoteAgentService,
+  {
+    provide: QUOTE_AGENT,
+    useFactory: (service: QuoteAgentService): QuoteAgentService => service,
+    inject: [QuoteAgentService],
+  },
 ];
 
 @Module({
@@ -53,6 +61,7 @@ const providers: Provider[] = [
     PricingController,
     OrderController,
     RevisionController,
+    QuoteAgentController,
   ],
   providers,
 })

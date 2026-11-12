@@ -14,6 +14,11 @@ const EnvSchema = z.object({
   EMBEDDING_PROVIDER: z.string().min(1).default("local-stub"),
   /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key） */
   LLM_PROVIDER: z.string().min(1).default("local-rule"),
+  /** LLM 网关（LiteLLM，OpenAI 兼容）；agent 只认这个地址，不直连厂商。 */
+  LITELLM_BASE_URL: z.string().url().default("http://localhost:4000"),
+  LITELLM_MASTER_KEY: z.string().min(1).default("sk-local-dev"),
+  /** 单次调用超时（毫秒）。 */
+  LITELLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   /** 物流 provider：local-deterministic（默认，本地确定性） */
   LOGISTICS_PROVIDER: z.string().min(1).default("local-deterministic"),
   /** 客户回复来源：local-scripted（默认，便于演示与测试） */
