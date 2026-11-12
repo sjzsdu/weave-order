@@ -53,12 +53,23 @@ pnpm db:migrate
 
 生产环境若仍为 `dev`，进程拒绝启动（`main.ts` 与网关工厂双重拦截）。
 
+**业务连接必须显式配置且不能绕过 RLS**：
+
+- `NODE_ENV=production` 或 `AUTH_MODE=oidc` 时，`APP_DATABASE_URL` **必填**，缺省拒绝启动。
+- 显式配置后，启动时查询 `pg_roles` 断言当前角色 `rolsuper=false && rolbypassrls=false`；
+  否则 fail-fast（防止误用 owner 连接静默绕过 RLS）。
+- 本地 dev 未配置时回退 `DATABASE_URL`，但会打印告警，且只允许 dev/test。
+
 端点：
 
 - `GET /api/auth/me` → `AuthContextResponse`（subject、租户、成员、角色、数据范围、审批上限）。
 - `GET /api/auth/customers` → 示例：走租户会话 + RLS 的只读列表。
 
 `(sub, org)` → membership 由平台连接查询；业务请求永远不跨租户。`org` 只用于校验，租户以本地记录为准。
+
+> 硬约束：`DatabaseProvider`（平台/控制面连接）拥有跨租户可见性，**永远不能用于业务数据请求**。
+> 业务请求只能经 `AppDatabaseProvider.openScope` 打开租户会话。`GatewayModule` 中
+> `DIRECTORY_KERNEL` 与 `AppDatabaseProvider` 是两个独立 provider，不要合并。
 
 ## 4. 契约清单（冻结）
 
@@ -124,3 +135,8 @@ APP_DATABASE_URL=postgres://weave_app:weave_app@localhost:5433/weave_order pnpm 
 - membership 目录查询使用平台连接（owner/控制面角色）；生产应换成控制面专用角色或
   `SECURITY DEFINER` 函数，业务连接始终是 `weave_app`。
 - 开发口令 `weave_app` 只用于本地/CI；生产必须在部署时轮换为密钥管理注入。
+- **负金额语义（billing/退款落地前必须定）**：当前 `Money.amount` 是
+  `.int().nonnegative()`，展示层已能格式化负号。退款/折让落地时需决定：
+  独立 `refundAmount` 字段，还是放开 `nonnegative` + 方向字段；不要直接放开约束。
+- **多公司顾问**：`resolveMembership` 在一个 sub 有多个 ACTIVE membership 时拒绝登录。
+  后续需要「登录后选择租户」流程（见 product-design §3.6），已记录为 WAN-81。

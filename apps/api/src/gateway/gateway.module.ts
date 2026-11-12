@@ -33,6 +33,8 @@ const providers: Provider[] = [
     useFactory: verifierFactory,
   },
   {
+    // 硬约束：DIRECTORY_KERNEL 用平台/owner 连接做 membership 目录查询，
+    // 永远不能拿去处理业务请求；业务请求只走 AppDatabaseProvider 的租户会话。
     provide: DIRECTORY_KERNEL,
     useFactory: (database: DatabaseProvider): Kernel => createKernel(database.handle.db),
     inject: [DatabaseProvider],
