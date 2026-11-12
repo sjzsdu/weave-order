@@ -450,7 +450,7 @@
     </div>
     <div class="page-meta">
       <span class="pill"><span class="dot"></span>可点击：左侧导航 / 审批 / 手机 Tab</span>
-      <span class="pill">v1.6 · 2026-11-12</span>
+      <span class="pill">v1.7 · 2026-11-12</span>
     </div>
   </div>
 
@@ -1440,6 +1440,7 @@
             <button><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>开票设置</button>
             <button><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><circle cx="12" cy="12" r="4"/></svg>LLM 设置</button>
             <button><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3-5.8 7-5.8s7 2.2 7 5.8"/></svg>身份</button>
+            <button><svg viewBox="0 0 24 24"><path d="M4 7h10"/><circle cx="17" cy="7" r="2.4"/><path d="M4 17h6"/><circle cx="13" cy="17" r="2.4"/></svg>配置中心</button>
             <button><svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>功能开关</button>
             <button><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>支持</button>
             <button><svg viewBox="0 0 24 24"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>平台审计</button>
@@ -1543,13 +1544,28 @@
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">模型</span><span>qwen-plus</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">Temperature</span><span class="num">0.2</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">租户覆盖</span><span class="num">3 家</span></div>
-                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">今日 tokens</span><span class="num">2.4M · ¥186</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">今日 tokens</span><span class="num">2.4M · 成本 ¥186</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">今日调用</span><span class="num">1,284 次 · 0 失败</span></div>
                   <div class="between" style="margin-top:8px;gap:7px">
                     <button class="btn ghost sm" style="flex:1">测试连接</button>
                     <button class="btn primary sm" style="flex:1">编辑参数</button>
                   </div>
                   <div class="tiny muted" style="margin-top:7px">客户内网模型填自己的 base_url；Key 加密存储、不回显。</div>
+                </div>
+
+                <div class="card pad" id="configCard" style="margin-top:14px">
+                  <div class="between" style="margin-bottom:6px">
+                    <div class="eyebrow">配置中心</div>
+                    <span class="badge">86 项 · 7 类</span>
+                  </div>
+                  <div class="between" style="font-size:11.5px;padding:4px 0"><span class="muted">商业 / 计量</span><span class="num">24 / 12</span></div>
+                  <div class="between" style="font-size:11.5px;padding:4px 0"><span class="muted">AI / 功能</span><span class="num">18 / 9</span></div>
+                  <div class="between" style="font-size:11.5px;padding:4px 0"><span class="muted">内容 / 数据 / 安全</span><span class="num">8 / 9 / 6</span></div>
+                  <div class="between" style="margin-top:8px;gap:7px">
+                    <button class="btn ghost sm" style="flex:1">看变更</button>
+                    <button class="btn primary sm" style="flex:1">打开配置中心</button>
+                  </div>
+                  <div class="tiny muted" style="margin-top:7px">版本化 · 影响预览 · 双人复核 · 一键回滚；内核铁律不配置。</div>
                 </div>
 
                 <div class="card pad" style="margin-top:14px">
