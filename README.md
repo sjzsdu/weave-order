@@ -39,7 +39,10 @@ weave-order/
 │   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源，含 import.ts）
 │   └── db/                  # Drizzle Schema、连接、SQL 迁移
 ├── data/seed/               # 冷启动样例数据（customers.csv / samples.csv / .xlsx）
-├── docker-compose.yml       # PostgreSQL + pgvector、Redis
+├── .github/workflows/ci.yml # CI：lint / typecheck / test + compose 冷启动冒烟
+├── Dockerfile.api           # API 多阶段构建（生产依赖 + dist + 迁移 SQL）
+├── Dockerfile.web           # Web 构建产物 + Nginx 网关（同源转发 /api）
+├── docker-compose.yml       # 本地 PG/Redis，以及一键部署全套
 ├── turbo.json
 └── pnpm-workspace.yaml
 ```
@@ -52,7 +55,8 @@ corepack enable
 pnpm install
 
 # 2. 起本地 PG + Redis（端口 5433 / 6380，避免与本机已有服务冲突）
-docker compose up -d
+#    只指定这两个服务，仓库新增的 api/web/migrate 不会一起构建。
+docker compose up -d postgres redis
 
 # 3. 应用迁移 + 冷启动导入样例数据（Excel/CSV），或直接跑内核演示
 pnpm seed          # 迁移 + 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
@@ -191,7 +195,7 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
 干净 clone 起服务后，导入一份样例客户 / 样品数据即可直接跑通 demo 与审批流：
 
 ```bash
-docker compose up -d
+docker compose up -d postgres redis
 pnpm seed          # = 迁移 + 导入 data/seed/customers.csv + samples.csv
 # 或换成 Excel 工作簿（含 customers / samples 两个 sheet）：
 IMPORT_XLSX=data/seed/weave-order-seed.xlsx pnpm seed
@@ -240,6 +244,92 @@ pnpm dev           # http://localhost:5173
 `paymentPattern` / `followupPreference`，复用领域契约）会一并校验并落库，
 `decisionDeltas` / `customerId` / `updatedAt` 仍由内核管理、不接受导入。
 集成测试断言导入后 `getContext` 读得回带去的私有字段。
+
+## 一键部署（Docker Compose）
+
+拿到仓库就能起，宿主机不需要 Node / pnpm。镜像由仓库内的 `Dockerfile.api` /
+`Dockerfile.web` 多阶段构建；空库冷启动时 `migrate` 服务自动跑完 Drizzle 迁移，
+API 等它成功退出后才启动。
+
+### 从零开始
+
+```bash
+git clone git@github.com:sjzsdu/weave-order.git
+cd weave-order
+
+# 1. 构建镜像并起全套（PostgreSQL + Redis + 迁移 + API + Web）
+docker compose up -d --build
+
+# 2. 确认 API 可用（空库也返回 ok：健康检查只读一次审计表）
+curl http://localhost:3000/api/health
+# {"ok":true,"database":"up"}
+
+# 3. 打开页面：Nginx 同源转发 /api 到 API 容器
+open http://localhost:8080
+```
+
+| 服务     | 地址                    | 说明                                    |
+| -------- | ----------------------- | --------------------------------------- |
+| web      | <http://localhost:8080> | Nginx 提供静态产物，`/api/*` 反代到 API |
+| api      | <http://localhost:3000> | NestJS，健康检查 `/api/health`          |
+| postgres | `localhost:5433`        | 端口与 `pnpm dev` 的默认值一致          |
+| redis    | `localhost:6380`        | 同上                                    |
+
+PG / Redis 端口沿用本地开发约定，所以「compose 起全套」和「本地 `pnpm dev`」可以共存：
+只想用容器跑数据库时，`docker compose up -d postgres redis`（不指定服务名就会连应用
+一起构建启动）。
+
+### 迁移为什么不需要手动执行
+
+1. `docker compose up` 先起 postgres / redis，等 healthcheck 通过；
+2. `migrate` 服务用同一个 API 镜像执行 `node packages/db/dist/migrate.js`，
+   把 `packages/db/drizzle` 下的 SQL 应用到空库，成功后退出；
+3. `api` 带着 `depends_on.migrate.condition: service_completed_successfully` 等它退出再启动；
+4. 迁移幂等（已应用版本记在 `drizzle.__drizzle_migrations`），重复 `up` 不会重跑。
+
+想看迁移结果：
+
+```bash
+docker compose logs migrate
+docker compose exec postgres psql -U weave -d weave_order -c \
+  "select count(*) from drizzle.__drizzle_migrations"
+```
+
+### 导入样例数据（可选）
+
+运行时镜像不含 `tsx`，冷启动导入走宿主机脚本（PG 端口已发布到 5433）：
+
+```bash
+corepack enable && pnpm install
+DATABASE_URL=postgres://weave:weave@localhost:5433/weave_order pnpm seed
+# 页面上的客户 / 样品列表在刷新后就有数据
+```
+
+### 常用运维
+
+```bash
+docker compose ps                 # 各服务状态（含健康检查）
+docker compose logs -f api        # 跟 API 日志
+docker compose up -d --build      # 改代码后重建并滚动重启
+docker compose down               # 停服务，保留数据卷
+docker compose down -v            # 连数据卷一起删；下次 up 即空库冷启动
+docker compose build --no-cache api   # 依赖层缓存可疑时强重建
+```
+
+默认配置全在 `docker-compose.yml` 的 `api.environment`：embedding / LLM / 物流 /
+客户回复来源都是本地确定性实现，**零外部 key**，要接真实 provider 时在那里覆盖。
+换成别的反向代理部署时，只需把 `/api` 转发到 API 的 3000 端口（前端只调相对路径）。
+
+### CI
+
+`.github/workflows/ci.yml` 两个 job，PR 上都会跑：
+
+- **Lint / Typecheck / Test**：PostgreSQL（pgvector/pg16）与 Redis 以 service 容器起在
+  5433 / 6380，先 `pnpm db:migrate` 再 `pnpm test` —— 有库之后内核 / HTTP / 导入的
+  集成测试不再被 skip，而是真跑。
+- **Docker 一键部署（compose 冷启动）**：`docker compose build && up -d`，然后断言
+  `/api/health` 返回 `{"ok":true,"database":"up"}`、`drizzle.__drizzle_migrations`
+  非空（迁移自动跑过）、`http://localhost:8080` 能拿到页面且 `/api/health` 经网关可达。
 
 ## 架构铁律（不可违反）
 
