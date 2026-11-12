@@ -11,11 +11,11 @@ import type {
   AuditLogEntry,
   CreatedQuoteShare,
   DraftRevision,
+  JsonValue,
   RevisionRequest,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
   T001SearchFabricByImageResult,
-  JsonValue,
 } from "@weave-order/schema";
 import {
   MOCK_CUSTOMERS,
@@ -153,8 +153,8 @@ function draftView(quote: QuoteRecord): T004GenerateQuoteDraftResult {
         tenantId: quote.tenantId,
         customerId: quote.customerId,
         status: "DRAFT",
-        currency: quote.currency,
         version: quote.version,
+        currency: quote.currency,
         items: quote.items,
         subtotal: quote.subtotal,
         total: quote.total,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ApprovalDetail,
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
@@ -14,6 +15,7 @@ import {
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
 } from "@weave-order/schema";
+import type { ApprovalKind } from "@weave-order/schema";
 
 /**
  * 前端唯一 API 入口。
@@ -116,6 +118,12 @@ export function createApiClient(options: ApiClientOptions) {
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 
     approvals: async () => ApprovalQueue.parse(await request("/api/approvals")),
+
+    /** 审批卡详情：出处 / diff / 草稿态由后端只读聚合，前端不推导。 */
+    approvalDetail: async (id: string, kind: ApprovalKind) =>
+      ApprovalDetail.parse(
+        await request(`/api/approvals/${encodeURIComponent(id)}?kind=${kind}`),
+      ),
 
     audit: async (limit = 50) =>
       AuditResponse.parse(await request(`/api/audit?limit=${limit}`)).entries,

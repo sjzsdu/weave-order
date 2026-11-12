@@ -12,7 +12,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
-import { ReviseQuoteDraftResult } from "@weave-order/schema";
+import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { createApprovalService } from "../approval";
 import { isKernelError } from "../kernel";
@@ -392,6 +392,30 @@ export class ApprovalController {
     return this.human.run(authorization, this.kernel, async (kernel) =>
       createApprovalService(kernel).listPending(),
     );
+  }
+
+  /** 审批卡详情：出处 / diff / 草稿态，一次只读聚合。 */
+  @Get(":id")
+  async detail(
+    @Param("id") id: string,
+    @Query("kind") kind: string | undefined,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const parsed = ApprovalKind.safeParse(kind);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        error: { code: "INVALID_INPUT", message: "kind 必须是 quote 或 sample_shipment" },
+      });
+    }
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      const detail = await createApprovalService(kernel).detail(id, parsed.data);
+      if (!detail) {
+        throw new NotFoundException({
+          error: { code: "NOT_FOUND", message: "审批单据不存在或已不在可查看范围" },
+        });
+      }
+      return detail;
+    });
   }
 
   @Post("decide")

@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import {
+  ApprovalDetail,
   ApprovalDecisionResult,
   ApprovalQueue,
   PanoramaSnapshot,
@@ -138,6 +139,23 @@ describe("审批窗口端到端（HTTP 真起服务 + 真连 PG）", () => {
       expect(found?.status).toBe("DRAFT");
       expect(found?.pending).toBe(true);
     }
+
+    // ②b 审批卡详情：出处 / diff / 草稿态由后端聚合（前端不推导）
+    const quoteDetail = ApprovalDetail.parse(
+      await getJson(`/api/approvals/${quoteId}?kind=quote`),
+    );
+    expect(quoteDetail.draft.state).toBe("DRAFT");
+    expect(quoteDetail.lines).toHaveLength(1);
+    expect(quoteDetail.lines[0]?.lineTotal.amount).toBe(3000);
+    expect(quoteDetail.provenance.some((entry) => entry.kind === "COST")).toBe(true);
+    expect(quoteDetail.diffs).toEqual([]);
+
+    const shipmentDetail = ApprovalDetail.parse(
+      await getJson(`/api/approvals/${shipmentId}?kind=sample_shipment`),
+    );
+    expect(shipmentDetail.missingFields.some((field) => field.field === "trackingNumber")).toBe(
+      false,
+    );
 
     // ③ 批准报价：approval API → confirm → SENT（actor 固定 HUMAN）
     const approve = ApprovalDecisionResult.parse(
