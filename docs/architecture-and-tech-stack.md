@@ -16,45 +16,46 @@
 
 从 `product-design.md` 可识别出 **5 个端**（客户端入口），外加 1 个内核与 3 类外部依赖：
 
-| # | 端 | 域名 / 形态 | 谁在用 | 是否登录 | 阶段 |
-| --- | --- | --- | --- | --- | --- |
-| E1 | 租户端 · 桌面 | `app.weaveorder.cn`（Web / PWA，后期 Tauri 壳） | owner / manager / sales / merchandiser / sample_admin / finance | 是（Casdoor） | P0 |
-| E2 | 租户端 · 移动 | PWA（可安装 / 离线），后续小程序/App | 同上，sales 手机优先 | 是（Casdoor） | P0 |
-| E3 | 客户报价链接页 | `app.weaveorder.cn/s/<token>`（只读，无登录） | 客户（外部） | 否（签名 token） | P0 |
-| E4 | 平台总管理端 | `admin.weaveorder.cn`（独立产品） | platform_owner / finance / support / ops | 是（Casdoor 独立应用 + 强制 MFA） | P1 |
-| E5 | 打印代理 | 本地常驻桌面小程序（Windows 优先，后续 macOS） | 办公室 / 仓库的常驻机 | 是（打印专用 token） | P1 |
+| #   | 端             | 域名 / 形态                                     | 谁在用                                                          | 是否登录                          | 阶段 |
+| --- | -------------- | ----------------------------------------------- | --------------------------------------------------------------- | --------------------------------- | ---- |
+| E1  | 租户端 · 桌面  | `app.weaveorder.cn`（Web / PWA，后期 Tauri 壳） | owner / manager / sales / merchandiser / sample_admin / finance | 是（Casdoor）                     | P0   |
+| E2  | 租户端 · 移动  | PWA（可安装 / 离线），后续小程序/App            | 同上，sales 手机优先                                            | 是（Casdoor）                     | P0   |
+| E3  | 客户报价链接页 | `app.weaveorder.cn/s/<token>`（只读，无登录）   | 客户（外部）                                                    | 否（签名 token）                  | P0   |
+| E4  | 平台总管理端   | `admin.weaveorder.cn`（独立产品）               | platform_owner / finance / support / ops                        | 是（Casdoor 独立应用 + 强制 MFA） | P1   |
+| E5  | 打印代理       | 本地常驻桌面小程序（Windows 优先，后续 macOS）  | 办公室 / 仓库的常驻机                                           | 是（打印专用 token）              | P1   |
 
 **非「端」但属于系统组成部分**：
 
-| 组件 | 说明 |
-| --- | --- |
-| 确定性内核 + 工具层 + 智能体 | 后端模块化单体（NestJS），唯一业务写入口 |
-| Casdoor | 身份认证（OIDC/OAuth2），`sso.wnbgj.com` |
-| LLM Router | LiteLLM Proxy，多模型网关，token 计量 |
-| 数据面 | PostgreSQL（RLS）+ Redis + 对象存储；控制面库分离 |
+| 组件                         | 说明                                              |
+| ---------------------------- | ------------------------------------------------- |
+| 确定性内核 + 工具层 + 智能体 | 后端模块化单体（NestJS），唯一业务写入口          |
+| Casdoor                      | 身份认证（OIDC/OAuth2），`sso.wnbgj.com`          |
+| LLM Router                   | LiteLLM Proxy，多模型网关，token 计量             |
+| 数据面                       | PostgreSQL（RLS）+ Redis + 对象存储；控制面库分离 |
 
 ---
 
 ## 2. 技术选型总览
 
-| 层 | 选型 | 理由（独立开发者视角） |
-| --- | --- | --- |
-| 前端·桌面（E1/E3） | **Next.js 15（App Router）+ React 19 + TypeScript + TailwindCSS + shadcn/ui** | 桌面宽屏/复杂表格/⌘K；E3 报价页需 SSR/ISR；全栈 TS 单人可维护 |
-| 前端·移动（E2） | **Taro（React）**：一套代码编译 H5/PWA + 小程序 + React Native App | 一个技术栈覆盖三端，避免多套栈维护 |
-| 桌面外设壳（P3） | **Tauri 2** | 只暴露 print/scan/readFile/电子秤，业务 UI 仍从 Web 加载 |
-| 平台管理端（E4） | **Next.js 15 独立应用**（同仓库 `apps/admin`，复用 UI 包，隔离部署） | 独立产品，物理/逻辑隔离，强制 MFA |
-| 打印代理（E5） | **Tauri 2（Rust）+ WebView 2 UI**（已定） | 常驻托盘、WSS 出站、自动更新、轻量 |
-| 后端 API / 内核 | **NestJS 10+（TypeScript）模块化单体** | 依赖注入、Guard（租户上下文注入）、Pipe（Zod）、模块边界清晰，符合「内核 / 工具 / agent」铁律 |
-| 智能体编排 | **LangGraph.js**（状态机 + PostgreSQL 检查点，工具调用 Zod 校验） | 可观测、可检查点、可恢复，适合「跑到只剩一个决定」 |
-| 数据库 | **PostgreSQL 16 + pgvector** | RLS 行级隔离、JSONB 配置、向量检索 |
-| ORM | **Drizzle ORM**（TS 优先） | 类型安全、迁移 SQL 可控 |
-| 缓存 / 队列 | **Redis 7**（缓存）+ **BullMQ**（打印队列 / 异步任务） | 幂等 job、租户前缀 key |
-| 对象存储 | **S3 兼容（腾讯云 COS / MinIO）** | 图片直传、PDF 快照，tenant 前缀隔离 |
-| 身份认证 | **Casdoor**（自托管 `sso.wnbgj.com`） | 不自研登录，一个租户一个 Organization |
-| LLM 网关 | **LiteLLM Proxy**（自托管） | 多模型、虚拟 Key、预算、用量日志最全；默认模型 DeepSeek |
-| 搜索 | PostgreSQL FTS + pgvector（起步），后接 Meilisearch/OpenSearch（可选） | 先不做额外组件 |
-| 监控 | **Uptime Kuma + Plausible**（或 Sentry + Prometheus/Grafana） | 成本低、可自托管 |
-| 部署 | **腾讯云（CVM/RDS/COS/短信）容器化**；开发期可用 Railway/Vercel 快速验证 | 目标客户在国内，域名 `.cn` 需备案；.cn 访问稳定优先 |
+| 层                  | 选型                                                                                | 理由（独立开发者视角）                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 前端·桌面（E1）     | **Next.js 15（App Router）+ React 19 + TypeScript + TailwindCSS + shadcn/ui**       | 桌面宽屏/复杂表格/⌘K；全栈 TS 单人可维护                                                      |
+| 前端·客户报价（E3） | **独立 Next.js 15 应用 `apps/quote`**（App Router + React 19），路由组 `/s/[token]` | SSR + 无鉴权 Cookie + 独立部署；客户面与租户面物理隔离                                        |
+| 前端·移动（E2）     | **Taro（React）**：一套代码编译 H5/PWA + 小程序 + React Native App                  | 一个技术栈覆盖三端，避免多套栈维护                                                            |
+| 桌面外设壳（P3）    | **Tauri 2**                                                                         | 只暴露 print/scan/readFile/电子秤，业务 UI 仍从 Web 加载                                      |
+| 平台管理端（E4）    | **Next.js 15 独立应用**（同仓库 `apps/admin`，复用 UI 包，隔离部署）                | 独立产品，物理/逻辑隔离，强制 MFA                                                             |
+| 打印代理（E5）      | **Tauri 2（Rust）+ WebView 2 UI**（已定）                                           | 常驻托盘、WSS 出站、自动更新、轻量                                                            |
+| 后端 API / 内核     | **NestJS 10+（TypeScript）模块化单体**                                              | 依赖注入、Guard（租户上下文注入）、Pipe（Zod）、模块边界清晰，符合「内核 / 工具 / agent」铁律 |
+| 智能体编排          | **LangGraph.js**（状态机 + PostgreSQL 检查点，工具调用 Zod 校验）                   | 可观测、可检查点、可恢复，适合「跑到只剩一个决定」                                            |
+| 数据库              | **PostgreSQL 16 + pgvector**                                                        | RLS 行级隔离、JSONB 配置、向量检索                                                            |
+| ORM                 | **Drizzle ORM**（TS 优先）                                                          | 类型安全、迁移 SQL 可控                                                                       |
+| 缓存 / 队列         | **Redis 7**（缓存）+ **BullMQ**（打印队列 / 异步任务）                              | 幂等 job、租户前缀 key                                                                        |
+| 对象存储            | **S3 兼容（腾讯云 COS / MinIO）**                                                   | 图片直传、PDF 快照，tenant 前缀隔离                                                           |
+| 身份认证            | **Casdoor**（自托管 `sso.wnbgj.com`）                                               | 不自研登录，一个租户一个 Organization                                                         |
+| LLM 网关            | **LiteLLM Proxy**（自托管）                                                         | 多模型、虚拟 Key、预算、用量日志最全；默认模型 DeepSeek                                       |
+| 搜索                | PostgreSQL FTS + pgvector（起步），后接 Meilisearch/OpenSearch（可选）              | 先不做额外组件                                                                                |
+| 监控                | **Uptime Kuma + Plausible**（或 Sentry + Prometheus/Grafana）                       | 成本低、可自托管                                                                              |
+| 部署                | **腾讯云（CVM/RDS/COS/短信）容器化**；开发期可用 Railway/Vercel 快速验证            | 目标客户在国内，域名 `.cn` 需备案；.cn 访问稳定优先                                           |
 
 ---
 
@@ -62,10 +63,10 @@
 
 ### E1 租户端 · 桌面（浏览器 Web + 桌面软件，两种形态并存）
 
-| 形态 | 技术栈 | 定位 | 阶段 |
-| --- | --- | --- | --- |
-| 浏览器 Web | Next.js 15（App Router）+ React 19，`/` 桌面路由 | 主形态，零安装、随浏览器访问 | P0 |
-| 桌面软件 | Tauri 2 包裹同一 Web 业务 UI | 外设能力增强，非第二套界面 | P3 |
+| 形态       | 技术栈                                           | 定位                         | 阶段 |
+| ---------- | ------------------------------------------------ | ---------------------------- | ---- |
+| 浏览器 Web | Next.js 15（App Router）+ React 19，`/` 桌面路由 | 主形态，零安装、随浏览器访问 | P0   |
+| 桌面软件   | Tauri 2 包裹同一 Web 业务 UI                     | 外设能力增强，非第二套界面   | P3   |
 
 - **同一套 Web 业务 UI，两处加载**：浏览器直接访问 `app.weaveorder.cn`；桌面软件 = Tauri 2 的 WebView 加载**同一个 Web 应用**，只额外注入原生外设桥。**业务 UI 始终从 Web 加载，不为桌面软件重写界面**（§6 铁律，避免两套界面维护）。
 - **原生外设桥**：Tauri 2 通过 IPC 暴露 `print / scan / readFile / 电子秤` 四类能力给 Web（`invoke('print')` 等），Web 内用 capability 检测降级：无 Tauri 环境时退回浏览器打印 / 文件上传。
@@ -75,19 +76,19 @@
 
 移动端统一用 **Taro（React）**：**一个代码库编译出三种形态**，不引入 Next.js + Taro + Capacitor 三套栈。
 
-| 形态 | 输出方式 | 定位 | 阶段 |
-| --- | --- | --- | --- |
-| PWA（H5） | Taro H5 构建 + PWA 配置（manifest + Service Worker） | 主形态，覆盖 90%「手机上批一下」 | P0 |
-| 小程序 | Taro 编译微信小程序（同代码再出支付宝/抖音） | 客户自助 / 分享传播场景 | P3（按需） |
-| App | Taro React Native（一套 JS + 原生壳） | Face ID / 蓝牙打印 / 推送刚需 | P3（按需） |
+| 形态      | 输出方式                                             | 定位                             | 阶段       |
+| --------- | ---------------------------------------------------- | -------------------------------- | ---------- |
+| PWA（H5） | Taro H5 构建 + PWA 配置（manifest + Service Worker） | 主形态，覆盖 90%「手机上批一下」 | P0         |
+| 小程序    | Taro 编译微信小程序（同代码再出支付宝/抖音）         | 客户自助 / 分享传播场景          | P3（按需） |
+| App       | Taro React Native（一套 JS + 原生壳）                | Face ID / 蓝牙打印 / 推送刚需    | P3（按需） |
 
 **一套代码、三端复用的分层策略**（Taro 天然支持，单人可维护的核心）：
 
-| 层 | 内容 | 复用率 |
-| --- | --- | --- |
-| `packages/core` | 业务逻辑、TanStack Query hooks、API client、离线队列、Zod 契约 | 100% 复用（与桌面端 Next.js 共享） |
-| `apps/mobile`（Taro） | 页面 + Taro 跨端组件，用 `process.env.TARO_ENV` 做少量端差异分支 | ~90% 一套代码 |
-| 端能力适配 | 相机/扫码/蓝牙/推送/Face ID 按平台调 Taro 或原生插件 | 薄壳 |
+| 层                    | 内容                                                             | 复用率                             |
+| --------------------- | ---------------------------------------------------------------- | ---------------------------------- |
+| `packages/core`       | 业务逻辑、TanStack Query hooks、API client、离线队列、Zod 契约   | 100% 复用（与桌面端 Next.js 共享） |
+| `apps/mobile`（Taro） | 页面 + Taro 跨端组件，用 `process.env.TARO_ENV` 做少量端差异分支 | ~90% 一套代码                      |
+| 端能力适配            | 相机/扫码/蓝牙/推送/Face ID 按平台调 Taro 或原生插件             | 薄壳                               |
 
 **各形态技术细节**：
 
@@ -105,7 +106,9 @@
 
 ### E3 客户报价链接页（无登录只读）
 
-- 与租户端**同一 Next.js 应用**，独立公开路由组 `/s/[token]`，无鉴权 Cookie、最小埋点，避免与租户会话串 Cookie。
+- **独立 Next.js 应用 `apps/quote`**（与租户端同 monorepo、独立部署），公开路由组 `/s/[token]`。
+  隔离部署比「同一应用加路由组」更彻底：客户面与租户面不共享 Cookie 域，也避免客户流量拖垮租户端。
+  无鉴权 Cookie、最小埋点，避免与租户会话串 Cookie。
 - **SSR/ISR 优先**，CDN 边缘加速；这是产品唯一外部界面，加载速度即品牌，也是增长资产（§13.6）。
 - 服务端校验签名 token（`token_hash` 命中 + 有效期 + 未撤回），页面只返回客户视图字段（**绝不返回成本/毛利/内部备注**）。
 - 水印、中/英切换、PDF 下载走同一渲染链路。
@@ -138,7 +141,7 @@ flowchart TB
   subgraph CLIENTS["端（客户端入口）"]
     D["E1 租户端·桌面<br/>app.weaveorder.cn<br/>Next.js + React 19<br/>Web/PWA（P3 加 Tauri 壳）"]
     M["E2 租户端·移动<br/>Taro 一套代码<br/>H5/PWA + 小程序 + RN App"]
-    Q["E3 客户报价链接页<br/>/s/:token<br/>无登录 · SSR/ISR · 只读"]
+    Q["E3 客户报价链接页<br/>apps/quote · /s/:token<br/>独立 Next.js · 无登录 · SSR · 只读"]
     P["E4 平台总管理端<br/>admin.weaveorder.cn<br/>独立 Next.js 应用 · 强制 MFA"]
     PA["E5 打印代理<br/>Tauri 2 本地常驻<br/>Windows 优先"]
   end
@@ -220,37 +223,39 @@ flowchart TB
 
 ## 9. 成本估算（单人运营，月）
 
-| 项 | 估算 | 备注 |
-| --- | --- | --- |
-| 计算（API + 3 个前端 + LiteLLM + 打印网关） | ¥300–600 | 2–3 台小规格 CVM |
-| CDB PostgreSQL + Redis | ¥200–400 | 起步共享实例 |
-| 对象存储 + CDN | ¥50–150 | 图片/PDF 快照 |
-| LLM 用量 | 随量（¥0–3,000+） | 按租户采购价核算，占比控在收入 15% 内 |
-| Casdoor + Uptime Kuma + Plausible | ~¥100 | 自托管 |
-| **合计（自用，不含 LLM）** | **约 ¥700–1,300/月** | 试点期可控在 ¥1,000 内 |
+| 项                                          | 估算                 | 备注                                  |
+| ------------------------------------------- | -------------------- | ------------------------------------- |
+| 计算（API + 3 个前端 + LiteLLM + 打印网关） | ¥300–600             | 2–3 台小规格 CVM                      |
+| CDB PostgreSQL + Redis                      | ¥200–400             | 起步共享实例                          |
+| 对象存储 + CDN                              | ¥50–150              | 图片/PDF 快照                         |
+| LLM 用量                                    | 随量（¥0–3,000+）    | 按租户采购价核算，占比控在收入 15% 内 |
+| Casdoor + Uptime Kuma + Plausible           | ~¥100                | 自托管                                |
+| **合计（自用，不含 LLM）**                  | **约 ¥700–1,300/月** | 试点期可控在 ¥1,000 内                |
 
 ---
 
 ## 10. 分期落地建议（对应 §12 交付分期）
 
-| 阶段 | 端 | 关键基础设施 |
-| --- | --- | --- |
-| P0 | E1 + E2（PWA）+ E3 | 共享库+RLS、Casdoor 登录、LLM 全局参数、报价链接、改稿 Patch |
-| P1 | E4（v1）+ E5 | schema-per-tenant、企业 SSO、LiteLLM 接入 + token 记账、打印中心 |
-| P2 | E4 完整 | 独立库/每租户 KMS、SaaS 订阅账单、模板工作室 + AI 识样张 |
-| P3 | E1（Tauri 壳）+ E2（小程序）+ 客户门户 | 供应商协同、私有化、渠道商/多仓 |
+| 阶段 | 端                                     | 关键基础设施                                                     |
+| ---- | -------------------------------------- | ---------------------------------------------------------------- |
+| P0   | E1 + E2（PWA）+ E3                     | 共享库+RLS、Casdoor 登录、LLM 全局参数、报价链接、改稿 Patch     |
+| P1   | E4（v1）+ E5                           | schema-per-tenant、企业 SSO、LiteLLM 接入 + token 记账、打印中心 |
+| P2   | E4 完整                                | 独立库/每租户 KMS、SaaS 订阅账单、模板工作室 + AI 识样张         |
+| P3   | E1（Tauri 壳）+ E2（小程序）+ 客户门户 | 供应商协同、私有化、渠道商/多仓                                  |
 
 ---
 
 ## 11. 已拍板与风险
 
 **已拍板（v1.1 决策）**：
+
 1. 部署云：**腾讯云**（CVM/CDB/COS/短信），ICP 备案 + 短信签名。
 2. 打印代理：**Tauri 2**（不再评估 Electron）。
 3. Casdoor：**已部署就绪**（`sso.wnbgj.com`），无需再定。
 4. LLM 默认供应商：**DeepSeek**（`deepseek-chat` 默认 + `deepseek-reasoner` 复杂场景）。
 
 **主要风险与对策**（详见 §16）：
+
 - 共享库漏加租户条件 → RLS 强制 + 应用角色无 BYPASSRLS + CI 跨租户互查。
 - 打印代理打印驱动生态（针式/网络打印机）→ 保留浏览器 PDF 兜底 + Electron 备选。
 - Casdoor 单点故障 → 独立部署 + 多副本 + 每日备份 + 会话短期宽限。

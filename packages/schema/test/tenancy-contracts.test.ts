@@ -211,7 +211,6 @@ describe("T0 契约：改稿 / 分享", () => {
     expect(QuoteShare.parse(share).tokenHash).toHaveLength(64);
 
     const view = {
-      shareToken: "t".repeat(64),
       quoteNumber: "Q-001",
       tenantName: "Acme",
       customerName: "客户 A",

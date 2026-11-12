@@ -17,8 +17,8 @@ import { QuoteLinkError as QuoteLinkErrorContract } from "@weave-order/schema";
 import type { QuoteLinkErrorCode } from "@weave-order/schema";
 import { QuoteLinkError } from "../kernel";
 import type { Kernel } from "../kernel";
-import { HUMAN_CONTEXT } from "./context";
-import { KERNEL, PUBLIC_SHARE } from "./tokens";
+import type { HumanActorService } from "./human-actor.service";
+import { HUMAN_ACTOR, KERNEL, PUBLIC_SHARE } from "./tokens";
 import type { PublicShareService } from "../shares/public-share.service";
 import type { ShareVisitor } from "../kernel/shares.service";
 
@@ -157,35 +157,55 @@ export class PublicQuoteController {
  */
 @Controller("api")
 export class QuoteSharesController {
-  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
   /** T0 冻结契约（移动端）：quoteId 在 body，返回裸 CreatedQuoteShare。 */
   @Post("quote-shares")
-  async createLegacy(@Body() body: unknown) {
-    return this.kernel.shares.createFromInput(body, HUMAN_CONTEXT);
+  async createLegacy(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, (kernel, ctx) =>
+      kernel.shares.createFromInput(body, ctx),
+    );
   }
 
   /** T0 冻结契约（移动端）：客户 360 的链接访问时间线。 */
   @Get("quote-shares")
-  async listLegacy(@Query("quoteId") quoteId?: string) {
-    return this.kernel.shares.listLegacy(quoteId);
+  async listLegacy(
+    @Query("quoteId") quoteId: string | undefined,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, (kernel) =>
+      kernel.shares.listLegacy(quoteId),
+    );
   }
 
   @Post("quotes/:id/shares")
-  async create(@Param("id") quoteId: string, @Body() body: unknown) {
-    return {
+  async create(
+    @Param("id") quoteId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
       ok: true,
-      data: await this.kernel.shares.createForQuote(quoteId, body ?? {}, HUMAN_CONTEXT),
-    };
+      data: await kernel.shares.createForQuote(quoteId, body ?? {}, ctx),
+    }));
   }
 
   @Get("quotes/:id/shares")
-  async list(@Param("id") quoteId: string) {
-    return { ok: true, data: await this.kernel.shares.listForQuote(quoteId) };
+  async list(@Param("id") quoteId: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => ({
+      ok: true,
+      data: await kernel.shares.listForQuote(quoteId),
+    }));
   }
 
   @Post("shares/:id/revoke")
-  async revoke(@Param("id") shareId: string) {
-    return { ok: true, data: await this.kernel.shares.revoke(shareId, HUMAN_CONTEXT) };
+  async revoke(@Param("id") shareId: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      ok: true,
+      data: await kernel.shares.revoke(shareId, ctx),
+    }));
   }
 }

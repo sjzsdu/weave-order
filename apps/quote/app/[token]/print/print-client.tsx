@@ -109,6 +109,27 @@ export function PrintClient({
           {data.terms ?? t.termsFallback}
         </div>
 
+        {data.salesContact && (
+          <div className="sales-card">
+            <div>
+              <p className="sales-kicker">{t.contactSales}</p>
+              <p className="sales-name">{data.salesContact.name}</p>
+              {data.salesContact.phoneMasked && (
+                <p className="sales-phone">{data.salesContact.phoneMasked}</p>
+              )}
+            </div>
+            {data.salesContact.wechatQrUrl && (
+              <img
+                className="sales-qr"
+                src={data.salesContact.wechatQrUrl}
+                alt={t.wechatQr}
+                width={88}
+                height={88}
+              />
+            )}
+          </div>
+        )}
+
         <footer className="footer">
           <span>{t.offerNote}</span>
           <span>{watermark}</span>

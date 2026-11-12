@@ -16,25 +16,25 @@
 
 ## 1. 端 → 位置映射
 
-| 端 | 形态 | 代码位置 | 运行/构建 |
-| --- | --- | --- | --- |
-| E1 租户端 · 桌面 | 浏览器 Web（+ P3 Tauri 壳） | `apps/web` | Next.js 15 |
-| E2 租户端 · 移动 | Taro（H5/PWA + 小程序 + RN App） | `apps/mobile` | Taro |
-| E3 客户报价链接页 | 无登录只读页面 | `apps/web` 的公开路由组 `/s/[token]` | Next.js 15（与 E1 同应用） |
-| E4 平台总管理端 | 独立 Web 应用 | `apps/admin` | Next.js 15 |
-| E5 打印代理 | 本地常驻桌面程序 | `apps/print-agent` | Tauri 2（Rust） |
-| E1 桌面外设壳（P3） | Tauri 壳加载 Web | `apps/desktop` | Tauri 2（Rust） |
-| 后端内核 | NestJS 模块化单体 | `apps/api` | NestJS |
+| 端                  | 形态                             | 代码位置                               | 运行/构建                        |
+| ------------------- | -------------------------------- | -------------------------------------- | -------------------------------- |
+| E1 租户端 · 桌面    | 浏览器 Web（+ P3 Tauri 壳）      | `apps/web`                             | Next.js 15                       |
+| E2 租户端 · 移动    | Taro（H5/PWA + 小程序 + RN App） | `apps/mobile`                          | Taro                             |
+| E3 客户报价链接页   | 无登录只读页面                   | `apps/quote` 的公开路由组 `/s/[token]` | Next.js 15（独立应用，隔离部署） |
+| E4 平台总管理端     | 独立 Web 应用                    | `apps/admin`                           | Next.js 15                       |
+| E5 打印代理         | 本地常驻桌面程序                 | `apps/print-agent`                     | Tauri 2（Rust）                  |
+| E1 桌面外设壳（P3） | Tauri 壳加载 Web                 | `apps/desktop`                         | Tauri 2（Rust）                  |
+| 后端内核            | NestJS 模块化单体                | `apps/api`                             | NestJS                           |
 
 **共享包**：
 
-| 包 | 内容 | 被谁用 |
-| --- | --- | --- |
-| `packages/schema` | Zod 契约（工具/内核/HTTP/env 唯一来源） | 全部 |
-| `packages/shared` | 纯 TS 工具、常量、类型 | 全部 |
-| `packages/db` | Drizzle schema + 迁移 + RLS 策略 | `apps/api` |
-| `packages/core` | 前端业务逻辑（TanStack Query hooks / API client / 离线队列） | web / mobile / admin |
-| `packages/ui` | 设计系统（shadcn/ui + Tailwind tokens，桌面+admin） | web / admin |
+| 包                | 内容                                                         | 被谁用               |
+| ----------------- | ------------------------------------------------------------ | -------------------- |
+| `packages/schema` | Zod 契约（工具/内核/HTTP/env 唯一来源）                      | 全部                 |
+| `packages/shared` | 纯 TS 工具、常量、类型                                       | 全部                 |
+| `packages/db`     | Drizzle schema + 迁移 + RLS 策略                             | `apps/api`           |
+| `packages/core`   | 前端业务逻辑（TanStack Query hooks / API client / 离线队列） | web / mobile / admin |
+| `packages/ui`     | 设计系统（shadcn/ui + Tailwind tokens，桌面+admin）          | web / admin          |
 
 ---
 
@@ -55,12 +55,12 @@ weave-order/
 │   │   │   ├── gateway/            # 鉴权 + 租户上下文注入 + RLS SET LOCAL
 │   │   │   └── main.ts             # 组合根：显式装配依赖，模块间不互 import 内部实现
 │   │   └── test/                   # 内核集成 / HTTP e2e / 跨租户越权测试
-│   ├── web/                        # E1 桌面 + E3 报价页（Next.js 15 App Router）
+│   ├── web/                        # E1 桌面（Vite SPA，迁 Next.js 中）
 │   │   ├── app/
 │   │   │   ├── (desktop)/          # 桌面路由组：today / approvals / panorama / settings
-│   │   │   ├── s/[token]/          # E3 客户报价页（公开，无鉴权，只读）
 │   │   │   └── auth/callback/      # Casdoor OIDC 回调
 │   │   └── src/                    # 组件 / hooks（走 packages/core）
+│   ├── quote/                      # E3 客户报价页（Next.js 15 独立应用，/s/[token]）
 │   ├── admin/                      # E4 平台总管理端（Next.js 15 独立应用）
 │   ├── mobile/                     # E2 移动端（Taro：H5/PWA + 小程序 + RN App）
 │   │   └── src/pages/              # 今日 / 审批 / 相机 / 客户 / 更多
@@ -86,18 +86,18 @@ weave-order/
 
 ## 3. 全局铁律（所有端遵守）
 
-| # | 铁律 | 说明 |
-| --- | --- | --- |
-| G1 | 内核是唯一写入口 | 业务数据（客户/样品/报价/订单/应收…）只经 `apps/api/src/kernel` 写入；前端和 agent 都不得绕过 |
-| G2 | Agent 只调工具层 | 智能体只能调 `tools/`，不得直接操作数据库、不得直连 LLM 厂商 |
-| G3 | 不信任前端 | 金额、阈值、角色、数据范围一律服务端校验；前端只读展示 |
-| G4 | 租户上下文由网关注入 | 前端不传 `tenant_id`；网关按 `(sub, org)` 解析 membership 注入，事务内 `SET LOCAL app.tenant_id` |
-| G5 | Zod 是唯一契约来源 | 工具输入输出、HTTP 请求响应、环境变量都从 `packages/schema` 取，禁止手写重复类型 |
-| G6 | 金额用整数（分） | 内核用整数计算金额，禁止浮点；展示层再格式化 |
-| G7 | 审计只追加 | 所有写动作同事务写 `audit_log`（actorRole/tenantId/dataScope 落快照），审计不可改 |
-| G8 | 依赖方向单向 | `apps → packages`，禁止反向与循环依赖（Turborepo 边界 + ESLint no-restricted-imports 强制） |
-| G9 | 敏感字段脱敏 | 手机号、银行账号出网/进 LLM 前脱敏；成本底线、合同价、客户名单默认不进外部模型 |
-| G10 | 草稿即默认 | 所有 AI 产出为 `DRAFT`，批准后经内核 confirm 才生效；金额类动作永不低于 L1 |
+| #   | 铁律                 | 说明                                                                                             |
+| --- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| G1  | 内核是唯一写入口     | 业务数据（客户/样品/报价/订单/应收…）只经 `apps/api/src/kernel` 写入；前端和 agent 都不得绕过    |
+| G2  | Agent 只调工具层     | 智能体只能调 `tools/`，不得直接操作数据库、不得直连 LLM 厂商                                     |
+| G3  | 不信任前端           | 金额、阈值、角色、数据范围一律服务端校验；前端只读展示                                           |
+| G4  | 租户上下文由网关注入 | 前端不传 `tenant_id`；网关按 `(sub, org)` 解析 membership 注入，事务内 `SET LOCAL app.tenant_id` |
+| G5  | Zod 是唯一契约来源   | 工具输入输出、HTTP 请求响应、环境变量都从 `packages/schema` 取，禁止手写重复类型                 |
+| G6  | 金额用整数（分）     | 内核用整数计算金额，禁止浮点；展示层再格式化                                                     |
+| G7  | 审计只追加           | 所有写动作同事务写 `audit_log`（actorRole/tenantId/dataScope 落快照），审计不可改                |
+| G8  | 依赖方向单向         | `apps → packages`，禁止反向与循环依赖（Turborepo 边界 + ESLint no-restricted-imports 强制）      |
+| G9  | 敏感字段脱敏         | 手机号、银行账号出网/进 LLM 前脱敏；成本底线、合同价、客户名单默认不进外部模型                   |
+| G10 | 草稿即默认           | 所有 AI 产出为 `DRAFT`，批准后经内核 confirm 才生效；金额类动作永不低于 L1                       |
 
 ---
 
@@ -114,10 +114,10 @@ weave-order/
 - **Gateway（`gateway/`）**：JWT 校验（RS256/JWKS/issuer/audience/exp/nonce）+ membership 映射 + 注入 tenant 上下文；应用角色无 `BYPASSRLS`。
 - **平台与控制面分离**：`platform_*` / `plans` / `subscriptions` / `usage_*` / `invoices` 属控制面，与租户业务数据分离（独立 schema/库）。
 
-### apps/web（E1 桌面 + E3 报价页）
+### apps/web（E1 桌面）与 apps/quote（E3 报价页）
 
 - **IA 铁律**：桌面只有「3 个业务窗口 + 1 个管理面」；打印中心是全局抽屉，不新增第四个窗口/一级导航。
-- **E3 报价页（`s/[token]`）**：公开路由、无鉴权 Cookie、最小埋点；服务端校验 token（`token_hash` + 有效期 + 未撤回）；**只渲染客户视图字段，绝不渲染成本/毛利/内部备注/其他客户**。
+- **E3 报价页（`apps/quote` 的 `/s/[token]`）**：独立 Next.js 应用、独立部署；公开路由、无鉴权 Cookie、最小埋点；服务端校验签名 token（哈希命中 + 有效期 + 未撤回）；**只渲染客户视图字段，绝不渲染成本/毛利/内部备注/其他客户**。
 - **草稿态视觉统一**：浅底 + 虚线边 + 版本号，批准后变实底；金额用 `tabular-nums` 右对齐。
 - **通过 `packages/core` 调 API**：不直接 fetch 绕过；不信任前端，金额/阈值校验在后端。
 - **外设能力降级**：`print/scan/readFile/电子秤` 通过 capability 检测，无 Tauri 环境退回浏览器打印/文件上传。
@@ -153,22 +153,22 @@ weave-order/
 
 ## 5. packages 约束
 
-| 包 | 约束 |
-| --- | --- |
-| `packages/schema` | 唯一契约来源；只放 Zod 定义，不放业务逻辑；工具/内核/HTTP/env 全部引用它 |
-| `packages/shared` | 只放无副作用的纯函数/常量/类型；禁止依赖 React/NestJS/DB |
-| `packages/db` | Drizzle schema + 迁移 + RLS 策略；所有业务表带 `tenant_id`；只在 `apps/api` 被 import |
-| `packages/core` | 前端业务逻辑（hooks/API client/离线队列）；不依赖具体端框架，供 web/mobile/admin 复用 |
-| `packages/ui` | 设计系统组件与 tokens；桌面 + admin 复用；移动端用 Taro 组件（对齐 tokens，不直接复用 DOM 组件） |
+| 包                | 约束                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| `packages/schema` | 唯一契约来源；只放 Zod 定义，不放业务逻辑；工具/内核/HTTP/env 全部引用它                         |
+| `packages/shared` | 只放无副作用的纯函数/常量/类型；禁止依赖 React/NestJS/DB                                         |
+| `packages/db`     | Drizzle schema + 迁移 + RLS 策略；所有业务表带 `tenant_id`；只在 `apps/api` 被 import            |
+| `packages/core`   | 前端业务逻辑（hooks/API client/离线队列）；不依赖具体端框架，供 web/mobile/admin 复用            |
+| `packages/ui`     | 设计系统组件与 tokens；桌面 + admin 复用；移动端用 Taro 组件（对齐 tokens，不直接复用 DOM 组件） |
 
 ---
 
 ## 6. 落地建议（分阶段建目录）
 
-| 阶段 | 先建 | 后建 |
-| --- | --- | --- |
-| P0 | `apps/api`（kernel/tools/agents/approval/gateway）、`apps/web`（desktop + s/[token]）、`apps/mobile`（Taro H5/PWA）、`packages/schema` / `shared` / `db` / `core` / `ui` | — |
-| P1 | `apps/admin`、`apps/print-agent`、`apps/api` 的 `print` / `billing` / `platform` | — |
-| P3 | `apps/desktop`、`apps/mobile` 的小程序/RN 输出 | — |
+| 阶段 | 先建                                                                                                                                                                                      | 后建 |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| P0   | `apps/api`（kernel/tools/agents/approval/gateway）、`apps/web`（desktop）、`apps/quote`（`s/[token]`）、`apps/mobile`（Taro H5/PWA）、`packages/schema` / `shared` / `db` / `core` / `ui` | —    |
+| P1   | `apps/admin`、`apps/print-agent`、`apps/api` 的 `print` / `billing` / `platform`                                                                                                          | —    |
+| P3   | `apps/desktop`、`apps/mobile` 的小程序/RN 输出                                                                                                                                            | —    |
 
 > 现在仓库已有 `apps/api`、`apps/web`、`packages/db`、`packages/schema`、`packages/shared`；按上表增量补齐 `apps/mobile`、`apps/admin`、`apps/print-agent`、`apps/desktop`、`packages/core`、`packages/ui` 即可。

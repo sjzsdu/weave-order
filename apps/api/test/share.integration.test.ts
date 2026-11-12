@@ -1,5 +1,6 @@
-import { createDb, quoteShares, quotes } from "@weave-order/db";
+import { createDb, DEFAULT_TENANT_ID, quoteShares, quotes, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
+import type { CustomerQuotePage } from "@weave-order/schema";
 import { eq } from "drizzle-orm";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -151,6 +152,8 @@ describe("客户报价链接（集成）", () => {
     if (!available || !publicPool) ctx.skip();
     const pool = publicPool;
     if (!pool) throw new Error("数据库不可用");
+    const database = db;
+    if (!database) throw new Error("数据库不可用");
     const kernel = kernelOf();
     const share = new PublicShareService(pool);
     const { quoteId } = await approvedQuote(kernel);
@@ -160,7 +163,31 @@ describe("客户报价链接（集成）", () => {
       HUMAN,
     );
 
-    const page = await share.view(created.token, VISITOR);
+    const before = await database
+      .select({ settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, DEFAULT_TENANT_ID));
+    await database
+      .update(tenants)
+      .set({
+        settings: {
+          salesContact: {
+            name: "李娜",
+            phone: "13800136621",
+            wechatQrUrl: "https://cdn.example.com/qr/li-na.png",
+          },
+        },
+      })
+      .where(eq(tenants.id, DEFAULT_TENANT_ID));
+    let page: CustomerQuotePage;
+    try {
+      page = await share.view(created.token, VISITOR);
+    } finally {
+      await database
+        .update(tenants)
+        .set({ settings: before[0]?.settings ?? {} })
+        .where(eq(tenants.id, DEFAULT_TENANT_ID));
+    }
     expect(page.view.customerName).toBe("杭州青禾服饰");
     expect(page.view.quoteNumber).toMatch(/^Q-\d{8}-[0-9A-F]{6}$/);
     expect(page.view.lines).toHaveLength(1);
@@ -172,11 +199,17 @@ describe("客户报价链接（集成）", () => {
     });
     expect(page.view.totalAmount).toBe(760000);
     expect(page.remainingDays).toBeGreaterThan(0);
+    expect(page.salesContact).toEqual({
+      name: "李娜",
+      phoneMasked: "138****6621",
+      wechatQrUrl: "https://cdn.example.com/qr/li-na.png",
+    });
     // 客户视图绝不包含成本 / 毛利 / 内部备注
     const serialized = JSON.stringify(page);
     expect(serialized).not.toContain("costFloor");
     expect(serialized).not.toContain("margin");
     expect(serialized).not.toContain("remarks");
+    expect(serialized).not.toContain("13800136621");
 
     await expect(share.accept(created.token, { phoneTail: "0000" }, VISITOR)).rejects.toMatchObject(
       {

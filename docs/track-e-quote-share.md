@@ -57,8 +57,11 @@ sequenceDiagram
 | 不泄露内部字段      | 客户视图只 SELECT `CustomerQuoteView` 需要的列；测试断言无 cost/margin/remarks          |
 | 接受 ≠ 合同         | 只写 `ACCEPTED` 事件；不更新 `quotes`；测试断言状态仍为 `SENT`                          |
 | IP 只存哈希         | `hashAnonymous(ip, QUOTE_SHARE_SECRET)`，不存明文                                       |
+| 生产密钥 fail-fast  | 生产/OIDC 下 `QUOTE_SHARE_SECRET` 仍是开发默认值即拒绝启动（同 `APP_DATABASE_URL`）     |
 | 不写追踪 Cookie     | Next 路由无鉴权 Cookie；返回 `Cache-Control: no-store` + `noindex`                      |
 | 跨租户隔离          | token 自带 tenantId；公开路由仍走 `withTenantSession`，不存在 owner 跨租户查询          |
+| 不回显 token        | `CustomerQuoteView` 不含原始 token；客户端从 URL 取，避免日志/监控误记明文              |
+| 销售名片            | 读 `tenants.settings.salesContact`；只输出脱敏电话与可选微信二维码                      |
 
 ## 4. 接口
 
@@ -96,7 +99,7 @@ sequenceDiagram
 ## 7. 已知边界 / 后续
 
 1. PDF 是浏览器打印（另存为 PDF），服务端记录下载事件；后续可接 Playwright/puppeteer 渲染同款页面成 PDF。
-2. 销售名片：`memberships` 没有展示名，`salesName` 暂为 `null`；需要补用户资料表或从 Casdoor 取 name。
-3. 条款文本读 `tenants.settings.quoteTerms`，尚未做租户设置页。
+2. 销售名片当前是租户级配置（`tenants.settings.salesContact`）；后续可升级为 per-membership 资料并从 Casdoor 同步。
+3. 条款文本读 `tenants.settings.quoteTerms`，尚未做租户设置页（可先用种子/后台写入）。
 4. ISR 未启用：浏览计数与接受状态必须实时，使用 `force-dynamic`；静态资源仍可走 CDN。
 5. 分享渠道记录（微信/二维码/邮件）与「旧链接显示已更新」尚未实现。

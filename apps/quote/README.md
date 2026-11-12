@@ -66,6 +66,7 @@ pnpm --filter @weave-order/api test        # 含 share.integration / share.http.
 ## 当前边界
 
 - PDF 走浏览器打印（另存为 PDF），由服务端记录下载事件；尚未接服务器端二进制 PDF 渲染。
-- 销售名片目前只有公司抬头：`memberships` 没有展示名字段，`salesName` 返回 `null`。
+- 销售名片读租户配置 `tenants.settings.salesContact = { name, phone, wechatQrUrl }`：
+  页面只输出脱敏电话（`138****6621`）与可选微信二维码；未配置则不展示该区块。
 - 条款文本读取 `tenants.settings.quoteTerms`（字符串）；未配置时用产品默认条款。
 - 报价版本号读取 `quotes.version`（Track A 起提供）；当前分支若尚未合入该字段则回退为 `1`。

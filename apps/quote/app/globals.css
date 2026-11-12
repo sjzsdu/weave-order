@@ -285,6 +285,45 @@ a {
   color: var(--ink);
 }
 
+.sales-card {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sales-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sales-name {
+  margin: 2px 0 0;
+  font-weight: 650;
+}
+
+.sales-phone {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sales-qr {
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+
 .actions {
   display: grid;
   gap: 10px;

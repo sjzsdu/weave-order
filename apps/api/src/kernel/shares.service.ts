@@ -15,6 +15,7 @@ import {
   CustomerAskQuestionResult,
   CustomerQuotePage,
   CustomerQuoteView,
+  CustomerSalesContact,
   CreateQuoteShareInput,
   QuoteShareStats,
   QuoteShareStatsList,
@@ -78,6 +79,42 @@ function asString(value: JsonValue | undefined): string | null {
 
 function asNumber(value: JsonValue | undefined): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+/** 只保留「可拨打的实名名片」，不把完整手机号写进客户页。 */
+function maskPhone(phone: unknown): string | null {
+  if (typeof phone !== "string") return null;
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+}
+
+function safeQrUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 销售名片来自租户配置 `tenants.settings.salesContact`：
+ * `{ name, phone, wechatQrUrl }`。电话只输出脱敏版；未配置则整块不展示。
+ */
+function salesContactFromSettings(
+  settings: Record<string, JsonValue> | null,
+): CustomerSalesContact | null {
+  const raw = settings?.salesContact;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const contact = raw as Record<string, JsonValue>;
+  if (typeof contact.name !== "string" || contact.name.trim().length === 0) return null;
+  return CustomerSalesContact.parse({
+    name: contact.name.trim().slice(0, 255),
+    phoneMasked: maskPhone(contact.phone),
+    wechatQrUrl: safeQrUrl(contact.wechatQrUrl),
+  });
 }
 
 /**
@@ -321,7 +358,7 @@ export class ShareService {
     options: { track?: boolean } = {},
   ): Promise<CustomerPage> {
     const share = await this.requireActiveShare(shareId, token);
-    const page = await this.buildCustomerPage(share, token);
+    const page = await this.buildCustomerPage(share);
     // 打印页只需要读取同一份客户视图，不应重复计一次浏览。
     if (options.track !== false) {
       await this.recordEvent(shareId, "VIEWED", null, visitor);
@@ -390,7 +427,7 @@ export class ShareService {
   ): Promise<CustomerAskQuestionResult> {
     const parsed = CustomerAskQuestionInput.parse(input);
     const share = await this.requireActiveShare(shareId, token);
-    await this.buildCustomerPage(share, token); // 校验报价仍在有效状态
+    await this.buildCustomerPage(share); // 校验报价仍在有效状态
     const event = await this.recordEvent(
       shareId,
       "QUESTION_ASKED",
@@ -411,7 +448,7 @@ export class ShareService {
     if (!share.allowPdf) {
       throw new QuoteLinkError("PDF_DISABLED", "该报价未开放 PDF 下载");
     }
-    await this.buildCustomerPage(share, token);
+    await this.buildCustomerPage(share);
     await this.recordEvent(shareId, "PDF_DOWNLOADED", null, visitor);
   }
 
@@ -452,7 +489,7 @@ export class ShareService {
     });
   }
 
-  private async buildCustomerPage(share: ShareRow, token: string): Promise<CustomerPage> {
+  private async buildCustomerPage(share: ShareRow): Promise<CustomerPage> {
     const quote = await this.getQuoteRow(share.quoteId);
     if (quote.status !== ACTIVE_QUOTE_STATUS) {
       throw new QuoteLinkError("INVALID_LINK", "该报价已失效，请联系您的业务员");
@@ -485,7 +522,6 @@ export class ShareService {
     const terms = asString(settings?.quoteTerms);
 
     const view = CustomerQuoteView.parse({
-      shareToken: token,
       quoteNumber: quoteNumber(quote),
       tenantName: tenant.name,
       customerName: customer.name,
@@ -508,7 +544,7 @@ export class ShareService {
       acceptedAt: accepted ? toIso(accepted.createdAt) : null,
       remainingDays,
       requirePhoneTail: share.requirePhoneTail,
-      salesName: null,
+      salesContact: salesContactFromSettings(settings),
       terms,
     });
   }

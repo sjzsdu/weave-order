@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** 仅本地/测试使用的占位密钥；生产出现即 fail-fast（与 database-guard 同一策略）。 */
+export const DEV_QUOTE_SHARE_SECRET = "dev-only-quote-share-secret-change-me-0001";
+
 /**
  * 运行时环境变量契约。
  * 默认值与 docker-compose.yml 一致，因此本地 `docker compose up` 后
@@ -33,7 +36,7 @@ const EnvSchema = z.object({
   /** 客户报价分享链接的站点根地址。 */
   PUBLIC_APP_URL: z.string().url().default("http://localhost:5174"),
   /** 客户报价链接的 HMAC 密钥；生产必须覆盖为 ≥32 字节随机值。 */
-  QUOTE_SHARE_SECRET: z.string().min(32).default("dev-only-quote-share-secret-change-me-0001"),
+  QUOTE_SHARE_SECRET: z.string().min(32).default(DEV_QUOTE_SHARE_SECRET),
   /** T-001 imageUrl 变体允许取图的对象存储 / CDN 域名（逗号分隔）。 */
   MEDIA_ALLOWED_HOSTS: z.string().default(""),
   /** 按 URL 取图的最大字节数（默认 2MB，上限 10MB）。 */
@@ -43,5 +46,17 @@ const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  return EnvSchema.parse(source);
+  const env = EnvSchema.parse(source);
+  // 与 APP_DATABASE_URL 的生产硬校验同一原则：生产/OIDC 模式不允许静默使用公开占位密钥。
+  // 默认 secret 已知时，IP/UA 加盐哈希可被反查，「IP 只存哈希」的隐私承诺会被削弱。
+  if (
+    (env.NODE_ENV === "production" || env.AUTH_MODE === "oidc") &&
+    env.QUOTE_SHARE_SECRET === DEV_QUOTE_SHARE_SECRET
+  ) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 QUOTE_SHARE_SECRET（≥32 字节随机值，例如 openssl rand -hex 32）；" +
+        "否则报价链接与匿名 IP 哈希会使用公开的默认密钥。",
+    );
+  }
+  return env;
 }

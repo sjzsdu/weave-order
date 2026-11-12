@@ -196,6 +196,27 @@ export function QuoteClient({
           {data.terms ?? t.termsFallback}
         </div>
 
+        {data.salesContact && (
+          <div className="sales-card">
+            <div>
+              <p className="sales-kicker">{t.contactSales}</p>
+              <p className="sales-name">{data.salesContact.name}</p>
+              {data.salesContact.phoneMasked && (
+                <p className="sales-phone">{data.salesContact.phoneMasked}</p>
+              )}
+            </div>
+            {data.salesContact.wechatQrUrl && (
+              <img
+                className="sales-qr"
+                src={data.salesContact.wechatQrUrl}
+                alt={t.wechatQr}
+                width={88}
+                height={88}
+              />
+            )}
+          </div>
+        )}
+
         <div className="actions no-print">
           {acceptedAt ? (
             <div className="accepted" role="status">

@@ -44,6 +44,7 @@ export interface Dict {
   revokedBody: string;
   pdfDisabled: string;
   contactSales: string;
+  wechatQr: string;
   offerNote: string;
   retry: string;
   language: string;
@@ -97,6 +98,7 @@ const ZH: Dict = {
   revokedBody: "业务员已撤回这条报价链接。如有疑问，请直接联系业务员。",
   pdfDisabled: "该报价未开放 PDF 下载。",
   contactSales: "联系业务员",
+  wechatQr: "微信二维码",
   offerNote: "本报价为要约邀请，接受后由业务员确认订单。",
   retry: "重试",
   language: "EN",
@@ -154,6 +156,7 @@ const EN: Dict = {
   revokedBody: "Your salesperson has withdrawn this quote link. Please contact them directly.",
   pdfDisabled: "PDF download is not enabled for this quotation.",
   contactSales: "Contact salesperson",
+  wechatQr: "WeChat QR code",
   offerNote: "This quotation is an invitation to offer; your salesperson confirms the order.",
   retry: "Retry",
   language: "中文",

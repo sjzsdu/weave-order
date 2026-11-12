@@ -75,7 +75,6 @@ export type RevokeQuoteShareInput = z.infer<typeof RevokeQuoteShareInput>;
 /** 客户视图（公开路由）——刻意只含客户可见字段。 */
 export const CustomerQuoteView = z
   .object({
-    shareToken: z.string().min(32).max(256),
     quoteNumber: z.string().min(1).max(64),
     tenantName: z.string().min(1).max(255),
     customerName: z.string().min(1).max(255),
@@ -100,6 +99,19 @@ export const CustomerQuoteView = z
 export type CustomerQuoteView = z.infer<typeof CustomerQuoteView>;
 
 /**
+ * 客户页的销售名片：实名 + 脱敏电话 + 微信二维码（可选）。
+ * 来源于租户配置 `tenants.settings.salesContact`，只输出脱敏后的电话。
+ */
+export const CustomerSalesContact = z
+  .object({
+    name: z.string().min(1).max(255),
+    phoneMasked: z.string().max(64).nullable(),
+    wechatQrUrl: z.string().url().nullable(),
+  })
+  .strict();
+export type CustomerSalesContact = z.infer<typeof CustomerSalesContact>;
+
+/**
  * 客户页的完整读取模型：客户视图 + 页面级元数据。
  * `view` 之外的字段都只描述「这条链接」本身，不携带任何内部业务数据。
  */
@@ -109,7 +121,7 @@ export const CustomerQuotePage = z
     acceptedAt: Timestamp.nullable(),
     remainingDays: z.number().int().nonnegative(),
     requirePhoneTail: z.boolean(),
-    salesName: z.string().min(1).max(255).nullable(),
+    salesContact: CustomerSalesContact.nullable(),
     terms: z.string().max(2000).nullable(),
   })
   .strict();
