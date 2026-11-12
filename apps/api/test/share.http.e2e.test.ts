@@ -198,4 +198,48 @@ describe("报价链接 HTTP（e2e）", () => {
     });
     expect(response.status).toBeGreaterThanOrEqual(400);
   }, 40_000);
+
+  it("兼容移动端 T0 契约：POST /api/quote-shares 返回裸 CreatedQuoteShare，GET 返回访问时间线", async (ctx) => {
+    if (!available || !db) ctx.skip();
+    const database = db;
+    if (!database) throw new Error("数据库不可用");
+    const kernel = createKernel(database);
+    const quoteId = await approvedQuote(kernel);
+
+    const createResponse = await fetch(`${baseUrl}/api/quote-shares`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quoteId, requirePhoneTail: false, allowPdf: true }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await json(createResponse)) as {
+      token?: string;
+      url?: string;
+      share?: { quoteId: string };
+    };
+    expect(created.token).toBeTruthy();
+    expect(created.url).toContain("/s/");
+    expect(created.share?.quoteId).toBe(quoteId);
+
+    const token = created.token;
+    if (!token) throw new Error("缺少 token");
+    await fetch(`${baseUrl}/api/public/quotes/${token}`);
+    const listResponse = await fetch(
+      `${baseUrl}/api/quote-shares?quoteId=${encodeURIComponent(quoteId)}`,
+    );
+    expect(listResponse.status).toBe(200);
+    const list = (await json(listResponse)) as {
+      shares: Array<{
+        share: { quoteId: string };
+        url: string;
+        viewCount: number;
+        lastViewedAt: string | null;
+      }>;
+    };
+    expect(list.shares).toHaveLength(1);
+    expect(list.shares[0]?.share.quoteId).toBe(quoteId);
+    expect(list.shares[0]?.url).toBe("");
+    expect(list.shares[0]?.viewCount).toBe(1);
+    expect(list.shares[0]?.lastViewedAt).toBeTruthy();
+  }, 40_000);
 });

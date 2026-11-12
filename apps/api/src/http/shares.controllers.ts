@@ -159,6 +159,18 @@ export class PublicQuoteController {
 export class QuoteSharesController {
   constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
 
+  /** T0 冻结契约（移动端）：quoteId 在 body，返回裸 CreatedQuoteShare。 */
+  @Post("quote-shares")
+  async createLegacy(@Body() body: unknown) {
+    return this.kernel.shares.createFromInput(body, HUMAN_CONTEXT);
+  }
+
+  /** T0 冻结契约（移动端）：客户 360 的链接访问时间线。 */
+  @Get("quote-shares")
+  async listLegacy(@Query("quoteId") quoteId?: string) {
+    return this.kernel.shares.listLegacy(quoteId);
+  }
+
   @Post("quotes/:id/shares")
   async create(@Param("id") quoteId: string, @Body() body: unknown) {
     return {

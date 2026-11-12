@@ -18,11 +18,13 @@ import {
   CreateQuoteShareInput,
   QuoteShareStats,
   QuoteShareStatsList,
+  QuoteShare,
 } from "@weave-order/schema";
 import type {
   CustomerQuotePage as CustomerPage,
   JsonValue,
   QuoteLinkErrorCode,
+  QuoteShare as QuoteShareRecord,
 } from "@weave-order/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { appendAudit } from "./audit";
@@ -193,22 +195,19 @@ export class ShareService {
     });
 
     return CreatedQuoteShare.parse({
-      share: {
-        id: row.id,
-        tenantId: row.tenantId,
-        quoteId: row.quoteId,
-        version: row.version,
-        tokenHash: row.tokenHash,
-        expiresAt: toIso(row.expiresAt),
-        requirePhoneTail: row.requirePhoneTail,
-        allowPdf: row.allowPdf,
-        revokedAt: row.revokedAt ? toIso(row.revokedAt) : null,
-        createdBy: row.createdBy,
-        createdAt: toIso(row.createdAt),
-      },
+      share: this.mapShare(row),
       token,
       url: this.urlFor(token),
     });
+  }
+
+  /**
+   * 兼容 T0 冻结的移动端契约：`POST /api/quote-shares`（quoteId 在 body）。
+   * 与 `createForQuote` 完全同一条内核路径，只是入参形态不同。
+   */
+  async createFromInput(input: unknown, ctx: KernelContext): Promise<CreatedQuoteShare> {
+    const parsed = CreateQuoteShareInput.parse(input);
+    return this.createForQuote(parsed.quoteId, input, ctx);
   }
 
   /** 业务员的分享面板：每条链接看到多少次、是否接受、客户问了什么。 */
@@ -221,6 +220,44 @@ export class ShareService {
       .orderBy(desc(quoteShares.createdAt));
     const stats = await Promise.all(shareRows.map((row) => this.statsForShare(row)));
     return QuoteShareStatsList.parse({ quoteId, shares: stats });
+  }
+
+  /**
+   * 兼容 T0 冻结的移动端契约：`GET /api/quote-shares?quoteId=`。
+   * 返回 `{ share, url, viewCount, lastViewedAt }`；明文 token 不可还原，`url` 固定为空串。
+   */
+  async listLegacy(quoteId?: string): Promise<{
+    shares: Array<{
+      share: QuoteShareRecord;
+      url: string;
+      viewCount: number;
+      lastViewedAt: string | null;
+    }>;
+  }> {
+    let rows: ShareRow[];
+    if (quoteId) {
+      await this.getQuoteRow(quoteId);
+      rows = await this.db
+        .select()
+        .from(quoteShares)
+        .where(and(eq(quoteShares.quoteId, quoteId), eq(quoteShares.tenantId, this.tenantId)))
+        .orderBy(desc(quoteShares.createdAt));
+    } else {
+      rows = await this.db
+        .select()
+        .from(quoteShares)
+        .where(eq(quoteShares.tenantId, this.tenantId))
+        .orderBy(desc(quoteShares.createdAt));
+    }
+    const stats = await Promise.all(rows.map((row) => this.statsForShare(row)));
+    return {
+      shares: rows.map((row, index) => ({
+        share: this.mapShare(row),
+        url: "",
+        viewCount: stats[index]?.viewCount ?? 0,
+        lastViewedAt: stats[index]?.lastViewedAt ?? null,
+      })),
+    };
   }
 
   async revoke(shareId: string, ctx: KernelContext): Promise<QuoteShareStats> {
@@ -400,6 +437,22 @@ export class ShareService {
       throw new QuoteLinkError("EXPIRED", "该报价链接已过期，请联系您的业务员");
     }
     return share;
+  }
+
+  private mapShare(row: ShareRow): QuoteShareRecord {
+    return QuoteShare.parse({
+      id: row.id,
+      tenantId: row.tenantId,
+      quoteId: row.quoteId,
+      version: row.version,
+      tokenHash: row.tokenHash,
+      expiresAt: toIso(row.expiresAt),
+      requirePhoneTail: row.requirePhoneTail,
+      allowPdf: row.allowPdf,
+      revokedAt: row.revokedAt ? toIso(row.revokedAt) : null,
+      createdBy: row.createdBy,
+      createdAt: toIso(row.createdAt),
+    });
   }
 
   private async buildCustomerPage(share: ShareRow, token: string): Promise<CustomerPage> {
