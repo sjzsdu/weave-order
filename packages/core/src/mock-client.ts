@@ -5,6 +5,7 @@ import {
   AuthContextResponse,
   CreatedQuoteShare,
   PanoramaSnapshot,
+  T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
 } from "@weave-order/schema";
 import type { ApprovalDecisionInput } from "@weave-order/schema";
@@ -233,6 +234,8 @@ export function createMockApiClient(): ApiClient {
 
     listCustomers: () => Promise.resolve([customer]),
 
+    listSamples: () => Promise.resolve([sample]),
+
     panorama: () =>
       Promise.resolve(
         PanoramaSnapshot.parse({
@@ -268,6 +271,14 @@ export function createMockApiClient(): ApiClient {
     },
 
     audit: () => Promise.resolve(audit),
+
+    searchBySpec: () =>
+      Promise.resolve(
+        T002SearchFabricBySpecResult.parse({
+          ok: true,
+          data: { matches: [{ sample, score: 1, matchedOn: ["name"] }] },
+        }),
+      ),
 
     generateQuoteDraft: (_input: Parameters<ApiClient["generateQuoteDraft"]>[0]) =>
       Promise.resolve(T004GenerateQuoteDraftResult.parse({ ok: true, data: { draft } })),

@@ -20,6 +20,10 @@ export interface QueuedOperation {
   status: QueueStatus;
   attempts: number;
   lastError?: string;
+  /** 冲突时服务端当前版本，供「保留服务端 / 以服务端版本重试」使用。 */
+  serverVersion?: number;
+  /** 冲突时服务端快照（只读展示，绝不自动覆盖）。 */
+  serverSnapshot?: unknown;
   createdAt: string;
 }
 
@@ -52,6 +56,17 @@ export function memoryStorage(seed: QueuedOperation[] = []): QueueStorage {
       return Promise.resolve();
     },
   };
+}
+
+/**
+ * 版本冲突判定：HTTP 409 或契约里的 `VERSION_CONFLICT` 错误码。
+ * 只有冲突会被标记后继续处理后续操作；普通网络失败保留时间序并停止。
+ */
+export function isVersionConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const status = (error as { status?: unknown }).status;
+  const code = (error as { code?: unknown }).code;
+  return status === 409 || code === "VERSION_CONFLICT";
 }
 
 export function createOfflineQueue(storage: QueueStorage) {
@@ -87,6 +102,39 @@ export function createOfflineQueue(storage: QueueStorage) {
     async remove(opId: string): Promise<void> {
       const items = await storage.load();
       await storage.save(items.filter((item) => item.opId !== opId));
+    },
+
+    /** 局部更新一条待提交操作（用于记录冲突信息 / 人工确认后的重试）。 */
+    async update(
+      opId: string,
+      patch: Partial<Omit<QueuedOperation, "opId" | "createdAt">>,
+    ): Promise<QueuedOperation | null> {
+      const items = await storage.load();
+      const index = items.findIndex((item) => item.opId === opId);
+      if (index < 0) return null;
+      const current = items[index];
+      if (!current) return null;
+      const next: QueuedOperation = { ...current, ...patch };
+      items[index] = next;
+      await storage.save(items);
+      return next;
+    },
+
+    /**
+     * 人工确认「以服务端版本重试」：把基线版本换成服务端当前版本并重新排队。
+     * 这不是自动合并 —— 必须有人在冲突面板上点过才算。
+     */
+    async retryWithServerVersion(
+      opId: string,
+      serverVersion: number,
+    ): Promise<QueuedOperation | null> {
+      return this.update(opId, {
+        status: "pending",
+        attempts: 0,
+        baseVersion: serverVersion,
+        serverVersion,
+        lastError: undefined,
+      });
     },
 
     /**

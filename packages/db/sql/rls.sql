@@ -39,6 +39,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   revision_reasons,
   revision_requests,
   draft_revisions,
+  pricing_policies,
+  policy_change_log,
+  decision_deltas,
   quote_shares,
   quote_share_events,
   audit_log
@@ -68,6 +71,9 @@ DECLARE
     'revision_reasons',
     'revision_requests',
     'draft_revisions',
+    'pricing_policies',
+    'policy_change_log',
+    'decision_deltas',
     'quote_shares',
     'quote_share_events',
     'audit_log'

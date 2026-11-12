@@ -14,6 +14,8 @@ export const samples = pgTable(
     code: varchar("code", { length: 64 }).notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     composition: varchar("composition", { length: 255 }),
+    /** 品类（定价继承的 CATEGORY 作用域）。 */
+    category: varchar("category", { length: 64 }),
     /** 克重描述，如 "220g/m2" */
     weight: varchar("weight", { length: 64 }),
     unit: unitEnum("unit").notNull().default("meter"),

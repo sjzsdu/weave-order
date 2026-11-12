@@ -10,5 +10,6 @@ export const AGENT_CONTEXT: KernelContext = {
  * 生产环境这里应来自登录态（Casdoor OIDC），MVP 先用固定审批人标识。
  */
 export const HUMAN_CONTEXT: KernelContext = {
-  actor: { type: "HUMAN", id: "web-approver" },
+  // 本地/演示环境没有网关登录态：固定为 owner。生产必须从 RequestContext 注入真实角色。
+  actor: { type: "HUMAN", id: "web-approver", role: "OWNER" },
 };

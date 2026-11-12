@@ -98,3 +98,21 @@ export const quoteShareEventEnum = pgEnum("quote_share_event", [
   "QUESTION_ASKED",
   "REVOKED",
 ]);
+
+/** 定价策略作用域：系统 → 公司 → 团队/客户/品类 → 个人。 */
+export const pricingScopeTypeEnum = pgEnum("pricing_scope_type", [
+  "SYSTEM",
+  "COMPANY",
+  "TEAM",
+  "CUSTOMER",
+  "CATEGORY",
+  "PERSON",
+]);
+
+/** 决策增量的业务场景（与 packages/schema 的 ScenarioTag 一致）。 */
+export const scenarioTagEnum = pgEnum("scenario_tag", [
+  "PRICING",
+  "SAMPLE_FOLLOWUP",
+  "ORDER_FOLLOWUP",
+  "RECONCILIATION",
+]);

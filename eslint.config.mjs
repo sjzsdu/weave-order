@@ -43,6 +43,7 @@ export default tseslint.config(
       "**/*.config.mjs",
       "**/*.config.cjs",
       "**/*.config.ts",
+      "apps/mobile/src/pwa/**",
       "packages/db/drizzle/**",
     ],
   },

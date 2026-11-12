@@ -107,94 +107,111 @@ export function createApprovalService(kernel: Kernel) {
       ]);
 
       if (kind === "quote") {
-        const draft = await kernel.quotes.getDraft(id).catch(() => null);
-        if (!draft) return null;
-        const samples = await kernel.samples.getManyByIds(
-          draft.items.map((line) => line.fabricSampleId),
-        );
-        const diffs = await kernel.quotes.listDiffs(id);
-        const currency = draft.currency;
+        const view = await kernel.quotes.getApprovalView(id).catch(() => null);
+        if (!view) return null;
 
-        const provenance: Detail["provenance"] = draft.items.flatMap((line, index) => {
-          const sample = samples.get(line.fabricSampleId);
+        const provenance: Detail["provenance"] = view.items.flatMap((line) => {
+          const raw = jsonRecord(line.provenance);
+          const sample = jsonRecord(raw.sample);
+          const unitPrice = jsonRecord(raw.unitPrice);
           const entries: Detail["provenance"] = [
             {
-              id: `line-${index}-kernel`,
+              id: `line-${line.lineIndex}-kernel`,
               kind: "AGENT",
-              label: `第 ${index + 1} 行单价`,
+              label: `第 ${line.lineIndex + 1} 行单价`,
               value: formatMoney(line.unitPrice),
               detail: "内核按整数分重算：单价 × 数量，智能体不得直接填写总额。",
               sourceRef: null,
             },
           ];
-          if (sample?.costFloor) {
+          if (typeof sample.code === "string") {
+            const costFloor = jsonRecord(sample.costFloor);
             entries.push({
-              id: `line-${index}-cost`,
+              id: `line-${line.lineIndex}-sample`,
               kind: "COST",
-              label: "成本底线",
-              value: formatMoney(sample.costFloor),
-              detail: `样品 ${sample.code} 的硬边界；低于此线内核直接拒绝。`,
+              label: "样品 / 成本底线",
+              value:
+                typeof costFloor.amount === "number"
+                  ? `${String(sample.code)} · ${formatMoney({
+                      amount: costFloor.amount,
+                      currency: view.currency,
+                    })}`
+                  : String(sample.code),
+              detail: typeof sample.name === "string" ? sample.name : null,
+              sourceRef: null,
+            });
+          }
+          if (typeof unitPrice.source === "string") {
+            entries.push({
+              id: `line-${line.lineIndex}-pricing`,
+              kind: "POLICY",
+              label: "定价来源",
+              value: unitPrice.source,
+              detail:
+                typeof unitPrice.floorCents === "number"
+                  ? `成本/毛利底线 ${formatMoney({ amount: unitPrice.floorCents, currency: view.currency })}`
+                  : null,
               sourceRef: null,
             });
           }
           return entries;
         });
 
+        for (const policy of view.requirement.policySources) {
+          provenance.push({
+            id: `policy-${policy.key}`,
+            kind: "POLICY",
+            label: `阈值 ${policy.key}`,
+            value: truncate(JSON.stringify(policy.value), 120),
+            detail: `来源：${sourceLabel(policy.source)}${policy.clamped ? "（下级放宽被管控夹取）" : ""}`,
+            sourceRef: null,
+          });
+        }
+
         provenance.push({
           id: "customer-tier",
           kind: "CUSTOMER",
           label: "客户背景",
           value: customer ? `${customer.name} · ${customer.tier}` : "客户信息不可见",
-          detail: customer
-            ? `客户编号 ${customer.code}；报价有效性 ${draft.validityDays} 天。`
-            : null,
+          detail: customer ? `客户编号 ${customer.code}` : null,
           sourceRef: null,
         });
 
-        const nearFloor = draft.items.some((line) => {
-          const floor = samples.get(line.fabricSampleId)?.costFloor;
-          if (!floor || floor.amount === 0) return false;
-          return line.unitPrice.amount <= Math.ceil(floor.amount * 1.05);
-        });
-        const highValue = draft.total.amount >= 5_000_000;
-
+        const highValue = view.total.amount >= 5_000_000;
         return ApprovalDetail.parse({
           item,
           customer,
           draft: {
             state: item.pending ? "DRAFT" : "CONFIRMED",
-            version: diffs.length > 0 ? diffs.length + 1 : 1,
-            revisedByHuman: diffs.length > 0,
-            revisionCount: diffs.length > 0 ? 1 : 0,
+            version: view.version,
+            revisedByHuman: view.revisions.some((revision) => revision.actorType === "HUMAN"),
+            revisionCount: view.revisions.length,
           },
-          lines: draft.items.map((line, index) => ({
-            id: `${draft.id}-${index}`,
+          lines: view.items.map((line) => ({
+            id: `${view.quoteId}-${line.lineIndex}`,
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
             lineTotal: line.lineTotal,
           })),
-          subtotal: draft.subtotal,
-          total: draft.total,
-          currency,
+          subtotal: view.subtotal,
+          total: view.total,
+          currency: view.currency,
           provenance,
-          diffs,
-          missingFields: draft.remarks
-            ? []
-            : [
-                {
-                  field: "remarks",
-                  label: "报价备注",
-                  hint: "补充交期或付款条件会更完整",
-                },
-              ],
+          diffs: view.diff,
+          missingFields:
+            view.status === "DRAFT"
+              ? [
+                  {
+                    field: "remarks",
+                    label: "报价备注",
+                    hint: "补充交期或付款条件会更完整",
+                  },
+                ]
+              : [],
           risk: {
-            level: nearFloor ? "HIGH" : highValue ? "MEDIUM" : "LOW",
-            reasons: nearFloor
-              ? ["有报价行贴近成本底线"]
-              : highValue
-                ? ["单笔金额超过 5 万元"]
-                : [],
+            level: item.escalated ? "HIGH" : highValue ? "MEDIUM" : "LOW",
+            reasons: view.requirement.reasons,
           },
           audit,
         });
@@ -245,14 +262,20 @@ export function createApprovalService(kernel: Kernel) {
       const parsed = ApprovalDecisionInput.safeParse(input);
       if (!parsed.success) return failure(parsed.error);
 
-      const { id, kind, decision, note } = parsed.data;
+      const { id, kind, decision, note, reasonId, baseVersion } = parsed.data;
       try {
         let status: ApprovalItem["status"];
         if (kind === "quote") {
           if (decision === "APPROVE") {
-            status = (await kernel.quotes.confirmDraft(id, ctx)).status;
+            status =
+              baseVersion === undefined
+                ? (await kernel.quotes.confirmDraft(id, ctx)).status
+                : (await kernel.quotes.confirmDraft(id, ctx, baseVersion)).status;
           } else {
-            status = (await kernel.quotes.rejectDraft(id, ctx, note)).status;
+            status =
+              reasonId === undefined
+                ? (await kernel.quotes.rejectDraft(id, ctx, note)).status
+                : (await kernel.quotes.rejectDraft(id, ctx, note, reasonId)).status;
           }
         } else if (decision === "APPROVE") {
           status = (await kernel.shipments.confirm(id, ctx)).status;
@@ -311,6 +334,22 @@ export function createApprovalService(kernel: Kernel) {
       });
     },
   };
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function sourceLabel(source: unknown): string {
+  const record = jsonRecord(source);
+  const scope = typeof record.scopeType === "string" ? record.scopeType : "UNKNOWN";
+  const policyId = typeof record.policyId === "string" ? record.policyId : null;
+  return policyId ? `${scope} · ${policyId}` : scope;
 }
 
 export type ApprovalService = ReturnType<typeof createApprovalService>;

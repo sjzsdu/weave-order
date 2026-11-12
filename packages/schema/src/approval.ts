@@ -12,7 +12,9 @@ import {
   Timestamp,
 } from "./domain";
 import { AuditLogEntry } from "./kernel";
+import { ApprovalLevel, ApprovalRequirement, EscalationReason } from "./pricing";
 import { RevisionDiff } from "./revisions";
+import { MemberRole } from "./tenancy";
 
 /**
  * 第五步：审批窗口与业务全景的契约。
@@ -47,6 +49,20 @@ export const ApprovalItem = z
     customerId: EntityId,
     createdAt: Timestamp,
     confirmedBy: z.string().max(128).nullable(),
+    /** 报价草稿版本（寄样单为 null）。 */
+    version: z.number().int().positive().nullable().optional(),
+    /** 这条单据需要谁来批；由内核按金额 + 改幅阈值算出。 */
+    requiredRole: MemberRole.nullable().optional(),
+    requiredLevel: ApprovalLevel.nullable().optional(),
+    /** 是否因改幅/金额超阈值被自动升级。 */
+    escalated: z.boolean().optional(),
+    escalationReasons: z.array(EscalationReason).optional(),
+    /** 相对原稿的改幅（万分之一），无改稿为 null。 */
+    changePctBps: z.number().int().nonnegative().nullable().optional(),
+    /** 原稿 vs 当前版本的逐行 diff，审批卡直接渲染。 */
+    diff: z.array(RevisionDiff).optional(),
+    /** 生效值与来源（阈值策略、成本底线、毛利规则）。 */
+    requirement: ApprovalRequirement.nullable().optional(),
   })
   .strict();
 export type ApprovalItem = z.infer<typeof ApprovalItem>;
@@ -63,6 +79,10 @@ export const ApprovalDecisionInput = z
     kind: ApprovalKind,
     decision: ApprovalDecision,
     note: z.string().max(500).optional(),
+    /** 驳回时的结构化原因（revision_reasons.id），用于决策增量。 */
+    reasonId: EntityId.optional(),
+    /** 审批人看到的是哪一版草稿；与账本不一致时内核拒绝（并发保护）。 */
+    baseVersion: z.number().int().positive().optional(),
   })
   .strict();
 export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionInput>;

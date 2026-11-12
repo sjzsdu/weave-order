@@ -53,5 +53,6 @@ const providers: Provider[] = [
 @Module({
   controllers: [AuthController],
   providers,
+  exports: [AuthService],
 })
 export class GatewayModule {}

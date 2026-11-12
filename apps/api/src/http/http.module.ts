@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import type { Provider } from "@nestjs/common";
-import { createApprovalService } from "../approval";
-import type { ApprovalService } from "../approval";
+import { GatewayModule } from "../gateway/gateway.module";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
 import { DatabaseProvider } from "../platform/database.provider";
@@ -14,10 +13,14 @@ import {
   CatalogController,
   HealthController,
   ImportController,
+  OrderController,
   PanoramaController,
+  PricingController,
   QuoteController,
+  RevisionController,
 } from "./controllers";
-import { APPROVAL, KERNEL, TOOLS } from "./tokens";
+import { HumanActorService } from "./human-actor.service";
+import { HUMAN_ACTOR, KERNEL, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
   {
@@ -30,15 +33,15 @@ const providers: Provider[] = [
     useFactory: (kernel: Kernel): Tools => createTools(kernel),
     inject: [KERNEL],
   },
+  HumanActorService,
   {
-    provide: APPROVAL,
-    useFactory: (kernel: Kernel): ApprovalService => createApprovalService(kernel),
-    inject: [KERNEL],
+    provide: HUMAN_ACTOR,
+    useExisting: HumanActorService,
   },
 ];
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, GatewayModule],
   controllers: [
     HealthController,
     CatalogController,
@@ -47,6 +50,9 @@ const providers: Provider[] = [
     ApprovalController,
     PanoramaController,
     ImportController,
+    PricingController,
+    OrderController,
+    RevisionController,
   ],
   providers,
 })

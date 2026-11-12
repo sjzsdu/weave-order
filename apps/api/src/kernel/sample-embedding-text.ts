@@ -3,7 +3,16 @@ export function sampleEmbeddingText(sample: {
   code: string;
   name: string;
   composition: string | null;
+  category?: string | null;
   weight: string | null;
 }): string {
-  return [sample.code, sample.name, sample.composition ?? "", sample.weight ?? ""].join(" ").trim();
+  return [
+    sample.code,
+    sample.name,
+    sample.composition ?? "",
+    sample.category ?? "",
+    sample.weight ?? "",
+  ]
+    .join(" ")
+    .trim();
 }
