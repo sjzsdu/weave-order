@@ -358,9 +358,15 @@ export class LiteLlmProvider implements LlmProvider {
   private async chat(
     task: LlmTask,
     messages: { role: "system" | "user"; content: string }[],
-    model: string,
+    fallbackModel: string,
   ): Promise<string> {
     const settings = this.options.settings;
+    // 按任务路由：复杂报价/对账用 reasoner；超长意图（客户原话很长）也升到 reasoner。
+    const promptChars = messages.reduce((sum, message) => sum + message.content.length, 0);
+    const model =
+      task === "QUOTE_DRAFT" || (task === "QUOTE_INTENT" && promptChars > 1200)
+        ? settings.reasoningModel
+        : fallbackModel;
     if (!settings.modelAllowlist.includes(model)) {
       throw new Error(`模型 ${model} 不在租户白名单内`);
     }
@@ -460,7 +466,11 @@ function parseJsonObject(content: string): Record<string, unknown> {
 export interface CreateLlmOptions {
   settings: ResolvedLlmSettings;
   usage: LlmUsageSink;
-  env?: { LITELLM_MASTER_KEY: string; LITELLM_TIMEOUT_MS: number };
+  env?: {
+    NODE_ENV?: "development" | "test" | "production";
+    LITELLM_MASTER_KEY: string;
+    LITELLM_TIMEOUT_MS: number;
+  };
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }
@@ -474,11 +484,21 @@ export function createLlmProvider(
   if (provider === "litellm") {
     if (!options) throw new Error("LLM_PROVIDER=litellm 需要 settings / usage 配置");
     const keyRef = options.settings.keyRef;
+    const referenced = keyRef === "LITELLM_MASTER_KEY" ? undefined : keyRef;
+    const keyFromRef = referenced ? process.env[referenced] : undefined;
+    const keyFromMaster = options.env?.LITELLM_MASTER_KEY ?? process.env.LITELLM_MASTER_KEY;
+    if (referenced && !keyFromRef && options.env?.NODE_ENV === "production") {
+      throw new Error(
+        `LLM keyRef "${referenced}" 未命中环境变量/KMS；生产环境拒绝启动，请配置该密钥或修正 llm_settings.key_ref`,
+      );
+    }
     const apiKey =
-      (keyRef ? process.env[keyRef] : undefined) ??
-      options.env?.LITELLM_MASTER_KEY ??
-      process.env.LITELLM_MASTER_KEY ??
-      "sk-local-dev";
+      keyFromRef ?? keyFromMaster ?? (options.env?.NODE_ENV === "production" ? "" : "sk-local-dev");
+    if (!apiKey || (options.env?.NODE_ENV === "production" && apiKey === "sk-local-dev")) {
+      throw new Error(
+        "生产环境缺少 LiteLLM Key（keyRef 未命中且未配置 LITELLM_MASTER_KEY），拒绝以 dev 默认值启动",
+      );
+    }
     return new LiteLlmProvider({
       settings: options.settings,
       usage: options.usage,

@@ -1,5 +1,6 @@
 import { MemorySaver } from "@langchain/langgraph";
 import { describe, expect, it } from "vitest";
+import { QuoteRequestInput } from "@weave-order/schema";
 import { createQuoteAgentGraph, toQuoteAgentResult } from "../src/agent";
 import { LocalRuleLlmProvider } from "../src/platform/llm";
 import type { Tools } from "../src/tools";
@@ -36,6 +37,8 @@ const customer = {
   contactPhone: null,
   contactEmail: null,
 };
+
+const imageCalls: unknown[] = [];
 
 const fakeTools = {
   getCustomerHistory: {
@@ -88,7 +91,10 @@ const fakeTools = {
       }),
   },
   searchFabricByImage: {
-    execute: () => Promise.resolve({ ok: true, data: { matches: [] } }),
+    execute: (input: unknown) => {
+      imageCalls.push(input);
+      return Promise.resolve({ ok: true, data: { matches: [] } });
+    },
   },
   suggestLinePrice: {
     execute: () =>
@@ -212,5 +218,44 @@ describe("找样 / 报价 agent（原话 → 候选 → DRAFT）", () => {
     expect(state.stage).toBe("FAILED");
     expect(state.failure?.code).toBe("INVALID_INPUT");
     expect(state.draft).toBeNull();
+  });
+});
+
+describe("找样图像输入的跨端契约", () => {
+  it("imageUrl 与 base64 二选一；移动端直传 URL 被接受", () => {
+    expect(
+      QuoteRequestInput.parse({
+        rawText: "这款棉的什么价",
+        imageUrl: "https://cdn.example.com/a.jpg",
+      }).imageUrl,
+    ).toBe("https://cdn.example.com/a.jpg");
+    expect(() =>
+      QuoteRequestInput.parse({
+        rawText: "这款棉的什么价",
+        imageUrl: "https://cdn.example.com/a.jpg",
+        image: { mimeType: "image/jpeg", base64: "abc" },
+      }),
+    ).toThrow(/二选一/);
+  });
+
+  it("图走 imageUrl 时 agent 原样交给 T-001，不转换成 base64", async () => {
+    imageCalls.length = 0;
+    const graph = buildGraph();
+    await graph.invoke(
+      {
+        threadId: "unit-image-url",
+        rawText: "这款 220g 棉的，要 500 米，什么价",
+        customerId: CUSTOMER_ID,
+        currency: "CNY",
+        imageUrl: "https://cdn.example.com/fabric.jpg",
+        topK: 3,
+      },
+      { configurable: { thread_id: "unit-image-url" } },
+    );
+    expect(imageCalls[0]).toMatchObject({
+      imageUrl: "https://cdn.example.com/fabric.jpg",
+      topK: 3,
+    });
+    expect(imageCalls[0]).not.toHaveProperty("image");
   });
 });
