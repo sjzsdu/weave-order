@@ -139,12 +139,9 @@ export class ShareService {
       });
     }
 
-    // 默认有效期 = 报价有效期（§7.6 规则 3）；
-    // 只有调用方显式传 expiresInDays 时才允许进一步缩短，绝不延长。
-    const explicitDays = typeof body === "object" && body !== null && "expiresInDays" in body;
-    const cap = new Date(now.getTime() + parsed.expiresInDays * DAY_MS);
-    const expiresAt =
-      explicitDays && cap.getTime() < quote.expiresAt.getTime() ? cap : quote.expiresAt;
+    // 有效期严格 = 报价有效期（§7.6 规则 3）。
+    // 契约里的 expiresInDays 仅为兼容旧客户端保留，不参与计算，避免移动端默认 14 天截断报价有效期。
+    const expiresAt = quote.expiresAt;
     const shareId = globalThis.crypto.randomUUID();
     const { token, tokenHash } = createShareToken(
       { t: this.tenantId, s: shareId },

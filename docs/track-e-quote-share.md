@@ -46,19 +46,19 @@ sequenceDiagram
 
 ## 3. 安全约束对照
 
-| 约束                | 落点                                                                           |
-| ------------------- | ------------------------------------------------------------------------------ |
-| 不存明文 token      | 只存 `sha256(token)`；明文只出现在 `CreatedQuoteShare.token/url`               |
-| 有效期 = 报价有效期 | `expiresAt = min(quote.expiresAt, now + expiresInDays)`；过期返回 410          |
-| 可撤回              | `revoked_at` + `REVOKED` 事件 + 审计 `QUOTE_SHARE_REVOKED`；撤回后 410         |
-| 只有已批准可分享    | `quote.status === "SENT"`，否则 `KERNEL_REJECTED / QUOTE_NOT_APPROVED`         |
-| 手机尾号验证        | 可选；比对 `customers.contact_phone` 后 4 位；不匹配 400                       |
-| 客户名水印          | 页面 + 打印版铺满「客户名 · 报价编号」                                         |
-| 不泄露内部字段      | 客户视图只 SELECT `CustomerQuoteView` 需要的列；测试断言无 cost/margin/remarks |
-| 接受 ≠ 合同         | 只写 `ACCEPTED` 事件；不更新 `quotes`；测试断言状态仍为 `SENT`                 |
-| IP 只存哈希         | `hashAnonymous(ip, QUOTE_SHARE_SECRET)`，不存明文                              |
-| 不写追踪 Cookie     | Next 路由无鉴权 Cookie；返回 `Cache-Control: no-store` + `noindex`             |
-| 跨租户隔离          | token 自带 tenantId；公开路由仍走 `withTenantSession`，不存在 owner 跨租户查询 |
+| 约束                | 落点                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| 不存明文 token      | 只存 `sha256(token)`；明文只出现在 `CreatedQuoteShare.token/url`                        |
+| 有效期 = 报价有效期 | `expiresAt = quote.expiresAt`；`expiresInDays` 仅旧客户端兼容保留，不参与计算；过期 410 |
+| 可撤回              | `revoked_at` + `REVOKED` 事件 + 审计 `QUOTE_SHARE_REVOKED`；撤回后 410                  |
+| 只有已批准可分享    | `quote.status === "SENT"`，否则 `KERNEL_REJECTED / QUOTE_NOT_APPROVED`                  |
+| 手机尾号验证        | 可选；比对 `customers.contact_phone` 后 4 位；不匹配 400                                |
+| 客户名水印          | 页面 + 打印版铺满「客户名 · 报价编号」                                                  |
+| 不泄露内部字段      | 客户视图只 SELECT `CustomerQuoteView` 需要的列；测试断言无 cost/margin/remarks          |
+| 接受 ≠ 合同         | 只写 `ACCEPTED` 事件；不更新 `quotes`；测试断言状态仍为 `SENT`                          |
+| IP 只存哈希         | `hashAnonymous(ip, QUOTE_SHARE_SECRET)`，不存明文                                       |
+| 不写追踪 Cookie     | Next 路由无鉴权 Cookie；返回 `Cache-Control: no-store` + `noindex`                      |
+| 跨租户隔离          | token 自带 tenantId；公开路由仍走 `withTenantSession`，不存在 owner 跨租户查询          |
 
 ## 4. 接口
 
