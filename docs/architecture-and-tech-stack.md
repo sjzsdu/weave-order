@@ -1,6 +1,6 @@
 # 织序 WeaveOrder · 整体架构设计与技术选型
 
-> 版本：v1.0 ｜ 日期：2026-11-12 ｜ 作者：鲁班（首席架构师）
+> 版本：v1.1 ｜ 日期：2026-11-12 ｜ 作者：鲁班（首席架构师）
 > 依据：`docs/product-design.md`（v1.8）。本文只做架构与技术选型，不沿用任何既有代码实现；与产品文档冲突处以产品决策为准。
 > 设计原则：KISS、一个产品一个仓库、managed service 优先、单人可维护、基础设施成本可控。
 
@@ -42,18 +42,18 @@
 | 前端（E1/E2/E3 同构） | **Next.js 15（App Router）+ React 19 + TypeScript + TailwindCSS + shadcn/ui** | 一套代码双布局；E3 报价页需要 SSR/ISR 保证加载速度与品牌感；全栈 TS 单人可维护 |
 | 桌面外设壳（P3） | **Tauri 2** | 只暴露 print/scan/readFile/电子秤，业务 UI 仍从 Web 加载 |
 | 平台管理端（E4） | **Next.js 15 独立应用**（同仓库 `apps/admin`，复用 UI 包，隔离部署） | 独立产品，物理/逻辑隔离，强制 MFA |
-| 打印代理（E5） | **Tauri 2（Rust）+ WebView 2 UI** | 常驻托盘、WSS 出站、自动更新、轻量；Electron 作为打印驱动生态兜底备选 |
+| 打印代理（E5） | **Tauri 2（Rust）+ WebView 2 UI**（已定） | 常驻托盘、WSS 出站、自动更新、轻量 |
 | 后端 API / 内核 | **NestJS 10+（TypeScript）模块化单体** | 依赖注入、Guard（租户上下文注入）、Pipe（Zod）、模块边界清晰，符合「内核 / 工具 / agent」铁律 |
 | 智能体编排 | **LangGraph.js**（状态机 + PostgreSQL 检查点，工具调用 Zod 校验） | 可观测、可检查点、可恢复，适合「跑到只剩一个决定」 |
 | 数据库 | **PostgreSQL 16 + pgvector** | RLS 行级隔离、JSONB 配置、向量检索 |
 | ORM | **Drizzle ORM**（TS 优先） | 类型安全、迁移 SQL 可控 |
 | 缓存 / 队列 | **Redis 7**（缓存）+ **BullMQ**（打印队列 / 异步任务） | 幂等 job、租户前缀 key |
-| 对象存储 | **S3 兼容（阿里云 OSS / MinIO）** | 图片直传、PDF 快照，tenant 前缀隔离 |
+| 对象存储 | **S3 兼容（腾讯云 COS / MinIO）** | 图片直传、PDF 快照，tenant 前缀隔离 |
 | 身份认证 | **Casdoor**（自托管 `sso.wnbgj.com`） | 不自研登录，一个租户一个 Organization |
-| LLM 网关 | **LiteLLM Proxy**（自托管） | 多模型、虚拟 Key、预算、用量日志最全 |
+| LLM 网关 | **LiteLLM Proxy**（自托管） | 多模型、虚拟 Key、预算、用量日志最全；默认模型 DeepSeek |
 | 搜索 | PostgreSQL FTS + pgvector（起步），后接 Meilisearch/OpenSearch（可选） | 先不做额外组件 |
 | 监控 | **Uptime Kuma + Plausible**（或 Sentry + Prometheus/Grafana） | 成本低、可自托管 |
-| 部署 | **国内云（阿里云 ECS/RDS/OSS）容器化**；开发期可用 Railway/Vercel 快速验证 | 目标客户在国内，域名 `.cn` 需备案；.cn 访问稳定优先 |
+| 部署 | **腾讯云（CVM/RDS/COS/短信）容器化**；开发期可用 Railway/Vercel 快速验证 | 目标客户在国内，域名 `.cn` 需备案；.cn 访问稳定优先 |
 
 ---
 
@@ -89,12 +89,12 @@
 ### E5 打印代理（Print Agent）
 
 - **形态**：本地常驻桌面小程序，Windows 优先（后续 macOS），托盘常驻、崩溃自启、签名静默升级、可回滚。
-- **技术**：**Tauri 2（Rust）+ WebView 2 UI**。
+- **技术**：**Tauri 2（Rust）+ WebView 2 UI**（已定，不再评估 Electron）。
   - 出站长连接：Rust `tokio-tungstenite` 建 WSS，**不开启入站端口**。
   - 打印：A4 PDF 走系统打印 / 内置 PDF 渲染；标签 ZPL/TSPL 走 RAW TCP（9100）直发；蓝牙便携机走 TSPL 协议。
   - 本地 spool：SQLite（`rusqlite`）或文件队列，任务载荷本地保留 ≤24h，`idempotency_key` 去重。
   - 自动更新：`tauri-plugin-updater` + 代码签名，灰度、可回滚。
-- **兜底**：若 Rust 打印驱动生态（特殊针式/网络打印机）踩坑，退 **Electron + `pdf-to-printer` / `node-printer`**，UI 与协议不变。
+- **兜底**：打印驱动生态（特殊针式/网络打印机）踩坑时，保留浏览器 PDF 兜底路径（§4.4 设备选型），不引入第二套运行时。
 - **安全**：注册拿「只能打印、不能读业务数据」的 token；不落客户数据；日志脱敏、可一键清空。
 
 ---
@@ -131,11 +131,11 @@ flowchart TB
     PG["PostgreSQL 16 + pgvector<br/>共享库 + RLS（升级 schema/独立库）"]
     PG2["控制面库<br/>platform schema（与租户库分离）"]
     RD["Redis 7<br/>缓存（t:前缀）+ BullMQ 队列"]
-    OSS["对象存储 S3/OSS<br/>tenant/<id> 前缀隔离"]
+    OSS["对象存储 S3/COS<br/>tenant/<id> 前缀隔离"]
   end
 
   LLM["LLM Router<br/>LiteLLM Proxy<br/>虚拟Key / 预算 / 计量"]
-  EXT["模型厂商<br/>qwen-plus / qwen-max / deepseek-chat<br/>客户自定义端点 vLLM"]
+  EXT["模型厂商<br/>deepseek-chat / deepseek-reasoner<br/>客户自定义端点 vLLM"]
 
   D --> GW
   M --> GW
@@ -164,7 +164,7 @@ flowchart TB
 
 ## 6. 身份与授权
 
-- 认证全交 Casdoor（`sso.wnbgj.com`）：一个租户 = 一个 Organization；一个产品 = 一个 Application（`weave-order`）；平台 = 独立 Application（`weave-platform`）+ 强制 MFA。
+- 认证全交 Casdoor（`sso.wnbgj.com`，**已部署就绪**）：一个租户 = 一个 Organization；一个产品 = 一个 Application（`weave-order`）；平台 = 独立 Application（`weave-platform`）+ 强制 MFA。
 - 后端只做授权：`(sub, org)` 查本地 `memberships`（角色 / 数据范围 / 阈值），`tenant_id` 以本地 membership 为准，不信任前端。
 - 令牌校验：RS256 + JWKS，issuer/audience/exp/nonce；access 15 分钟、refresh 7 天；`client_secret` 只存服务端环境变量/KMS，前端不存 token。
 
@@ -173,14 +173,14 @@ flowchart TB
 ## 7. LLM 接入
 
 - 所有 agent 走 LiteLLM Proxy，不直连厂商；密钥只存服务端，每租户虚拟 Key + 模型白名单 + 预算限额 + 重试/降级。
-- 默认模型：`qwen-plus`（日常报价/跟进）、`qwen-max`（复杂报价/对账）、`deepseek-chat`（备用/降级）；租户默认白名单只开前两个。
+- 默认模型：`deepseek-chat`（日常报价/跟进，**默认**）、`deepseek-reasoner`（复杂报价/对账）、`qwen-plus`（备用/降级，后台可配）；租户默认白名单只开 `deepseek-chat` + `deepseek-reasoner`。
 - token 只计量不收费：`usage` 幂等落 `token_usage`，每日汇总 `usage_monthly`，按采购价做成本/毛利看板；敏感字段出网前脱敏。
 
 ---
 
 ## 8. 部署与基础设施
 
-- **国内为主**（目标客户国内，`.cn` 需备案）：阿里云 ECS（容器化，K8s 或轻量 Docker Compose）+ RDS PostgreSQL（pgvector）+ OSS + 短信服务。
+- **国内为主**（目标客户国内，`.cn` 需备案）：**腾讯云** CVM（容器化，轻量 Docker Compose 起步，后接 K8s）+ CDB PostgreSQL（pgvector）+ COS + 短信服务。
 - **开发/验证期**可用 Railway / Fly.io / Vercel 快速起环境（前端 Vercel，后端 Railway）。
 - 打印代理：一个安装包、扫码绑定、自动发现打印机、打测试页，5 分钟装完。
 
@@ -190,8 +190,8 @@ flowchart TB
 
 | 项 | 估算 | 备注 |
 | --- | --- | --- |
-| 计算（API + 3 个前端 + LiteLLM + 打印网关） | ¥300–600 | 2–3 台小规格 ECS |
-| RDS PostgreSQL + Redis | ¥200–400 | 起步共享实例 |
+| 计算（API + 3 个前端 + LiteLLM + 打印网关） | ¥300–600 | 2–3 台小规格 CVM |
+| CDB PostgreSQL + Redis | ¥200–400 | 起步共享实例 |
 | 对象存储 + CDN | ¥50–150 | 图片/PDF 快照 |
 | LLM 用量 | 随量（¥0–3,000+） | 按租户采购价核算，占比控在收入 15% 内 |
 | Casdoor + Uptime Kuma + Plausible | ~¥100 | 自托管 |
@@ -210,13 +210,13 @@ flowchart TB
 
 ---
 
-## 11. 待拍板与风险
+## 11. 已拍板与风险
 
-**需拍板（架构相关）**：
-1. 部署云与备案主体（建议阿里云，ICP 备案 + 短信签名）。
-2. 打印代理最终落地 Tauri 2 还是 Electron（建议先 Tauri 2，P1 打印驱动验收后再定）。
-3. Casdoor 自托管运维归属与多副本 + 每日备份是否到位。
-4. LLM 默认供应商是否确定阿里百炼 + DeepSeek 备用。
+**已拍板（v1.1 决策）**：
+1. 部署云：**腾讯云**（CVM/CDB/COS/短信），ICP 备案 + 短信签名。
+2. 打印代理：**Tauri 2**（不再评估 Electron）。
+3. Casdoor：**已部署就绪**（`sso.wnbgj.com`），无需再定。
+4. LLM 默认供应商：**DeepSeek**（`deepseek-chat` 默认 + `deepseek-reasoner` 复杂场景）。
 
 **主要风险与对策**（详见 §16）：
 - 共享库漏加租户条件 → RLS 强制 + 应用角色无 BYPASSRLS + CI 跨租户互查。
