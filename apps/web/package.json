@@ -2,31 +2,32 @@
   "name": "@weave-order/web",
   "version": "0.0.0",
   "private": true,
-  "description": "React 18 + Vite 前端（Web + H5 按路由区分）",
+  "description": "E1 租户端桌面 + E3 客户报价页（Next.js 15 App Router）",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
-    "dev": "vite",
+    "build": "next build",
+    "dev": "next dev --port 3001",
+    "start": "next start --port 3001",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint app src"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.3.1",
-    "@radix-ui/react-tabs": "^1.2.1",
+    "@tanstack/react-query": "^5.90.2",
+    "@weave-order/core": "workspace:*",
     "@weave-order/schema": "workspace:*",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zustand": "^5.1.0"
+    "@weave-order/ui": "workspace:*",
+    "next": "^15.5.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
     "autoprefixer": "^10.6.2",
     "postcss": "^8.5.32",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
-    "vite": "^5.4.21",
     "vitest": "^3.2.7"
   }
 }

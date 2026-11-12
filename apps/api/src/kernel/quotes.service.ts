@@ -1,7 +1,13 @@
-import { quoteItems, quotes } from "@weave-order/db";
+import { draftRevisions, quoteItems, quotes } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { ApprovalItem, T004GenerateQuoteDraftInput } from "@weave-order/schema";
-import type { QuoteConfirmation, QuoteDraft, QuoteLineItem } from "@weave-order/schema";
+import type {
+  JsonValue,
+  QuoteConfirmation,
+  QuoteDraft,
+  QuoteLineItem,
+  RevisionDiff,
+} from "@weave-order/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
@@ -216,6 +222,40 @@ export class QuoteService {
     return mapQuote(row, items);
   }
 
+  /**
+   * 审批卡的逐行 diff：读 draft_revisions 的 before/after，摊平成字段级。
+   * 没有修订记录时返回空数组（智能体原稿，未被人改过）。
+   */
+  async listDiffs(quoteId: string): Promise<RevisionDiff[]> {
+    const rows = await this.db
+      .select()
+      .from(draftRevisions)
+      .where(
+        and(
+          eq(draftRevisions.tenantId, this.tenantId),
+          eq(draftRevisions.entityType, "quote"),
+          eq(draftRevisions.entityId, quoteId),
+        ),
+      )
+      .orderBy(asc(draftRevisions.version));
+
+    const diffs: RevisionDiff[] = [];
+    for (const row of rows) {
+      const before = asRecord(row.before);
+      const after = asRecord(row.after);
+      const patch = asRecord(row.patch);
+      const keys = new Set([...Object.keys(patch), ...Object.keys(before), ...Object.keys(after)]);
+      for (const key of keys) {
+        diffs.push({
+          field: `${key} · v${row.version}`,
+          before: before[key] ?? null,
+          after: after[key] ?? null,
+        });
+      }
+    }
+    return diffs;
+  }
+
   /** 人类审批窗口确认报价草稿：DRAFT -> SENT。智能体无权确认。 */
   async confirmDraft(quoteId: string, ctx: KernelContext): Promise<QuoteConfirmation> {
     if (ctx.actor.type !== "HUMAN") {
@@ -345,4 +385,11 @@ export class QuoteService {
     });
     return { status: "REJECTED" };
   }
+}
+
+function asRecord(value: JsonValue): Record<string, JsonValue> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { value };
+  }
+  return value;
 }

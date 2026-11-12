@@ -1,51 +1,45 @@
-import type { CSSProperties, ReactNode } from "react";
-import { draftVisual, tokens } from "./tokens";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { draftClassName } from "./tokens";
 import type { DraftState } from "./tokens";
 
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
 
-const buttonBase: CSSProperties = {
-  fontFamily: tokens.font.sans,
-  fontSize: tokens.fontSize.md,
-  borderRadius: tokens.radius.md,
-  padding: `${tokens.space.sm}px ${tokens.space.lg}px`,
-  border: `1px solid ${tokens.color.line}`,
-  cursor: "pointer",
-  background: tokens.color.surface,
-  color: tokens.color.ink,
-};
+const BUTTON_VARIANTS = {
+  primary: "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700",
+  secondary: "bg-surface text-ink-900 border-line hover:bg-paper",
+  ghost: "bg-transparent text-ink-700 border-transparent hover:bg-paper",
+  danger: "bg-vermilion-600/10 text-vermilion-600 border-vermilion-600/40 hover:bg-vermilion-600/15",
+} as const;
 
+export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
+
+export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type"> {
+  variant?: ButtonVariant;
+  type?: "button" | "submit";
+  children: ReactNode;
+}
+
+/** 触控目标 ≥ 44px；主操作只有一个（由页面保证）。 */
 export function Button({
   children,
   variant = "secondary",
-  disabled,
-  onClick,
+  className,
   type = "button",
-}: {
-  children: ReactNode;
-  variant?: "primary" | "secondary" | "danger";
-  disabled?: boolean;
-  onClick?: () => void;
-  type?: "button" | "submit";
-}) {
-  const variantStyle: CSSProperties =
-    variant === "primary"
-      ? { background: tokens.color.accent, borderColor: tokens.color.accent, color: "#fff" }
-      : variant === "danger"
-        ? {
-            background: tokens.color.dangerSoft,
-            borderColor: tokens.color.danger,
-            color: tokens.color.danger,
-          }
-        : {};
+  ...rest
+}: ButtonProps) {
   return (
     <button
       type={type}
-      disabled={disabled}
-      onClick={onClick}
-      style={{ ...buttonBase, ...variantStyle, opacity: disabled ? 0.5 : 1 }}
+      className={cn(
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-4 text-sm font-medium",
+        "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600/40",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        BUTTON_VARIANTS[variant],
+        className,
+      )}
+      {...rest}
     >
       {children}
     </button>
@@ -57,30 +51,26 @@ export function Card({
   state = "confirmed",
   version,
   title,
+  className,
 }: {
   children: ReactNode;
   state?: DraftState;
   version?: number;
   title?: ReactNode;
+  className?: string;
 }) {
   return (
     <section
-      style={{
-        ...draftVisual[state],
-        borderRadius: tokens.radius.lg,
-        boxShadow: tokens.shadow.card,
-        padding: tokens.space.lg,
-        fontFamily: tokens.font.sans,
-        color: tokens.color.ink,
-      }}
+      data-state={state}
+      className={cn("rounded-lg p-5 text-ink-900 shadow-card", draftClassName[state], className)}
     >
-      {(title || version) && (
-        <header style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ fontWeight: 600 }}>{title}</div>
+      {(title || version !== undefined) && (
+        <header className="mb-3 flex items-start justify-between gap-4">
+          <div className="text-base font-semibold">{title}</div>
           {version !== undefined && (
-            <span style={{ color: tokens.color.inkMuted, fontSize: tokens.fontSize.xs }}>
+            <span className="text-xs text-ink-400">
               v{version}
-              {state === "draft" ? " · 草稿" : ""}
+              {state === "draft" ? " · 草稿" : state === "rejected" ? " · 已驳回" : ""}
             </span>
           )}
         </header>
@@ -90,47 +80,59 @@ export function Card({
   );
 }
 
-const badgePalette = {
-  neutral: { background: tokens.color.bg, color: tokens.color.inkMuted },
-  success: { background: tokens.color.accentSoft, color: tokens.color.accent },
-  warning: { background: tokens.color.warnSoft, color: tokens.color.warn },
-  danger: { background: tokens.color.dangerSoft, color: tokens.color.danger },
-  info: { background: tokens.color.infoSoft, color: tokens.color.info },
+const BADGE_TONES = {
+  neutral: "bg-paper text-ink-700",
+  info: "bg-indigo-100 text-indigo-600",
+  success: "bg-moss-600/10 text-moss-600",
+  warning: "bg-amber-600/10 text-amber-600",
+  danger: "bg-vermilion-600/10 text-vermilion-600",
 } as const;
 
 export function Badge({
   children,
   tone = "neutral",
+  className,
 }: {
   children: ReactNode;
-  tone?: keyof typeof badgePalette;
+  tone?: keyof typeof BADGE_TONES;
+  className?: string;
 }) {
   return (
     <span
-      style={{
-        ...badgePalette[tone],
-        borderRadius: tokens.radius.pill,
-        padding: "2px 10px",
-        fontSize: tokens.fontSize.xs,
-        fontFamily: tokens.font.sans,
-        whiteSpace: "nowrap",
-      }}
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs",
+        BADGE_TONES[tone],
+        className,
+      )}
     >
       {children}
     </span>
   );
 }
 
-export function MoneyText({ children }: { children: ReactNode }) {
+export function Spinner({ label = "加载中" }: { label?: string }) {
   return (
-    <span
-      style={{
-        fontFamily: tokens.font.mono,
-        fontVariantNumeric: "tabular-nums",
-        textAlign: "right",
-      }}
-    >
-      {children}
+    <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-sm text-ink-400">
+      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line border-t-indigo-600" />
+      {label}
     </span>
+  );
+}
+
+export function EmptyState({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
+      <p className="text-sm font-medium text-ink-900">{title}</p>
+      {description && <p className="mt-1 text-sm text-ink-400">{description}</p>}
+      {actions && <div className="mt-4 flex justify-center gap-2">{actions}</div>}
+    </div>
   );
 }

@@ -12,3 +12,6 @@ coverage/
 # Taro / SWC 构建缓存
 .swc/
 .taro/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

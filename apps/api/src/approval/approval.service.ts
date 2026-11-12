@@ -1,4 +1,5 @@
 import {
+  ApprovalDetail,
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
@@ -6,13 +7,15 @@ import {
   PanoramaStats,
 } from "@weave-order/schema";
 import type {
+  ApprovalDetail as Detail,
   ApprovalDecisionResult as DecisionResult,
   ApprovalItem,
+  ApprovalKind,
   PanoramaSnapshot as Panorama,
   ToolError,
   ZodIssueSummary,
 } from "@weave-order/schema";
-import { isKernelError } from "../kernel";
+import { formatMoney, isKernelError } from "../kernel";
 import type { Kernel, KernelContext } from "../kernel";
 
 /**
@@ -82,6 +85,159 @@ export function createApprovalService(kernel: Kernel) {
         .filter((entry) => entry.pending)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return ApprovalQueue.parse({ items });
+    },
+
+    /**
+     * 审批卡详情：出处 / 生效值 / diff 一次聚合。
+     * 只读，不落账；金额与风险全部由后端给出，前端只展示。
+     */
+    async detail(id: string, kind: ApprovalKind): Promise<Detail | null> {
+      const [quotes, shipments] = await Promise.all([
+        kernel.quotes.list(100),
+        kernel.shipments.list(100),
+      ]);
+      const item = [...quotes, ...shipments].find(
+        (entry) => entry.id === id && entry.kind === kind,
+      );
+      if (!item) return null;
+
+      const [customer, audit] = await Promise.all([
+        kernel.customers.getById(item.customerId).catch(() => null),
+        kernel.audit.list(20),
+      ]);
+
+      if (kind === "quote") {
+        const draft = await kernel.quotes.getDraft(id).catch(() => null);
+        if (!draft) return null;
+        const samples = await kernel.samples.getManyByIds(
+          draft.items.map((line) => line.fabricSampleId),
+        );
+        const diffs = await kernel.quotes.listDiffs(id);
+        const currency = draft.currency;
+
+        const provenance: Detail["provenance"] = draft.items.flatMap((line, index) => {
+          const sample = samples.get(line.fabricSampleId);
+          const entries: Detail["provenance"] = [
+            {
+              id: `line-${index}-kernel`,
+              kind: "AGENT",
+              label: `第 ${index + 1} 行单价`,
+              value: formatMoney(line.unitPrice),
+              detail: "内核按整数分重算：单价 × 数量，智能体不得直接填写总额。",
+              sourceRef: null,
+            },
+          ];
+          if (sample?.costFloor) {
+            entries.push({
+              id: `line-${index}-cost`,
+              kind: "COST",
+              label: "成本底线",
+              value: formatMoney(sample.costFloor),
+              detail: `样品 ${sample.code} 的硬边界；低于此线内核直接拒绝。`,
+              sourceRef: null,
+            });
+          }
+          return entries;
+        });
+
+        provenance.push({
+          id: "customer-tier",
+          kind: "CUSTOMER",
+          label: "客户背景",
+          value: customer ? `${customer.name} · ${customer.tier}` : "客户信息不可见",
+          detail: customer
+            ? `客户编号 ${customer.code}；报价有效性 ${draft.validityDays} 天。`
+            : null,
+          sourceRef: null,
+        });
+
+        const nearFloor = draft.items.some((line) => {
+          const floor = samples.get(line.fabricSampleId)?.costFloor;
+          if (!floor || floor.amount === 0) return false;
+          return line.unitPrice.amount <= Math.ceil(floor.amount * 1.05);
+        });
+        const highValue = draft.total.amount >= 5_000_000;
+
+        return ApprovalDetail.parse({
+          item,
+          customer,
+          draft: {
+            state: item.pending ? "DRAFT" : "CONFIRMED",
+            version: diffs.length > 0 ? diffs.length + 1 : 1,
+            revisedByHuman: diffs.length > 0,
+            revisionCount: diffs.length > 0 ? 1 : 0,
+          },
+          lines: draft.items.map((line, index) => ({
+            id: `${draft.id}-${index}`,
+            description: line.description,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            lineTotal: line.lineTotal,
+          })),
+          subtotal: draft.subtotal,
+          total: draft.total,
+          currency,
+          provenance,
+          diffs,
+          missingFields: draft.remarks
+            ? []
+            : [
+                {
+                  field: "remarks",
+                  label: "报价备注",
+                  hint: "补充交期或付款条件会更完整",
+                },
+              ],
+          risk: {
+            level: nearFloor ? "HIGH" : highValue ? "MEDIUM" : "LOW",
+            reasons: nearFloor
+              ? ["有报价行贴近成本底线"]
+              : highValue
+                ? ["单笔金额超过 5 万元"]
+                : [],
+          },
+          audit,
+        });
+      }
+
+      const shipment = await kernel.shipments.getById(id).catch(() => null);
+      if (!shipment) return null;
+      return ApprovalDetail.parse({
+        item,
+        customer,
+        draft: {
+          state: item.pending ? "DRAFT" : "CONFIRMED",
+          version: 1,
+          revisedByHuman: false,
+          revisionCount: 0,
+        },
+        lines: [],
+        subtotal: null,
+        total: null,
+        currency: item.currency ?? "CNY",
+        provenance: [
+          {
+            id: "shipment-channel",
+            kind: "AGENT",
+            label: "寄样方式",
+            value: shipment.channel,
+            detail: shipment.note ?? "智能体按客户历史偏好建议的寄样方式。",
+            sourceRef: null,
+          },
+        ],
+        diffs: [],
+        missingFields: shipment.trackingNumber
+          ? []
+          : [
+              {
+                field: "trackingNumber",
+                label: "运单号",
+                hint: "补一下就能继续跟踪",
+              },
+            ],
+        risk: { level: "LOW", reasons: [] },
+        audit,
+      });
     },
 
     /** 批准 / 拒绝：唯一的人类决策入口，内部落到内核 confirm / reject。 */

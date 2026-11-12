@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Inject, Post, Query } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+} from "@nestjs/common";
+import { ApprovalKind } from "@weave-order/schema";
 import type { ApprovalService } from "../approval";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
@@ -116,6 +127,24 @@ export class ApprovalController {
   @Get()
   async list() {
     return this.approval.listPending();
+  }
+
+  /** 审批卡详情：出处 / diff / 草稿态，一次只读聚合。 */
+  @Get(":id")
+  async detail(@Param("id") id: string, @Query("kind") kind?: string) {
+    const parsed = ApprovalKind.safeParse(kind);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        error: { code: "INVALID_INPUT", message: "kind 必须是 quote 或 sample_shipment" },
+      });
+    }
+    const detail = await this.approval.detail(id, parsed.data);
+    if (!detail) {
+      throw new NotFoundException({
+        error: { code: "NOT_FOUND", message: "审批单据不存在或已不在可查看范围" },
+      });
+    }
+    return detail;
   }
 
   @Post("decide")

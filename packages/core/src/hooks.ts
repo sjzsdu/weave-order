@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ApprovalDecisionInput } from "@weave-order/schema";
+import type { ApprovalDecisionInput, ApprovalKind } from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
 
 /** 统一的 query key，避免各端自造字符串。 */
@@ -8,6 +8,7 @@ export const queryKeys = {
   customers: (limit: number) => ["customers", limit] as const,
   panorama: ["panorama"] as const,
   approvals: ["approvals"] as const,
+  approvalDetail: (id: string, kind: ApprovalKind) => ["approvals", id, kind] as const,
   audit: (limit: number) => ["audit", limit] as const,
 };
 
@@ -30,6 +31,14 @@ export function useApprovals(client: ApiClient) {
   return useQuery({ queryKey: queryKeys.approvals, queryFn: () => client.approvals() });
 }
 
+export function useApprovalDetail(client: ApiClient, id: string | null, kind: ApprovalKind) {
+  return useQuery({
+    queryKey: queryKeys.approvalDetail(id ?? "none", kind),
+    queryFn: () => client.approvalDetail(id as string, kind),
+    enabled: id !== null,
+  });
+}
+
 /**
  * 审批决策：成功后刷新审批队列与全景，保证「批完立刻消失」。
  * 失败不乐观更新（金额类动作不允许前端先行生效）。
@@ -38,10 +47,13 @@ export function useDecideApproval(client: ApiClient) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: ApprovalDecisionInput) => client.decideApproval(input),
-    onSuccess: async () => {
+    onSuccess: async (_result, input) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.approvals }),
         queryClient.invalidateQueries({ queryKey: queryKeys.panorama }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.approvalDetail(input.id, input.kind),
+        }),
       ]);
     },
   });

@@ -17,7 +17,7 @@
 | 缓存与队列   | Redis 7                                                          |
 | 向量检索     | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW |
 | 智能体编排   | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）  |
-| 前端         | React 18 + TypeScript + Vite（Web + H5 按路由区分）              |
+| 前端         | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统；移动端 Taro |
 | 校验         | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）        |
 | 测试         | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）      |
 
@@ -37,9 +37,11 @@ weave-order/
 │   │   │   └── import/      # Excel/CSV 文件解析适配器（只解析、不写库，第六步）
 │   │   ├── scripts/         # demo / demo-followup / import-data 冷启动
 │   │   └── test/            # 边界 / 单元 / 内核集成 / HTTP e2e / 导入集成
-│   └── web/                 # React 18 + Zustand + Radix + Tailwind + Vite（三个窗口）
+│   └── web/                 # Next.js 15：三个业务窗口 + 组织设置 + /auth/callback（E1/E3）
 ├── packages/
 │   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源，含 import.ts）
+│   ├── core/                # 前端业务逻辑：API client / TanStack Query hooks / 离线队列
+│   ├── ui/                  # 设计系统：tokens + 16 组件（草稿态统一视觉）
 │   └── db/                  # Drizzle Schema、连接、SQL 迁移
 ├── data/seed/               # 冷启动样例数据（customers.csv / samples.csv / .xlsx）
 ├── docker-compose.yml       # PostgreSQL + pgvector、Redis
@@ -61,14 +63,18 @@ docker compose up -d
 pnpm seed          # 迁移 + 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
 pnpm demo          # 可选：迁移 + 内核演示 + 寄样跟进智能体（另造演示数据）
 
-# 4. 打开三个窗口（API 3000 + Vite 5173）
+# 4. 打开桌面三窗口（API 3000 + Next 3001）
 pnpm dev
-# → http://localhost:5173
+# → http://localhost:3001/today
 ```
 
-页面是**三个窗口**（Radix Tabs 切换）：任务派发（Intent Bar）、审批与异常分诊
-（Review Queue）、业务全景只读（Read-Only Panorama）。智能体只出 `DRAFT` / 建议；
-批准 / 拒绝是审批窗口里人类唯一的决策入口，前端才会调内核 confirm 生效（铁律 #2）。
+桌面端是**三个业务窗口 + 一个管理面**：工作台（⌘1）、审批（⌘2）、全景只读（⌘3）、
+组织设置（⌘,）。打印是全局抽屉，不是第四个窗口。智能体只出 `DRAFT` / 建议；
+批准 / 拒绝是审批窗口里人类唯一的决策入口，前端经 `/api/approvals/decide` 调内核 confirm 生效（铁律 #2）。
+
+首次本地预览可以不带后端：访问 `http://localhost:3001/today?demo=1` 使用 mock transport；
+真实联调时用 `GET /auth/dev` 写入 dev token（默认 `dev:demo:demo`），或配置 Casdoor 走
+`/auth/login` → `/auth/callback`（Authorization Code + PKCE，客户端不持有 secret）。
 
 `demo` 逐项展示：
 
@@ -89,7 +95,7 @@ pnpm dev
 
 ```bash
 pnpm build        # 构建
-pnpm dev          # api(3000) + web(5173)
+pnpm dev          # api(3000) + web(3001)
 pnpm lint         # 先构建契约包，再跑全仓 ESLint（含目录边界规则）
 pnpm typecheck    # 全仓类型检查
 pnpm test         # 单元 + 边界；有本地 PG 时内核/HTTP 集成测试自动启用
@@ -142,6 +148,7 @@ pnpm format       # Prettier
 | POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
 | POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
 | GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）    |
+| GET  | `/api/approvals/:id?kind=quote`     | 只读                          | 审批卡详情：出处 / diff / 草稿态        |
 | GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）  |
 | POST | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品 |
 
@@ -175,10 +182,13 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
   → GET /api/panorama 与审计流水立刻可见
 ```
 
-技术栈：React 18 + Zustand（共享只读状态与审批队列实时刷新）+ Radix UI（Tabs / Dialog）
+技术栈：Next.js 15 App Router + React 19 + Tailwind + `packages/ui` 设计系统。
 
-- Tailwind CSS + Vite。状态、契约（输入 / 结果 / 只读视图）全部来自 `packages/schema`，
-  前端不重复定义任何业务结构。
+- 数据与状态走 `packages/core`（TanStack Query hooks + API client），页面不裸 fetch；
+  契约（输入 / 结果 / 只读视图）全部来自 `packages/schema`，前端不重复定义任何业务结构。
+- 审批卡详情来自 `GET /api/approvals/:id?kind=`：出处、diff、草稿态由后端只读聚合。
+- 设计系统 16 组件在 `packages/ui`：`DraftCard` / `ApprovalSheet` / `DiffRow` / `ProvenanceChip` /
+  `MoneyText` / `RiskBadge` / `MissingFieldBadge` 等；草稿态统一「浅底 + 虚线边 + 版本号」。
 
 包公记录项处理：
 
@@ -200,7 +210,7 @@ SEED_RESET=1 pnpm seed   # 数据已存在：同事务重置 seed 行后重导�
 # 或换成 Excel 工作簿（含 customers / samples 两个 sheet）：
 IMPORT_XLSX=data/seed/weave-order-seed.xlsx pnpm seed
 pnpm demo          # 可选：内核演示 + 寄样跟进智能体（另造演示数据）
-pnpm dev           # http://localhost:5173
+pnpm dev           # http://localhost:3001
 ```
 
 - 来源：`data/seed/customers.csv` + `samples.csv`（CSV），或 `weave-order-seed.xlsx`
@@ -324,7 +334,7 @@ SEED_RESET=1 pnpm seed
 六步全部完成（P0 收尾）。第六步（Excel/CSV 导入 + 冷启动）已完成，累计包含前五步能力：
 
 - 确定性内核、工具接口层、LangGraph 编排、审计日志、目录边界 ESLint 规则（第一~四步）。
-- `apps/web` 三个窗口：Intent Bar / Review Queue / Read-Only Panorama（React 18 + Zustand + Radix + Tailwind）。
+- `apps/web` 桌面三窗口 + 组织设置（Next.js 15 + React 19 + `packages/ui` 设计系统）；审批卡带出处 / diff / 草稿态。
 - `apps/api/src/approval`：审批队列、批准 / 拒绝决策、业务全景聚合；只调用 kernel。
 - 批准 / 拒绝端到端：approval API → confirm / reject → 账本状态生效 → 全景 / 审计可见。
 - 包公记录项①：缺运单号改走明确业务错误码 `NO_TRACKING_NUMBER`（图入口校验）；记录项②仅在案未改。
