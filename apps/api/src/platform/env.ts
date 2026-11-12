@@ -31,7 +31,9 @@ const EnvSchema = z.object({
   CASDOOR_AUDIENCE: z.string().min(1).default("weave-order"),
   CASDOOR_JWKS_URI: z.string().url().optional(),
   /** 客户报价分享链接的站点根地址。 */
-  PUBLIC_APP_URL: z.string().url().default("http://localhost:5173"),
+  PUBLIC_APP_URL: z.string().url().default("http://localhost:5174"),
+  /** 客户报价链接的 HMAC 密钥；生产必须覆盖为 ≥32 字节随机值。 */
+  QUOTE_SHARE_SECRET: z.string().min(32).default("dev-only-quote-share-secret-change-me-0001"),
   /** T-001 imageUrl 变体允许取图的对象存储 / CDN 域名（逗号分隔）。 */
   MEDIA_ALLOWED_HOSTS: z.string().default(""),
   /** 按 URL 取图的最大字节数（默认 2MB，上限 10MB）。 */

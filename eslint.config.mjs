@@ -38,6 +38,8 @@ export default tseslint.config(
       "**/next-env.d.ts",
       "**/*.cjs",
       "**/.turbo/**",
+      "**/.next/**",
+      "**/next-env.d.ts",
       "**/coverage/**",
       "**/*.config.js",
       "**/*.config.mjs",

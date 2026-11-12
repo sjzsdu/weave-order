@@ -2,6 +2,7 @@ import { DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
+import { loadEnv } from "../platform/env";
 import { listAuditLog } from "./audit";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
@@ -15,6 +16,7 @@ import { ReceivableService } from "./receivables.service";
 import { RevisionService } from "./revisions.service";
 import { SampleService } from "./samples.service";
 import { SearchService } from "./search.service";
+import { ShareService } from "./shares.service";
 import { ShipmentService } from "./shipments.service";
 import { TenancyService } from "./tenancy.service";
 
@@ -24,6 +26,10 @@ export interface KernelOptions {
    * 未传时退回默认演示租户（仅本地演示 / 单租户脚本）。
    */
   tenantId?: string;
+  /** 客户报价链接签名密钥；缺省读 `QUOTE_SHARE_SECRET`。 */
+  shareSecret?: string;
+  /** 客户报价页站点根地址；缺省读 `PUBLIC_APP_URL`。 */
+  publicAppUrl?: string;
 }
 
 /**
@@ -55,6 +61,11 @@ export function createKernel(
   const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
+  const env = loadEnv();
+  const shares = new ShareService(db, tenantId, {
+    secret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
+    publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
+  });
 
   return {
     tenantId,
@@ -72,6 +83,7 @@ export function createKernel(
     quotePricing,
     llmSettings,
     usage,
+    shares,
     audit: {
       list: (limit?: number) => listAuditLog(db, limit, tenantId),
     },
@@ -81,6 +93,8 @@ export function createKernel(
 export type Kernel = ReturnType<typeof createKernel>;
 
 export { KernelError, isKernelError, errorChainMessage } from "./errors";
+export { QuoteLinkError } from "./shares.service";
+export { parseShareToken } from "./share-token";
 export type { KernelContext } from "./audit";
 export type { EmbeddingProvider } from "../platform/embedding";
 export { formatMoney } from "./money";

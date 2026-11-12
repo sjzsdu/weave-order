@@ -3,7 +3,8 @@ import type { Provider } from "@nestjs/common";
 import { GatewayModule } from "../gateway/gateway.module";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
-import { DatabaseProvider } from "../platform/database.provider";
+import { PublicShareService } from "../shares/public-share.service";
+import { AppDatabaseProvider, DatabaseProvider } from "../platform/database.provider";
 import { DatabaseModule } from "../platform/database.module";
 import { createTools } from "../tools";
 import { QuoteAgentService } from "./quote-agent.service";
@@ -22,7 +23,8 @@ import {
   QuoteAgentController,
 } from "./controllers";
 import { HumanActorService } from "./human-actor.service";
-import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
+import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
+import { HUMAN_ACTOR, KERNEL, PUBLIC_SHARE, QUOTE_AGENT, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
   {
@@ -46,6 +48,12 @@ const providers: Provider[] = [
     useFactory: (service: QuoteAgentService): QuoteAgentService => service,
     inject: [QuoteAgentService],
   },
+  {
+    provide: PUBLIC_SHARE,
+    useFactory: (database: AppDatabaseProvider): PublicShareService =>
+      new PublicShareService(database.pool),
+    inject: [AppDatabaseProvider],
+  },
 ];
 
 @Module({
@@ -62,6 +70,8 @@ const providers: Provider[] = [
     OrderController,
     RevisionController,
     QuoteAgentController,
+    PublicQuoteController,
+    QuoteSharesController,
   ],
   providers,
 })
