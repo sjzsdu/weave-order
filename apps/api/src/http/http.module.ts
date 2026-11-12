@@ -12,6 +12,7 @@ import {
   CatalogController,
   HealthController,
   ImportController,
+  MasterDataController,
   PanoramaController,
   QuoteController,
 } from "./controllers";
@@ -41,6 +42,7 @@ const providers: Provider[] = [
   controllers: [
     HealthController,
     CatalogController,
+    MasterDataController,
     QuoteController,
     AuditController,
     ApprovalController,

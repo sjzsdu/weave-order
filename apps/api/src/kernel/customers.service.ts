@@ -25,6 +25,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
 import { currencyOf, toIso } from "./mappers";
+import { trimTextFields } from "./normalize";
 
 const DEFAULT_PRICING_BEHAVIOR: PricingBehavior = {
   sensitivity: "MEDIUM",
@@ -81,8 +82,22 @@ function mapContext(row: ContextRow): CustomerContext {
 export class CustomerService {
   constructor(private readonly db: Db) {}
 
-  async create(input: unknown, ctx: KernelContext): Promise<Customer> {
-    const parsed = CreateCustomerInput.parse(input);
+  /**
+   * 创建客户。
+   *
+   * `options.uniqueName`：界面 / 人工录入路径的防重复录入开关 —— 同名客户直接拒绝。
+   * 演示脚本与批量导入保持原语义（同一家客户在不同批次下允许重复录入），
+   * 避免重复执行 `pnpm demo` 或补导数据被误拦。
+   */
+  async create(
+    input: unknown,
+    ctx: KernelContext,
+    options: { uniqueName?: boolean } = {},
+  ): Promise<Customer> {
+    const parsed = CreateCustomerInput.parse(
+      trimTextFields(input, ["code", "name", "contactName", "contactPhone", "contactEmail"]),
+    );
+    if (options.uniqueName) await this.assertNameAvailable(parsed.name);
     try {
       return await this.db.transaction((tx) => this.insertWithin(tx, parsed, ctx));
     } catch (error) {
@@ -92,6 +107,24 @@ export class CustomerService {
         });
       }
       throw error;
+    }
+  }
+
+  /**
+   * 界面录入的重名预检（只读）。
+   * 客户名不是唯一键（历史导入允许同名主体），因此这里用预检而不是数据库约束；
+   * 并发下的极小概率重名由产品层面的人工复核兜底，不阻塞正常录入。
+   */
+  private async assertNameAvailable(name: string): Promise<void> {
+    const rows = await this.db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.name, name))
+      .limit(1);
+    if (rows.length > 0) {
+      throw new KernelError("KERNEL_REJECTED", `客户名称已存在：${name}`, {
+        reason: "CUSTOMER_NAME_EXISTS",
+      });
     }
   }
 

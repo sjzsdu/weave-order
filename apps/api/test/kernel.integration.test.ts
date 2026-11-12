@@ -78,6 +78,63 @@ describe("确定性内核（集成）", () => {
     });
   }, 20_000);
 
+  it("建客户（界面录入）：同名被拒、全空白被拒，脚本路径不受影响", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const id = suffix();
+    const name = `重名客户-${id}`;
+    const first = await kernel.customers.create({ code: `IT-NAME-A-${id}`, name }, HUMAN, {
+      uniqueName: true,
+    });
+
+    await expect(
+      kernel.customers.create({ code: `IT-NAME-B-${id}`, name }, HUMAN, { uniqueName: true }),
+    ).rejects.toMatchObject({
+      code: "KERNEL_REJECTED",
+      details: { reason: "CUSTOMER_NAME_EXISTS" },
+    });
+
+    // 演示脚本 / 批量导入不传 uniqueName：历史行为不变（同名主体可以并存）。
+    const third = await kernel.customers.create({ code: `IT-NAME-C-${id}`, name }, HUMAN);
+    expect(third.id).not.toBe(first.id);
+
+    // 只敲空格 = 空：trim 之后由契约拒绝，不落一条空白客户。
+    const blank = await kernel.customers
+      .create({ code: `IT-BLANK-${id}`, name: "   " }, HUMAN, { uniqueName: true })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(blank).not.toBeNull();
+    expect((blank as { issues?: { path: (string | number)[] }[] }).issues?.[0]?.path).toEqual([
+      "name",
+    ]);
+  }, 20_000);
+
+  it("建样品：编号 / 名称 trim 后落库，非法计量单位被契约拒绝", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const id = suffix();
+    const sample = await kernel.samples.create(
+      { code: `  IT-NORM-${id}  `, name: "  测试布料  ", unit: "yard" },
+      HUMAN,
+    );
+    expect(sample.code).toBe(`IT-NORM-${id}`);
+    expect(sample.name).toBe("测试布料");
+    expect(sample.unit).toBe("yard");
+
+    const invalid = await kernel.samples
+      .create({ code: `IT-UNIT-${id}`, name: "非法单位布料", unit: "斤" }, HUMAN)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(invalid).not.toBeNull();
+    expect((invalid as { issues?: { path: (string | number)[] }[] }).issues?.[0]?.path).toEqual([
+      "unit",
+    ]);
+  }, 20_000);
+
   it("寄样单：智能体只能建 DRAFT，确认必须人类（铁律 #2）", async (ctx) => {
     if (!available) ctx.skip();
     const kernel = kernelOf();

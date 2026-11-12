@@ -95,8 +95,8 @@ export default function App() {
       </Tabs.Root>
 
       <footer className="mt-10 border-t border-line pt-4 text-xs text-muted">
-        架构铁律：只这三个窗口 · 不做逐条录入表单 · 智能体输出一律草稿 / 建议 · 前端不绕过 tools
-        直连内核或写业务表。
+        架构铁律：只这三个窗口 · 基础资料（客户 / 样品）内联录入，业务单据只由智能体产出草稿 ·
+        前端不绕过 tools 直连内核或写账本。
       </footer>
     </main>
   );

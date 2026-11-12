@@ -7,6 +7,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
 import { toIso } from "./mappers";
+import { trimTextFields } from "./normalize";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 
@@ -37,7 +38,9 @@ export class SampleService {
   ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
-    const parsed = CreateSampleInput.parse(input);
+    const parsed = CreateSampleInput.parse(
+      trimTextFields(input, ["code", "name", "composition", "weight"]),
+    );
     // 向量生成在写库前完成；provider 不可用时样品不会半写入。
     const embedding = await this.embedder.embedText(
       sampleEmbeddingText({

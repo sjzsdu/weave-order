@@ -3,6 +3,8 @@ import type {
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalItem,
+  CreateCustomerInput,
+  CreateSampleInput,
   Customer,
   FabricSample,
   PanoramaSnapshot,
@@ -43,6 +45,9 @@ export interface AppState {
   /** 一次拉取全部只读数据；审批队列的「实时更新」由此驱动。 */
   refresh: () => Promise<void>;
   decide: (input: ApprovalDecisionInput) => Promise<ApprovalDecisionResult>;
+  /** 建客户 / 建样品：主数据录入，成功后立刻刷新目录与全景。 */
+  createCustomer: (body: CreateCustomerInput) => Promise<Customer>;
+  createSample: (body: CreateSampleInput) => Promise<FabricSample>;
   generateQuoteDraft: (body: T004GenerateQuoteDraftInput) => Promise<T004GenerateQuoteDraftResult>;
   createSampleShipment: (
     body: T005CreateSampleShipmentInput,
@@ -110,6 +115,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
       await get().refresh();
     }
     return result;
+  },
+
+  createCustomer: async (body) => {
+    const result = await apiClient.createCustomer(body);
+    await get().refresh();
+    return result.data;
+  },
+
+  createSample: async (body) => {
+    const result = await apiClient.createSample(body);
+    await get().refresh();
+    return result.data;
   },
 
   generateQuoteDraft: async (body) => {

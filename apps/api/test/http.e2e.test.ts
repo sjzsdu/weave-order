@@ -228,6 +228,111 @@ describe("HTTP 面（e2e）", () => {
     expect(result.importedCustomers).toBe(0);
   });
 
+  it("POST /api/customers：界面录入客户成功、重名 409、空字段 400（不是 500）", async (ctx) => {
+    const database = db;
+    if (!available || !database) {
+      ctx.skip();
+      return;
+    }
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = `界面录入客户-${suffix}`;
+    const created = await fetch(`${baseUrl}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: `UI-C-${suffix}`, name, tier: "VIP" }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as {
+      ok: boolean;
+      data?: { id: string; name: string; tier: string; code: string };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.data?.name).toBe(name);
+    expect(body.data?.tier).toBe("VIP");
+
+    const customerId = body.data?.id ?? "";
+    const auditRows = await database
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, customerId));
+    const audit = auditRows.find((row) => row.action === "CUSTOMER_CREATED");
+    expect(audit?.actorType).toBe("HUMAN");
+    expect(audit?.after).toMatchObject({ name });
+
+    // 录入后 Panorama 立刻能看到（只读聚合里出现新客户）。
+    const panorama = await fetch(`${baseUrl}/api/panorama`);
+    const snapshot = (await panorama.json()) as { customers: { id: string }[] };
+    expect(snapshot.customers.map((row) => row.id)).toContain(customerId);
+
+    // 重名：409 + 可读原因，而不是 500。
+    const duplicate = await fetch(`${baseUrl}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: `UI-C2-${suffix}`, name }),
+    });
+    expect(duplicate.status).toBe(409);
+    const duplicateBody = (await duplicate.json()) as {
+      ok: boolean;
+      error?: { code: string; message: string };
+    };
+    expect(duplicateBody.ok).toBe(false);
+    expect(duplicateBody.error?.code).toBe("CUSTOMER_NAME_EXISTS");
+    expect(duplicateBody.error?.message).toContain("已存在");
+
+    // 空字段：400 + 「必填」。
+    const empty = await fetch(`${baseUrl}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "", name: "" }),
+    });
+    expect(empty.status).toBe(400);
+    const emptyBody = (await empty.json()) as {
+      ok: boolean;
+      error?: { code: string; message: string };
+    };
+    expect(emptyBody.error?.code).toBe("INVALID_INPUT");
+    expect(emptyBody.error?.message).toContain("必填");
+  });
+
+  it("POST /api/samples：样品录入进入只读目录，非法计量单位返回 400 可读提示", async (ctx) => {
+    if (!available) ctx.skip();
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const code = `UI-S-${suffix}`;
+    const created = await fetch(`${baseUrl}/api/samples`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code,
+        name: "界面录入面料",
+        composition: "100% 棉",
+        unit: "yard",
+        costFloor: { amount: 1200, currency: "CNY" },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as {
+      ok: boolean;
+      data?: { id: string; unit: string; costFloor: { amount: number } | null };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.data?.unit).toBe("yard");
+    expect(body.data?.costFloor?.amount).toBe(1200);
+
+    const catalog = await fetch(`${baseUrl}/api/samples?limit=100`);
+    const catalogBody = (await catalog.json()) as { samples: { id: string }[] };
+    expect(catalogBody.samples.map((row) => row.id)).toContain(body.data?.id);
+
+    const invalid = await fetch(`${baseUrl}/api/samples`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: `${code}-BAD`, name: "非法单位面料", unit: "斤" }),
+    });
+    expect(invalid.status).toBe(400);
+    const invalidBody = (await invalid.json()) as { error?: { code: string; message: string } };
+    expect(invalidBody.error?.code).toBe("INVALID_INPUT");
+    expect(invalidBody.error?.message).toContain("计量单位不合法");
+  });
+
   it("参数匹配工具走 HTTP，非法输入返回 INVALID_INPUT 而不是 500", async (ctx) => {
     if (!available) ctx.skip();
     const response = await fetch(`${baseUrl}/api/tools/search-by-spec`, {

@@ -3,6 +3,7 @@ import type { ApprovalService } from "../approval";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
 import { AGENT_CONTEXT, HUMAN_CONTEXT } from "./context";
+import { writeException } from "./errors";
 import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
@@ -72,6 +73,44 @@ export class QuoteController {
   @Post("tools/generate-quote-draft")
   async generateDraft(@Body() body: unknown) {
     return this.tools.generateQuoteDraft.execute(body, AGENT_CONTEXT);
+  }
+}
+
+/**
+ * 基础资料录入（阶段一）：空库冷启动的界面写入口。
+ *
+ * 只写主数据（customers / customer_contexts / samples / sample_embeddings），
+ * 不产出任何账本单据，因此不违反「智能体产出草稿、人类审批」的铁律 ——
+ * 报价单 / 寄样单仍然只能由工具产出 DRAFT。
+ *
+ * 固定 HUMAN 上下文：谁录入谁负责，审计里能查到 CUSTOMER_CREATED / SAMPLE_CREATED。
+ */
+@Controller("api")
+export class MasterDataController {
+  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+
+  /** 建客户：重名 / 编号重复回 409，字段不合法回 400，均带可读中文原因。 */
+  @Post("customers")
+  async createCustomer(@Body() body: unknown) {
+    try {
+      const customer = await this.kernel.customers.create(body, HUMAN_CONTEXT, {
+        uniqueName: true,
+      });
+      return { ok: true, data: customer };
+    } catch (error) {
+      throw writeException(error, "客户");
+    }
+  }
+
+  /** 建样品：计量单位只接受 meter / kilogram / yard / piece。 */
+  @Post("samples")
+  async createSample(@Body() body: unknown) {
+    try {
+      const sample = await this.kernel.samples.create(body, HUMAN_CONTEXT);
+      return { ok: true, data: sample };
+    } catch (error) {
+      throw writeException(error, "样品");
+    }
   }
 }
 
