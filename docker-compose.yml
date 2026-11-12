@@ -1,3 +1,17 @@
+# 织序 WeaveOrder 一键部署栈。
+#
+# 开发（只要 PG + Redis，配 pnpm dev）：
+#   docker compose up -d postgres redis
+# 一键起全套（PG + Redis + 迁移 + API + Web）：
+#   docker compose up -d --build
+#   curl http://localhost:3000/api/health   → {"ok":true,"database":"up"}
+#   http://localhost:8080                   → 三个窗口
+#
+# 空库冷启动的迁移由 migrate 服务负责：它跑 packages/db 的 Drizzle 迁移后退出，
+# api 只有在它成功退出（service_completed_successfully）之后才启动。
+
+name: weave-order
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -15,6 +29,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -29,6 +44,76 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+
+  # 一次性任务：把 Drizzle 迁移打到空库上，成功后退出。重复 up 是幂等的。
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: weave-order-api:local
+    command: ["node", "packages/db/dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://weave:weave@postgres:5432/weave_order
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: weave-order-api:local
+    environment:
+      DATABASE_URL: postgres://weave:weave@postgres:5432/weave_order
+      REDIS_URL: redis://redis:6379
+      PORT: 3000
+      NODE_ENV: production
+      # 默认全是本地确定性实现，零外部 key；接真实 provider 时在这里覆盖。
+      EMBEDDING_PROVIDER: local-stub
+      LLM_PROVIDER: local-rule
+      LOGISTICS_PROVIDER: local-deterministic
+      REPLY_SOURCE: local-scripted
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: weave-order-web:local
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
 
 volumes:
   weave_pgdata:

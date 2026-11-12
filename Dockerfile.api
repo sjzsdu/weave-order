@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1
+
+# 织序 API 镜像（NestJS）。
+#
+#   1. manifest  —— 只拷 workspace 的 package.json，让依赖层能独立命中缓存
+#   2. builder   —— 全量依赖 + 构建 schema / db / api（tsc）
+#   3. prod-deps —— 只装生产依赖：运行时镜像里没有 tsx / vitest / eslint / turbo
+#   4. runner    —— 只带 dist + drizzle 迁移 SQL + 生产 node_modules
+#
+# 迁移与启动是两个动作：compose 里由 migrate 服务先跑
+# `node packages/db/dist/migrate.js`，api 服务依赖它成功退出后再起。
+
+FROM node:22-alpine AS base
+# 版本必须与根 package.json 的 packageManager 字段一致。
+RUN corepack enable && corepack prepare pnpm@10.34.9 --activate
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=true
+WORKDIR /app
+
+FROM base AS manifest
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY packages/db/package.json packages/db/
+COPY packages/schema/package.json packages/schema/
+COPY packages/shared/package.json packages/shared/
+
+FROM manifest AS builder
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter @weave-order/api...
+COPY tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+# 先构建 workspace 依赖（schema → db），再构建 API。
+RUN pnpm --filter @weave-order/api... build
+
+FROM manifest AS prod-deps
+# 只装 API 及其 workspace 依赖的生产依赖：web 的 react/radix 之类不进 API 镜像。
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prod --filter @weave-order/api...
+
+FROM node:22-alpine AS runner
+ENV NODE_ENV=production \
+    PORT=3000
+WORKDIR /app
+
+# pnpm 的 node_modules 是符号链接结构：/app/node_modules/.pnpm 是唯一实体目录，
+# 各 workspace 包的 node_modules 里是指向它的相对链接。运行时必须原样保留这几层。
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=prod-deps /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=prod-deps /app/packages/schema/node_modules ./packages/schema/node_modules
+
+COPY apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+
+COPY packages/db/package.json ./packages/db/package.json
+COPY --from=builder /app/packages/db/dist ./packages/db/dist
+COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
+
+COPY packages/schema/package.json ./packages/schema/package.json
+COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
+
+USER node
+EXPOSE 3000
+CMD ["node", "apps/api/dist/main.js"]

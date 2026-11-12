@@ -1,0 +1,21 @@
+# 构建上下文忽略清单：镜像只需要 workspace 源码，不需要依赖、产物与文档。
+# .github 一并排除，改 workflow 不会让镜像构建缓存失效。
+node_modules
+**/node_modules
+**/dist
+.turbo
+**/.turbo
+coverage
+**/coverage
+.git
+.gitignore
+.github
+.vscode
+.idea
+docs
+data
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
