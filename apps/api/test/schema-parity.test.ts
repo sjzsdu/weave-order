@@ -4,14 +4,17 @@ import {
   CustomerTier,
   QuoteStatus,
   SampleShipmentStatus,
+  TokenScope,
   Unit,
 } from "@weave-order/schema";
 import {
   actorTypeEnum,
   currencyEnum,
   customerTierEnum,
+  deviceAuthStatusEnum,
   quoteStatusEnum,
   shipmentStatusEnum,
+  tokenScopeEnum,
   unitEnum,
 } from "@weave-order/db";
 
@@ -42,5 +45,13 @@ describe("数据库枚举与契约枚举一致", () => {
 
   it("审计 actor 类型", () => {
     expect(actorTypeEnum.enumValues).toEqual(["AGENT", "HUMAN", "SYSTEM"]);
+  });
+
+  it("凭据作用域", () => {
+    expect(tokenScopeEnum.enumValues).toEqual(TokenScope.options);
+  });
+
+  it("设备登录状态", () => {
+    expect(deviceAuthStatusEnum.enumValues).toEqual(["PENDING", "APPROVED", "CONSUMED", "DENIED"]);
   });
 });

@@ -20,7 +20,8 @@
     "demo": "turbo run migrate && turbo run demo && turbo run demo:followup",
     "seed": "turbo run migrate && turbo run seed",
     "lint:only": "eslint .",
-    "demo:followup": "turbo run demo:followup"
+    "demo:followup": "turbo run demo:followup",
+    "cli": "pnpm --filter @weave-order/cli dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

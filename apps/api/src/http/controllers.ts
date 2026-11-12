@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Inject, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
 import type { ApprovalService } from "../approval";
+import { RequireScope } from "../auth/auth.guard";
+import type { AuthRequest } from "../auth/auth.guard";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
-import { AGENT_CONTEXT, HUMAN_CONTEXT } from "./context";
+import { agentContext, humanContext } from "./context";
 import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
@@ -32,31 +34,43 @@ export class CatalogController {
   ) {}
 
   @Get("customers")
+  @RequireScope("read")
   async customers(@Query("limit") limit?: string) {
     const rows = await this.kernel.customers.list(clampLimit(limit, 20, 100));
     return { customers: rows };
   }
 
   @Get("samples")
+  @RequireScope("read")
   async samples(@Query("limit") limit?: string) {
     const rows = await this.kernel.search.listSamples(clampLimit(limit, 50, 200));
     return { samples: rows };
   }
 
   @Post("tools/search-by-spec")
-  async searchBySpec(@Body() body: unknown) {
-    return this.tools.searchFabricBySpec.execute(body, AGENT_CONTEXT);
+  @RequireScope("write")
+  async searchBySpec(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.tools.searchFabricBySpec.execute(body, agentContext(request));
   }
 
   @Post("tools/search-by-image")
-  async searchByImage(@Body() body: unknown) {
-    return this.tools.searchFabricByImage.execute(body, AGENT_CONTEXT);
+  @RequireScope("write")
+  async searchByImage(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.tools.searchFabricByImage.execute(body, agentContext(request));
   }
 
   /** 意图派发（Intent Bar）：建寄样单只能得到 DRAFT，确认走审批窗口。 */
   @Post("tools/create-sample-shipment")
-  async createSampleShipment(@Body() body: unknown) {
-    return this.tools.createSampleShipment.execute(body, AGENT_CONTEXT);
+  @RequireScope("write")
+  async createSampleShipment(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.tools.createSampleShipment.execute(body, agentContext(request));
+  }
+
+  /** 客户 360：读客户档案 + 最近报价 / 订单 / 样品，供 CLI / agent 在报价前取上下文。 */
+  @Post("tools/get-customer-history")
+  @RequireScope("read")
+  async getCustomerHistory(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.tools.getCustomerHistory.execute(body, agentContext(request));
   }
 }
 
@@ -70,8 +84,9 @@ export class QuoteController {
   constructor(@Inject(TOOLS) private readonly tools: Tools) {}
 
   @Post("tools/generate-quote-draft")
-  async generateDraft(@Body() body: unknown) {
-    return this.tools.generateQuoteDraft.execute(body, AGENT_CONTEXT);
+  @RequireScope("write")
+  async generateDraft(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.tools.generateQuoteDraft.execute(body, agentContext(request));
   }
 }
 
@@ -85,8 +100,9 @@ export class ImportController {
   constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
 
   @Post("import")
-  async importBatch(@Body() body: unknown) {
-    return this.kernel.importing.execute(body, HUMAN_CONTEXT);
+  @RequireScope("write")
+  async importBatch(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.kernel.importing.execute(body, humanContext(request));
   }
 }
 
@@ -96,6 +112,7 @@ export class AuditController {
   constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
 
   @Get("audit")
+  @RequireScope("read")
   async list(@Query("limit") limit?: string) {
     const entries = await this.kernel.audit.list(clampLimit(limit, 20, 200));
     return { entries };
@@ -108,19 +125,24 @@ export class AuditController {
  * 批准 / 拒绝是前端唯一的人类决策入口：控制器固定传入 HUMAN 上下文，
  * 由 approval 服务落到内核 confirm / reject，内核再校验 actor.type === "HUMAN"。
  * 前端拿不到内核句柄，也没有任何「直接改账本 / 绕过 tools」的端点。
+ *
+ * 通过 CLI 审批时必须持有一枚带 `approve` 作用域的 token：
+ * 登录默认签发的凭据没有这个作用域，避免 agent 自己批准自己。
  */
 @Controller("api/approvals")
 export class ApprovalController {
   constructor(@Inject(APPROVAL) private readonly approval: ApprovalService) {}
 
   @Get()
+  @RequireScope("read")
   async list() {
     return this.approval.listPending();
   }
 
   @Post("decide")
-  async decide(@Body() body: unknown) {
-    return this.approval.decide(body, HUMAN_CONTEXT);
+  @RequireScope("approve")
+  async decide(@Body() body: unknown, @Req() request: AuthRequest) {
+    return this.approval.decide(body, humanContext(request));
   }
 }
 
@@ -130,6 +152,7 @@ export class PanoramaController {
   constructor(@Inject(APPROVAL) private readonly approval: ApprovalService) {}
 
   @Get("panorama")
+  @RequireScope("read")
   async panorama() {
     return this.approval.panorama();
   }

@@ -1,6 +1,7 @@
 import type { Db } from "@weave-order/db";
 import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
+import { AccessService } from "./access.service";
 import { listAuditLog } from "./audit";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
@@ -22,6 +23,7 @@ export function createKernel(db: Db, embedder: EmbeddingProvider = createEmbeddi
   const quotes = new QuoteService(db, customers, samples);
   const search = new SearchService(db, embedder);
   const importing = new ImportService(db, customers, samples, embedder);
+  const access = new AccessService(db);
 
   return {
     customers,
@@ -30,6 +32,7 @@ export function createKernel(db: Db, embedder: EmbeddingProvider = createEmbeddi
     quotes,
     search,
     importing,
+    access,
     audit: {
       list: (limit?: number) => listAuditLog(db, limit),
     },

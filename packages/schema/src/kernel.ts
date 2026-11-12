@@ -102,6 +102,10 @@ export const AuditAction = z.enum([
   "QUOTE_DRAFT_GENERATED",
   "QUOTE_CONFIRMED",
   "QUOTE_REJECTED",
+  /** 用户侧凭据（WAN-78）：账号建立、token 签发、token 撤销。 */
+  "USER_CREATED",
+  "API_TOKEN_CREATED",
+  "API_TOKEN_REVOKED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

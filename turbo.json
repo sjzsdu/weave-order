@@ -7,7 +7,16 @@
     "PORT",
     "IMPORT_XLSX",
     "IMPORT_CUSTOMERS",
-    "IMPORT_SAMPLES"
+    "IMPORT_SAMPLES",
+    "PUBLIC_API_URL",
+    "AUTH_TOKEN_PEPPER",
+    "AUTH_REQUIRED",
+    "DEVICE_CODE_TTL_SECONDS",
+    "DEVICE_POLL_INTERVAL_SECONDS",
+    "WEAVE_SERVER",
+    "WEAVE_TOKEN",
+    "WEAVE_CONFIG_DIR",
+    "WEAVE_SKILL_PATH"
   ],
   "tasks": {
     "build": {
