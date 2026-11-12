@@ -56,7 +56,8 @@ flowchart LR
 
 ### 2.2 确认（`confirmDraft`）
 
-- 仅 HUMAN；`ctx.actor.role` 必须不低于单据要求（缺省按 OWNER，兼容本地/测试）。
+- 仅 HUMAN；`ctx.actor.role` 必须不低于单据要求。生产环境缺角色直接拒绝（fail-closed），
+  仅非生产环境为兼容 demo / 旧测试回退 OWNER。
 - 可选 `baseVersion`：审批人看到哪一版就确认哪一版，防止覆盖并发修改。
 - 同事务写 `QUOTE_CONFIRMED` 审计，记录 version / 总额 / 所需角色 / 改幅。
 
@@ -90,6 +91,8 @@ flowchart LR
   - `pricing.min_margin_pct` / `pricing.cost_floor_amount`：只允许**抬高**（MIN）
   - `approval.*`：只允许**压低**（MAX）
 - 下级策略试图放宽时被夹回，`ResolvedPricingValue.clamped = true`，`source` 指向真正生效的管控策略。
+- 夹取保留原始值形态：对象值（如 `{ marginPct: 20, unit: "percent" }`）只改数值字段，
+  不会降级成裸数字而丢失单位。
 - 任何解析结果都同时返回生效值、来源、完整继承链，审批卡上的数字可以点开看来源。
 
 ```ts
@@ -129,8 +132,11 @@ floor = ceil(base × (1 + minMarginPct / 100))
 | GET/POST | `/api/orders`、`/api/orders/:id/confirm`            | 订单草稿 / 确认                                |
 | GET/POST | `/api/receivables`、`/api/receivables/:id/payments` | 应收 / 收款                                    |
 
-> HTTP 层目前使用固定 `HUMAN_CONTEXT`（OWNER，本地/演示）。生产必须从网关注入
-> `RequestContext.role`，内核的角色校验才是真正的权限边界。
+> 人类写接口（改稿 / 审批 / 定价 / 订单 / 应收 / 改稿原因）统一走
+> `HumanActorService`：`Authorization: Bearer <token>` → Casdoor/Casdoor-dev 校验 →
+> 本地 membership → `KernelContext.actor.role`，并用该 membership 的租户会话执行
+> （RLS 生效）。生产环境缺 Bearer 令牌直接 401；仅非 production 且无令牌时回退
+> `DEV_HUMAN_CONTEXT`（OWNER，默认租户，供 demo/旧测试）。
 
 ## 6. 新增数据表 / 列
 

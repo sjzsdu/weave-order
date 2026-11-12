@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import {
+  ApprovalDecisionResult,
   ApprovalDecisionInput,
   QuoteApprovalView,
   ReviseQuoteDraftResult,
@@ -24,6 +25,8 @@ const DATABASE_URL =
 const HUMAN: KernelContext = {
   actor: { type: "HUMAN", id: "track-a-e2e-owner", role: "OWNER" },
 };
+const SYSTEM: KernelContext = { actor: { type: "SYSTEM", id: "track-a-e2e-system" } };
+const AGENT: KernelContext = { actor: { type: "AGENT", id: "track-a-e2e-agent" } };
 let app: INestApplication | null = null;
 let baseUrl = "";
 let db: Db | null = null;
@@ -58,6 +61,19 @@ async function postJson(path: string, body: unknown): Promise<{ ok: boolean; jso
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { ok: response.ok, json: await response.json() };
+}
+
+async function postJsonAuth(
+  path: string,
+  body: unknown,
+  authorization: string,
+): Promise<{ ok: boolean; json: unknown }> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: authorization },
     body: JSON.stringify(body),
   });
   return { ok: response.ok, json: await response.json() };
@@ -149,5 +165,121 @@ describe("Track A HTTP 面（真起服务 + 真连 PG）", () => {
     const outcome = decideRes.json as { ok: boolean; data?: { status: string } };
     expect(outcome.ok).toBe(true);
     expect(outcome.data?.status).toBe("SENT");
+  }, 30_000);
+
+  it("HTTP 审批按登录成员角色分级，不再全员 OWNER", async (ctx) => {
+    const database = db;
+    if (!available || !database) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const org = `ta-http-${id}`;
+    const owner = createKernel(database);
+    const tenant = await owner.tenancy.createTenant(
+      { slug: `ta-http-${id}`, name: "HTTP 角色租户", casdoorOrg: org },
+      SYSTEM,
+    );
+    const salesSubject = `sales-${id}`;
+    const managerSubject = `manager-${id}`;
+    await owner.tenancy.createMembership(
+      {
+        tenantId: tenant.id,
+        subject: salesSubject,
+        casdoorOrg: org,
+        role: "SALES",
+        dataScope: "OWN",
+      },
+      SYSTEM,
+    );
+    await owner.tenancy.createMembership(
+      {
+        tenantId: tenant.id,
+        subject: managerSubject,
+        casdoorOrg: org,
+        role: "MANAGER",
+        dataScope: "ALL",
+      },
+      SYSTEM,
+    );
+
+    const kernel = createKernel(database, undefined, { tenantId: tenant.id });
+    const customer = await kernel.customers.create(
+      { code: `TAH-C-${id}`, name: "HTTP 角色客户" },
+      HUMAN,
+    );
+    const sample = await kernel.samples.create(
+      {
+        code: `TAH-S-${id}`,
+        name: "HTTP 角色面料",
+        unit: "meter",
+        costFloor: { amount: 1000, currency: "CNY" },
+      },
+      HUMAN,
+    );
+    await kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "pricing.reprice_escalation_pct",
+        value: 5,
+      },
+      HUMAN,
+    );
+
+    const draft = await kernel.quotes.generateDraft(
+      {
+        customerId: customer.id,
+        currency: "CNY",
+        items: [
+          {
+            fabricSampleId: sample.id,
+            quantity: { value: 100, unit: "meter" },
+            unitPrice: { amount: 1500, currency: "CNY" },
+          },
+        ],
+      },
+      AGENT,
+    );
+    const revised = await kernel.quotes.reviseDraft(
+      {
+        quoteId: draft.id,
+        baseVersion: 1,
+        source: "INLINE",
+        instruction: "改幅 6.67%",
+        lines: [{ lineIndex: 0, unitPrice: { amount: 1600, currency: "CNY" } }],
+      },
+      HUMAN,
+    );
+    expect(revised.requirement.level).toBe("MANAGER");
+
+    const salesAttempt = await postJsonAuth(
+      "/api/approvals/decide",
+      {
+        id: draft.id,
+        kind: "quote",
+        decision: "APPROVE",
+        baseVersion: 2,
+      },
+      `Bearer dev:${salesSubject}:${org}`,
+    );
+    expect(salesAttempt.ok, JSON.stringify(salesAttempt.json)).toBe(true);
+    const denied = ApprovalDecisionResult.parse(salesAttempt.json);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.error.code).toBe("PERMISSION_DENIED");
+
+    const managerAttempt = await postJsonAuth(
+      "/api/approvals/decide",
+      {
+        id: draft.id,
+        kind: "quote",
+        decision: "APPROVE",
+        baseVersion: 2,
+      },
+      `Bearer dev:${managerSubject}:${org}`,
+    );
+    expect(managerAttempt.ok).toBe(true);
+    const approved = ApprovalDecisionResult.parse(managerAttempt.json);
+    expect(approved.ok).toBe(true);
+    if (approved.ok) expect(approved.data.status).toBe("SENT");
   }, 30_000);
 });

@@ -64,6 +64,39 @@ function numericValue(value: PricingPolicyValue): number | null {
   return null;
 }
 
+function isNumericObject(
+  value: PricingPolicyValue,
+): value is
+  | { value: number; unit?: string }
+  | { amount: number; unit?: string }
+  | { marginPct: number; unit?: string } {
+  return typeof value === "object" && value !== null;
+}
+
+/** 把数值写回原对象形态，避免夹取后丢失 unit 等展示信息。 */
+function withNumericValue(value: PricingPolicyValue, next: number): PricingPolicyValue {
+  if (!isNumericObject(value)) return next;
+  if ("value" in value) return { ...value, value: next };
+  if ("amount" in value) return { ...value, amount: next };
+  return { ...value, marginPct: next };
+}
+
+/**
+ * 夹取后的值形态：
+ * - 当前生效值本身是对象时，保留它的形态（改数值字段）；
+ * - 当前是裸数字而管控策略是对象时，采用管控策略的对象形态（保留单位）；
+ * - 其余保持裸数字。
+ */
+function revalued(
+  current: PricingPolicyValue,
+  boundaryRaw: PricingPolicyValue,
+  boundary: number,
+): PricingPolicyValue {
+  if (isNumericObject(current)) return withNumericValue(current, boundary);
+  if (isNumericObject(boundaryRaw)) return withNumericValue(boundaryRaw, boundary);
+  return boundary;
+}
+
 function mapPolicy(row: PolicyRow): PricingPolicy {
   return PricingPolicy.parse({
     id: row.id,
@@ -147,6 +180,7 @@ export class PricingService {
   async create(input: unknown, ctx: KernelContext): Promise<PricingPolicy> {
     const parsed = CreatePricingPolicyInput.parse(input);
     this.assertScope(parsed.scopeType, parsed.scopeId ?? null);
+    this.assertCanManage(parsed.scopeType, ctx);
     try {
       return await this.db.transaction(async (tx) => {
         // COMPANY 层统一落成 tenantId，避免 NULL 让唯一索引失效、出现两条同键策略。
@@ -212,6 +246,7 @@ export class PricingService {
   async update(policyId: string, input: unknown, ctx: KernelContext): Promise<PricingPolicy> {
     const parsed = UpdatePricingPolicyInput.parse(input);
     const current = await this.getById(policyId);
+    this.assertCanManage(current.scopeType, ctx);
     return this.db.transaction(async (tx) => {
       const rows = await tx
         .update(pricingPolicies)
@@ -321,12 +356,13 @@ export class PricingService {
     if (direction) {
       for (const row of applicable) {
         if (!row.locked) continue;
-        const boundary = numericValue(PricingPolicyValue.parse(row.value));
+        const boundaryRaw = PricingPolicyValue.parse(row.value);
+        const boundary = numericValue(boundaryRaw);
         const current = numericValue(effective);
         if (boundary === null || current === null) continue;
         const tighten = direction === "MIN" ? boundary > current : boundary < current;
         if (tighten) {
-          effective = boundary;
+          effective = revalued(effective, boundaryRaw, boundary);
           source = sourceOf(row);
           clamped = baseRow === row ? false : true;
         }
@@ -392,6 +428,17 @@ export class PricingService {
       throw new KernelError("KERNEL_REJECTED", `${scopeType} 层策略必须提供 scopeId`, {
         reason: "INVALID_POLICY_SCOPE",
       });
+    }
+  }
+
+  /** 定价政策是管控面：公司/系统层只有 OWNER 能改，其余至少 MANAGER。 */
+  private assertCanManage(scopeType: PricingScopeType, ctx: KernelContext): void {
+    const role = ctx.actor.role;
+    if (role !== "OWNER" && role !== "MANAGER") {
+      throw new KernelError("PERMISSION_DENIED", "只有 OWNER / MANAGER 可以维护定价策略");
+    }
+    if ((scopeType === "SYSTEM" || scopeType === "COMPANY") && role !== "OWNER") {
+      throw new KernelError("PERMISSION_DENIED", "公司/系统层定价策略只有 OWNER 可以维护");
     }
   }
 }

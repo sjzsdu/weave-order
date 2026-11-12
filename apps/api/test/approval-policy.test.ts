@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PricingKey, ResolvedPricingValue } from "@weave-order/schema";
-import { computeRequirement } from "../src/kernel/approval-policy";
+import { assertCanApprove, computeRequirement } from "../src/kernel/approval-policy";
 
 /**
  * 审批金额阈值与改幅升级的纯函数测试（不依赖数据库）。
@@ -94,5 +94,21 @@ describe("审批金额阈值（owner / manager / sales 分级）", () => {
       },
     });
     expect(requirement.level).toBe("MANAGER");
+  });
+
+  it("生产环境缺少审批人角色时 fail-closed", () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const requirement = computeRequirement({
+        amountCents: 100_000,
+        baselineCents: null,
+        policies: DEFAULT_POLICIES,
+      });
+      expect(() => assertCanApprove(undefined, requirement)).toThrowError(/缺少审批人角色/);
+      expect(() => assertCanApprove("SALES", requirement)).not.toThrow();
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
   });
 });

@@ -128,8 +128,11 @@ export function assertCanApprove(
   actorRole: MemberRole | undefined,
   requirement: ApprovalRequirement,
 ): void {
-  // 本地/测试路径没有网关角色：按 owner 处理，生产必须由网关注入。
-  const role = actorRole ?? "OWNER";
+  // 生产必须由网关注入真实角色；缺角色 fail-closed。仅非生产兼容旧测试与 demo。
+  const role = actorRole ?? (process.env.NODE_ENV === "production" ? undefined : "OWNER");
+  if (!role) {
+    throw new KernelError("PERMISSION_DENIED", "缺少审批人角色，拒绝审批");
+  }
   const actual = roleApprovalLevel(role);
   if (approvalLevelRank(actual) < approvalLevelRank(requirement.level)) {
     throw new KernelError(

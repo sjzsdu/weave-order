@@ -134,6 +134,41 @@ describe("Track A：定价继承与管控夹取", () => {
     const rows = await db!.select().from(pricingPolicies);
     expect(rows.length).toBeGreaterThan(0);
   }, 20_000);
+
+  it("夹取后保留对象形态与单位，不把百分比降级成裸数字", async (ctx) => {
+    if (!available) ctx.skip();
+    const id = suffix();
+    const kernel = await tenantKernel(id);
+    const customer = await kernel.customers.create(
+      { code: `TA-SHAPE-${id}`, name: "形态测试客户" },
+      HUMAN_OWNER,
+    );
+    await kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "pricing.min_margin_pct",
+        value: { marginPct: 10, unit: "percent" },
+        locked: true,
+      },
+      HUMAN_OWNER,
+    );
+    await kernel.pricing.create(
+      {
+        scopeType: "CUSTOMER",
+        scopeId: customer.id,
+        key: "pricing.min_margin_pct",
+        value: { marginPct: 2, unit: "percent" },
+        locked: false,
+      },
+      HUMAN_OWNER,
+    );
+
+    const resolved = await kernel.pricing.resolve("pricing.min_margin_pct", {
+      customerId: customer.id,
+    });
+    expect(resolved.clamped).toBe(true);
+    expect(resolved.value).toEqual({ marginPct: 10, unit: "percent" });
+  }, 20_000);
 });
 
 describe("Track A：报价全链路（建客户 → 草稿 → 改价 → 升级 → 批准 → confirm）", () => {
