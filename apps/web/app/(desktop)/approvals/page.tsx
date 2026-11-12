@@ -2,16 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalDetail, useApprovals, useDecideApproval } from "@weave-order/core";
-import type { ApprovalItem, ApprovalKind } from "@weave-order/schema";
-import {
-  ApprovalSheet,
-  Badge,
-  EmptyState,
-  MoneyText,
-  Spinner,
-  cn,
-} from "@weave-order/ui";
+import type { ApprovalItem, ApprovalKind, CreatedQuoteShare } from "@weave-order/schema";
+import { ApprovalSheet, Badge, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { SharePanel } from "@/share-panel";
 import { useMounted } from "@/use-mounted";
 import { KIND_LABEL, relativeTime, STATUS_LABEL } from "@/format";
 
@@ -45,6 +39,11 @@ function ApprovalsPageContent() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<{
+    id: string;
+    title: string;
+    created?: CreatedQuoteShare;
+  } | null>(null);
   const urlSelectionRef = useRef(false);
 
   const items = approvals.data?.items ?? [];
@@ -75,8 +74,26 @@ function ApprovalsPageContent() {
       try {
         const result = await decide.mutateAsync({ ...selection, decision });
         if (result.ok) {
-          setNotice(decision === "APPROVE" ? "已批准，内核已 confirm 生效。" : "已驳回并写入审计。");
+          setNotice(
+            decision === "APPROVE" ? "已批准，内核已 confirm 生效。" : "已驳回并写入审计。",
+          );
+          const approved = selection;
+          const title =
+            items.find((item) => item.id === approved.id)?.title ?? approved.id.slice(0, 8);
           setSelection(null);
+          // 批准后立即生成客户链接并展示：明文 token 只返回一次，不能等下次再取。
+          if (decision === "APPROVE" && approved.kind === "quote") {
+            try {
+              const created = await api.createQuoteShare({
+                quoteId: approved.id,
+                requirePhoneTail: true,
+                allowPdf: true,
+              });
+              setShareTarget({ id: approved.id, title, created });
+            } catch {
+              // 生成失败不否定批准结果；业务员可在全景窗口重试。
+            }
+          }
         } else {
           setDecisionError(result.error.message);
         }
@@ -84,7 +101,7 @@ function ApprovalsPageContent() {
         setDecisionError(cause instanceof Error ? cause.message : "决策失败，请稍后重试");
       }
     },
-    [decide, selection],
+    [api, decide, items, selection],
   );
 
   useEffect(() => {
@@ -135,7 +152,8 @@ function ApprovalsPageContent() {
           {approvals.isLoading && <Spinner label="读取审批队列…" />}
           {approvals.isError && (
             <p className="rounded-md border border-vermilion-600/30 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">
-              审批队列读取失败：{approvals.error instanceof Error ? approvals.error.message : "未知错误"}
+              审批队列读取失败：
+              {approvals.error instanceof Error ? approvals.error.message : "未知错误"}
             </p>
           )}
           {!approvals.isLoading && items.length === 0 && (
@@ -168,7 +186,13 @@ function ApprovalsPageContent() {
             <ApprovalSheet
               detail={detail.data ?? null}
               loading={detail.isLoading}
-              error={detail.isError ? (detail.error instanceof Error ? detail.error.message : "读取失败") : null}
+              error={
+                detail.isError
+                  ? detail.error instanceof Error
+                    ? detail.error.message
+                    : "读取失败"
+                  : null
+              }
               busy={decide.isPending}
               decisionError={decisionError}
               onApprove={() => void submit("APPROVE")}
@@ -179,6 +203,15 @@ function ApprovalsPageContent() {
           )}
         </section>
       </div>
+
+      {shareTarget && (
+        <SharePanel
+          quoteId={shareTarget.id}
+          title={shareTarget.title}
+          initialCreated={shareTarget.created}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -199,7 +232,9 @@ function QueueRow({
       aria-current={active ? "true" : undefined}
       className={cn(
         "rounded-lg border px-3 py-3 text-left transition-colors",
-        active ? "border-indigo-600 bg-indigo-100/60 ring-1 ring-indigo-600/20" : "border-line bg-surface hover:border-ink-400",
+        active
+          ? "border-indigo-600 bg-indigo-100/60 ring-1 ring-indigo-600/20"
+          : "border-line bg-surface hover:border-ink-400",
       )}
     >
       <div className="flex items-center justify-between gap-2">
