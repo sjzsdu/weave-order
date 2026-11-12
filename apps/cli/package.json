@@ -1,0 +1,33 @@
+{
+  "name": "@weave-order/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "织序 WeaveOrder 命令行：CLI 登录、个人凭据管理、业务工具调用、agent skill 安装",
+  "bin": {
+    "weave": "./bin/weave.js"
+  },
+  "main": "./dist/main.js",
+  "files": [
+    "bin",
+    "dist",
+    "skill"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "eslint": "^9.39.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

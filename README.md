@@ -6,6 +6,8 @@
 
 > 产品设计（定位、角色与权限、布管家能力对照、双端 IA、设计系统、指标与分期）：`docs/product-design.md`。
 > 可点击原型（桌面三窗口 + 手机四 Tab）：`prototype/product-design.html`，直接用浏览器打开。
+> 整体架构与技术选型：`docs/architecture-and-tech-stack.md`。
+> 用户凭据 / CLI / agent 接入（codex 等）：`docs/cli-and-agent-access.md`，skill 源文件 `skills/weave-order/SKILL.md`。
 
 ## 技术栈
 
@@ -41,6 +43,7 @@ weave-order/
 ├── packages/
 │   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源，含 import.ts）
 │   └── db/                  # Drizzle Schema、连接、SQL 迁移
+├── skills/weave-order/      # agent skill（SKILL.md）：codex 等加载后即可操作织序
 ├── data/seed/               # 冷启动样例数据（customers.csv / samples.csv / .xlsx）
 ├── docker-compose.yml       # PostgreSQL + pgvector、Redis
 ├── turbo.json
@@ -64,6 +67,11 @@ pnpm demo          # 可选：迁移 + 内核演示 + 寄样跟进智能体（�
 # 4. 打开三个窗口（API 3000 + Vite 5173）
 pnpm dev
 # → http://localhost:5173
+
+# 5. 可选：构建 CLI，登录并把 skill 装到 codex
+pnpm --filter @weave-order/cli build
+node apps/cli/bin/weave.js login      # 浏览器确认后凭据落在 ~/.config/weave-order/
+node apps/cli/bin/weave.js skill install
 ```
 
 页面是**三个窗口**（Radix Tabs 切换）：任务派发（Intent Bar）、审批与异常分诊
@@ -98,6 +106,7 @@ pnpm db:migrate   # 应用迁移
 pnpm demo         # 迁移 + 内核演示 + 寄样跟进智能体（含检查点续跑）
 pnpm demo:followup # 只跑寄样跟进智能体演示
 pnpm seed         # 迁移 + 导入样例客户/样品（Excel/CSV，冷启动）
+pnpm --filter @weave-order/cli build   # 构建 weave CLI
 pnpm format       # Prettier
 ```
 
@@ -130,20 +139,27 @@ pnpm format       # Prettier
 
 ### 最小 HTTP 面
 
-| 方法 | 路径                                | 身份 / 状态                   | 说明                                    |
-| ---- | ----------------------------------- | ----------------------------- | --------------------------------------- |
-| GET  | `/api/health`                       | 只读                          | 服务 + 数据库可用性                     |
-| GET  | `/api/customers`                    | 只读                          | 客户列表                                |
-| GET  | `/api/samples`                      | 只读                          | 样品目录                                |
-| GET  | `/api/audit`                        | 只读                          | 审计流水                                |
-| POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
-| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）                |
-| POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
-| POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
-| POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
-| GET  | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）    |
-| GET  | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）  |
-| POST | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品 |
+| 方法   | 路径                                | 身份 / 状态                   | 说明                                    |
+| ------ | ----------------------------------- | ----------------------------- | --------------------------------------- |
+| GET    | `/api/health`                       | 只读                          | 服务 + 数据库可用性                     |
+| GET    | `/api/customers`                    | 只读                          | 客户列表                                |
+| GET    | `/api/samples`                      | 只读                          | 样品目录                                |
+| GET    | `/api/audit`                        | 只读                          | 审计流水                                |
+| POST   | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
+| POST   | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）                |
+| POST   | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
+| POST   | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
+| POST   | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
+| GET    | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）    |
+| GET    | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）  |
+| POST   | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品 |
+| POST   | `/api/auth/device/start`            | 无                            | CLI 设备登录：申请一次性确认码          |
+| POST   | `/api/auth/device/poll`             | 无                            | CLI 轮询；批准后一次性换 token          |
+| POST   | `/api/auth/device/decide`           | 浏览器确认                    | 人类批准 / 拒绝 CLI 登录                |
+| GET    | `/api/auth/me`                      | Bearer token                  | 当前账号 + 凭据作用域                   |
+| GET    | `/api/auth/tokens`                  | Bearer token                  | 列出自己的凭据                          |
+| POST   | `/api/auth/tokens`                  | Bearer token（`write`）       | 签发新凭据（明文只返回一次）            |
+| DELETE | `/api/auth/tokens/:id`              | Bearer token                  | 撤销凭据（立即失效）                    |
 
 > 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
 > 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由
