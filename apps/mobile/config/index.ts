@@ -1,4 +1,6 @@
 import { defineConfig } from "@tarojs/cli";
+
+const outputRoot = process.env.TARO_APP_OUTPUT ?? "dist";
 /**
  * Taro 统一构建配置。
  *
@@ -11,10 +13,20 @@ export default defineConfig({
   designWidth: 750,
   deviceRatio: { 640: 2.34 / 2, 750: 1, 828: 1.81 / 2 },
   sourceRoot: "src",
-  outputRoot: "dist",
+  outputRoot,
   plugins: [],
-  defineConstants: {},
-  copy: { patterns: [], options: {} },
+  defineConstants: {
+    // 环境变量在构建期固化；页面里只读 process.env.TARO_APP_*。
+    "process.env.TARO_APP_MOCK": JSON.stringify(process.env.TARO_APP_MOCK ?? ""),
+    "process.env.TARO_APP_API_BASE": JSON.stringify(
+      process.env.TARO_APP_API_BASE ?? "http://localhost:3000",
+    ),
+  },
+  // PWA 壳：manifest / service worker / icons 直接落到 dist 根目录。
+  copy: {
+    patterns: process.env.TARO_APP_OUTPUT ? [] : [{ from: "src/pwa", to: outputRoot }],
+    options: {},
+  },
   framework: "react",
   compiler: { type: "webpack5", prebundle: { enable: false } },
   cache: { enable: false },

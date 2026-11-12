@@ -7,7 +7,10 @@ import {
   CreatedQuoteShare,
   CreateQuoteShareInput,
   Customer,
+  FabricSample,
   PanoramaSnapshot,
+  T002SearchFabricBySpecInput,
+  T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
 } from "@weave-order/schema";
@@ -37,6 +40,7 @@ export class ApiError extends Error {
 }
 
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
+const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
 const AuditResponse = z.object({
   entries: z.array(
     z
@@ -59,14 +63,27 @@ export function createApiClient(options: ApiClientOptions) {
 
   async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     const token = await options.getToken();
-    const headers = new Headers(init.headers);
-    headers.set("Accept", "application/json");
-    if (init.body !== undefined) headers.set("Content-Type", "application/json");
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+    // 不用 `Headers` 构造器：小程序运行时没有 DOM 的 Headers，端侧注入的
+    // fetch 适配器只认普通键值对象。
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (init.headers !== undefined && !(init.headers instanceof Array)) {
+      const raw = init.headers as Record<string, string>;
+      for (const key of Object.keys(raw)) {
+        const value = raw[key];
+        if (typeof value === "string") headers[key] = value;
+      }
+    }
+    if (init.body !== undefined) headers["Content-Type"] = "application/json";
+    if (token) headers.Authorization = `Bearer ${token}`;
 
     const response = await doFetch(`${base}${path}`, { ...init, headers });
     const text = await response.text();
-    const json: unknown = text ? JSON.parse(text) : null;
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      throw new ApiError(response.status, "INTERNAL", `请求失败（HTTP ${response.status}）`);
+    }
     if (!response.ok) {
       const parsed = z
         .object({ error: z.object({ code: z.string(), message: z.string() }).passthrough() })
@@ -93,6 +110,9 @@ export function createApiClient(options: ApiClientOptions) {
     listCustomers: async (limit = 20) =>
       CustomersResponse.parse(await request(`/api/customers?limit=${limit}`)).customers,
 
+    listSamples: async (limit = 50) =>
+      SamplesResponse.parse(await request(`/api/samples?limit=${limit}`)).samples,
+
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 
     approvals: async () => ApprovalQueue.parse(await request("/api/approvals")),
@@ -103,6 +123,11 @@ export function createApiClient(options: ApiClientOptions) {
     generateQuoteDraft: async (input: z.input<typeof T004GenerateQuoteDraftInput>) =>
       T004GenerateQuoteDraftResult.parse(
         await post("/api/tools/generate-quote-draft", T004GenerateQuoteDraftInput.parse(input)),
+      ),
+
+    searchBySpec: async (input: z.input<typeof T002SearchFabricBySpecInput>) =>
+      T002SearchFabricBySpecResult.parse(
+        await post("/api/tools/search-by-spec", T002SearchFabricBySpecInput.parse(input)),
       ),
 
     decideApproval: async (input: z.infer<typeof ApprovalDecisionInput>) =>

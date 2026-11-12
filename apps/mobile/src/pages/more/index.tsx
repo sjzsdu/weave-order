@@ -1,41 +1,395 @@
-import { View, Text } from "@tarojs/components";
+import { Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
-import { offlineQueue } from "../../lib/runtime";
+import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import type { QueuedOperation } from "@weave-order/core";
+import { Badge, Button, Card, Page, SectionTitle, Sheet } from "../../components/ui";
+import { useInstallPrompt } from "../../lib/pwa";
+import { useNetworkStatus, useQueueState, useSyncQueue } from "../../lib/hooks";
+import { formatMoneyShort, relativeTime } from "../../lib/format";
+import {
+  API_BASE_URL,
+  IS_MOCK,
+  mockControls,
+  offlineQueue,
+  prefs,
+  TARO_ENV,
+} from "../../lib/runtime";
+import { onQueueChanged } from "../../lib/offline";
+import { ROLES, ROLE_LABEL, isRole } from "../../lib/roles";
+import type { Role } from "../../lib/roles";
 
-/** 更多：账户 / 离线队列 / 隐私说明。权限配置与模板编辑不在移动端。 */
+const KIND_LABEL: Record<string, string> = {
+  "quote.compose": "原话 → 报价草稿",
+  "quote.revise": "改价（带基线版本）",
+  "quote.decide": "批 / 驳回",
+  "shipment.proof": "拍照回传",
+};
+
 export default function MorePage() {
-  const [queued, setQueued] = useState(0);
+  const queryClient = useQueryClient();
+  const network = useNetworkStatus();
+  const queue = useQueueState();
+  const sync = useSyncQueue();
+  const install = useInstallPrompt();
+  const mock = mockControls();
 
-  useEffect(() => {
-    void offlineQueue.list().then((items) => setQueued(items.length));
+  const [items, setItems] = useState<QueuedOperation[]>([]);
+  const [role, setRole] = useState<Role>(() => {
+    const saved = prefs.getRole();
+    return isRole(saved) ? saved : "sales";
+  });
+  const [showQueue, setShowQueue] = useState(false);
+  const [showThreshold, setShowThreshold] = useState(false);
+  const [thresholdYuan, setThresholdYuan] = useState(
+    (prefs.getLargeApprovalThresholdCents() / 100).toFixed(0),
+  );
+  const [busy, setBusy] = useState(false);
+  const [simulatedOffline, setSimulatedOffline] = useState(mock?.isOffline() ?? false);
+
+  const refresh = useCallback(async () => {
+    setItems(await offlineQueue.list());
   }, []);
 
-  return (
-    <View className="wrap">
-      <View className="title">更多</View>
-      <View className="muted">移动端不提供批量导入、权限配置与模板编辑。</View>
+  useEffect(() => {
+    void refresh();
+    const off = onQueueChanged(() => void refresh());
+    return off;
+  }, [refresh]);
 
-      <View className="row" style={{ marginTop: 24 }}>
-        <Text>离线待提交</Text>
-        <Text className="amount">{queued}</Text>
+  const runSync = async () => {
+    setBusy(true);
+    try {
+      const result = await sync();
+      await refresh();
+      await Taro.showToast({
+        title: `已提交 ${result.sent} · 冲突 ${result.conflicts} · 失败 ${result.failed}`,
+        icon: "none",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const switchRole = async () => {
+    try {
+      const result = await Taro.showActionSheet({
+        itemList: ROLES.map((entry) => ROLE_LABEL[entry]),
+      });
+      const picked = ROLES[result.tapIndex ?? -1];
+      if (picked) {
+        setRole(picked);
+        prefs.setRole(picked);
+        await Taro.showToast({ title: `首页已切换为${ROLE_LABEL[picked]}`, icon: "none" });
+      }
+    } catch {
+      // 用户取消切换不处理。
+    }
+  };
+
+  const saveThreshold = () => {
+    const yuan = Number(thresholdYuan);
+    if (!Number.isFinite(yuan) || yuan <= 0) {
+      void Taro.showToast({ title: "阈值要大于 0 元", icon: "none" });
+      return;
+    }
+    prefs.setLargeApprovalThresholdCents(Math.round(yuan * 100));
+    setShowThreshold(false);
+    void Taro.showToast({ title: "阈值已保存（仅本机）", icon: "success" });
+  };
+
+  const resolveConflict = async (op: QueuedOperation, choice: "local" | "server") => {
+    if (choice === "server") {
+      await offlineQueue.remove(op.opId);
+      await Taro.showToast({ title: "已保留服务端版本", icon: "none" });
+    } else {
+      if (typeof op.serverVersion !== "number") {
+        await Taro.showToast({ title: "缺少服务端版本，先刷新审批再重试", icon: "none" });
+        return;
+      }
+      await offlineQueue.retryWithServerVersion(op.opId, op.serverVersion);
+      await Taro.showToast({ title: "已按服务端版本重新排队", icon: "none" });
+    }
+    await refresh();
+  };
+
+  const drop = async (op: QueuedOperation) => {
+    const result = await Taro.showModal({
+      title: "丢弃这条离线操作？",
+      content: `${KIND_LABEL[op.kind] ?? op.kind} · 丢弃后不会提交`,
+      confirmText: "丢弃",
+      confirmColor: "#b3261e",
+    });
+    if (!result.confirm) return;
+    await offlineQueue.remove(op.opId);
+    await refresh();
+  };
+
+  const toggleOffline = () => {
+    if (!mock) return;
+    const next = !simulatedOffline;
+    mock.setOffline(next);
+    setSimulatedOffline(next);
+    void Taro.showToast({ title: next ? "已模拟断网" : "已恢复网络", icon: "none" });
+  };
+
+  const simulateRemoteEdit = () => {
+    if (!mock) return;
+    try {
+      const result = mock.simulateRemoteEdit();
+      void queryClient.invalidateQueries();
+      void Taro.showToast({ title: `服务端已改为 v${result.version}`, icon: "none" });
+    } catch (error) {
+      void Taro.showToast({
+        title: error instanceof Error ? error.message : "没有可模拟的草稿",
+        icon: "none",
+      });
+    }
+  };
+
+  const resetDemo = async () => {
+    if (!mock) return;
+    const confirmed = await Taro.showModal({
+      title: "重置演示数据？",
+      content: "客户端 mock 状态与缓存会清空，重新生成示例报价。",
+      confirmColor: "#b3261e",
+    });
+    if (!confirmed.confirm) return;
+    mock.reset();
+    await queryClient.invalidateQueries();
+    await refresh();
+    await Taro.showToast({ title: "已重置", icon: "success" });
+  };
+
+  return (
+    <Page>
+      <View className="page-title">更多</View>
+      <View className="page-sub">
+        离线队列、身份、安装与隐私。批量导入 / 模板 / 权限配置留在 PC。
       </View>
-      <View className="row">
-        <Text>端类型</Text>
-        <Text className="amount">{process.env.TARO_ENV}</Text>
-      </View>
-      <View
-        className="row"
-        onClick={() =>
-          void Taro.showModal({
-            title: "隐私",
-            content: "图片与客户数据不上传到第三方模型；敏感字段出网前脱敏。",
-          })
+
+      {IS_MOCK && (
+        <Card className="card-flat">
+          <View className="row">
+            <View>
+              <View className="list-title">演示模式（Mock）</View>
+              <View className="list-sub">契约端点本地实现；可模拟断网与并发冲突</View>
+            </View>
+            <Badge tone="info">Mock</Badge>
+          </View>
+          <View className="actions">
+            <Button small variant="ghost" onClick={toggleOffline}>
+              {simulatedOffline ? "恢复网络" : "模拟断网"}
+            </Button>
+            <Button small variant="ghost" onClick={simulateRemoteEdit}>
+              模拟服务端改价
+            </Button>
+          </View>
+          <View className="actions">
+            <Button small variant="danger" onClick={() => void resetDemo()}>
+              重置演示数据
+            </Button>
+          </View>
+        </Card>
+      )}
+
+      <SectionTitle title="离线队列" hint="按时间序提交；冲突必须人工确认" />
+      <Card>
+        <View className="stats">
+          <View className="stat">
+            <View className="stat-value">{queue.total}</View>
+            <View className="stat-label">全部</View>
+          </View>
+          <View className="stat">
+            <View className="stat-value stat-warn">{queue.pending}</View>
+            <View className="stat-label">待提交</View>
+          </View>
+          <View className="stat">
+            <View className="stat-value stat-danger">{queue.conflicts}</View>
+            <View className="stat-label">冲突</View>
+          </View>
+        </View>
+        <View className="actions">
+          <Button variant="ghost" onClick={() => setShowQueue(true)}>
+            查看明细
+          </Button>
+          <Button onClick={() => void runSync()} loading={busy} disabled={!network.online}>
+            {network.online ? "立即提交" : "等待联网"}
+          </Button>
+        </View>
+        <View className="footnote">
+          H5 落 IndexedDB，小程序 / App 落 Taro Storage；照片只存本地引用，恢复后直传对象存储。
+        </View>
+      </Card>
+
+      <SectionTitle title="身份与审批" hint="角色只改首页排序，权限由服务端决定" />
+      <Card>
+        <View className="list-row" onClick={() => void switchRole()}>
+          <View>
+            <View className="list-title">当前身份</View>
+            <View className="list-sub">影响「今日」第一屏与快捷动作</View>
+          </View>
+          <Text className="link">{ROLE_LABEL[role]}</Text>
+        </View>
+        <View className="list-row" onClick={() => setShowThreshold(true)}>
+          <View>
+            <View className="list-title">大额审批阈值</View>
+            <View className="list-sub">超过即要求 Face ID / 生物识别二次验证</View>
+          </View>
+          <Text className="link">{formatMoneyShort(prefs.getLargeApprovalThresholdCents())}</Text>
+        </View>
+        <View
+          className="list-row"
+          onClick={() =>
+            void Taro.showModal({
+              title: "隐私",
+              content:
+                "图片与客户数据不上传第三方模型；手机号默认脱敏；token 只驻留内存，不落本地明文。",
+              showCancel: false,
+            })
+          }
+        >
+          <View>
+            <View className="list-title">隐私与数据说明</View>
+            <View className="list-sub">色卡屏幕色仅供参考</View>
+          </View>
+          <Text className="link">查看</Text>
+        </View>
+      </Card>
+
+      <SectionTitle title="应用" hint="PWA 可安装；小程序 / App 同一份代码" />
+      <Card>
+        <View className="list-row">
+          <View>
+            <View className="list-title">安装到桌面</View>
+            <View className="list-sub">
+              {install.installed
+                ? "已安装（独立窗口运行）"
+                : install.canInstall
+                  ? "支持一键安装"
+                  : "用浏览器菜单「添加到主屏幕」"}
+            </View>
+          </View>
+          {install.installed ? (
+            <Badge tone="accent">已安装</Badge>
+          ) : (
+            <Button
+              small
+              onClick={() => {
+                void install.install().then((result) => {
+                  if (result === "unavailable") {
+                    void Taro.showToast({ title: "请用浏览器菜单添加到主屏幕", icon: "none" });
+                  }
+                });
+              }}
+            >
+              安装
+            </Button>
+          )}
+        </View>
+        <View className="list-row">
+          <View>
+            <View className="list-title">当前端</View>
+            <View className="list-sub">
+              {TARO_ENV} · {IS_MOCK ? "mock" : API_BASE_URL}
+            </View>
+          </View>
+          <Badge>{TARO_ENV}</Badge>
+        </View>
+        <View className="list-row">
+          <View>
+            <View className="list-title">网络</View>
+            <View className="list-sub">{network.networkType}</View>
+          </View>
+          <Badge tone={network.online ? "accent" : "warn"}>
+            {network.online ? "在线" : "离线"}
+          </Badge>
+        </View>
+        <View className="footnote">
+          PWA：manifest + Service Worker 已随 H5 构建输出；只缓存静态壳，不缓存 /api 鉴权响应。
+        </View>
+      </Card>
+
+      <SectionTitle title="手机不做" hint="避免手机变成「什么都做一点」" />
+      <Card className="card-flat">
+        <View className="muted">
+          批量导入、报价模板编辑、宽表全景、权限配置、审计全文检索、对账单批量调整。
+        </View>
+        <View className="footnote">这些在 PC 上 10 秒能做完，在手机上做是自虐。</View>
+      </Card>
+
+      <Sheet open={showQueue} title="离线队列" onClose={() => setShowQueue(false)}>
+        {items.length === 0 ? (
+          <View className="muted">没有待提交的操作。</View>
+        ) : (
+          items.map((op) => (
+            <View key={op.opId} className="queue-item">
+              <View className="row">
+                <View>
+                  <View className="list-title">{KIND_LABEL[op.kind] ?? op.kind}</View>
+                  <View className="list-sub">
+                    {relativeTime(op.createdAt)} · 尝试 {op.attempts} 次
+                  </View>
+                </View>
+                <Badge tone={op.status === "conflict" ? "danger" : "warn"}>
+                  {op.status === "conflict" ? "冲突" : "待提交"}
+                </Badge>
+              </View>
+              {op.lastError && <View className="footnote">{op.lastError}</View>}
+              {op.status === "conflict" && (
+                <View className="conflict-box">
+                  <View>
+                    本地基于 v{op.baseVersion ?? "?"}，服务端已是 v{op.serverVersion ?? "?"}。
+                    不会自动合并：请选择保留哪一版。
+                  </View>
+                  <View className="actions">
+                    <Button
+                      small
+                      variant="ghost"
+                      onClick={() => void resolveConflict(op, "server")}
+                    >
+                      保留服务端（丢弃本地）
+                    </Button>
+                    <Button small onClick={() => void resolveConflict(op, "local")}>
+                      以服务端版本重试本地
+                    </Button>
+                  </View>
+                </View>
+              )}
+              <View className="actions">
+                <Button small variant="danger" onClick={() => void drop(op)}>
+                  丢弃
+                </Button>
+              </View>
+            </View>
+          ))
+        )}
+        <View className="footnote">
+          分享链接不排队：链接必须由服务端签发，离线时不会把 token 落本地。
+        </View>
+      </Sheet>
+
+      <Sheet
+        open={showThreshold}
+        title="大额审批阈值"
+        onClose={() => setShowThreshold(false)}
+        footer={
+          <Button block onClick={saveThreshold}>
+            保存
+          </Button>
         }
       >
-        <Text>隐私与数据说明</Text>
-        <Text className="action">查看</Text>
-      </View>
-    </View>
+        <View className="muted">
+          超过该金额的批准会要求二次验证。仅影响本机展示，服务端仍有自己的审批上限。
+        </View>
+        <View className="label">阈值（元）</View>
+        <Input
+          className="input"
+          type="digit"
+          value={thresholdYuan}
+          onInput={(event) => setThresholdYuan(event.detail.value)}
+        />
+      </Sheet>
+    </Page>
   );
 }

@@ -5,6 +5,8 @@ export default defineAppConfig({
     "pages/camera/index",
     "pages/customers/index",
     "pages/more/index",
+    "pages/quote/index",
+    "pages/customer/index",
   ],
   window: {
     backgroundTextStyle: "light",
