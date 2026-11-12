@@ -1,7 +1,8 @@
 # 后 AI 时代纺织管理软件 · 产品设计
 
-> 版本：v1.4 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
-> v1.4 变更：新增多租户隔离（共享库+RLS / schema-per-tenant / 独立库）与 LLM 部署（云端 / BYOK / 自部署）设计，见 §15。
+> 版本：v1.5 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
+> v1.5 变更：确认共享库+RLS 默认、schema/独立库仅作升级项；LLM 不做自部署，改为平台端参数设置；数据区域改为按合同启用；新增 Casdoor 统一登录（§3.6）。
+> v1.4 变更：新增多租户隔离（共享库+RLS / schema-per-tenant / 独立库）与 LLM 部署设计，见 §15。
 > v1.3 变更：打印代理（Print Agent）与每家公司个性化（模板工作室 + AI 识样张）、总后台版本化价格表与租户合同价、开票设置可配（§4.4 / §14.1 / §14.3 / §14.5）。
 > v1.2 变更：打印与单证流水线（§4.4 / §7.7 / §8.6 / §8.7）、SaaS 商业化与平台总管理端（§14）、打印与 SaaS 数据模型和指标。
 > v1.1 变更：配置继承链（§3.5）、移动端 5 入口与能力矩阵（§5.2）、客户报价链接（§7.6 / §8.5）、分享指标与增长闭环（§11 / §13.6）。
@@ -223,6 +224,47 @@ flowchart LR
 ```
 
 每一行可展开「为什么是这个值」，显示完整的继承链和最近三次修改。客户 360 里多一个「该客户专属」页签，只显示与默认值不同的项，避免配置迷宫。
+
+### 3.6 身份与登录：Casdoor 负责认证，我们只做授权
+
+**决定：不自研登录。** 密码、短信验证码、微信扫码、MFA、SSO、找回密码、登录风控全部交给 **Casdoor**（自托管，OIDC/OAuth2），我们只保留业务角色与数据范围。这样少写一大块最容易出安全事故的代码。
+
+```mermaid
+flowchart LR
+  U["成员"] -->|"OIDC 授权码 + PKCE"| C["Casdoor<br/>组织 / 应用 / MFA / SSO"]
+  C -->|"ID Token（sub / org / email）"| A["织序 API 网关"]
+  A -->|"sub + org → membership"| M["本地 memberships<br/>角色 / 数据范围 / 阈值"]
+  M --> B["业务内核"]
+  P["平台管理员"] -->|"独立应用 + 强制 MFA"| C
+```
+
+**租户与组织的映射**：
+
+- **一个租户 = 一个 Casdoor Organization**，用户池天然隔离，支持每家公司自己的登录方式与品牌。
+- **一个产品 = 一个 Casdoor Application**（`weave-order`）；平台管理端是**另一个应用**（`weave-platform`），强制 MFA，禁止社交登录。
+- 登录后 ID Token 里有 `sub` 与 `org`；后端用 `(sub, org)` 查本地 `memberships`，**tenant_id 以本地 membership 为准**，不直接信前端。
+
+**四种登录入口**：
+
+| 入口 | 方式 | 说明 |
+| ---- | ---- | ---- |
+| 租户员工 | 手机号+密码 / 微信扫码 / 企业 SSO | 按公司配置；邀请制，不开放自助注册 |
+| 企业 SSO | SAML / OIDC（钉钉、企微、飞书、Azure AD） | 按租户开通，域名验证 + JIT 建号 |
+| 平台管理员 | 邮箱+密码 + 强制 MFA | 独立应用，可选 IP 白名单 |
+| 客户（报价链接） | 无需登录 | 只读 token 链接，见 §7.6 |
+
+**账号生命周期**：
+
+1. 邀请：管理员填手机/邮箱 → 在 Casdoor 对应组织建号 → 同步创建 `memberships`（角色、数据范围）。
+2. 调岗：只改 `memberships`，不动 Casdoor 账号；角色变更立即生效。
+3. 离职：禁用 Casdoor 账号 + 撤销会话 + 触发客户交接（§3.4）；历史审计保留。
+4. 多公司顾问：一个 Casdoor 用户可属于多个 Organization；登录后选择租户，或按域名自动进入。
+
+**我们不做的事**：不存密码、不做短信通道、不做 MFA、不做找回密码、不做登录限流。Casdoor 负责这些，我们只校验 token（issuer / audience / exp / nonce）并映射权限。
+
+**Casdoor 部署**：独立 Postgres、同区域、每日备份；与业务库分离；升级走灰度。它是登录的单点，必须监控可用性与延迟；故障时保留已签发会话的短期宽限，但禁止新登录。
+
+**数据模型增量**：`users` 增加 `idp_subject` / `idp_org`；新增 `idp_connections`（租户 SSO 配置）、`idp_org_map`（tenant ↔ Casdoor org）、`sso_domains`（域名验证）。不存密码字段。
 
 ---
 
@@ -986,7 +1028,8 @@ flowchart TB
 | 表 | 关键字段 | 阶段 |
 | -- | -------- | ---- |
 | `tenants` | id, name, brand, bank, currency, settings | P0 |
-| `users` | id, tenant_id, name, phone, email, status | P0 |
+| `users` | id, tenant_id, name, phone, email, status, idp_subject, idp_org | P0 |
+| `idp_connections` / `idp_org_map` / `sso_domains` | tenant_id, protocol, config_json, casdoor_org, domain, verified_at | P0 |
 | `memberships` | user_id, role, team_id, data_scope, approval_limit | P0 |
 | `teams` | id, tenant_id, name, manager_id | P0 |
 | `customer_owners` | customer_id, user_id, scope, granted_by, granted_at | P0 |
@@ -1035,11 +1078,11 @@ flowchart TB
 | `tenant_notes` / `support_tickets` | tenant_id, author, body, status, priority | P1 |
 | `tenant_data_planes` | id, isolation_mode, region, schema_name, dsn_secret_ref, migration_version, status | P0 |
 | `tenant_security_profiles` | tenant_id, data_region, allow_external_llm, retention_days, kms_key_ref | P0 |
-| `llm_configs` | tenant_id, provider, base_url, model, key_ref, allow_external, log_prompts, fallback | P0 |
-| `model_deployments` | tenant_id, kind, vendor, endpoint, gpu, status, eval_score, last_check_at | P1 |
+| `llm_settings` | scope, tenant_id, provider, base_url, model, params_json, key_ref, allow_external, log_prompts, version, updated_by | P0 |
+| `llm_call_stats` | tenant_id, task, provider, model, latency_ms, tokens, error_code, at | P1 |
 | `data_export_jobs` | tenant_id, scope, status, file_key, requested_by, expires_at | P1 |
 
-关键索引：`customers(tenant_id, owner_id)`、`quotes(tenant_id, status, created_at)`、`pricing_policies(tenant_id, scope_type, scope_id, key)` 唯一、`quote_shares(token_hash)` 唯一、`quote_share_events(share_id, created_at)`、`orders(tenant_id, due_date, status)`、`audit_log(tenant_id, entity, entity_id, created_at)`、`print_jobs(tenant_id, status, created_at)`、`print_jobs(idempotency_key)` 唯一、`boxes(qr_payload)` 唯一、`subscriptions(tenant_id, status)`、`usage_events(tenant_id, meter, occurred_at)`、`invoices(tenant_id, status, due_at)`。
+关键索引：`customers(tenant_id, owner_id)`、`quotes(tenant_id, status, created_at)`、`pricing_policies(tenant_id, scope_type, scope_id, key)` 唯一、`quote_shares(token_hash)` 唯一、`quote_share_events(share_id, created_at)`、`orders(tenant_id, due_date, status)`、`audit_log(tenant_id, entity, entity_id, created_at)`、`print_jobs(tenant_id, status, created_at)`、`print_jobs(idempotency_key)` 唯一、`boxes(qr_payload)` 唯一、`subscriptions(tenant_id, status)`、`usage_events(tenant_id, meter, occurred_at)`、`invoices(tenant_id, status, due_at)`、`llm_settings(scope, tenant_id)` 唯一、`idp_connections(tenant_id)` 唯一、`sso_domains(domain)` 唯一。
 
 > 迁移策略：`tenantId` 现在加、存量填默认租户，新数据必须带；`ownerId` 先允许空，空=全公司可见（兼容演示数据），新数据强制填。
 > `pricing_policies` 的 `value_json` 存 `{ "marginPct": 20, "unit": "percent" }` 这类结构化值，不用字符串；`locked=true` 表示管控层，下级不可覆盖。
@@ -1083,7 +1126,7 @@ flowchart TB
 | 安全 | 跨租户数据泄露事件 | 0 |
 | 安全 | 跨租户越权测试覆盖 | 100% 业务表 |
 | LLM | 敏感字段出网次数（脱敏前） | 0 |
-| LLM | 自部署任务 p95 延迟 | ≤ 8 秒 |
+| LLM | LLM 调用 p95 延迟 | ≤ 8 秒 |
 | LLM | 外部模型处理占比（可按租户审计） | 可解释 |
 | 商业 | 每席位月处理单量 | 基线 ×2 |
 
@@ -1097,9 +1140,9 @@ flowchart TB
 
 | 阶段 | 已有路线 | 本次设计新增 | 端 |
 | ---- | -------- | ------------ | -- |
-| **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、**共享库 + RLS + 跨租户测试、LLM provider 接口 + 敏感字段脱敏**、`tenants/users/memberships/pricing_policies/quote_shares/tenant_data_planes/llm_configs` | PC + 手机 PWA + 客户 |
-| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、客户自带 Key / 自部署 LLM adapter（vLLM + Qwen）** | PC + 手机 PWA + 客户 |
-| **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张、独立库/区域选择/每租户 KMS** | PC 为主 |
+| **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、**共享库 + RLS + 跨租户测试、Casdoor 登录（OIDC + 租户组织映射）、LLM 设置页（全局参数 + 敏感字段脱敏）**、`tenants/users/idp_* /memberships/pricing_policies/quote_shares/tenant_data_planes/llm_settings` | PC + 手机 PWA + 客户 |
+| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、企业 SSO（Casdoor SAML/OIDC）、LLM 租户覆盖（含自定义 base_url）** | PC + 手机 PWA + 客户 |
+| **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张、独立库/每租户 KMS、LLM 按任务路由与调用成本看板** | PC 为主 |
 | **P3 阶段四**（6–8 周） | 订单履约、对账 | 客户自助门户（寄样进度/历史报价/对账单）、供应商协同、Tauri 外设壳、小程序（仅当客户侧验证成立）、洗水唛/吊牌、渠道商/多仓 | PC + 手机 + 客户侧 |
 
 **每阶段的验收都是「一个人做一次具体动作」**（沿用既有原则）：
@@ -1320,11 +1363,13 @@ features: { customer_portal: true, sso: false, custom_domain: true, print_agent:
 ```
 平台总管理端
 ├── 总览       MRR / ARR · 活跃租户 · 试用漏斗 · 流失 · 毛利 · 事故
-├── 租户       列表/搜索/筛选；详情：套餐、席位、用量、健康度、隔离模式（共享/schema/独立）、LLM 模式（云端/BYOK/自部署）、区域、备注、功能开关
+├── 租户       列表/搜索/筛选；详情：套餐、席位、用量、健康度、隔离模式（共享/schema/独立）、LLM 覆盖（默认/自定义端点）、区域、备注、功能开关
 ├── 订阅账单   合同、账单、回款、逾期、退款、发票
 ├── 用量       agent 动作、存储、短信；Top 消耗与异常
 ├── 套餐与价格 计划、价格表版本、租户覆盖、试算；改价不影响存量合同
 ├── 开票设置   税率、发票类型、开票主体、开票时机、红冲规则
+├── LLM 设置   全局参数、租户覆盖、测试连接、调用统计与预算
+├── 身份        Casdoor 组织、企业 SSO、MFA 策略、登录审计
 ├── 功能开关   按租户/批次灰度；一键回滚
 ├── 支持       工单、备注、break-glass 申请与审批
 ├── 运营       公告、邮件模板、试用跟进任务
@@ -1338,10 +1383,10 @@ features: { customer_portal: true, sso: false, custom_domain: true, print_agent:
 | `platform_owner` | 全部；改价格/套餐；删除租户 | 无 |
 | `platform_finance` | 账单、回款、发票、退款 | 改功能、看业务数据 |
 | `platform_support` | 看租户状态、开工单、申请 break-glass | 改套餐、删除、导出业务数据 |
-| `platform_ops` | 功能开关、灰度、事故处理 | 改账单、删除租户 |
+| `platform_ops` | 功能开关、灰度、LLM 参数、事故处理 | 改账单、删除租户 |
 | `platform_readonly` | 只看 | 任何写操作 |
 
-**五条硬规则**：
+**六条硬规则**：
 
 1. **默认看不到租户业务数据**。平台侧只存租户、订阅、用量聚合；需要看业务数据必须 break-glass。
 2. **代登录（impersonation）要审批**。租户管理员在应用内点同意，或工单里明确授权；单次 ≤ 60 分钟；租户端顶部始终显示「平台支持正在协助」；全程录审计；不能导出。
@@ -1411,12 +1456,12 @@ sequenceDiagram
 
 ---
 
-## 15. 多租户隔离与 LLM 部署（数据安全）
+## 15. 多租户隔离与 LLM 配置（数据安全）
 
 客户问「数据放哪、会不会混、能不能用我们自己的模型」，这不是技术细节，是**成交门槛**。结论先给：
 
 1. **数据库不要二选一**。默认「共享库 + 行级隔离（RLS）」，付费企业版可升级「每家公司一个 schema」，最高档「独立数据库/独立实例/私有化」。同一套代码，三种数据平面。
-2. **LLM 也不二选一**。默认云端 API（零留存、不训练），企业版可接**客户自己的 API Key / 专属端点 / 自部署模型**。按租户配置，不按全局开关。
+2. **LLM 也不二选一**。默认云端 API（零留存、不训练），企业版可接**客户自己的 API Key / 自定义端点**。按租户配置，不按全局开关。
 3. **现在就要留口子**，否则以后改成本很高：所有表带 `tenant_id`、从第一天开 RLS、租户表加 `data_plane_id` / `isolation_mode` / `region`、LLM 走 provider 接口而不是全局单例。
 
 ### 15.1 四种隔离模型与推荐
@@ -1476,37 +1521,39 @@ CREATE POLICY tenant_isolation ON quotes
 
 迁移路径必须**单向可升级**：共享 → schema → 独立库 → 独立实例。客户规模变大时只换数据平面，不换产品。
 
-### 15.4 LLM 部署：四种模式，按租户选
+### 15.4 LLM：不自建模型，只在总后台留参数
 
-| 模式 | 数据路径 | 适合 | 代价 |
-| ---- | -------- | ---- | ---- |
-| 云端共享 API（默认） | 我们 → 模型厂商，零留存/不训练/区域端点 | 大多数客户 | 依赖厂商合规 |
-| 云端专属端点 | 我们 → 厂商专属实例 | 中大型客户 | 成本高、容量固定 |
-| 客户自带 Key（BYOK） | 我们 → 客户的云账号/端点 | 已有 AI 合同的客户 | 需要客户运维 |
-| 自部署（VPC/内网） | 客户的 GPU 上跑开源模型 | 数据不出内网、信创 | GPU、运维、模型更新 |
+**按你的决定：不自部署、不做 GPU 运维。** 平台总后台提供「LLM 设置」页，配好参数即可；默认一套全局配置，允许按租户覆盖。想接自己模型的客户，把 `base_url` 指向自己的 vLLM / OpenAI 兼容端点就行，我们不负责那台机器。
 
-**自部署不是从零做**：现有代码里 LLM / embedding 已经是 provider 接口（默认 `local-rule` / `local-stub`），接入 vLLM / SGLang / TGI 只是实现一个 `LlmProvider` + 一个 `EmbeddingProvider`。模型建议 Qwen 系列（中文与工具调用稳），按任务分大小模型。
+**参数表**（全局默认 → 租户覆盖，就两层，不搞复杂继承）：
 
-**模型网关（Model Gateway）**：所有 agent 不直接调厂商，统一走网关，网关负责：
+| 参数 | 说明 |
+| ---- | ---- |
+| Provider | OpenAI 兼容 / 阿里百炼 / 火山 / Azure / 自定义 |
+| Base URL | 兼容 OpenAI 协议的端点；客户自建模型就填自己的内网地址 |
+| API Key | 加密存 KMS，不回显；支持 BYOK |
+| Model | 主模型，例如 `qwen-plus`、`deepseek-chat` |
+| Temperature / Top P | 报价建议偏保守（0.2），文案可稍高 |
+| Max tokens / Timeout / Retries | 按任务配，避免长任务卡死 |
+| Fallback | 主模型失败时的备用模型；再失败降级到规则 |
+| 允许出网 | 租户级开关；关闭后只用本地规则 |
+| 记录 prompt | 默认关；开启时脱敏并只保留 30 天 |
+| 每日预算 | 按租户/全局，防止跑飞 |
 
-1. 按租户读 `llm_configs`：provider、base_url、model、key（KMS 加密）、region、是否允许外部。
-2. 按数据分级路由：客户原话/报价可走云端；成本底线、合同、客户名单默认只走自部署或本地规则。
-3. PII 脱敏：手机号、银行账号、身份证在出网前替换；返回后再还原。
-4. 不跨租户复用提示缓存；日志默认不存 prompt 原文，只存 hash 与 token 数。
-5. 失败降级：云端超时 → 重试 → 降级到规则/小模型 → 告知「建议由人处理」，不静默失败。
-6. 质量评估：换模型/换端点前跑固定评测集（报价准确率、工具调用成功率），不靠感觉。
+**页面能力**：测试连接、拉模型列表、保存为新版本、一键回滚、查看最近调用与错误率。改配置需要 owner 复核，写审计。
 
-**租户端开关**（企业版）：数据与安全 → 模型设置：
+**按任务路由**（可选）：报价/对账用稳的模型（低 temperature），跟进话术可用便宜模型，OCR 用专用模型。全部在同一个设置页里按「任务」覆盖，不增加新概念。
 
-```
-模型来源：云端（零留存） / 自带 Key / 自部署
-允许数据出网：是 / 否
-数据区域：杭州 / 新加坡 / 客户内网
-模型：Qwen2.5-32B（自部署） / 云端默认
-调用日志：不记录原文 / 记录 30 天（可选）
-```
+**仍然保留的底线**：
 
-**敏感数据策略**：即使用户选云端，也默认「最小化 + 脱敏」；「不允许外部模型」的租户，agent 只用本地规则/自部署模型，功能降级但可用，界面明确提示「当前为私有模式，部分建议质量下降」。
+1. 所有 agent 走统一网关，不直接调厂商；密钥只存在服务端。
+2. 敏感字段（手机号、银行账号）出网前脱敏；成本底线、合同价、客户名单默认不发给外部模型。
+3. 不跨租户复用缓存；prompt 默认不落原文。
+4. 「不允许外部模型」的租户，agent 用规则/本地模型，界面明确提示能力降级。
+
+**数据区域是什么、要不要管**：就是数据存在哪个机房/国家。国内客户默认杭州，**不需要选**；只有海外客户或合同明确要求「数据不出境/存在新加坡」时才出现这个选项。字段保留，但现在不给你增加操作。
+
+**不自部署意味着什么**：我们不做模型训练、GPU 采购、模型升级。客户坚持要内网模型，就由客户自己提供兼容端点，我们只填 URL 和 Key。这样复杂度最低，也仍然留了口子。
 
 ### 15.5 现在版本必须留的口子（很便宜，后面补很贵）
 
@@ -1516,7 +1563,7 @@ CREATE POLICY tenant_isolation ON quotes
 | RLS | 第一天就开，CI 跨租户测试 | 不用补历史漏网查询 |
 | 数据平面 | `tenants` 加 `isolation_mode` / `data_plane_id` / `region` | 升级 schema/独立库只改路由 |
 | 对象存储 | key 前缀带租户，签名 URL 带租户 | 不用迁移文件 |
-| LLM | provider 接口 + `llm_configs` 按租户读，不写全局单例 | 接自部署只加 adapter |
+| LLM | 参数统一走 `llm_settings`（全局 + 租户覆盖），agent 不直连厂商 | 换模型/换供应商只改配置 |
 | 密钥 | API Key 存 KMS/密钥管理，不落库明文 | 满足企业安全评审 |
 | 审计 | 记录 tenant、data plane、provider、model、prompt hash | 可回答「数据经过谁」 |
 | 导出/删除 | 租户级导出/删除任务 | 满足合规与流失交接 |
@@ -1528,7 +1575,7 @@ CREATE POLICY tenant_isolation ON quotes
 - 权限：最小权限、MFA、平台侧 break-glass 需租户同意、双人复核。
 - 审计：登录、导出、打印、审批、平台访问全留痕；审计不可改。
 - 备份：每日全量 + PITR；每季度恢复演练；企业版可指定区域。
-- 模型：零留存协议、不训练、区域端点；自部署可选；prompt 默认不留原文。
+- 模型：零留存协议、不训练、区域端点；支持客户自定义端点；prompt 默认不留原文。
 - 合规：DPA、子处理商清单、数据删除承诺、渗透测试报告（上线前）。
 
 ### 15.7 分期建议
@@ -1536,16 +1583,24 @@ CREATE POLICY tenant_isolation ON quotes
 | 阶段 | 数据隔离 | LLM |
 | ---- | -------- | --- |
 | P0 | 共享库 + RLS + 跨租户测试；`isolation_mode` 字段 | provider 接口 + 云端零留存；敏感字段脱敏 |
-| P1 | schema-per-tenant 路由与迁移；单租户导出/恢复 | 客户自带 Key；自部署 adapter（vLLM + Qwen） |
-| P2 | 独立数据库/实例、区域选择、每租户 KMS | 专属端点、模型评测、私有化部署包 |
+| P1 | schema-per-tenant 路由与迁移；单租户导出/恢复 | LLM 租户覆盖（含自定义 base_url / 客户自带 Key） |
+| P2 | 独立数据库/实例、每租户 KMS、区域（仅按合同启用） | LLM 按任务路由、调用成本看板、故障切换 |
 
-### 15.8 需要拍板
+### 15.8 已定与待定
 
-1. 默认付费客户用共享库 + RLS，是否接受？（建议接受；企业版再升 schema）
-2. 自部署模型由谁运维：客户 IT，还是我们提供托管私有云？
-3. 数据区域先开哪几个？（建议杭州 + 新加坡）
-4. 隔离/自部署是否作为 Enterprise 的付费项？加价多少？
-5. 是否承诺「绝不用客户数据训练」并写进合同？（建议写）
+**已定（v1.5）**：
+
+1. 默认共享库 + RLS；schema/独立库只作为应对挑剔客户的升级项，不默认。
+2. 不自部署模型，不做 GPU 运维；总后台「LLM 设置」提供参数口子，客户要内网模型就填自己的兼容端点。
+3. 数据区域不作为用户必选项：国内默认杭州，只有海外/合同要求时才启用。
+4. 「绝不用客户数据训练」写进合同与官网。
+5. 登录交给 Casdoor，我们只做授权映射。
+
+**还需确认**：
+
+1. 隔离升级（schema/独立库）定价：Enterprise 加价多少？
+2. LLM 默认供应商与模型选哪家（阿里百炼 / 火山 / DeepSeek）？
+3. Casdoor 自托管由谁运维、是否接受它作为登录单点？
 
 ---
 
@@ -1572,9 +1627,11 @@ CREATE POLICY tenant_isolation ON quotes
 | 定价过低覆盖不了 agent 成本 | 越卖越亏 | 每席位额度 + 动作包 + 月度毛利看板；毛利 < 60% 触发调价 |
 | 共享库漏加租户条件导致串号 | 严重安全事故 | RLS 强制 + 应用角色无 BYPASSRLS + CI 两租户互查 + 对象存储/缓存前缀隔离 |
 | schema 迁移一半失败 | 部分租户不可用 | 按租户串行迁移 + 单租户回滚 + 每个 schema 记录版本 |
-| 自部署模型质量下降 / 没人运维 | 客户体验差、口碑受损 | 固定评测集 + 模型版本锁定 + 托管私有云选项 + 降级到规则 |
+| 客户自填的模型端点不稳定 | 调用失败、体验下降 | 测试连接 + 超时/重试 + 备用模型 + 降级到规则；不承诺运维客户端点 |
+| Casdoor 登录单点故障 | 全员无法登录 | 独立部署 + 多副本 + 每日备份 + 会话短期宽限 + 监控告警 |
+| Casdoor 与本地成员不同步 | 权限错配 | `(sub, org)` 映射 + 定期对账任务 + 离职禁用双写 |
 | 客户敏感数据出网 | 合规与信任风险 | 默认脱敏 + 数据分级路由 + 租户「禁止外部模型」开关 + 出网审计 |
-| 模型厂商停服/涨价 | 成本与连续性 | provider 抽象 + 多厂商 + 自部署兜底 + 按租户可切 |
+| 模型厂商停服/涨价 | 成本与连续性 | provider 抽象 + 多厂商 + 备用端点 + 规则降级 + 按租户可切 |
 | 渠道 API 审批 | 自动发送无法上线 | 先「复制文案 + 记录已发」，不阻塞链路 |
 | 多租户数据串号 | 严重安全事故 | 所有业务表 `tenant_id` + 行级隔离；控制面单独 schema；集成测试覆盖跨租户越权 |
 
@@ -1589,7 +1646,8 @@ CREATE POLICY tenant_isolation ON quotes
 7. 开票：按「老规矩」默认 **6% 增值税专用发票、价税分离、收款后开票**；发票类型/税率/开票主体/时机在**总后台「开票设置」**可改，按租户生效。见 §14.3。
 8. 打印：**做一个真正的打印代理（Print Agent）**，本地常驻、自动发现打印机、离线补打、本地渲染与校准；每家公司通过「参数覆盖 → 字段布局 → 模板工作室 → 模板包」自定义，并可用 **AI 识样张**从旧单据生成模板。见 §4.4。
 9. 数据隔离：**默认共享库 + RLS**，企业版可升级 **schema-per-tenant**，旗舰/私有化用独立库/实例；同一套代码按 `data_plane` 路由。见 §15。
-10. LLM：**按租户配置**——云端（零留存/不训练）/ 客户自带 Key / 自部署（vLLM + Qwen）；统一走模型网关，敏感字段脱敏，禁止外部模型的租户可完全内网运行。见 §15.4。
+10. LLM：**不自建/不自部署模型**，总后台「LLM 设置」提供参数口子（provider、base_url、model、Key、temperature、预算）；默认全局、支持租户覆盖；客户要内网模型就填自己的兼容端点。见 §15.4。
+11. 登录：**交给 Casdoor**（自托管 OIDC/OAuth2），一个租户一个 Organization，平台管理员独立应用 + 强制 MFA；我们只保留角色/数据范围映射，不存密码。见 §3.6。
 
 **还需要你拍板的事**：
 
@@ -1609,10 +1667,9 @@ CREATE POLICY tenant_isolation ON quotes
 9. 开票按 6% 专票是否就是你说的「老规矩」？如果公司实际按 13% 开，请让财务在总后台改税率即可。
 
 数据安全：
-10. 默认付费客户用「共享库 + RLS」是否接受？还是所有客户都要 schema？
-11. 自部署 LLM 由谁运维（客户 IT / 我们托管 / 混合）？先支持哪个模型与 GPU 规格？
-12. 数据区域先开哪几个（建议杭州 + 新加坡）？是否需要信创/内网私有化？
-13. 「绝不用客户数据训练」是否写进合同与官网？
+10. schema/独立库作为 Enterprise 升级项，加价多少？
+11. LLM 默认用哪家（阿里百炼 / 火山 / DeepSeek）？先配哪个模型？
+12. Casdoor 自托管由谁运维？是否接受它作为登录单点（需要监控与备份）？
 
 ---
 
@@ -1622,4 +1679,4 @@ CREATE POLICY tenant_isolation ON quotes
 - 阶段排序与验收口径：沿用 `usability-roadmap.md`；本文只在其上补产品设计与双端落点。
 - 平台形态（移动端/桌面壳/打印/部署）：`platform-and-engineering-plan.md` 的结论仍然有效；本文的差异是**把移动端从「阶段三之后」提前到 P0 的 PWA**，并在 v1.1 扩为 5 入口 + 角色化现场能力，理由是公司化后「老板在路上批单」是采纳瓶颈，且 PWA 成本远低于 Taro 三端。
 - 客户侧：`platform-and-engineering-plan.md` 曾把客户自助端排在 P3；v1.1 按你的决定把**单条报价链接**提前到 P0（只读、无登录、可接受），完整的客户门户（寄样/历史/对账）仍在 P3。
-- 数据隔离与模型部署：既有文档按「试点单租户」假设，v1.4 改为**SaaS 多租户分层隔离**（共享库+RLS / schema / 独立库）与**按租户选择 LLM**（云端 / BYOK / 自部署），见 §15；private deployment 仍按 Enterprise 交付。
+- 数据隔离与模型部署：既有文档按「试点单租户」假设，v1.4 改为**SaaS 多租户分层隔离**（共享库+RLS / schema / 独立库）；v1.5 按你的决定**不做自部署模型**，只在平台端提供 LLM 参数口子，见 §15。登录统一交给 Casdoor，见 §3.6。

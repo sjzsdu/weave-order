@@ -450,7 +450,7 @@
     </div>
     <div class="page-meta">
       <span class="pill"><span class="dot"></span>可点击：左侧导航 / 审批 / 手机 Tab</span>
-      <span class="pill">v1.4 · 2026-11-12</span>
+      <span class="pill">v1.5 · 2026-11-12</span>
     </div>
   </div>
 
@@ -956,11 +956,13 @@
                       <div class="eyebrow">数据与安全</div>
                       <span class="badge good">共享库 + RLS</span>
                     </div>
-                    <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">数据区域</span><span>杭州</span></div>
+                    <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">数据区域</span><span>杭州（默认）</span></div>
+                    <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">登录</span><span>Casdoor · 账号/微信</span></div>
+                    <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">企业 SSO</span><span>未开启</span></div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">LLM</span><span>云端 · 零留存</span></div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">敏感字段</span><span>出网前脱敏</span></div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">数据训练</span><span>永不使用</span></div>
-                    <button class="btn ghost sm" style="width:100%;margin-top:8px">升级隔离 / 切换自部署模型</button>
+                    <button class="btn ghost sm" style="width:100%;margin-top:8px">升级隔离 / 配置模型</button>
                   </div>
 
                   <div class="card pad">
@@ -1403,6 +1405,8 @@
             <button><svg viewBox="0 0 24 24"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>用量</button>
             <button><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/></svg>套餐与价格</button>
             <button><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>开票设置</button>
+            <button><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><circle cx="12" cy="12" r="4"/></svg>LLM 设置</button>
+            <button><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3-5.8 7-5.8s7 2.2 7 5.8"/></svg>身份</button>
             <button><svg viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>功能开关</button>
             <button><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>支持</button>
             <button><svg viewBox="0 0 24 24"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>平台审计</button>
@@ -1439,7 +1443,8 @@
               <span style="font-size:11.5px">共享库 + RLS <b class="num">36</b></span>
               <span style="font-size:11.5px">Schema / 租户 <b class="num">5</b></span>
               <span style="font-size:11.5px">独立库 <b class="num">1</b></span>
-              <span style="font-size:11.5px">自部署 LLM <b class="num">4</b></span>
+              <span style="font-size:11.5px">LLM 租户覆盖 <b class="num">3</b></span>
+              <span style="font-size:11.5px">Casdoor 组织 <b class="num">42</b></span>
               <span class="tiny muted" style="margin-left:auto">跨租户测试 100% 业务表 · 敏感字段出网前脱敏</span>
             </div>
 
@@ -1493,6 +1498,23 @@
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">开票时机</span><span>收款后 3 个工作日</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">可按租户覆盖</span><span class="num">2 家</span></div>
                   <div class="tiny muted" style="margin-top:7px">类型 / 税率 / 主体 / 时机均可配；改税率需财务复核。</div>
+                </div>
+
+                <div class="card pad" id="llmCard" style="margin-top:14px">
+                  <div class="between" style="margin-bottom:6px">
+                    <div class="eyebrow">LLM 设置 · 全局</div>
+                    <span class="badge">云端</span>
+                  </div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">Provider</span><span>阿里百炼</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">模型</span><span>qwen-plus</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">Temperature</span><span class="num">0.2</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">租户覆盖</span><span class="num">3 家</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">今日调用</span><span class="num">1,284 次 · 0 失败</span></div>
+                  <div class="between" style="margin-top:8px;gap:7px">
+                    <button class="btn ghost sm" style="flex:1">测试连接</button>
+                    <button class="btn primary sm" style="flex:1">编辑参数</button>
+                  </div>
+                  <div class="tiny muted" style="margin-top:7px">客户内网模型填自己的 base_url；Key 加密存储、不回显。</div>
                 </div>
 
                 <div class="card pad" style="margin-top:14px">
@@ -1689,6 +1711,16 @@
   if (scrollWin) {
     const target = document.getElementById(scrollWin);
     if (target) window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - 16);
+  }
+  const adminScroll = (new URLSearchParams(location.search).get('adminScroll') || '').trim();
+  if (adminScroll) {
+    const target = document.getElementById(adminScroll);
+    const scroller = document.querySelector('.cbody');
+    if (target && scroller) {
+      const tr = target.getBoundingClientRect();
+      const sr = scroller.getBoundingClientRect();
+      scroller.scrollTop += tr.top - sr.top - 16;
+    }
   }
 </script>
 </body>
