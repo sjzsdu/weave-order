@@ -61,7 +61,8 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(new URL(next, request.url));
   const secure = process.env.NODE_ENV === "production";
   response.cookies.set("weave_token", token, {
-    httpOnly: false, // 浏览器端 API client 需要携带；生产应换成 BFF 会话代理
+    // 只走同源 BFF 转发；浏览器脚本永远读不到原始 OIDC token。
+    httpOnly: true,
     sameSite: "lax",
     secure,
     path: "/",

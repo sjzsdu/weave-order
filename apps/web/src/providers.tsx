@@ -5,28 +5,7 @@ import type { ApiClient } from "@weave-order/core";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-const TOKEN_STORAGE_KEY = "weave.token";
 const DEMO_STORAGE_KEY = "weave.demo";
-
-function readCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
-}
-
-export function readToken(): string | null {
-  if (typeof window === "undefined") return null;
-  const stored = window.localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (stored) return stored;
-  const cookie = readCookie("weave_token");
-  if (cookie) return cookie;
-  // 本地 dev 网关接受 dev:<sub>:<org>；生产构建里绝不回退。
-  if (process.env.NODE_ENV !== "production") {
-    return process.env.NEXT_PUBLIC_DEV_TOKEN ?? "dev:demo:demo";
-  }
-  return null;
-}
-
 const ApiContext = createContext<ApiClient | null>(null);
 
 /** 页面永远从这里拿 client；不在组件里裸 fetch，也不碰 tenant_id。 */
@@ -36,8 +15,11 @@ export function useApi(): ApiClient {
   return client;
 }
 
+const DEMO_ALLOWED = process.env.NODE_ENV !== "production";
+
 export function AppProviders({ children }: { children: ReactNode }) {
   const [demo, setDemo] = useState(() => {
+    if (!DEMO_ALLOWED) return false;
     if (typeof window === "undefined") return process.env.NEXT_PUBLIC_DEMO_MODE === "1";
     const params = new URLSearchParams(window.location.search);
     if (params.get("demo") === "1") return true;
@@ -51,6 +33,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setMounted(true);
+    if (!DEMO_ALLOWED) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("demo") === "1") {
       window.localStorage.setItem(DEMO_STORAGE_KEY, "1");
@@ -79,10 +62,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   const client = useMemo<ApiClient>(() => {
     if (demo) return createMockApiClient();
-    return createApiClient({
-      baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "",
-      getToken: readToken,
-    });
+    // token 只在服务端 BFF（app/api/[...path]/route.ts）注入，浏览器不持有。
+    return createApiClient({ baseUrl: "", getToken: () => null });
   }, [demo]);
 
   const queryClient = useMemo(() => createQueryClient(), []);

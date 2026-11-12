@@ -15,8 +15,7 @@ export function middleware(request: NextRequest) {
   if (process.env.NODE_ENV !== "production") return NextResponse.next();
 
   const token = request.cookies.get("weave_token")?.value;
-  const demo = request.cookies.get("weave_demo")?.value;
-  if (token || demo) return NextResponse.next();
+  if (token) return NextResponse.next();
 
   const login = new URL("/login", request.url);
   login.searchParams.set("next", pathname);

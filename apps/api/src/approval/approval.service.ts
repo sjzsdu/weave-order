@@ -177,7 +177,8 @@ export function createApprovalService(kernel: Kernel) {
           sourceRef: null,
         });
 
-        const highValue = view.total.amount >= 5_000_000;
+        // 风险等级只跟随后端 resolved policy / 升级结果，不在前端另设阈值。
+        const escalated = view.requirement.escalated;
         return ApprovalDetail.parse({
           item,
           customer,
@@ -210,7 +211,12 @@ export function createApprovalService(kernel: Kernel) {
                 ]
               : [],
           risk: {
-            level: item.escalated ? "HIGH" : highValue ? "MEDIUM" : "LOW",
+            level:
+              escalated && view.requirement.level === "OWNER"
+                ? "HIGH"
+                : escalated
+                  ? "MEDIUM"
+                  : "LOW",
             reasons: view.requirement.reasons,
           },
           audit,

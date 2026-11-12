@@ -12,7 +12,7 @@ export function GET(request: NextRequest) {
   const next = request.nextUrl.searchParams.get("next") ?? "/today";
   const response = NextResponse.redirect(new URL(next, request.url));
   response.cookies.set("weave_token", token, {
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: 8 * 60 * 60,

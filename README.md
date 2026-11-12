@@ -72,9 +72,13 @@ pnpm dev
 组织设置（⌘,）。打印是全局抽屉，不是第四个窗口。智能体只出 `DRAFT` / 建议；
 批准 / 拒绝是审批窗口里人类唯一的决策入口，前端经 `/api/approvals/decide` 调内核 confirm 生效（铁律 #2）。
 
-首次本地预览可以不带后端：访问 `http://localhost:3001/today?demo=1` 使用 mock transport；
-真实联调时用 `GET /auth/dev` 写入 dev token（默认 `dev:demo:demo`），或配置 Casdoor 走
-`/auth/login` → `/auth/callback`（Authorization Code + PKCE，客户端不持有 secret）。
+首次本地预览可以不带后端：开发模式下访问 `http://localhost:3001/today?demo=1` 使用 mock transport
+（生产构建禁用 demo 入口）。真实联调时用 `GET /auth/dev` 写入 dev token（默认 `dev:demo:demo`），
+或配置 Casdoor 走 `/auth/login` → `/auth/callback`（Authorization Code + PKCE，客户端不持有 secret）。
+
+OIDC token 只存 **httpOnly Cookie**；浏览器只调同源 `/api/*`，由 Next BFF
+（`apps/web/app/api/[...path]/route.ts`）在服务端注入 `Authorization` 转发给 Nest。
+前端脚本不读 token、不落 localStorage，生产也不需要开放跨域。
 
 `demo` 逐项展示：
 
