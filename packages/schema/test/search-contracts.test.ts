@@ -67,6 +67,28 @@ describe("T-001 search_fabric_by_image", () => {
     ).toBe(false);
   });
 
+  it("接受直传后的 imageUrl，并填充默认参数", () => {
+    const parsed = T001SearchFabricByImageInput.safeParse({
+      imageUrl: "https://cdn.weaveorder.cn/fabric/abc.jpg",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.topK).toBe(5);
+      expect(parsed.data.minSimilarity).toBe(0.5);
+      expect("imageUrl" in parsed.data).toBe(true);
+    }
+  });
+
+  it("base64 与 imageUrl 只能二选一，且拒绝非法 URL", () => {
+    expect(
+      T001SearchFabricByImageInput.safeParse({
+        image: { mimeType: "image/jpeg", base64: "aGVsbG8=" },
+        imageUrl: "https://cdn.weaveorder.cn/fabric/abc.jpg",
+      }).success,
+    ).toBe(false);
+    expect(T001SearchFabricByImageInput.safeParse({ imageUrl: "not-a-url" }).success).toBe(false);
+  });
+
   it("接受带相似度的结果，拒绝越界的相似度", () => {
     const ok = T001SearchFabricByImageResult.safeParse({
       ok: true,

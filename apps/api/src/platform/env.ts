@@ -27,6 +27,10 @@ const EnvSchema = z.object({
   CASDOOR_JWKS_URI: z.string().url().optional(),
   /** 客户报价分享链接的站点根地址。 */
   PUBLIC_APP_URL: z.string().url().default("http://localhost:5173"),
+  /** T-001 imageUrl 变体允许取图的对象存储 / CDN 域名（逗号分隔）。 */
+  MEDIA_ALLOWED_HOSTS: z.string().default(""),
+  /** 按 URL 取图的最大字节数（默认 2MB，上限 10MB）。 */
+  MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(10_000_000).default(2_000_000),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

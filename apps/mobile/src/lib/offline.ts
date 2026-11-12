@@ -195,11 +195,13 @@ export async function submitQueuedOperation(op: QueuedOperation, deps: QueueDeps
         return;
       }
       case "quote.revise": {
+        // 语义：离线时用户本人改自己的草稿 = 直接应用（产品设计 §7.8），
+        // 不是「恢复联网后再找一个人审批」。approval 仍是单独的 quote.decide 操作。
         const revision = await deps.api.createRevision(payload as CreateRevisionRequestInput);
         await deps.api.decideRevision({
           revisionRequestId: revision.id,
           decision: "APPROVE",
-          note: "移动端离线改价，恢复后人工确认",
+          note: "离线改价，直接应用用户本人修改",
         });
         return;
       }

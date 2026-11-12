@@ -61,8 +61,8 @@ export interface MobileApi extends ApiClient {
   getQuote(quoteId: string): Promise<QuoteDetail>;
   /**
    * 以图搜样（直传后按 URL 检索）。
-   * 注意：T0 冻结的 T-001 只接受 base64，和「禁止 base64 JSON」冲突；
-   * 这里按 imageUrl 调用，待契约增加 URL 变体后即可接真后端。
+   * T-001 现支持 imageUrl（与 base64 `image` 二选一）；真后端需配置
+   * MEDIA_ALLOWED_HOSTS 对象存储域名白名单。
    */
   searchByImageUrl(imageUrl: string): Promise<T001SearchFabricByImageResult>;
   createRevision(input: z.input<typeof CreateRevisionRequestInput>): Promise<RevisionRequest>;

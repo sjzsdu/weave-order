@@ -656,7 +656,7 @@ export function createMockServer(options: MockServerOptions): MockServer {
     if (method === "POST" && path === "/api/tools/search-by-spec")
       return jsonResponse(200, searchSpec(body));
     if (method === "POST" && path === "/api/tools/search-by-image") {
-      if (typeof body.base64 === "string") {
+      if (typeof body.base64 === "string" || typeof body.image === "object") {
         return fail(400, "INVALID_INPUT", "移动端禁止 base64 JSON，请先直传对象存储并传 imageUrl");
       }
       if (typeof body.imageUrl !== "string") {

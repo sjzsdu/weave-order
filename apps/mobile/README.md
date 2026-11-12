@@ -98,16 +98,18 @@ src/
 
 ## 待联调契约（Track A / E 落地后对齐）
 
-| 调用                                                | 当前状态     | 说明                                                                                                              |
-| --------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `POST /api/revisions`、`POST /api/revisions/decide` | mock 已实现  | 输入用 T0 的 `CreateRevisionRequestInput` / `DecideRevisionRequestInput`；HTTP 路径待 Track A 确认                |
-| `GET /api/quotes/:id`                               | mock 已实现  | 返回 `{ draft, version, status }`，供改价页 / 冲突重载                                                            |
-| `POST /api/media/presign`                           | mock 已实现  | 返回 `{ uploadUrl, publicUrl, method, headers?, formData? }`                                                      |
-| `POST /api/shipments/proof`                         | mock 已实现  | 拍照签收 / 大货 / 回款凭证                                                                                        |
-| `GET /api/quote-shares?quoteId=`                    | mock 已实现  | 客户 360 的链接访问时间线                                                                                         |
-| `POST /api/tools/search-by-image`                   | **契约冲突** | T0 的 T-001 只接受 base64 `image`，与「禁止 base64 JSON」冲突；移动端改为直传后传 `imageUrl`，需契约增加 URL 变体 |
+| 调用                                                | 当前状态      | 说明                                                                                                             |
+| --------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `POST /api/revisions`、`POST /api/revisions/decide` | mock 已实现   | 输入用 T0 的 `CreateRevisionRequestInput` / `DecideRevisionRequestInput`；HTTP 路径待 Track A 确认               |
+| `GET /api/quotes/:id`                               | mock 已实现   | 返回 `{ draft, version, status }`，供改价页 / 冲突重载                                                           |
+| `POST /api/media/presign`                           | mock 已实现   | 返回 `{ uploadUrl, publicUrl, method, headers?, formData? }`                                                     |
+| `POST /api/shipments/proof`                         | mock 已实现   | 拍照签收 / 大货 / 回款凭证                                                                                       |
+| `GET /api/quote-shares?quoteId=`                    | mock 已实现   | 客户 360 的链接访问时间线                                                                                        |
+| `POST /api/tools/search-by-image`                   | 已补 URL 变体 | T-001 现接受 `imageUrl`（与 base64 `image` 二选一）；服务端按 `MEDIA_ALLOWED_HOSTS` 白名单取图，移动端直传后调用 |
 
 切换真后端只需改 `src/lib/mobile-api.ts`（未冻结点集中在这里），页面不裸 fetch。
+
+真后端启用 imageUrl 变体需配置对象存储域名白名单：`MEDIA_ALLOWED_HOSTS=cdn.weaveorder.cn`（本地 MinIO 可加 `localhost`）。
 
 ## 测试
 

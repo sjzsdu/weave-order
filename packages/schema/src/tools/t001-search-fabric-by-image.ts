@@ -18,13 +18,36 @@ export const ImagePayload = z
   .strict();
 export type ImagePayload = z.infer<typeof ImagePayload>;
 
-export const T001SearchFabricByImageInput = z
+/**
+ * T-001 输入有两种图像来源，二选一（不允许同时传）：
+ * - `image`：base64，保留给已有后端/脚本；
+ * - `imageUrl`：对象存储预签名 URL，移动端直传后使用（禁止把图片塞进 JSON base64）。
+ *
+ * URL 变体由服务端校验域名白名单 + 体积上限后取图，绝不直接信任客户端 URL。
+ */
+const T001Options = {
+  topK: z.number().int().positive().max(50).default(5),
+  minSimilarity: z.number().min(0).max(1).default(0.5),
+} as const;
+
+export const T001SearchFabricByImageBase64Input = z
+  .object({ image: ImagePayload, ...T001Options })
+  .strict();
+export type T001SearchFabricByImageBase64Input = z.infer<typeof T001SearchFabricByImageBase64Input>;
+
+export const T001SearchFabricByImageUrlInput = z
   .object({
-    image: ImagePayload,
-    topK: z.number().int().positive().max(50).default(5),
-    minSimilarity: z.number().min(0).max(1).default(0.5),
+    /** 必须是 http(s) 预签名 URL；服务端按 MEDIA_ALLOWED_HOSTS 白名单取图。 */
+    imageUrl: z.string().url().max(2048),
+    ...T001Options,
   })
   .strict();
+export type T001SearchFabricByImageUrlInput = z.infer<typeof T001SearchFabricByImageUrlInput>;
+
+export const T001SearchFabricByImageInput = z.union([
+  T001SearchFabricByImageBase64Input,
+  T001SearchFabricByImageUrlInput,
+]);
 export type T001SearchFabricByImageInput = z.infer<typeof T001SearchFabricByImageInput>;
 
 /** 以图搜图的一条候选结果。 */

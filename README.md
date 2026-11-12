@@ -137,7 +137,7 @@ pnpm format       # Prettier
 | GET  | `/api/samples`                      | 只读                          | 样品目录                                |
 | GET  | `/api/audit`                        | 只读                          | 审计流水                                |
 | POST | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
-| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）                |
+| POST | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64 / imageUrl）     |
 | POST | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
 | POST | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
 | POST | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
