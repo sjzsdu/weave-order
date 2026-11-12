@@ -10,6 +10,8 @@ import {
   Customer,
   FabricSample,
   PanoramaSnapshot,
+  QuoteShareStats,
+  QuoteShareStatsList,
   T002SearchFabricBySpecInput,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
@@ -43,6 +45,8 @@ export class ApiError extends Error {
 
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
 const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
+const OkQuoteShareStats = z.object({ ok: z.literal(true), data: QuoteShareStats }).strict();
+const OkQuoteShareStatsList = z.object({ ok: z.literal(true), data: QuoteShareStatsList }).strict();
 const AuditResponse = z.object({
   entries: z.array(
     z
@@ -121,9 +125,7 @@ export function createApiClient(options: ApiClientOptions) {
 
     /** 审批卡详情：出处 / diff / 草稿态由后端只读聚合，前端不推导。 */
     approvalDetail: async (id: string, kind: ApprovalKind) =>
-      ApprovalDetail.parse(
-        await request(`/api/approvals/${encodeURIComponent(id)}?kind=${kind}`),
-      ),
+      ApprovalDetail.parse(await request(`/api/approvals/${encodeURIComponent(id)}?kind=${kind}`)),
 
     audit: async (limit = 50) =>
       AuditResponse.parse(await request(`/api/audit?limit=${limit}`)).entries,
@@ -145,6 +147,16 @@ export function createApiClient(options: ApiClientOptions) {
 
     createQuoteShare: async (input: z.input<typeof CreateQuoteShareInput>) =>
       CreatedQuoteShare.parse(await post("/api/quote-shares", CreateQuoteShareInput.parse(input))),
+
+    /** 业务员分享面板：访问次数 / 独立访客 / 接受 / 留言聚合。 */
+    quoteShareStats: async (quoteId: string) =>
+      OkQuoteShareStatsList.parse(
+        await request(`/api/quotes/${encodeURIComponent(quoteId)}/shares`),
+      ).data.shares,
+
+    revokeQuoteShare: async (shareId: string) =>
+      OkQuoteShareStats.parse(await post(`/api/shares/${encodeURIComponent(shareId)}/revoke`, {}))
+        .data,
   };
 }
 

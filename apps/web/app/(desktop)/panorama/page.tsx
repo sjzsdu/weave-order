@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { usePanorama } from "@weave-order/core";
 import {
   AuditTrail,
   Badge,
+  Button,
   EmptyState,
   MoneyText,
   SampleTile,
@@ -12,6 +14,7 @@ import {
 } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
+import { SharePanel } from "@/share-panel";
 import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL } from "@/format";
 
 const STAT_KEYS = [
@@ -35,6 +38,7 @@ export default function PanoramaPage() {
 function PanoramaPageContent() {
   const api = useApi();
   const panorama = usePanorama(api);
+  const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
 
   if (panorama.isLoading) return <Spinner label="正在汇总业务全景…" />;
   if (panorama.isError || !panorama.data) {
@@ -100,7 +104,9 @@ function PanoramaPageContent() {
                       <div className="text-xs text-ink-400">{customer.code}</div>
                     </td>
                     <td className="px-3 py-2">
-                      <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>{customer.tier}</Badge>
+                      <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>
+                        {customer.tier}
+                      </Badge>
                     </td>
                     <td className="px-3 py-2 text-ink-700">
                       {customer.contactName ?? "—"}
@@ -121,7 +127,9 @@ function PanoramaPageContent() {
             {data.samples.slice(0, 6).map((sample) => (
               <SampleTile key={sample.id} sample={sample} />
             ))}
-            {data.samples.length === 0 && <EmptyState title="还没有样品" description="导入 Excel 或让 agent 建一个。" />}
+            {data.samples.length === 0 && (
+              <EmptyState title="还没有样品" description="导入 Excel 或让 agent 建一个。" />
+            )}
           </div>
         </section>
       </div>
@@ -137,6 +145,7 @@ function PanoramaPageContent() {
                 <th className="px-3 py-2 text-left font-normal">状态</th>
                 <th className="px-3 py-2 text-right font-normal">金额</th>
                 <th className="px-3 py-2 text-right font-normal">时间</th>
+                <th className="px-3 py-2 text-right font-normal">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -149,7 +158,9 @@ function PanoramaPageContent() {
                     <div className="text-ink-900">{item.title}</div>
                     <div className="text-xs text-ink-400">{item.summary}</div>
                   </td>
-                  <td className="px-3 py-2 text-ink-700">{STATUS_LABEL[item.status] ?? item.status}</td>
+                  <td className="px-3 py-2 text-ink-700">
+                    {STATUS_LABEL[item.status] ?? item.status}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <MoneyText
                       money={
@@ -161,6 +172,19 @@ function PanoramaPageContent() {
                   </td>
                   <td className="px-3 py-2 text-right text-xs text-ink-400">
                     {relativeTime(item.createdAt)}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {item.kind === "quote" && item.status === "SENT" ? (
+                      <Button
+                        variant="secondary"
+                        className="min-h-9 px-3 text-xs"
+                        onClick={() => setShareTarget({ id: item.id, title: item.title })}
+                      >
+                        分享 / 访问数据
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-ink-400">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -178,6 +202,14 @@ function PanoramaPageContent() {
           </p>
         </div>
       </section>
+
+      {shareTarget && (
+        <SharePanel
+          quoteId={shareTarget.id}
+          title={shareTarget.title}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -5,6 +5,8 @@ import {
   AuthContextResponse,
   CreatedQuoteShare,
   PanoramaSnapshot,
+  QuoteShareStats,
+  QuoteShareStatsList,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
 } from "@weave-order/schema";
@@ -111,9 +113,7 @@ const detail = ApprovalDetail.parse({
     },
   ],
   diffs: [{ field: "第 1 行单价 · v2", before: 1560, after: 1520 }],
-  missingFields: [
-    { field: "deliveryDate", label: "交期", hint: "确认后报价才算完整" },
-  ],
+  missingFields: [{ field: "deliveryDate", label: "交期", hint: "确认后报价才算完整" }],
   risk: { level: "MEDIUM", reasons: ["距成本底线 7%"] },
   audit: [
     {
@@ -200,35 +200,35 @@ export function createMockApiClient(): ApiClient {
     me: () =>
       Promise.resolve(
         AuthContextResponse.parse({
-        subject: "demo-owner",
-        name: "孙巨中",
-        email: "owner@example.com",
-        tenant: {
-          id: TENANT_ID,
-          slug: "demo",
-          name: "青禾纺织（演示）",
-          brand: "青禾",
-          bank: null,
-          currency: "CNY",
-          settings: {},
-          status: "ACTIVE",
-          isolationMode: "SHARED_RLS",
-          createdAt: NOW,
-          updatedAt: NOW,
-        },
-        membership: {
-          id: MEMBERSHIP_ID,
-          tenantId: TENANT_ID,
           subject: "demo-owner",
-          casdoorOrg: "demo",
-          role: "OWNER",
-          dataScope: "ALL",
-          teamId: null,
-          approvalLimitAmount: null,
-          status: "ACTIVE",
-          createdAt: NOW,
-          updatedAt: NOW,
-        },
+          name: "孙巨中",
+          email: "owner@example.com",
+          tenant: {
+            id: TENANT_ID,
+            slug: "demo",
+            name: "青禾纺织（演示）",
+            brand: "青禾",
+            bank: null,
+            currency: "CNY",
+            settings: {},
+            status: "ACTIVE",
+            isolationMode: "SHARED_RLS",
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+          membership: {
+            id: MEMBERSHIP_ID,
+            tenantId: TENANT_ID,
+            subject: "demo-owner",
+            casdoorOrg: "demo",
+            role: "OWNER",
+            dataScope: "ALL",
+            teamId: null,
+            approvalLimitAmount: null,
+            status: "ACTIVE",
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
         }),
       ),
 
@@ -239,29 +239,27 @@ export function createMockApiClient(): ApiClient {
     panorama: () =>
       Promise.resolve(
         PanoramaSnapshot.parse({
-        generatedAt: NOW,
-        customers: [customer],
-        samples: [sample],
-        items: [current.item],
-        audit: [auditEntry],
-        stats: {
-          customerCount: 12,
-          sampleCount: 48,
-          quoteCount: 7,
-          shipmentCount: 3,
-          pendingCount: current.item.pending ? 1 : 0,
-          sentQuoteCount: 5,
-          confirmedShipmentCount: 2,
-          rejectedCount: 0,
-          auditCount: 30,
-        },
+          generatedAt: NOW,
+          customers: [customer],
+          samples: [sample],
+          items: [current.item],
+          audit: [auditEntry],
+          stats: {
+            customerCount: 12,
+            sampleCount: 48,
+            quoteCount: 7,
+            shipmentCount: 3,
+            pendingCount: current.item.pending ? 1 : 0,
+            sentQuoteCount: 5,
+            confirmedShipmentCount: 2,
+            rejectedCount: 0,
+            auditCount: 30,
+          },
         }),
       ),
 
     approvals: () =>
-      Promise.resolve(
-        ApprovalQueue.parse({ items: current.item.pending ? [current.item] : [] }),
-      ),
+      Promise.resolve(ApprovalQueue.parse({ items: current.item.pending ? [current.item] : [] })),
 
     approvalDetail: (id) => {
       if (id !== QUOTE_ID) {
@@ -328,6 +326,64 @@ export function createMockApiClient(): ApiClient {
           },
           token: "demo".padEnd(40, "0"),
           url: "https://app.weaveorder.cn/s/demo",
+        }),
+      ),
+
+    quoteShareStats: () =>
+      Promise.resolve(
+        QuoteShareStatsList.parse({
+          quoteId: QUOTE_ID,
+          shares: [
+            {
+              shareId: REVISION_ID,
+              quoteId: QUOTE_ID,
+              version: 2,
+              url: null,
+              createdAt: NOW,
+              expiresAt: EXPIRES,
+              revokedAt: null,
+              requirePhoneTail: false,
+              allowPdf: true,
+              viewCount: 3,
+              uniqueVisitors: 2,
+              pdfDownloadCount: 1,
+              questionCount: 1,
+              acceptedAt: null,
+              lastViewedAt: NOW,
+              lastActivityAt: NOW,
+              questions: [
+                {
+                  eventId: REVISION_ID,
+                  message: "这个克重有没有更厚的？（mock）",
+                  lineIndex: 0,
+                  createdAt: NOW,
+                },
+              ],
+            },
+          ],
+        }).shares,
+      ),
+
+    revokeQuoteShare: () =>
+      Promise.resolve(
+        QuoteShareStats.parse({
+          shareId: REVISION_ID,
+          quoteId: QUOTE_ID,
+          version: 2,
+          url: null,
+          createdAt: NOW,
+          expiresAt: EXPIRES,
+          revokedAt: NOW,
+          requirePhoneTail: false,
+          allowPdf: true,
+          viewCount: 3,
+          uniqueVisitors: 2,
+          pdfDownloadCount: 1,
+          questionCount: 0,
+          acceptedAt: null,
+          lastViewedAt: NOW,
+          lastActivityAt: NOW,
+          questions: [],
         }),
       ),
   };

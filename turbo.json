@@ -14,6 +14,9 @@
     "MEDIA_ALLOWED_HOSTS",
     "MEDIA_MAX_BYTES",
     "LLM_PROVIDER",
+    "QUOTE_SHARE_SECRET",
+    "QUOTE_API_BASE_URL",
+    "NEXT_PUBLIC_QUOTE_API_BASE_URL",
     "LITELLM_BASE_URL",
     "LITELLM_MASTER_KEY",
     "LITELLM_TIMEOUT_MS",
@@ -24,7 +27,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
