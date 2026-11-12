@@ -1,0 +1,44 @@
+{
+  "name": "@weave-order/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "E2 移动端（Taro 一套代码：H5/PWA + 小程序 + RN App）",
+  "scripts": {
+    "build": "taro build --type h5",
+    "dev": "taro build --type h5 --watch",
+    "dev:h5": "taro build --type h5 --watch",
+    "build:weapp": "taro build --type weapp",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src config"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.2",
+    "@tarojs/components": "4.3.2",
+    "@tarojs/helper": "4.3.2",
+    "@tarojs/plugin-framework-react": "4.3.2",
+    "@tarojs/plugin-platform-h5": "4.3.2",
+    "@tarojs/plugin-platform-weapp": "4.3.2",
+    "@tarojs/react": "4.3.2",
+    "@tarojs/runtime": "4.3.2",
+    "@tarojs/shared": "4.3.2",
+    "@tarojs/taro": "4.3.2",
+    "@weave-order/core": "workspace:*",
+    "@weave-order/schema": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-react": "^7.29.7",
+    "@tarojs/cli": "4.3.2",
+    "@tarojs/webpack5-runner": "4.3.2",
+    "@types/react": "^18.3.12",
+    "@types/webpack-env": "^1.18.8",
+    "babel-preset-taro": "4.3.2",
+    "react-refresh": "^0.14.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "webpack": "5.91.0"
+  }
+}
