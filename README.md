@@ -147,7 +147,12 @@ pnpm format       # Prettier
 > `apps/api/src/approval` 调内核 `confirmDraft` / `confirm`（批准）或
 > `rejectDraft` / `reject`（驳回），内核再校验 `actor.type === "HUMAN"` 兜底。
 > 第三步遗留的旧路由 `POST /api/quotes/:quoteId/confirm` 已在第六步删除，
-> HTTP 面不再有第二个 HUMAN 上下文写路由 —— `decide` 是唯一入口。
+> 审批决策只有 `decide` 一个入口。
+>
+> **「唯一入口」的口径**：指**审批决策**——`POST /api/approvals/decide` 是 HUMAN 上下文里
+> 唯一能推动 `DRAFT` 单据状态流转（批准 / 驳回）的入口，这一点字面成立。
+> `POST /api/import` 不属于审批决策：它是人类运维动作、独立的数据冷启动域（与 CLI `pnpm seed`
+> 共用同一个内核 `ImportService`），也不改变任何单据状态。不要把「唯一」读成跨域独占。
 
 ### 三个窗口与审批 API（第五步）
 
@@ -222,8 +227,11 @@ pnpm dev           # http://localhost:5173
 
 架构铁律照旧：导入写业务表**只经内核 service**（`kernel/import.service.ts` 是唯一
 批量写入者，单条 `create` 与批量导入共用 `insertWithin` 一处写逻辑）；`http` / 工具层 /
-`import` 适配层都禁止直连数据库（ESLint `no-restricted-imports` + `boundary.test.ts`）；
-无 `any`（行内容用 `unknown` 承载，由契约逐行校验）。重复运行同一 seed 会因
+`import` 适配层都禁止直连数据库（ESLint `no-restricted-imports` + `boundary.test.ts`）。
+`http` 层唯一例外是组合根的两个文件：`http.module.ts`（把 `DatabaseProvider` 装配进 Nest DI）
+与 `database.provider.ts`（真正建连接），它们只允许 import `../platform/database`，
+`pg` / `drizzle-orm` / `@weave-order/db` 在例外内也照样被拦——例外范围就这两条，不向外扩。
+导入链路同样不出现 `any`（行内容用 `unknown` 承载，由契约逐行校验）。重复运行同一 seed 会因
 `DUPLICATE_IN_DB` 整批拒绝（不会重复落库），换一份 code 或清空对应表即可重导。
 
 **CustomerContext 确认**：P0 已有着落 —— `customer_contexts` 表、创建客户时内核自动
@@ -242,23 +250,24 @@ pnpm dev           # http://localhost:5173
 
 ### 铁律在代码与数据库里的落点
 
-| 铁律           | 落地方式                                                                                                        | 可验证点                                               |
-| -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| 智能体不改账本 | 只有 `apps/api/src/kernel` 能写入业务表；工具层只拿到 `Kernel` 对象，拿不到 `Db`                                | `eslint.config.mjs` + `apps/api/test/boundary.test.ts` |
-| 越权路径封死   | agent 禁止 import kernel / drizzle-orm / pg / `@weave-order/db`；tools / approval / import 适配层禁止直连数据库 | 同上，含裸 barrel `../kernel`                          |
-| 输出必须是草稿 | 内核 `createDraft` 强制 `DRAFT`；`confirm*` / `reject*` 校验 `actor.type === "HUMAN"`                           | demo、内核/HTTP 集成测试                               |
-| 金额不可伪造   | 金额一律整数「分」，PG `bigint` 存储；行金额用 BigInt 计算再一次 half-up；契约层 `Money.max(MAX_SAFE_INTEGER)`  | `packages/schema`、`apps/api/src/kernel/money.ts`      |
-| 改账必须留痕   | 业务写入与审计写入同一事务；`audit_log` 由数据库触发器禁止 UPDATE / DELETE                                      | demo、内核集成测试                                     |
-| 导入整批原子   | 全量逐行 Zod 校验 → 任一坏行/重复整批不提交 → 单事务写入 + HUMAN 审计；失败整批回滚、零脏数据                   | `apps/api/test/import.integration.test.ts`             |
-| 契约唯一来源   | 所有 Zod Schema 只在 `packages/schema`；数据库枚举与契约枚举由测试比对                                          | `apps/api/test/schema-parity.test.ts`                  |
-| 检索可替换     | embedding 是 provider 接口，默认 local stub，不需要模型 key                                                     | `apps/api/src/platform/embedding.ts`                   |
+| 铁律           | 落地方式                                                                                                                                                                | 可验证点                                               |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| 智能体不改账本 | 只有 `apps/api/src/kernel` 能写入业务表；工具层只拿到 `Kernel` 对象，拿不到 `Db`                                                                                        | `eslint.config.mjs` + `apps/api/test/boundary.test.ts` |
+| 越权路径封死   | agent 禁止 import kernel / drizzle-orm / pg / `@weave-order/db`；tools / approval / import / http 禁止直连数据库（http 仅组合根两文件可 import `../platform/database`） | 同上，含裸 barrel `../kernel`                          |
+| 输出必须是草稿 | 内核 `createDraft` 强制 `DRAFT`；`confirm*` / `reject*` 校验 `actor.type === "HUMAN"`                                                                                   | demo、内核/HTTP 集成测试                               |
+| 金额不可伪造   | 金额一律整数「分」，PG `bigint` 存储；行金额用 BigInt 计算再一次 half-up；契约层 `Money.max(MAX_SAFE_INTEGER)`                                                          | `packages/schema`、`apps/api/src/kernel/money.ts`      |
+| 改账必须留痕   | 业务写入与审计写入同一事务；`audit_log` 由数据库触发器禁止 UPDATE / DELETE                                                                                              | demo、内核集成测试                                     |
+| 导入整批原子   | 全量逐行 Zod 校验 → 任一坏行/重复整批不提交 → 单事务写入 + HUMAN 审计；失败整批回滚、零脏数据                                                                           | `apps/api/test/import.integration.test.ts`             |
+| 契约唯一来源   | 所有 Zod Schema 只在 `packages/schema`；数据库枚举与契约枚举由测试比对                                                                                                  | `apps/api/test/schema-parity.test.ts`                  |
+| 检索可替换     | embedding 是 provider 接口，默认 local stub，不需要模型 key                                                                                                             | `apps/api/src/platform/embedding.ts`                   |
 
 ## 目录边界铁律
 
 - `apps/api/src/kernel/` 下的 service 是唯一可以写业务表的代码。
 - `apps/api/src/tools/` 只调用 kernel 的 service，不直接连数据库。
 - `apps/api/src/import/` 只做 Excel/CSV 解析（列 → 字段映射），不写业务表、不连数据库。
-- `apps/api/src/agent/` 只调用 tools/ 的接口，不 import kernel/ 的任何模块，也不触达数据库。**已用 ESLint `no-restricted-imports` 强制**（`eslint.config.mjs`），tools / approval / import 适配层同样禁止直连数据库，并有常驻回归测试（`apps/api/test/boundary.test.ts`）锁定。
+- `apps/api/src/agent/` 只调用 tools/ 的接口，不 import kernel/ 的任何模块，也不触达数据库。**已用 ESLint `no-restricted-imports` 强制**（`eslint.config.mjs`），tools / approval / import 适配层与 `http` 层（控制器、context、tokens）同样禁止直连数据库，并有常驻回归测试（`apps/api/test/boundary.test.ts`）锁定。
+- `apps/api/src/http/` 的**唯一例外**是组合根：`http.module.ts`（Nest 模块装配 `DatabaseProvider`）与 `database.provider.ts`（建连接）。这两个文件只放开 `../platform/database`，`pg` / `drizzle-orm` / `@weave-order/db` 仍被拦；`boundary.test.ts` 对控制器/context 与组合根分别断言，改配置会被测出来。
 - `packages/schema/` 的 Zod Schema 是前后端、工具层、内核、导入的唯一契约来源，不重复定义。
 
 ## 契约设计（packages/schema）
@@ -309,7 +318,7 @@ pnpm dev           # http://localhost:5173
 - 包公记录项①：缺运单号改走明确业务错误码 `NO_TRACKING_NUMBER`（图入口校验）；记录项②仅在案未改。
 - 第六步：Excel/CSV 导入（`csv-parse` + `exceljs`）、`data/seed` 样例数据、`pnpm seed` 冷启动、
   内核 `ImportService` 整批原子 / 单事务回滚、逐行可判别回执、HUMAN 审计、CustomerContext 按契约处理。
-- 收掉遗留旧路由 `POST /api/quotes/:quoteId/confirm`：`decide` 成为 HUMAN 上下文唯一入口（HTTP e2e 断言旧路由 404）。
+- 收掉遗留旧路由 `POST /api/quotes/:quoteId/confirm`：`decide` 成为 HUMAN 上下文里唯一的**审批决策**入口（HTTP e2e 断言旧路由 404）；`POST /api/import` 是独立的人类运维域，不计入这条不变量。
 
 未做（P1 及以后，本步严格未外溢）：跟单异常 / 对账智能体、H5 / 小程序、ERP 集成、
 pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。

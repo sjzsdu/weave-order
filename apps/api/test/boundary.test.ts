@@ -52,12 +52,21 @@ async function importRule(): Promise<RuleEntry | undefined> {
   return (await resolvedRules("apps/api/src/import/parse.ts"))["no-restricted-imports"];
 }
 
+async function httpRule(): Promise<RuleEntry | undefined> {
+  return (await resolvedRules("apps/api/src/http/controllers.ts"))["no-restricted-imports"];
+}
+
+async function httpCompositionRootRule(file: string): Promise<RuleEntry | undefined> {
+  return (await resolvedRules(`apps/api/src/http/${file}`))["no-restricted-imports"];
+}
+
 describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", () => {
-  it("规则只作用于 agent / tools / approval / import，kernel 与其余包不生效（files 作用域）", async () => {
+  it("规则只作用于 agent / tools / approval / import / http，kernel 与其余包不生效（files 作用域）", async () => {
     const agentRules = await resolvedRules("apps/api/src/agent/foo.ts");
     const toolsRules = await resolvedRules("apps/api/src/tools/foo.ts");
     const approvalRules = await resolvedRules("apps/api/src/approval/foo.ts");
     const importRules = await resolvedRules("apps/api/src/import/parse.ts");
+    const httpRules = await resolvedRules("apps/api/src/http/controllers.ts");
     const kernelRules = await resolvedRules("apps/api/src/kernel/foo.ts");
     const schemaRules = await resolvedRules("packages/schema/src/index.ts");
 
@@ -65,6 +74,7 @@ describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", (
     expect(toolsRules["no-restricted-imports"]).toBeDefined();
     expect(approvalRules["no-restricted-imports"]).toBeDefined();
     expect(importRules["no-restricted-imports"]).toBeDefined();
+    expect(httpRules["no-restricted-imports"]).toBeDefined();
     expect(kernelRules["no-restricted-imports"]).toBeUndefined();
     expect(schemaRules["no-restricted-imports"]).toBeUndefined();
   });
@@ -132,6 +142,36 @@ describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", (
       expect(
         restrictedRuleIds("apps/api/src/import/parse.ts", `import x from "${source}";`, rule),
       ).toContain("no-restricted-imports");
+    }
+  });
+
+  it("http 控制器直连数据库被拦（第六步补）", async () => {
+    const rule = await httpRule();
+    for (const file of ["apps/api/src/http/controllers.ts", "apps/api/src/http/context.ts"]) {
+      for (const source of ["drizzle-orm", "@weave-order/db", "pg", "../platform/database"]) {
+        expect(restrictedRuleIds(file, `import x from "${source}";`, rule)).toContain(
+          "no-restricted-imports",
+        );
+      }
+    }
+  });
+
+  it("http 组合根只放开 ../platform/database，pg / drizzle-orm / @weave-order/db 仍被拦", async () => {
+    for (const file of ["http.module.ts", "database.provider.ts"]) {
+      const rule = await httpCompositionRootRule(file);
+      expect(rule).toBeDefined();
+      expect(
+        restrictedRuleIds(
+          `apps/api/src/http/${file}`,
+          'import { connectDatabase } from "../platform/database";',
+          rule,
+        ),
+      ).not.toContain("no-restricted-imports");
+      for (const source of ["pg", "drizzle-orm", "@weave-order/db"]) {
+        expect(
+          restrictedRuleIds(`apps/api/src/http/${file}`, `import x from "${source}";`, rule),
+        ).toContain("no-restricted-imports");
+      }
     }
   });
 
