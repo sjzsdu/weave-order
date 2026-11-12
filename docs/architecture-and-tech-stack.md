@@ -1,6 +1,6 @@
 # 织序 WeaveOrder · 整体架构设计与技术选型
 
-> 版本：v1.2 ｜ 日期：2026-11-12 ｜ 作者：鲁班（首席架构师）
+> 版本：v1.3 ｜ 日期：2026-11-12 ｜ 作者：鲁班（首席架构师）
 > 依据：`docs/product-design.md`（v1.8）。本文只做架构与技术选型，不沿用任何既有代码实现；与产品文档冲突处以产品决策为准。
 > 设计原则：KISS、一个产品一个仓库、managed service 优先、单人可维护、基础设施成本可控。
 
@@ -39,7 +39,8 @@
 
 | 层 | 选型 | 理由（独立开发者视角） |
 | --- | --- | --- |
-| 前端（E1/E2/E3 同构） | **Next.js 15（App Router）+ React 19 + TypeScript + TailwindCSS + shadcn/ui** | 一套代码双布局；E3 报价页需要 SSR/ISR 保证加载速度与品牌感；全栈 TS 单人可维护 |
+| 前端·桌面（E1/E3） | **Next.js 15（App Router）+ React 19 + TypeScript + TailwindCSS + shadcn/ui** | 桌面宽屏/复杂表格/⌘K；E3 报价页需 SSR/ISR；全栈 TS 单人可维护 |
+| 前端·移动（E2） | **Taro（React）**：一套代码编译 H5/PWA + 小程序 + React Native App | 一个技术栈覆盖三端，避免多套栈维护 |
 | 桌面外设壳（P3） | **Tauri 2** | 只暴露 print/scan/readFile/电子秤，业务 UI 仍从 Web 加载 |
 | 平台管理端（E4） | **Next.js 15 独立应用**（同仓库 `apps/admin`，复用 UI 包，隔离部署） | 独立产品，物理/逻辑隔离，强制 MFA |
 | 打印代理（E5） | **Tauri 2（Rust）+ WebView 2 UI**（已定） | 常驻托盘、WSS 出站、自动更新、轻量 |
@@ -70,33 +71,37 @@
 - **原生外设桥**：Tauri 2 通过 IPC 暴露 `print / scan / readFile / 电子秤` 四类能力给 Web（`invoke('print')` 等），Web 内用 capability 检测降级：无 Tauri 环境时退回浏览器打印 / 文件上传。
 - **桌面路由与 IA**：`/` 起，3 个业务窗口（工作台 ⌘1 / 审批 ⌘2 / 全景 ⌘3）+ 1 个管理面（组织与设置 ⌘,），顶栏 + 全局打印抽屉。
 
-### E2 租户端 · 移动（PWA + 小程序 + App，三种形态并存）
+### E2 租户端 · 移动（Taro 一套代码，三端输出）
 
-| 形态 | 技术栈 | 定位 | 阶段 |
+移动端统一用 **Taro（React）**：**一个代码库编译出三种形态**，不引入 Next.js + Taro + Capacitor 三套栈。
+
+| 形态 | 输出方式 | 定位 | 阶段 |
 | --- | --- | --- | --- |
-| PWA（H5） | Next.js `/m/*` 路由 + `@serwist/next` | 主形态，覆盖 90%「手机上批一下」 | P0 |
-| 小程序 | Taro（React）+ 微信优先（后续支付宝/抖音） | 客户自助 / 分享传播场景 | P3（按需） |
-| App | Capacitor 包裹同一 H5 + 原生插件 | Face ID / 蓝牙打印 / 推送刚需 | P3（按需） |
+| PWA（H5） | Taro H5 构建 + PWA 配置（manifest + Service Worker） | 主形态，覆盖 90%「手机上批一下」 | P0 |
+| 小程序 | Taro 编译微信小程序（同代码再出支付宝/抖音） | 客户自助 / 分享传播场景 | P3（按需） |
+| App | Taro React Native（一套 JS + 原生壳） | Face ID / 蓝牙打印 / 推送刚需 | P3（按需） |
 
-**一套代码、三端复用的分层策略**（单人可维护的核心）：
+**一套代码、三端复用的分层策略**（Taro 天然支持，单人可维护的核心）：
 
 | 层 | 内容 | 复用率 |
 | --- | --- | --- |
-| `packages/core` | 业务逻辑、TanStack Query hooks、API client、离线队列、Zod 契约 | 100% 复用 |
-| `packages/ui-mobile` | 设计 tokens + 组件 API 一致；渲染层按端适配（DOM / 小程序 WXML） | ~70% 复用 |
-| 各端薄壳 | 路由、打包、PWA manifest、原生桥接、发布 | ~5%（各自独立） |
+| `packages/core` | 业务逻辑、TanStack Query hooks、API client、离线队列、Zod 契约 | 100% 复用（与桌面端 Next.js 共享） |
+| `apps/mobile`（Taro） | 页面 + Taro 跨端组件，用 `process.env.TARO_ENV` 做少量端差异分支 | ~90% 一套代码 |
+| 端能力适配 | 相机/扫码/蓝牙/推送/Face ID 按平台调 Taro 或原生插件 | 薄壳 |
 
 **各形态技术细节**：
 
-- **PWA（H5，P0 主形态）**：Next.js `/m/*` 独立路由组，底部 5 入口（今日 / 审批 / 相机 / 客户 / 更多），独立组件密度。`@serwist/next` 做 Service Worker + manifest + 离线缓存；离线队列落 IndexedDB，恢复后按时间序提交，冲突「服务端版本 + 人工确认」。相机 6 模式、语音转写、图片压缩（长边 1600px / ≤1MB）直传对象存储。
-- **小程序（P3，按需）**：**Taro（React 语法）** 编译到微信小程序，与桌面端同栈、可复用 `packages/core` 与大部分 hooks。差异点：小程序无 DOM / Service Worker，故离线队列走 `Taro.setStorage`（非 IndexedDB）、相机/扫码走 Taro 原生 API、渲染组件用 Taro 组件库（风格对齐设计 tokens）。选 Taro 而非 uni-app 是因为团队用 React（与桌面同栈）；选 Taro 而非独立原生，是因为单人无法同时维护两套原生小程序。
-- **App（P3，按需）**：**Capacitor** 包裹同一份 H5（Next.js 静态导出），提供 Face ID / Touch ID（大额审批二次验证）、蓝牙标签打印、推送（腾讯 TPNS / 极光）、相机增强。App 与 PWA 共享 UI，只多一层原生能力桥，不引入 React Native 第二套运行时。
+- **PWA（H5，P0）**：Taro H5 输出为 SPA，叠加 manifest + Service Worker（Workbox）做可安装与离线缓存；离线队列落 IndexedDB（小程序端走 `Taro.setStorage`），恢复后按时间序提交，冲突「服务端版本 + 人工确认」。底部 5 入口（今日/审批/相机/客户/更多），独立组件密度。
+- **小程序（P3）**：Taro 第一等公民，编译微信小程序零额外维护；同一套代码可再出支付宝/抖音小程序。相机/扫码走 Taro 原生 API。
+- **App（P3）**：Taro React Native 输出，一套 JS + iOS/Android 原生壳；Face ID / 蓝牙标签打印 / 推送（TPNS/极光）用 Taro 插件或 RN 原生模块。
 
-**为什么 H5/App 共用 Next.js，小程序单独 Taro**：H5 是基线与主形态，App 是它的原生壳（Capacitor 成本极低）；小程序受微信渲染层（WXML）限制无法直接复用 DOM 组件，但业务逻辑层（`packages/core`）仍 100% 复用，代价被压到 UI 渲染层。三者共享设计系统 tokens，视觉与交互一致。
+**为什么是 Taro 一个栈（而非「Next.js H5 + Taro 小程序 + Capacitor App」三栈）**：三栈方案虽然 H5 能与桌面端共用 Next.js 运行时，但代价是移动端要同时维护 Next.js、Taro、Capacitor 三套构建/依赖/调试链路，对单人团队是隐性成本。Taro 用一套 React 代码、一次构建产出 H5/PWA + 小程序 + RN App，工程面收敛到 1 套；业务逻辑仍通过 `packages/core` 与桌面端 100% 共享。
 
-**移动端能力清单**（§5.2）：相机 6 模式、语音转写、扫码录运单/盘点、Face ID 大额审批、离线队列、拜访签到、拍回款凭证等，在各形态按能力矩阵开放。
+**选 Taro 需要接受的代价与对策**：
 
-**状态与契约**：TanStack Query（服务端状态）+ Zustand（UI/会话态）；`packages/schema` 的 Zod 契约作为前后端唯一来源（工具、内核、HTTP、env）。设计系统 TailwindCSS + shadcn/ui 底座，落地 §9 的 16 个首批组件与「草稿态」视觉。
+1. **H5 无 SSR/ISR**：移动端是登录后应用、无 SEO 诉求，可接受；需要 SSR 的客户报价页由 E3（Next.js）独立承担，两者不冲突。
+2. **RN 渲染差异**：RN 非 DOM，某些 CSS/DOM 特性在 App 端不生效；对策是用 Taro 跨端组件 + `TARO_ENV` 条件分支，复杂自定义组件（审批卡 diff）在 App 端单独适配一次，H5/小程序不受影响。
+3. **桌面端与移动端不再是同一份 UI**：改为「共享 `packages/core` 业务逻辑 + 设计 tokens，UI 各自维护」（桌面 shadcn/ui，移动 Taro 组件）。这是「移动端单栈」换来的主要代价，但业务逻辑与数据契约的复用率（最高价值部分）不受影响。
 
 ### E3 客户报价链接页（无登录只读）
 
@@ -132,7 +137,7 @@
 flowchart TB
   subgraph CLIENTS["端（客户端入口）"]
     D["E1 租户端·桌面<br/>app.weaveorder.cn<br/>Next.js + React 19<br/>Web/PWA（P3 加 Tauri 壳）"]
-    M["E2 租户端·移动<br/>PWA（同构 React）<br/>/m/* 路由 · 离线 · 相机"]
+    M["E2 租户端·移动<br/>Taro 一套代码<br/>H5/PWA + 小程序 + RN App"]
     Q["E3 客户报价链接页<br/>/s/:token<br/>无登录 · SSR/ISR · 只读"]
     P["E4 平台总管理端<br/>admin.weaveorder.cn<br/>独立 Next.js 应用 · 强制 MFA"]
     PA["E5 打印代理<br/>Tauri 2 本地常驻<br/>Windows 优先"]
