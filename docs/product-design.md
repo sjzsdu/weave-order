@@ -1,6 +1,7 @@
 # 后 AI 时代纺织管理软件 · 产品设计
 
-> 版本：v1.3 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
+> 版本：v1.4 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
+> v1.4 变更：新增多租户隔离（共享库+RLS / schema-per-tenant / 独立库）与 LLM 部署（云端 / BYOK / 自部署）设计，见 §15。
 > v1.3 变更：打印代理（Print Agent）与每家公司个性化（模板工作室 + AI 识样张）、总后台版本化价格表与租户合同价、开票设置可配（§4.4 / §14.1 / §14.3 / §14.5）。
 > v1.2 变更：打印与单证流水线（§4.4 / §7.7 / §8.6 / §8.7）、SaaS 商业化与平台总管理端（§14）、打印与 SaaS 数据模型和指标。
 > v1.1 变更：配置继承链（§3.5）、移动端 5 入口与能力矩阵（§5.2）、客户报价链接（§7.6 / §8.5）、分享指标与增长闭环（§11 / §13.6）。
@@ -1032,10 +1033,15 @@ flowchart TB
 | `platform_users` / `platform_audit` | name, email, role, status, actor, action, target_tenant, meta | P1 |
 | `feature_flags` | key, tenant_id, enabled, rollout | P1 |
 | `tenant_notes` / `support_tickets` | tenant_id, author, body, status, priority | P1 |
+| `tenant_data_planes` | id, isolation_mode, region, schema_name, dsn_secret_ref, migration_version, status | P0 |
+| `tenant_security_profiles` | tenant_id, data_region, allow_external_llm, retention_days, kms_key_ref | P0 |
+| `llm_configs` | tenant_id, provider, base_url, model, key_ref, allow_external, log_prompts, fallback | P0 |
+| `model_deployments` | tenant_id, kind, vendor, endpoint, gpu, status, eval_score, last_check_at | P1 |
+| `data_export_jobs` | tenant_id, scope, status, file_key, requested_by, expires_at | P1 |
 
 关键索引：`customers(tenant_id, owner_id)`、`quotes(tenant_id, status, created_at)`、`pricing_policies(tenant_id, scope_type, scope_id, key)` 唯一、`quote_shares(token_hash)` 唯一、`quote_share_events(share_id, created_at)`、`orders(tenant_id, due_date, status)`、`audit_log(tenant_id, entity, entity_id, created_at)`、`print_jobs(tenant_id, status, created_at)`、`print_jobs(idempotency_key)` 唯一、`boxes(qr_payload)` 唯一、`subscriptions(tenant_id, status)`、`usage_events(tenant_id, meter, occurred_at)`、`invoices(tenant_id, status, due_at)`。
 
-> 迁移策略：`tenantId` 现在加、单租户填默认值；`ownerId` 先允许空，空=全公司可见（兼容演示数据），新数据强制填。
+> 迁移策略：`tenantId` 现在加、存量填默认租户，新数据必须带；`ownerId` 先允许空，空=全公司可见（兼容演示数据），新数据强制填。
 > `pricing_policies` 的 `value_json` 存 `{ "marginPct": 20, "unit": "percent" }` 这类结构化值，不用字符串；`locked=true` 表示管控层，下级不可覆盖。
 > `quote_shares` 只存 token 的哈希，明文 token 只在生成那一刻返回；链接不能从数据库反推。
 > `print_jobs.idempotency_key` 由「单据 + 版本 + 模板 + 份数 + 操作人」生成，双击不会重复出纸。
@@ -1074,6 +1080,11 @@ flowchart TB
 | SaaS | 席位利用率（活跃/已购） | ≥ 80% |
 | SaaS | 客单价 / 毛利（扣除 agent 与存储成本） | ≥ 70% |
 | SaaS | 回款周期（DSO） | ≤ 30 天 |
+| 安全 | 跨租户数据泄露事件 | 0 |
+| 安全 | 跨租户越权测试覆盖 | 100% 业务表 |
+| LLM | 敏感字段出网次数（脱敏前） | 0 |
+| LLM | 自部署任务 p95 延迟 | ≤ 8 秒 |
+| LLM | 外部模型处理占比（可按租户审计） | 可解释 |
 | 商业 | 每席位月处理单量 | 基线 ×2 |
 
 埋点事件（最小集）：`intent_submitted` `draft_created` `draft_revised`（字段/幅度）`draft_approved` `draft_rejected`（原因）`agent_failed`（工具/错误码）`policy_resolved`（层级/是否被夹）`quote_share_created` `quote_share_viewed` `quote_accepted` `quote_question` `mobile_capture_used` `mobile_scan_used` `visit_checked_in` `offline_synced` `offline_conflict` `print_job_created` `print_job_completed` `print_job_failed` `print_reprinted` `delivery_confirmed` `subscription_started` `trial_started` `plan_upgraded` `invoice_paid` `handover_completed`。
@@ -1086,9 +1097,9 @@ flowchart TB
 
 | 阶段 | 已有路线 | 本次设计新增 | 端 |
 | ---- | -------- | ------------ | -- |
-| **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、`tenants/users/memberships/pricing_policies/quote_shares` | PC + 手机 PWA + 客户 |
-| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置 | PC + 手机 PWA + 客户 |
-| **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张** | PC 为主 |
+| **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、**共享库 + RLS + 跨租户测试、LLM provider 接口 + 敏感字段脱敏**、`tenants/users/memberships/pricing_policies/quote_shares/tenant_data_planes/llm_configs` | PC + 手机 PWA + 客户 |
+| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、客户自带 Key / 自部署 LLM adapter（vLLM + Qwen）** | PC + 手机 PWA + 客户 |
+| **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张、独立库/区域选择/每租户 KMS** | PC 为主 |
 | **P3 阶段四**（6–8 周） | 订单履约、对账 | 客户自助门户（寄样进度/历史报价/对账单）、供应商协同、Tauri 外设壳、小程序（仅当客户侧验证成立）、洗水唛/吊牌、渠道商/多仓 | PC + 手机 + 客户侧 |
 
 **每阶段的验收都是「一个人做一次具体动作」**（沿用既有原则）：
@@ -1309,7 +1320,7 @@ features: { customer_portal: true, sso: false, custom_domain: true, print_agent:
 ```
 平台总管理端
 ├── 总览       MRR / ARR · 活跃租户 · 试用漏斗 · 流失 · 毛利 · 事故
-├── 租户       列表/搜索/筛选；详情：套餐、席位、用量、健康度、备注、功能开关
+├── 租户       列表/搜索/筛选；详情：套餐、席位、用量、健康度、隔离模式（共享/schema/独立）、LLM 模式（云端/BYOK/自部署）、区域、备注、功能开关
 ├── 订阅账单   合同、账单、回款、逾期、退款、发票
 ├── 用量       agent 动作、存储、短信；Top 消耗与异常
 ├── 套餐与价格 计划、价格表版本、租户覆盖、试算；改价不影响存量合同
@@ -1400,7 +1411,145 @@ sequenceDiagram
 
 ---
 
-## 15. 风险与待拍板
+## 15. 多租户隔离与 LLM 部署（数据安全）
+
+客户问「数据放哪、会不会混、能不能用我们自己的模型」，这不是技术细节，是**成交门槛**。结论先给：
+
+1. **数据库不要二选一**。默认「共享库 + 行级隔离（RLS）」，付费企业版可升级「每家公司一个 schema」，最高档「独立数据库/独立实例/私有化」。同一套代码，三种数据平面。
+2. **LLM 也不二选一**。默认云端 API（零留存、不训练），企业版可接**客户自己的 API Key / 专属端点 / 自部署模型**。按租户配置，不按全局开关。
+3. **现在就要留口子**，否则以后改成本很高：所有表带 `tenant_id`、从第一天开 RLS、租户表加 `data_plane_id` / `isolation_mode` / `region`、LLM 走 provider 接口而不是全局单例。
+
+### 15.1 四种隔离模型与推荐
+
+| 模型 | 隔离强度 | 成本 | 运维复杂度 | 适合 |
+| ---- | -------- | ---- | ---------- | ---- |
+| 共享库 + 共享 schema + `tenant_id` + RLS | 中（逻辑隔离） | 最低 | 最低 | 绝大多数客户、试用、Starter/Pro |
+| 每租户一个 schema（同库或同实例） | 中高 | 中 | 中（迁移 × N） | 有合规要求的中大型客户 |
+| 每租户一个数据库 | 高 | 较高 | 较高 | 金融级/强合规客户 |
+| 每租户独立实例 / 私有化部署 | 最高 | 最高 | 最高 | 大企业、内网、信创 |
+
+**推荐：分层，不是一刀切。**
+
+- **默认（P0）**：共享库 + RLS。`tenant_id` 出现在每张业务表，连接进来先 `SET LOCAL app.tenant_id`，策略强制过滤，应用角色没有 `BYPASSRLS`。
+- **企业版（P1）**：schema-per-tenant。同一套代码，通过 `tenant_data_planes` 把租户路由到不同 schema；迁移按租户编排。
+- **旗舰/私有化（P2）**：独立 DB 或独立实例，客户可自选区域、自带备份策略。
+
+为什么不全用 schema：500 家公司 = 500 个 schema，一次迁移要跑 500 次，连接池和监控都变复杂，跨租户运营报表也难做。**schema 是卖给企业的「隔离感」，不是默认架构。**
+
+### 15.2 共享库 + RLS 怎么做到「不敢混」
+
+不是「查询时记得加 tenant_id」，而是数据库层强制：
+
+```sql
+-- 每个请求的事务内
+SET LOCAL app.tenant_id = '<uuid>';
+
+-- 每张业务表
+ALTER TABLE quotes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quotes FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON quotes
+  USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+```
+
+配套：
+
+1. **应用角色无 `BYPASSRLS`**；只有迁移/运维角色例外，且单独审计。
+2. **租户上下文由网关注入**，不接受前端传 `tenant_id`；JWT 只带 user，tenant 从会话/域名解析。
+3. **跨租户测试常驻**：CI 里用两个租户互相查，任何一张表漏加策略就失败。
+4. **对象存储按前缀隔离**：`s3://bucket/tenant/<id>/...`，签名 URL 绑定租户，禁止拼接他人 key。
+5. **向量检索按租户分区**：embedding 查询必须带 `tenant_id`，不做跨公司相似度。
+6. **缓存 key 带租户**：Redis key 前缀 `t:<id>:`，避免缓存串号。
+7. **审计**：所有跨租户的运维访问（break-glass）单独记录，见 §14.6。
+
+### 15.3 schema-per-tenant 的工程细节
+
+| 问题 | 做法 |
+| ---- | ---- |
+| 请求路由 | 登录时解析租户 → 从 `tenant_data_planes` 取 schema/连接串 → 连接池按 data plane 分组 |
+| 迁移 | 迁移任务按 schema 串行/分批执行；失败可单租户回滚；记录每个 schema 的迁移版本 |
+| 新建租户 | 复制模板 schema（`CREATE SCHEMA ... TEMPLATE` 或迁移 + seed），原子切换状态 |
+| 从共享迁到 schema | 导出该租户数据 → 导入新 schema → 校验行数/金额 → 切换指针 → 保留回滚窗口 |
+| 备份/恢复 | 共享库 PITR + 按租户导出；schema 可单 schema dump；独立库各自备份 |
+| 监控 | 每个 data plane 的连接数、慢查询、迁移版本；租户详情里可见 |
+| 噪声邻居 | 每租户限流、每 data plane 连接上限；重租户可单独迁到独立实例 |
+
+迁移路径必须**单向可升级**：共享 → schema → 独立库 → 独立实例。客户规模变大时只换数据平面，不换产品。
+
+### 15.4 LLM 部署：四种模式，按租户选
+
+| 模式 | 数据路径 | 适合 | 代价 |
+| ---- | -------- | ---- | ---- |
+| 云端共享 API（默认） | 我们 → 模型厂商，零留存/不训练/区域端点 | 大多数客户 | 依赖厂商合规 |
+| 云端专属端点 | 我们 → 厂商专属实例 | 中大型客户 | 成本高、容量固定 |
+| 客户自带 Key（BYOK） | 我们 → 客户的云账号/端点 | 已有 AI 合同的客户 | 需要客户运维 |
+| 自部署（VPC/内网） | 客户的 GPU 上跑开源模型 | 数据不出内网、信创 | GPU、运维、模型更新 |
+
+**自部署不是从零做**：现有代码里 LLM / embedding 已经是 provider 接口（默认 `local-rule` / `local-stub`），接入 vLLM / SGLang / TGI 只是实现一个 `LlmProvider` + 一个 `EmbeddingProvider`。模型建议 Qwen 系列（中文与工具调用稳），按任务分大小模型。
+
+**模型网关（Model Gateway）**：所有 agent 不直接调厂商，统一走网关，网关负责：
+
+1. 按租户读 `llm_configs`：provider、base_url、model、key（KMS 加密）、region、是否允许外部。
+2. 按数据分级路由：客户原话/报价可走云端；成本底线、合同、客户名单默认只走自部署或本地规则。
+3. PII 脱敏：手机号、银行账号、身份证在出网前替换；返回后再还原。
+4. 不跨租户复用提示缓存；日志默认不存 prompt 原文，只存 hash 与 token 数。
+5. 失败降级：云端超时 → 重试 → 降级到规则/小模型 → 告知「建议由人处理」，不静默失败。
+6. 质量评估：换模型/换端点前跑固定评测集（报价准确率、工具调用成功率），不靠感觉。
+
+**租户端开关**（企业版）：数据与安全 → 模型设置：
+
+```
+模型来源：云端（零留存） / 自带 Key / 自部署
+允许数据出网：是 / 否
+数据区域：杭州 / 新加坡 / 客户内网
+模型：Qwen2.5-32B（自部署） / 云端默认
+调用日志：不记录原文 / 记录 30 天（可选）
+```
+
+**敏感数据策略**：即使用户选云端，也默认「最小化 + 脱敏」；「不允许外部模型」的租户，agent 只用本地规则/自部署模型，功能降级但可用，界面明确提示「当前为私有模式，部分建议质量下降」。
+
+### 15.5 现在版本必须留的口子（很便宜，后面补很贵）
+
+| 事项 | 现在做什么 | 以后省什么 |
+| ---- | ---------- | ---------- |
+| 租户列 | 所有业务表加 `tenant_id`（已有计划） | 不用改表结构 |
+| RLS | 第一天就开，CI 跨租户测试 | 不用补历史漏网查询 |
+| 数据平面 | `tenants` 加 `isolation_mode` / `data_plane_id` / `region` | 升级 schema/独立库只改路由 |
+| 对象存储 | key 前缀带租户，签名 URL 带租户 | 不用迁移文件 |
+| LLM | provider 接口 + `llm_configs` 按租户读，不写全局单例 | 接自部署只加 adapter |
+| 密钥 | API Key 存 KMS/密钥管理，不落库明文 | 满足企业安全评审 |
+| 审计 | 记录 tenant、data plane、provider、model、prompt hash | 可回答「数据经过谁」 |
+| 导出/删除 | 租户级导出/删除任务 | 满足合规与流失交接 |
+
+### 15.6 安全基线（销售材料可直接用）
+
+- 传输 TLS 1.2+，静态加密 AES-256；敏感字段（手机号、银行账号）字段级加密。
+- 租户隔离：RLS + 跨租户测试；企业版 schema/独立库；对象存储前缀隔离。
+- 权限：最小权限、MFA、平台侧 break-glass 需租户同意、双人复核。
+- 审计：登录、导出、打印、审批、平台访问全留痕；审计不可改。
+- 备份：每日全量 + PITR；每季度恢复演练；企业版可指定区域。
+- 模型：零留存协议、不训练、区域端点；自部署可选；prompt 默认不留原文。
+- 合规：DPA、子处理商清单、数据删除承诺、渗透测试报告（上线前）。
+
+### 15.7 分期建议
+
+| 阶段 | 数据隔离 | LLM |
+| ---- | -------- | --- |
+| P0 | 共享库 + RLS + 跨租户测试；`isolation_mode` 字段 | provider 接口 + 云端零留存；敏感字段脱敏 |
+| P1 | schema-per-tenant 路由与迁移；单租户导出/恢复 | 客户自带 Key；自部署 adapter（vLLM + Qwen） |
+| P2 | 独立数据库/实例、区域选择、每租户 KMS | 专属端点、模型评测、私有化部署包 |
+
+### 15.8 需要拍板
+
+1. 默认付费客户用共享库 + RLS，是否接受？（建议接受；企业版再升 schema）
+2. 自部署模型由谁运维：客户 IT，还是我们提供托管私有云？
+3. 数据区域先开哪几个？（建议杭州 + 新加坡）
+4. 隔离/自部署是否作为 Enterprise 的付费项？加价多少？
+5. 是否承诺「绝不用客户数据训练」并写进合同？（建议写）
+
+---
+
+## 16. 风险与待拍板
 
 | 风险 | 影响 | 对策 |
 | ---- | ---- | ---- |
@@ -1421,6 +1570,11 @@ sequenceDiagram
 | 开票税率/类型配错 | 税务风险、客户拒收 | 默认 6% 专票、按租户 `tax_profile`、财务复核、红冲留痕 |
 | 平台客服越权看数据 | 信任崩塌 | 控制面与租户库分离 + break-glass 租户同意 + 双人复核 + 全程审计 |
 | 定价过低覆盖不了 agent 成本 | 越卖越亏 | 每席位额度 + 动作包 + 月度毛利看板；毛利 < 60% 触发调价 |
+| 共享库漏加租户条件导致串号 | 严重安全事故 | RLS 强制 + 应用角色无 BYPASSRLS + CI 两租户互查 + 对象存储/缓存前缀隔离 |
+| schema 迁移一半失败 | 部分租户不可用 | 按租户串行迁移 + 单租户回滚 + 每个 schema 记录版本 |
+| 自部署模型质量下降 / 没人运维 | 客户体验差、口碑受损 | 固定评测集 + 模型版本锁定 + 托管私有云选项 + 降级到规则 |
+| 客户敏感数据出网 | 合规与信任风险 | 默认脱敏 + 数据分级路由 + 租户「禁止外部模型」开关 + 出网审计 |
+| 模型厂商停服/涨价 | 成本与连续性 | provider 抽象 + 多厂商 + 自部署兜底 + 按租户可切 |
 | 渠道 API 审批 | 自动发送无法上线 | 先「复制文案 + 记录已发」，不阻塞链路 |
 | 多租户数据串号 | 严重安全事故 | 所有业务表 `tenant_id` + 行级隔离；控制面单独 schema；集成测试覆盖跨租户越权 |
 
@@ -1434,6 +1588,8 @@ sequenceDiagram
 6. 定价：**暂按 ¥299 / ¥499 / 定制、年付送 2 个月**；价格做成**总后台可配的版本化价格表**，支持租户级合同价/锁价，改价不影响存量。见 §14.1。
 7. 开票：按「老规矩」默认 **6% 增值税专用发票、价税分离、收款后开票**；发票类型/税率/开票主体/时机在**总后台「开票设置」**可改，按租户生效。见 §14.3。
 8. 打印：**做一个真正的打印代理（Print Agent）**，本地常驻、自动发现打印机、离线补打、本地渲染与校准；每家公司通过「参数覆盖 → 字段布局 → 模板工作室 → 模板包」自定义，并可用 **AI 识样张**从旧单据生成模板。见 §4.4。
+9. 数据隔离：**默认共享库 + RLS**，企业版可升级 **schema-per-tenant**，旗舰/私有化用独立库/实例；同一套代码按 `data_plane` 路由。见 §15。
+10. LLM：**按租户配置**——云端（零留存/不训练）/ 客户自带 Key / 自部署（vLLM + Qwen）；统一走模型网关，敏感字段脱敏，禁止外部模型的租户可完全内网运行。见 §15.4。
 
 **还需要你拍板的事**：
 
@@ -1452,6 +1608,12 @@ sequenceDiagram
 8. 试用 14 天，还是改成「7 天陪跑 + 14 天试用」？
 9. 开票按 6% 专票是否就是你说的「老规矩」？如果公司实际按 13% 开，请让财务在总后台改税率即可。
 
+数据安全：
+10. 默认付费客户用「共享库 + RLS」是否接受？还是所有客户都要 schema？
+11. 自部署 LLM 由谁运维（客户 IT / 我们托管 / 混合）？先支持哪个模型与 GPU 规格？
+12. 数据区域先开哪几个（建议杭州 + 新加坡）？是否需要信创/内网私有化？
+13. 「绝不用客户数据训练」是否写进合同与官网？
+
 ---
 
 ## 附：与既有文档的关系
@@ -1460,3 +1622,4 @@ sequenceDiagram
 - 阶段排序与验收口径：沿用 `usability-roadmap.md`；本文只在其上补产品设计与双端落点。
 - 平台形态（移动端/桌面壳/打印/部署）：`platform-and-engineering-plan.md` 的结论仍然有效；本文的差异是**把移动端从「阶段三之后」提前到 P0 的 PWA**，并在 v1.1 扩为 5 入口 + 角色化现场能力，理由是公司化后「老板在路上批单」是采纳瓶颈，且 PWA 成本远低于 Taro 三端。
 - 客户侧：`platform-and-engineering-plan.md` 曾把客户自助端排在 P3；v1.1 按你的决定把**单条报价链接**提前到 P0（只读、无登录、可接受），完整的客户门户（寄样/历史/对账）仍在 P3。
+- 数据隔离与模型部署：既有文档按「试点单租户」假设，v1.4 改为**SaaS 多租户分层隔离**（共享库+RLS / schema / 独立库）与**按租户选择 LLM**（云端 / BYOK / 自部署），见 §15；private deployment 仍按 Enterprise 交付。
