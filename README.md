@@ -334,3 +334,25 @@ SEED_RESET=1 pnpm seed
 
 未做（P1 及以后，本步严格未外溢）：跟单异常 / 对账智能体、H5 / 小程序、ERP 集成、
 pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
+
+## T0 地基（契约冻结 + 多租户 + 网关）
+
+在既有六步 MVP 之上完成并行开发前置：
+
+- **契约**：`packages/schema` 新增租户/成员、订单/发货/应收、改稿、报价分享与统一 HTTP 错误契约；
+  所有实体输出带 `tenantId`，输入 `strict()`（前端不得传 `tenantId`）。
+- **数据层**：全部业务表加 `tenant_id`，`ENABLE + FORCE ROW LEVEL SECURITY`，
+  应用角色 `weave_app`（`NOSUPERUSER` / `NOBYPASSRLS`）由迁移创建；策略与角色在
+  `packages/db/sql/rls.sql`，`pnpm db:migrate` 幂等应用。
+- **网关**：`apps/api/src/gateway` 做 Casdoor OIDC（RS256/JWKS/issuer/audience）校验，
+  `(sub, org)` → 本地 `memberships` → 租户会话（`SET app.tenant_id`）。
+  `GET /api/auth/me`、`GET /api/auth/customers`；本地 `AUTH_MODE=dev` 支持
+  `Authorization: Bearer dev:<sub>:<org>`，生产强制 `oidc`。
+- **前端骨架**：`apps/mobile`（Taro 五 Tab：今日/审批/相机/客户/更多）、
+  `packages/core`（API client / TanStack Query hooks / 离线队列）、
+  `packages/ui`（设计 tokens + 基础组件）。
+- **验收**：`apps/api/test/tenancy.integration.test.ts` 覆盖「建租户→建成员→建客户→建样品→出报价草稿
+  + 审计同事务」与跨租户 RLS 拦截；CI `.github/workflows/ci.yml` 常驻执行。
+- **本地基础设施**：`docker compose up -d` 增加 LiteLLM（`:4000`），配置在 `infra/litellm/config.yaml`。
+
+契约与各 Track 开工约定详见 `docs/t0-foundation.md`。
