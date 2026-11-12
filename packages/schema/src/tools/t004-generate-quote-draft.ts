@@ -48,6 +48,7 @@ export type QuoteLineItem = z.infer<typeof QuoteLineItem>;
  */
 export const QuoteDraft = z.object({
   id: EntityId,
+  tenantId: EntityId,
   customerId: EntityId,
   status: z.literal("DRAFT"),
   currency: Currency,

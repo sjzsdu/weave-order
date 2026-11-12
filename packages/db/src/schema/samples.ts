@@ -1,4 +1,4 @@
-import { bigint, index, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, index, pgTable, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { currencyEnum, sampleStatusEnum, unitEnum } from "./enums";
 
 /**
@@ -10,7 +10,8 @@ export const samples = pgTable(
   "samples",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    code: varchar("code", { length: 64 }).notNull().unique(),
+    tenantId: uuid("tenant_id").notNull(),
+    code: varchar("code", { length: 64 }).notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     composition: varchar("composition", { length: 255 }),
     /** 克重描述，如 "220g/m2" */
@@ -22,5 +23,8 @@ export const samples = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("samples_name_idx").on(table.name)],
+  (table) => [
+    uniqueIndex("samples_tenant_code_idx").on(table.tenantId, table.code),
+    index("samples_name_idx").on(table.name),
+  ],
 );

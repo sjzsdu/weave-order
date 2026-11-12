@@ -14,6 +14,7 @@ export const auditLog = pgTable(
   "audit_log",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     /** 单调递增序号，用于稳定排序与对账。 */
     seq: bigserial("seq", { mode: "number" }).notNull().unique(),
     actorType: actorTypeEnum("actor_type").notNull(),
@@ -27,7 +28,12 @@ export const auditLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("audit_log_entity_idx").on(table.entityType, table.entityId),
+    index("audit_log_tenant_entity_idx").on(
+      table.tenantId,
+      table.entityType,
+      table.entityId,
+      table.createdAt,
+    ),
     index("audit_log_created_at_idx").on(table.createdAt),
   ],
 );
