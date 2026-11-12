@@ -110,7 +110,7 @@
   .badge.bad{background:var(--verm-soft);color:var(--verm)}
   .badge.good{background:var(--moss-soft);color:var(--moss)}
   .badge.gray{background:#F1EEE7;color:var(--ink2)}
-  .agent{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2);background:#F4F0E8;border:1px solid var(--line);border-radius:999px;padding:3px 9px 3px 4px}
+  .agent{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2);background:#F4F0E8;border:1px solid var(--line);border-radius:999px;padding:3px 9px 3px 4px;white-space:nowrap;flex:none}
   .agent i{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:9px;color:#fff;font-style:normal}
   .agent.a1 i{background:var(--indigo)}.agent.a2 i{background:#6E7F6A}.agent.a3 i{background:#A86A4A}.agent.a4 i{background:#7A6A9B}
   .btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;font-size:12.5px;font-weight:600;padding:8px 14px;transition:.15s;border:1px solid transparent}
@@ -450,7 +450,7 @@
     </div>
     <div class="page-meta">
       <span class="pill"><span class="dot"></span>可点击：左侧导航 / 审批 / 手机 Tab</span>
-      <span class="pill">v1.5 · 2026-11-12</span>
+      <span class="pill">v1.6 · 2026-11-12</span>
     </div>
   </div>
 
@@ -728,6 +728,39 @@
                           <button class="btn primary" data-approve>批准并生成报价单</button>
                         </div>
                       </div>
+
+                      <div id="revisionChat" style="margin-top:14px;padding-top:12px;border-top:1px dashed #E3DED4">
+                        <div class="between">
+                          <div class="row" style="gap:6px">
+                            <span class="agent a1"><i>织</i>小织</span>
+                            <span class="tiny muted">表单改值，也可以直接说：「数量改 800 米，交期 7 天」</span>
+                          </div>
+                          <span class="badge">Chat → Patch</span>
+                        </div>
+                        <div class="diff" style="margin-top:8px">
+                          <div class="dh"><span>变更单 · 3 处 · 内核重算</span><span>来自对话</span></div>
+                          <table>
+                            <tr><td class="lbl">数量</td><td><span class="old num">500 米</span> → <span class="new num">800 米</span></td></tr>
+                            <tr><td class="lbl">交期</td><td><span class="old">未确认</span> → <span class="new">7 天</span></td></tr>
+                            <tr><td class="lbl">总额</td><td><span class="old num">¥7,600</span> → <span class="new num">¥12,160</span></td></tr>
+                          </table>
+                          <div style="display:flex;gap:8px;padding:8px 12px;border-top:1px solid #EAF1F6;background:#fff">
+                            <button class="btn primary sm">应用修改</button>
+                            <button class="btn ghost sm">放弃</button>
+                            <span class="tiny muted" style="margin-left:auto;align-self:center">不会直接改账本，应用后才生成 v3</span>
+                          </div>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:8px">
+                          <input placeholder="和小织说怎么改… 例如「按上次成交价 15.0」" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:12px;font-family:inherit;background:var(--surface)" />
+                          <button class="btn primary sm" data-send-revise>发送</button>
+                        </div>
+                        <div class="row" style="gap:6px;margin-top:8px">
+                          <button class="btn ghost sm">改数量</button>
+                          <button class="btn ghost sm">改交期</button>
+                          <button class="btn ghost sm">换样品</button>
+                          <span class="tiny muted" style="margin-left:auto">单个字段直接点上方明细改更快</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -957,7 +990,7 @@
                       <span class="badge good">共享库 + RLS</span>
                     </div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">数据区域</span><span>杭州（默认）</span></div>
-                    <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">登录</span><span>Casdoor · 账号/微信</span></div>
+                    <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">登录</span><span>Casdoor · sso.wnbgj.com</span></div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">企业 SSO</span><span>未开启</span></div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">LLM</span><span>云端 · 零留存</span></div>
                     <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">敏感字段</span><span>出网前脱敏</span></div>
@@ -1505,10 +1538,12 @@
                     <div class="eyebrow">LLM 设置 · 全局</div>
                     <span class="badge">云端</span>
                   </div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">Router</span><span>LiteLLM · 已连接</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">Provider</span><span>阿里百炼</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">模型</span><span>qwen-plus</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">Temperature</span><span class="num">0.2</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">租户覆盖</span><span class="num">3 家</span></div>
+                  <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">今日 tokens</span><span class="num">2.4M · ¥186</span></div>
                   <div class="between" style="font-size:11.5px;padding:5px 0"><span class="muted">今日调用</span><span class="num">1,284 次 · 0 失败</span></div>
                   <div class="between" style="margin-top:8px;gap:7px">
                     <button class="btn ghost sm" style="flex:1">测试连接</button>
@@ -1686,6 +1721,7 @@
 
   // provenance click demo
   $$('.prov').forEach(p => p.addEventListener('click', () => toast(p.textContent + ' · 原型演示：此处打开来源侧栏')));
+  $$('[data-send-revise]').forEach(b => b.addEventListener('click', () => toast('已生成变更单 · 应用后生成新版本并写审计')));
 
   // deep link after listeners are wired
   if (location.hash) showScreen(location.hash.slice(1));

@@ -1,6 +1,7 @@
 # 后 AI 时代纺织管理软件 · 产品设计
 
-> 版本：v1.5 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
+> 版本：v1.6 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
+> v1.6 变更：接入 LLM Router（LiteLLM）与 token 计费（§14.2 / §15.4）；Casdoor 落地到 `sso.wnbgj.com`（§3.6）；新增「表单 + Chat→Patch」改稿（§7.8）；隔离升级包价格改为后台合同配置。
 > v1.5 变更：确认共享库+RLS 默认、schema/独立库仅作升级项；LLM 不做自部署，改为平台端参数设置；数据区域改为按合同启用；新增 Casdoor 统一登录（§3.6）。
 > v1.4 变更：新增多租户隔离（共享库+RLS / schema-per-tenant / 独立库）与 LLM 部署设计，见 §15。
 > v1.3 变更：打印代理（Print Agent）与每家公司个性化（模板工作室 + AI 识样张）、总后台版本化价格表与租户合同价、开票设置可配（§4.4 / §14.1 / §14.3 / §14.5）。
@@ -262,7 +263,23 @@ flowchart LR
 
 **我们不做的事**：不存密码、不做短信通道、不做 MFA、不做找回密码、不做登录限流。Casdoor 负责这些，我们只校验 token（issuer / audience / exp / nonce）并映射权限。
 
-**Casdoor 部署**：独立 Postgres、同区域、每日备份；与业务库分离；升级走灰度。它是登录的单点，必须监控可用性与延迟；故障时保留已签发会话的短期宽限，但禁止新登录。
+**Casdoor 部署**：已部署在 `https://sso.wnbgj.com`（单点登录）。独立 Postgres、每日备份；与业务库分离；升级走灰度。它是登录的单点，必须监控可用性与延迟；故障时保留已签发会话的短期宽限，但禁止新登录。
+
+**接入参数（施工清单）**：
+
+| 项 | 值 |
+| -- | -- |
+| Issuer | `https://sso.wnbgj.com` |
+| Discovery | `https://sso.wnbgj.com/.well-known/openid-configuration` |
+| 租户端应用 | `weave-order`，回调 `https://app.weaveorder.cn/auth/callback` |
+| 平台端应用 | `weave-platform`，回调 `https://admin.weaveorder.cn/auth/callback`，强制 MFA |
+| Scopes | `openid profile email phone` |
+| Claims | `sub`、`org`、`name`、`email`、`phone` |
+| Token | RS256，JWKS 校验，clock skew ≤ 60s；access token 15 分钟、refresh 7 天 |
+| 登出 | 走 Casdoor `end_session_endpoint`，同时撤销本地会话 |
+| 组织 | 每租户一个 Organization；平台单独 Organization |
+
+**配置原则**：`client_secret` 只存服务端环境变量/KMS；回调地址白名单精确匹配；不在前端存 token；跨域用 BFF/同源代理，避免把 access token 暴露给浏览器脚本。
 
 **数据模型增量**：`users` 增加 `idp_subject` / `idp_org`；新增 `idp_connections`（租户 SSO 配置）、`idp_org_map`（tenant ↔ Casdoor org）、`sso_domains`（域名验证）。不存密码字段。
 
@@ -807,6 +824,51 @@ flowchart TB
 
 **发货单本身的设计**：一张 A4 两联（客户联 + 回单联），必须包含订单号、发货单号、客户、收货地址、每行品名/规格/数量/单价（可选隐藏价格）、箱数、毛重、物流单号、签字栏、公司抬头与盖章位。出口单加英文品名、HS Code、原产地（模板变量）。
 
+### 7.8 改稿：表单改值，Chat 改意图，最后都落成 Patch
+
+Agent 出的东西要调整，**不是二选一**。三种入口，按场景用：
+
+| 入口 | 适合 | 交互 |
+| ---- | ---- | ---- |
+| 直接改 | 改一个值：单价、数量、交期、备注 | 点字段 → 输入 → 失焦保存，自动重算 |
+| 快捷表单 | 一次改一组：价格+数量+交期、换样品、改条款 | 「调整」面板只显示相关字段 + 原因 |
+| 和小织说 | 复杂/模糊：换成同成分更厚的替代料、按上次成交价、整单改英文条款 | 自然语言 → Agent 生成变更单（Patch）→ 人确认 |
+
+**核心原则：Chat 不直接改数据，只生成 Patch。** 所有入口最终都走内核 `reviseDraft`：版本 +1、重算金额、写审计、必要时升级审批。人看到的永远是「原值 → 新值」的 diff，而不是一坨新数字。
+
+```
+用户：「第二行换成 32S 精梳棉，数量 500 改 800，交期 7 天」
+  → 小织解析成 3 个字段变更
+  → 变更单：
+     样品   40S 精梳棉 → 32S 精梳棉（库存 1,200m）
+     数量   500 米 → 800 米
+     交期   未确认 → 7 天
+     总额   ¥7,600 → ¥12,160（内核重算）
+  → [应用修改] [放弃] [继续让小织改]
+```
+
+**为什么不让 Chat 直接写**：自然语言有歧义、无法校验、难追溯；用户也不知道它到底改了哪几处。**为什么不做一个大表单**：复杂变更（换料、改条款、批量）表达不了，而且表单越长人越不想用。
+
+**四种界面形态**：
+
+1. **行内编辑**：审批详情里每个字段可点，输入框带单位与校验；保存即新版本。
+2. **调整面板**：右侧抽屉，页签「表单 / 对话」。表单是常用字段；对话是输入框 + 示例指令。
+3. **变更单（Patch Card）**：无论从哪来，结果都先落成一张变更单；逐行 diff + 重算总额 + 应用/放弃。
+4. **Agent 追问**：信息不足时，Agent 给 2–3 个选项（「换成 220g 还是 260g？」），不让用户写长句。
+
+**文案类产出**（跟进话术、客户回复）不走向量字段，用文本编辑器 + 快捷指令：「更简短」「更正式」「按上次语气」，Agent 重写后仍给 diff。
+
+**权限与风控**：
+
+- 改自己的草稿：直接改；改别人的：需 owner 权限或交接。
+- 改价超阈值、换成本更低的料：自动升级主管审批。
+- Chat 指令原文脱敏后保留，和 Patch 一起进审计；不把客户隐私写进训练数据。
+- 所有变更都写 `decision_deltas`，下次建议更准（§7.5）。
+
+**数据模型**：`revision_requests`（source: inline/form/chat、instruction、patch_json、status、actor、reason）；`draft_revisions` 存版本；`revision_reasons` 存结构化原因（价格/交期/规格/客户要求/其他）。
+
+**指标**：改稿入口占比、Chat→Patch 应用率、平均改稿时长、改后再次驳回率。目标：80% 改稿在 30 秒内完成。
+
 ---
 
 ## 8. 界面与交互规范
@@ -1034,6 +1096,8 @@ flowchart TB
 | `teams` | id, tenant_id, name, manager_id | P0 |
 | `customer_owners` | customer_id, user_id, scope, granted_by, granted_at | P0 |
 | `quote_versions` / `draft_revisions` | entity, entity_id, version, patch, actor, reason | P0 |
+| `revision_requests` | entity, entity_id, source (inline/form/chat), instruction, patch_json, status, actor, reason | P0 |
+| `revision_reasons` | code, label, applies_to, active | P1 |
 | `pricing_policies` | tenant_id, scope_type, scope_id, key, value_json, priority, locked, effective_from, created_by | P0 |
 | `policy_change_log` | policy_id, old_value, new_value, actor, reason, created_at | P0 |
 | `quote_shares` | quote_id, version, token_hash, expires_at, require_phone_tail, allow_pdf, revoked_at, created_by | P0 |
@@ -1080,9 +1144,12 @@ flowchart TB
 | `tenant_security_profiles` | tenant_id, data_region, allow_external_llm, retention_days, kms_key_ref | P0 |
 | `llm_settings` | scope, tenant_id, provider, base_url, model, params_json, key_ref, allow_external, log_prompts, version, updated_by | P0 |
 | `llm_call_stats` | tenant_id, task, provider, model, latency_ms, tokens, error_code, at | P1 |
+| `llm_routers` | name, base_url, kind (litellm/oneapi), status, key_ref | P1 |
+| `model_prices` | model, input_per_1k, output_per_1k, cached_per_1k, sell_markup, effective_from | P1 |
+| `token_usage` | tenant_id, request_id, task, model, prompt_tokens, completion_tokens, cached_tokens, cost, at | P1 |
 | `data_export_jobs` | tenant_id, scope, status, file_key, requested_by, expires_at | P1 |
 
-关键索引：`customers(tenant_id, owner_id)`、`quotes(tenant_id, status, created_at)`、`pricing_policies(tenant_id, scope_type, scope_id, key)` 唯一、`quote_shares(token_hash)` 唯一、`quote_share_events(share_id, created_at)`、`orders(tenant_id, due_date, status)`、`audit_log(tenant_id, entity, entity_id, created_at)`、`print_jobs(tenant_id, status, created_at)`、`print_jobs(idempotency_key)` 唯一、`boxes(qr_payload)` 唯一、`subscriptions(tenant_id, status)`、`usage_events(tenant_id, meter, occurred_at)`、`invoices(tenant_id, status, due_at)`、`llm_settings(scope, tenant_id)` 唯一、`idp_connections(tenant_id)` 唯一、`sso_domains(domain)` 唯一。
+关键索引：`customers(tenant_id, owner_id)`、`quotes(tenant_id, status, created_at)`、`pricing_policies(tenant_id, scope_type, scope_id, key)` 唯一、`quote_shares(token_hash)` 唯一、`quote_share_events(share_id, created_at)`、`orders(tenant_id, due_date, status)`、`audit_log(tenant_id, entity, entity_id, created_at)`、`print_jobs(tenant_id, status, created_at)`、`print_jobs(idempotency_key)` 唯一、`boxes(qr_payload)` 唯一、`subscriptions(tenant_id, status)`、`usage_events(tenant_id, meter, occurred_at)`、`invoices(tenant_id, status, due_at)`、`llm_settings(scope, tenant_id)` 唯一、`idp_connections(tenant_id)` 唯一、`sso_domains(domain)` 唯一、`revision_requests(entity, entity_id, created_at)`、`token_usage(request_id)` 唯一、`model_prices(model, effective_from)` 唯一。
 
 > 迁移策略：`tenantId` 现在加、存量填默认租户，新数据必须带；`ownerId` 先允许空，空=全公司可见（兼容演示数据），新数据强制填。
 > `pricing_policies` 的 `value_json` 存 `{ "marginPct": 20, "unit": "percent" }` 这类结构化值，不用字符串；`locked=true` 表示管控层，下级不可覆盖。
@@ -1128,9 +1195,12 @@ flowchart TB
 | LLM | 敏感字段出网次数（脱敏前） | 0 |
 | LLM | LLM 调用 p95 延迟 | ≤ 8 秒 |
 | LLM | 外部模型处理占比（可按租户审计） | 可解释 |
+| 改稿 | 80% 的改稿在 30 秒内完成 | 是 |
+| 改稿 | Chat → Patch 应用率 | ≥ 75% |
+| 成本 | 每租户 token 成本 / 收入可核算 | 100% |
 | 商业 | 每席位月处理单量 | 基线 ×2 |
 
-埋点事件（最小集）：`intent_submitted` `draft_created` `draft_revised`（字段/幅度）`draft_approved` `draft_rejected`（原因）`agent_failed`（工具/错误码）`policy_resolved`（层级/是否被夹）`quote_share_created` `quote_share_viewed` `quote_accepted` `quote_question` `mobile_capture_used` `mobile_scan_used` `visit_checked_in` `offline_synced` `offline_conflict` `print_job_created` `print_job_completed` `print_job_failed` `print_reprinted` `delivery_confirmed` `subscription_started` `trial_started` `plan_upgraded` `invoice_paid` `handover_completed`。
+埋点事件（最小集）：`intent_submitted` `draft_created` `draft_revised`（字段/幅度）`revision_requested`（来源 inline/form/chat）`revision_applied` `draft_approved` `draft_rejected`（原因）`agent_failed`（工具/错误码）`policy_resolved`（层级/是否被夹）`quote_share_created` `quote_share_viewed` `quote_accepted` `quote_question` `mobile_capture_used` `mobile_scan_used` `visit_checked_in` `offline_synced` `offline_conflict` `print_job_created` `print_job_completed` `print_job_failed` `print_reprinted` `delivery_confirmed` `token_usage_recorded` `subscription_started` `trial_started` `plan_upgraded` `invoice_paid` `handover_completed`。
 
 ---
 
@@ -1140,9 +1210,9 @@ flowchart TB
 
 | 阶段 | 已有路线 | 本次设计新增 | 端 |
 | ---- | -------- | ------------ | -- |
-| **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、**共享库 + RLS + 跨租户测试、Casdoor 登录（OIDC + 租户组织映射）、LLM 设置页（全局参数 + 敏感字段脱敏）**、`tenants/users/idp_* /memberships/pricing_policies/quote_shares/tenant_data_planes/llm_settings` | PC + 手机 PWA + 客户 |
-| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、企业 SSO（Casdoor SAML/OIDC）、LLM 租户覆盖（含自定义 base_url）** | PC + 手机 PWA + 客户 |
-| **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张、独立库/每租户 KMS、LLM 按任务路由与调用成本看板** | PC 为主 |
+| **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、**表单 + Chat→Patch 改稿**、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、**共享库 + RLS + 跨租户测试、Casdoor 登录（OIDC + 租户组织映射）、LLM 设置页（全局参数 + 敏感字段脱敏）**、`tenants/users/idp_* /memberships/pricing_policies/quote_shares/tenant_data_planes/llm_settings/revision_requests` | PC + 手机 PWA + 客户 |
+| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、企业 SSO（Casdoor SAML/OIDC）、LLM Router 接入（LiteLLM）+ token 记账 + 租户模型白名单** | PC + 手机 PWA + 客户 |
+| **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张、独立库/每租户 KMS、token 账单与毛利看板** | PC 为主 |
 | **P3 阶段四**（6–8 周） | 订单履约、对账 | 客户自助门户（寄样进度/历史报价/对账单）、供应商协同、Tauri 外设壳、小程序（仅当客户侧验证成立）、洗水唛/吊牌、渠道商/多仓 | PC + 手机 + 客户侧 |
 
 **每阶段的验收都是「一个人做一次具体动作」**（沿用既有原则）：
@@ -1261,6 +1331,7 @@ SEO 关键词簇：纺织管理软件、面料管理软件、布管家替代、�
 ├── Pro      ¥499 / 席位 / 月   年付 10 个月价
 ├── Enterprise  定制（合同价）
 └── 加购     动作包 ¥80 / 1,000 次 · 存储 ¥30 / 100GB
+            隔离升级（schema / 独立库）按合同价，在总后台配置
 ```
 
 **规则**：
@@ -1272,6 +1343,8 @@ SEO 关键词簇：纺织管理软件、面料管理软件、布管家替代、�
 5. **试算**：改价前可以选 3 个真实租户，预览「他们下个月会付多少」，避免拍脑袋。
 6. **审计**：谁改的、改前/改后、影响多少租户；改价需要第二个 owner 复核。
 7. **对外一致**：官网价格页从价格表生成，不手工维护两份。
+
+**隔离升级包**（应对挑剔客户）：schema-per-tenant / 独立库 / 独立实例作为 Enterprise 附加项，价格不写死，在总后台按租户合同价配置；包含迁移实施、独立备份、SLA 上浮。升级后按新数据平面计费。
 
 **平台端「套餐与价格」页面**：
 
@@ -1293,6 +1366,8 @@ Enterprise 合同价    合同价     不限       定制       生效
 | --- | --- | --- | --- |
 | 活跃席位 | 人 / 月 | ✓ | 当月登录过才算；只邀请不登录不计费 |
 | agent 动作 | 次 | ✓（含额度，超出买包） | 报价草稿、跟进建议、对账差异、OCR 一页各计 1 |
+| LLM 输入 tokens | 千 tokens | 成本核算 + 超额包 | 按模型价格表，区分缓存命中 |
+| LLM 输出 tokens | 千 tokens | 成本核算 + 超额包 | 输出单价通常更高 |
 | 存储 | GB / 月 | 超额才收 | 图片、PDF、录音；基础含 20GB/席位 |
 | 短信 | 条 | 成本价 | 客户链接验证码、通知 |
 | 打印张数 | 张 | ✗ | 只做成本分析，不计费 |
@@ -1300,6 +1375,13 @@ Enterprise 合同价    合同价     不限       定制       生效
 | 客户提问 | 条 | ✗ | 进入 agent 队列，按动作计 |
 
 **计量规则**：事件幂等（`idempotency_key`）；每日汇总、每月出账；允许 5% 争议窗口；额度用到 80% 提醒，100% 只暂停 agent 新任务，**绝不阻断审批、查看和导出**。
+
+**token 怎么收费（避免重复收）**：
+
+1. 对外主计价仍是**席位 + agent 动作**；token 先用于**成本核算、毛利看板、超额包**，不重复收。
+2. 如果某租户合同按 token 计费，则其 agent 动作额度不再收费（二选一，在订阅里标记计费口径）。
+3. 每个模型维护 `input/output/cached` 三档采购价与销售价；销售价 = 采购价 × 加价率（默认 1.3–1.5），可按租户合同覆盖。
+4. 账单行展示「模型用量：输入 1.2M / 输出 0.3M / 缓存 0.4M → ¥186」，再汇总到含税总额。
 
 ### 14.3 账单生命周期
 
@@ -1430,6 +1512,8 @@ sequenceDiagram
 | 指标 | 目标 | 说明 |
 | --- | --- | --- |
 | 毛利率 | ≥ 70% | 扣除模型、存储、短信、支付通道 |
+| token 毛利 | ≥ 25% | 销售价 / 采购价，按模型分档 |
+| token 成本可核算 | 100% 租户 | 每租户、每模型、每日 |
 | CAC 回收期 | ≤ 12 个月 | 销售+市场 / 新客月毛利 |
 | 试用转化 | ≥ 20% | 14 天内完成首单报价 |
 | 月度毛流失 | ≤ 2% | 试点期可放宽到 3% |
@@ -1542,6 +1626,28 @@ CREATE POLICY tenant_isolation ON quotes
 
 **页面能力**：测试连接、拉模型列表、保存为新版本、一键回滚、查看最近调用与错误率。改配置需要 owner 复核，写审计。
 
+**LLM Router（你计划做的）**：不自己写路由，直接接成熟开源网关——LiteLLM Proxy、OneAPI、Higress AI Gateway、Kong AI Gateway 都行。建议 **LiteLLM**（多模型、虚拟 Key、预算、用量日志最全）。
+
+```mermaid
+flowchart LR
+  A["织序 agent"] -->|"OpenAI 协议 + 租户虚拟 Key"| R["LLM Router<br/>LiteLLM / OneAPI"]
+  R --> M1["阿里百炼<br/>qwen-plus"]
+  R --> M2["火山 / DeepSeek"]
+  R --> M3["客户自定义端点<br/>vLLM"]
+  R -->|"usage: 输入/输出/缓存 tokens"| U["用量事件<br/>request_id 幂等"]
+  U --> B["月度账单<br/>按模型价格表"]
+```
+
+**Router 负责**：多模型适配、每租户虚拟 Key、模型白名单、限额与预算、重试/降级、缓存（可选）、用量日志。**我们负责**：租户配置界面、价格表、把 usage 变成账单、毛利看板。
+
+**token 记账链路**：
+
+1. 每次调用带 `request_id` + `tenant_id` + `task`。
+2. Router 返回 `usage.prompt_tokens / completion_tokens / cached_tokens`，网关写入 `token_usage`（幂等）。
+3. 每日汇总到 `usage_monthly`；每月按 `model_prices` 算成本与销售价。
+4. 账单出现「模型用量」行；平台端能看到每租户的 token 成本、收入、毛利率。
+5. 与 Router 自带日志做日对账，差异 >1% 告警；避免漏计/重计。
+
 **按任务路由**（可选）：报价/对账用稳的模型（低 temperature），跟进话术可用便宜模型，OCR 用专用模型。全部在同一个设置页里按「任务」覆盖，不增加新概念。
 
 **仍然保留的底线**：
@@ -1641,13 +1747,14 @@ CREATE POLICY tenant_isolation ON quotes
 2. 手机端：在原「审批 + 拍照找样 + 客户」上扩为 **5 入口 + 角色化首页 + 现场能力矩阵**（扫码、拍签收、拍大货、盘点、拜访、回款、离线、委派）。见 §5.2。
 3. 客户可见报价链接：**确认做**，进入 P0；客户无登录可看、可问、可接受，接受后由业务员确认转订单。见 §7.6 / §8.5。
 4. 打印：做成**统一打印中心 + 打印代理 + 一单一码**，不是每个页面一个按钮；发货单/箱唛走「拣货 → 装箱 → 一键打全套 → 扫码复核」。见 §4.4 / §7.7 / §8.6。
-5. SaaS 收费：**席位订阅 + 内置 agent 额度 + 动作包**，不做 token 实时计费；平台总管理端独立于租户端，默认看不到业务数据。见 §14。
+5. SaaS 收费：**席位订阅 + 内置 agent 额度 + 动作包**为对外主口径；**token 全程计量**用于成本、毛利、超额包，也可按合同切换为 token 计费。平台总管理端独立于租户端，默认看不到业务数据。见 §14.2。
 6. 定价：**暂按 ¥299 / ¥499 / 定制、年付送 2 个月**；价格做成**总后台可配的版本化价格表**，支持租户级合同价/锁价，改价不影响存量。见 §14.1。
 7. 开票：按「老规矩」默认 **6% 增值税专用发票、价税分离、收款后开票**；发票类型/税率/开票主体/时机在**总后台「开票设置」**可改，按租户生效。见 §14.3。
 8. 打印：**做一个真正的打印代理（Print Agent）**，本地常驻、自动发现打印机、离线补打、本地渲染与校准；每家公司通过「参数覆盖 → 字段布局 → 模板工作室 → 模板包」自定义，并可用 **AI 识样张**从旧单据生成模板。见 §4.4。
-9. 数据隔离：**默认共享库 + RLS**，企业版可升级 **schema-per-tenant**，旗舰/私有化用独立库/实例；同一套代码按 `data_plane` 路由。见 §15。
-10. LLM：**不自建/不自部署模型**，总后台「LLM 设置」提供参数口子（provider、base_url、model、Key、temperature、预算）；默认全局、支持租户覆盖；客户要内网模型就填自己的兼容端点。见 §15.4。
-11. 登录：**交给 Casdoor**（自托管 OIDC/OAuth2），一个租户一个 Organization，平台管理员独立应用 + 强制 MFA；我们只保留角色/数据范围映射，不存密码。见 §3.6。
+9. 数据隔离：**默认共享库 + RLS**，企业版可升级 **schema-per-tenant**，旗舰/私有化用独立库/实例；**升级包价格在总后台按合同配置**（不写死）。见 §14.1 / §15。
+10. LLM：**不自建模型**；总后台「LLM 设置」提供参数口子，接入 **LiteLLM 等开源 Router**，每家公司可配模型，**token 全程记账**用于收费与毛利。见 §15.4。
+11. 登录：**交给 Casdoor**（已部署 `https://sso.wnbgj.com`），一个租户一个 Organization，平台管理员独立应用 + 强制 MFA；我们只保留角色/数据范围映射，不存密码。见 §3.6。
+12. 改稿：**表单改值、Chat 改意图、统一落成 Patch**；Chat 不直接写数据，所有修改走内核版本与审计。见 §7.8。
 
 **还需要你拍板的事**：
 
@@ -1665,11 +1772,12 @@ CREATE POLICY tenant_isolation ON quotes
 7. 内置 agent 额度 1,000 / 5,000 次/月够不够？超出单价建议 ¥0.05–0.1/次。
 8. 试用 14 天，还是改成「7 天陪跑 + 14 天试用」？
 9. 开票按 6% 专票是否就是你说的「老规矩」？如果公司实际按 13% 开，请让财务在总后台改税率即可。
+10. token 计费口径：对外继续「席位+动作」，token 只做成本/超额；还是允许部分客户按 token 结算？建议二选一，不重复收。
 
 数据安全：
-10. schema/独立库作为 Enterprise 升级项，加价多少？
-11. LLM 默认用哪家（阿里百炼 / 火山 / DeepSeek）？先配哪个模型？
-12. Casdoor 自托管由谁运维？是否接受它作为登录单点（需要监控与备份）？
+11. schema/独立库升级包的默认标价（可后台改）先定多少？
+12. Router 先接哪几家（阿里百炼 / 火山 / DeepSeek）？哪些模型开放给租户选？
+13. Casdoor 已由你部署，确认后续运维/备份由你负责，还是要我们接手监控？
 
 ---
 
