@@ -26,7 +26,8 @@
     "@weave-order/core": "workspace:*",
     "@weave-order/schema": "workspace:*",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "@babel/runtime": "^7.29.0"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",
