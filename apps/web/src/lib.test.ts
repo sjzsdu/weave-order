@@ -11,6 +11,7 @@ import {
 
 const customer: Customer = {
   id: "123e4567-e89b-12d3-a456-426614174000",
+  tenantId: "00000000-0000-0000-0000-000000000001",
   code: "C001",
   name: "杭州织造有限公司",
   tier: "VIP",

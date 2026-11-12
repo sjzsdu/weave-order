@@ -2,7 +2,7 @@ import { quoteItems, quotes } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { ApprovalItem, T004GenerateQuoteDraftInput } from "@weave-order/schema";
 import type { QuoteConfirmation, QuoteDraft, QuoteLineItem } from "@weave-order/schema";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
@@ -19,6 +19,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function mapQuote(row: QuoteRow, items: QuoteLineItem[]): QuoteDraft {
   return {
     id: row.id,
+    tenantId: row.tenantId,
     customerId: row.customerId,
     status: "DRAFT",
     currency: row.currency,
@@ -46,6 +47,7 @@ export class QuoteService {
     private readonly db: Db,
     private readonly customers: CustomerService,
     private readonly samples: SampleService,
+    private readonly tenantId: string,
   ) {}
 
   async generateDraft(input: unknown, ctx: KernelContext): Promise<QuoteDraft> {
@@ -116,6 +118,7 @@ export class QuoteService {
       const quoteRows = await tx
         .insert(quotes)
         .values({
+          tenantId: this.tenantId,
           customerId: parsed.customerId,
           status: "DRAFT",
           currency: parsed.currency,
@@ -135,22 +138,29 @@ export class QuoteService {
 
       const inserted = await tx
         .insert(quoteItems)
-        .values(lineInputs.map((line) => ({ ...line, quoteId: quoteRow.id })))
+        .values(
+          lineInputs.map((line) => ({ ...line, tenantId: this.tenantId, quoteId: quoteRow.id })),
+        )
         .returning();
 
-      await appendAudit(tx, ctx, {
-        action: "QUOTE_DRAFT_GENERATED",
-        entityType: "quote",
-        entityId: quoteRow.id,
-        before: null,
-        after: {
-          customerId: quoteRow.customerId,
-          status: quoteRow.status,
-          totalAmount,
-          currency: quoteRow.currency,
-          lineCount: inserted.length,
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "QUOTE_DRAFT_GENERATED",
+          entityType: "quote",
+          entityId: quoteRow.id,
+          before: null,
+          after: {
+            customerId: quoteRow.customerId,
+            status: quoteRow.status,
+            totalAmount,
+            currency: quoteRow.currency,
+            lineCount: inserted.length,
+          },
         },
-      });
+        this.tenantId,
+      );
 
       const items: QuoteLineItem[] = inserted
         .slice()
@@ -174,7 +184,11 @@ export class QuoteService {
   }
 
   async getDraft(quoteId: string): Promise<QuoteDraft> {
-    const rows = await this.db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
+      .limit(1);
     const row = rows[0];
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
@@ -221,7 +235,7 @@ export class QuoteService {
           confirmedAt,
           updatedAt: confirmedAt,
         })
-        .where(eq(quotes.id, quoteId))
+        .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
         .returning();
       if (!rows[0]) {
         throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
@@ -229,13 +243,18 @@ export class QuoteService {
           resourceId: quoteId,
         });
       }
-      await appendAudit(tx, ctx, {
-        action: "QUOTE_CONFIRMED",
-        entityType: "quote",
-        entityId: quoteId,
-        before: { status: current.status, totalAmount: current.total.amount },
-        after: { status: "SENT", confirmedBy: ctx.actor.id },
-      });
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "QUOTE_CONFIRMED",
+          entityType: "quote",
+          entityId: quoteId,
+          before: { status: current.status, totalAmount: current.total.amount },
+          after: { status: "SENT", confirmedBy: ctx.actor.id },
+        },
+        this.tenantId,
+      );
     });
     return {
       quoteId,
@@ -247,7 +266,12 @@ export class QuoteService {
 
   /** 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。 */
   async list(limit = 50): Promise<ApprovalItem[]> {
-    const rows = await this.db.select().from(quotes).orderBy(desc(quotes.createdAt)).limit(limit);
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(eq(quotes.tenantId, this.tenantId))
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit);
     if (rows.length === 0) return [];
 
     const ids = rows.map((row) => row.id);
@@ -298,7 +322,7 @@ export class QuoteService {
       const rows = await tx
         .update(quotes)
         .set({ status: "REJECTED", updatedAt: rejectedAt })
-        .where(eq(quotes.id, quoteId))
+        .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
         .returning();
       if (!rows[0]) {
         throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
@@ -306,13 +330,18 @@ export class QuoteService {
           resourceId: quoteId,
         });
       }
-      await appendAudit(tx, ctx, {
-        action: "QUOTE_REJECTED",
-        entityType: "quote",
-        entityId: quoteId,
-        before: { status: current.status, totalAmount: current.total.amount },
-        after: { status: "REJECTED", confirmedBy: ctx.actor.id, note: note ?? null },
-      });
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "QUOTE_REJECTED",
+          entityType: "quote",
+          entityId: quoteId,
+          before: { status: current.status, totalAmount: current.total.amount },
+          after: { status: "REJECTED", confirmedBy: ctx.actor.id, note: note ?? null },
+        },
+        this.tenantId,
+      );
     });
     return { status: "REJECTED" };
   }

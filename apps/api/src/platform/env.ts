@@ -7,6 +7,8 @@ import { z } from "zod";
  */
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1).default("postgres://weave:weave@localhost:5433/weave_order"),
+  /** 网关业务连接：生产必须是 weave_app（无 BYPASSRLS）；本地缺省沿用 DATABASE_URL。 */
+  APP_DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
   /** embedding provider：local-stub（默认，无需外部 key） */
   EMBEDDING_PROVIDER: z.string().min(1).default("local-stub"),
@@ -18,6 +20,13 @@ const EnvSchema = z.object({
   REPLY_SOURCE: z.string().min(1).default("local-scripted"),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /** dev：接受 `Bearer dev:<sub>:<org>`（仅本地）；oidc：Casdoor JWKS 验签。 */
+  AUTH_MODE: z.enum(["dev", "oidc"]).default("dev"),
+  CASDOOR_ISSUER: z.string().url().default("https://sso.wnbgj.com"),
+  CASDOOR_AUDIENCE: z.string().min(1).default("weave-order"),
+  CASDOOR_JWKS_URI: z.string().url().optional(),
+  /** 客户报价分享链接的站点根地址。 */
+  PUBLIC_APP_URL: z.string().url().default("http://localhost:5173"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
