@@ -8,3 +8,7 @@ coverage/
 *.log
 .DS_Store
 .next/
+
+# Taro / SWC 构建缓存
+.swc/
+.taro/
