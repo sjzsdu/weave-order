@@ -1,7 +1,23 @@
-import { Body, Controller, Get, Inject, Post, Query } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
+import { ReviseQuoteDraftResult } from "@weave-order/schema";
+import type { PricingKey } from "@weave-order/schema";
 import type { ApprovalService } from "../approval";
+import { isKernelError } from "../kernel";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
+import { toToolError } from "../tools/errors";
 import { AGENT_CONTEXT, HUMAN_CONTEXT } from "./context";
 import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
@@ -9,6 +25,18 @@ function clampLimit(raw: string | undefined, fallback: number, max: number): num
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), 1), max);
+}
+
+/** 内核错误 -> HTTP 状态；其余继续抛出，交给 Nest 统一处理。 */
+function rethrowHttp(error: unknown): never {
+  if (isKernelError(error)) {
+    if (error.code === "RESOURCE_NOT_FOUND" || error.code === "CUSTOMER_NOT_FOUND") {
+      throw new NotFoundException(error.message);
+    }
+    if (error.code === "PERMISSION_DENIED") throw new ForbiddenException(error.message);
+    throw new BadRequestException(error.message);
+  }
+  throw error;
 }
 
 @Controller("api")
@@ -67,11 +95,196 @@ export class CatalogController {
  */
 @Controller("api")
 export class QuoteController {
-  constructor(@Inject(TOOLS) private readonly tools: Tools) {}
+  constructor(
+    @Inject(TOOLS) private readonly tools: Tools,
+    @Inject(KERNEL) private readonly kernel: Kernel,
+  ) {}
 
   @Post("tools/generate-quote-draft")
   async generateDraft(@Body() body: unknown) {
     return this.tools.generateQuoteDraft.execute(body, AGENT_CONTEXT);
+  }
+
+  /** 人类改稿：版本 +1、重算、审计、改幅升级审批。 */
+  @Post("quotes/revise")
+  async revise(@Body() body: unknown) {
+    try {
+      const data = await this.kernel.quotes.reviseDraft(body, HUMAN_CONTEXT);
+      return ReviseQuoteDraftResult.parse({ ok: true, data });
+    } catch (error) {
+      if (isKernelError(error)) {
+        return ReviseQuoteDraftResult.parse({ ok: false, error: toToolError(error) });
+      }
+      throw error;
+    }
+  }
+
+  /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
+  @Get("quotes/:id/approval-view")
+  async approvalView(@Param("id") id: string) {
+    try {
+      return { view: await this.kernel.quotes.getApprovalView(id) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Get("quotes/:id")
+  async draft(@Param("id") id: string) {
+    try {
+      return { draft: await this.kernel.quotes.getDraft(id) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+}
+
+/** 定价继承：策略 CRUD + 生效值/来源解析。 */
+@Controller("api/pricing")
+export class PricingController {
+  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+
+  @Get("policies")
+  async list(@Query("scopeType") scopeType?: string, @Query("scopeId") scopeId?: string) {
+    const policies = await this.kernel.pricing.list({
+      ...(scopeType ? { scopeType: scopeType as never } : {}),
+      ...(scopeId ? { scopeId } : {}),
+    });
+    return { policies };
+  }
+
+  @Post("policies")
+  async create(@Body() body: unknown) {
+    try {
+      return {
+        policy: await this.kernel.pricing.create(body, {
+          ...HUMAN_CONTEXT,
+          actor: { ...HUMAN_CONTEXT.actor, type: "HUMAN" },
+        }),
+      };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Patch("policies/:id")
+  async update(@Param("id") id: string, @Body() body: unknown) {
+    try {
+      return { policy: await this.kernel.pricing.update(id, body, HUMAN_CONTEXT) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 生效值 + 来源：审批卡点开任意数字都调这里。 */
+  @Get("resolve")
+  async resolve(
+    @Query("key") key: string,
+    @Query("customerId") customerId?: string,
+    @Query("teamId") teamId?: string,
+    @Query("categoryId") categoryId?: string,
+    @Query("personId") personId?: string,
+  ) {
+    try {
+      const resolved = await this.kernel.pricing.resolve(key as PricingKey, {
+        ...(customerId ? { customerId } : {}),
+        ...(teamId ? { teamId } : {}),
+        ...(categoryId ? { categoryId } : {}),
+        ...(personId ? { personId } : {}),
+      });
+      return { resolved };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+}
+
+/** 订单 / 应收：报价成交后的后端链路。 */
+@Controller("api")
+export class OrderController {
+  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+
+  @Get("orders")
+  async list(@Query("limit") limit?: string) {
+    return { orders: await this.kernel.orders.list(clampLimit(limit, 20, 100)) };
+  }
+
+  @Post("orders")
+  async create(@Body() body: unknown) {
+    try {
+      return { order: await this.kernel.orders.create(body, HUMAN_CONTEXT) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Post("orders/:id/confirm")
+  async confirm(@Param("id") id: string) {
+    try {
+      return { order: await this.kernel.orders.confirm(id, HUMAN_CONTEXT) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Get("receivables")
+  async receivables(@Query("limit") limit?: string) {
+    return { receivables: await this.kernel.receivables.list(clampLimit(limit, 20, 100)) };
+  }
+
+  @Post("receivables")
+  async createReceivable(@Body() body: unknown) {
+    try {
+      return { receivable: await this.kernel.receivables.create(body, HUMAN_CONTEXT) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Post("receivables/:id/payments")
+  async recordPayment(@Param("id") id: string, @Body() body: unknown) {
+    try {
+      const input = { ...(body as Record<string, unknown>), receivableId: id };
+      return { receivable: await this.kernel.receivables.recordPayment(input, HUMAN_CONTEXT) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+}
+
+/** 决策增量与改稿原因：护城河数据只读查询 + 原因字典维护。 */
+@Controller("api")
+export class RevisionController {
+  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+
+  @Get("customers/:id/decision-deltas")
+  async decisionDeltas(@Param("id") id: string, @Query("limit") limit?: string) {
+    try {
+      return {
+        deltas: await this.kernel.customers.listDecisionDeltas(id, clampLimit(limit, 50, 200)),
+      };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Get("revision-reasons")
+  async reasons() {
+    return { reasons: await this.kernel.revisions.list() };
+  }
+
+  @Post("revision-reasons")
+  async createReason(@Body() body: unknown) {
+    try {
+      return { reason: await this.kernel.revisions.create(body, HUMAN_CONTEXT) };
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Post("revision-reasons/defaults")
+  async ensureDefaults() {
+    return { reasons: await this.kernel.revisions.ensureDefaults(HUMAN_CONTEXT) };
   }
 }
 

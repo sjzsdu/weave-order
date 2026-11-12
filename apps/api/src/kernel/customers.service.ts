@@ -1,6 +1,7 @@
 import {
   customerContexts,
   customers,
+  decisionDeltas,
   quotes,
   sampleShipmentItems,
   sampleShipments,
@@ -13,6 +14,7 @@ import type {
   CustomerContext,
   CustomerContextImport,
   DecisionDelta,
+  JsonValue,
   FabricSampleSummary,
   FollowupPreference,
   PaymentPattern,
@@ -304,5 +306,50 @@ export class CustomerService {
       });
     }
     return mapContext(row);
+  }
+
+  /** 决策增量历史（可聚合的训练信号）：改价 / 驳回谁改了哪个字段。 */
+  async listDecisionDeltas(
+    customerId: string,
+    limit = 50,
+  ): Promise<
+    Array<{
+      id: string;
+      entityType: string;
+      entityId: string;
+      field: string;
+      originalValue: JsonValue | null;
+      modifiedValue: JsonValue | null;
+      scenarioTag: string;
+      actorType: string;
+      actorId: string;
+      reasonId: string | null;
+      note: string | null;
+      createdAt: string;
+    }>
+  > {
+    await this.getById(customerId);
+    const rows = await this.db
+      .select()
+      .from(decisionDeltas)
+      .where(
+        and(eq(decisionDeltas.tenantId, this.tenantId), eq(decisionDeltas.customerId, customerId)),
+      )
+      .orderBy(desc(decisionDeltas.createdAt))
+      .limit(limit);
+    return rows.map((row) => ({
+      id: row.id,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      field: row.field,
+      originalValue: row.originalValue ?? null,
+      modifiedValue: row.modifiedValue ?? null,
+      scenarioTag: row.scenarioTag,
+      actorType: row.actorType,
+      actorId: row.actorId,
+      reasonId: row.reasonId,
+      note: row.note,
+      createdAt: toIso(row.createdAt),
+    }));
   }
 }

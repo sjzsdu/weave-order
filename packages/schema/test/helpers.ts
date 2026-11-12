@@ -78,6 +78,7 @@ export function makeQuoteDraft(overrides: Partial<QuoteDraft> = {}): QuoteDraft 
     tenantId: UUID_A,
     customerId: UUID_A,
     status: "DRAFT",
+    version: 1,
     currency: "CNY",
     items: [
       {

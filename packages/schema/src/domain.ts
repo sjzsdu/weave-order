@@ -167,6 +167,7 @@ export const FabricSample = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   composition: z.string().max(255).nullable(),
+  category: z.string().max(64).nullable().optional(),
   weight: z.string().max(64).nullable(),
   unit: Unit,
   /** 内核报价的价格底线（整数分）；低于此线一律 KERNEL_REJECTED。 */

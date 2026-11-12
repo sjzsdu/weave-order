@@ -14,8 +14,11 @@ import {
   CatalogController,
   HealthController,
   ImportController,
+  OrderController,
   PanoramaController,
+  PricingController,
   QuoteController,
+  RevisionController,
 } from "./controllers";
 import { APPROVAL, KERNEL, TOOLS } from "./tokens";
 
@@ -47,6 +50,9 @@ const providers: Provider[] = [
     ApprovalController,
     PanoramaController,
     ImportController,
+    PricingController,
+    OrderController,
+    RevisionController,
   ],
   providers,
 })

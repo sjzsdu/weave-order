@@ -89,14 +89,20 @@ export function createApprovalService(kernel: Kernel) {
       const parsed = ApprovalDecisionInput.safeParse(input);
       if (!parsed.success) return failure(parsed.error);
 
-      const { id, kind, decision, note } = parsed.data;
+      const { id, kind, decision, note, reasonId, baseVersion } = parsed.data;
       try {
         let status: ApprovalItem["status"];
         if (kind === "quote") {
           if (decision === "APPROVE") {
-            status = (await kernel.quotes.confirmDraft(id, ctx)).status;
+            status =
+              baseVersion === undefined
+                ? (await kernel.quotes.confirmDraft(id, ctx)).status
+                : (await kernel.quotes.confirmDraft(id, ctx, baseVersion)).status;
           } else {
-            status = (await kernel.quotes.rejectDraft(id, ctx, note)).status;
+            status =
+              reasonId === undefined
+                ? (await kernel.quotes.rejectDraft(id, ctx, note)).status
+                : (await kernel.quotes.rejectDraft(id, ctx, note, reasonId)).status;
           }
         } else if (decision === "APPROVE") {
           status = (await kernel.shipments.confirm(id, ctx)).status;

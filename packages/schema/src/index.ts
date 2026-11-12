@@ -3,6 +3,8 @@ export * from "./domain";
 export * from "./tenancy";
 export * from "./entities";
 export * from "./revisions";
+export * from "./quote-revision";
+export * from "./pricing";
 export * from "./shares";
 export * from "./agent";
 export * from "./kernel";
