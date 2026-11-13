@@ -3,12 +3,13 @@
  * → 内核定价 → 报价 DRAFT（带定价依据 + 缺失项）+ token 计量。
  */
 import { createQuoteDemoContext, ok, section } from "./quote-demo-lib";
+import { demoWriteContext, ensureDemoIdentity } from "./demo-identity";
 import type { FabricSample } from "@weave-order/schema";
-
-const HUMAN = { actor: { type: "HUMAN" as const, id: "quote-demo-operator" } };
 
 async function main(): Promise<void> {
   const { handle, kernel, graph, llm } = await createQuoteDemoContext();
+  const identity = await ensureDemoIdentity(handle.db);
+  const HUMAN = demoWriteContext(identity, "quote-demo-operator");
   const suffix = Date.now().toString(36);
 
   section("① 准备客户与样品（内核写入，带审计）");

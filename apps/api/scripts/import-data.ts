@@ -19,9 +19,9 @@
 import path from "node:path";
 import { buildBatch, readRecords } from "../src/import";
 import { createKernel } from "../src/kernel";
-import type { KernelContext } from "../src/kernel";
 import { connectDatabase } from "../src/platform/database";
 import { loadEnv } from "../src/platform/env";
+import { demoWriteContext, ensureDemoIdentity } from "./demo-identity";
 
 // 可选：仓库根目录存在 .env 时加载（Node 20.12+）。
 try {
@@ -29,8 +29,6 @@ try {
 } catch {
   // 没有 .env 就用默认值。
 }
-
-const HUMAN: KernelContext = { actor: { type: "HUMAN", id: "import-operator" } };
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 const DEFAULT_CUSTOMERS = path.join(REPO_ROOT, "data/seed/customers.csv");
@@ -71,8 +69,20 @@ async function main(): Promise<void> {
       console.log("重置模式：库中同 code 的旧客户/样品（含其报价、寄样引用）将先删除再导入");
     }
 
-    const kernel = createKernel(db);
-    const result = await kernel.importing.execute(batch, HUMAN, { resetExisting });
+    // 演示/seed 数据必须有归属人：否则 dataScope=OWN 的成员（SALES）全都看不到，
+    // 冷启动后客户与报价列表会是空的（WAN-106）。
+    const identity = await ensureDemoIdentity(db);
+    console.log(
+      `归属：客户挂到演示业务员成员 ${identity.salesMembershipId}（OWNER ${identity.ownerMembershipId} 用 ALL 看全量）`,
+    );
+    const kernel = createKernel(db, undefined, { tenantId: identity.tenantId });
+    const result = await kernel.importing.execute(
+      batch,
+      demoWriteContext(identity, "import-operator"),
+      {
+        resetExisting,
+      },
+    );
 
     console.log(
       `\n结果：committed=${result.committed} · 客户 ${result.importedCustomers} · 样品 ${result.importedSamples} · 回执 ${result.rows.length} 行`,
