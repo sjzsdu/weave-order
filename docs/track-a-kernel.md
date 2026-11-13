@@ -121,10 +121,11 @@ floor = ceil(base × (1 + minMarginPct / 100))
 | POST     | `/api/quotes/revise`                                | 人类改稿，返回 `ReviseQuoteDraftResult`        |
 | GET      | `/api/quotes/:id`                                   | 草稿视图（含版本 / 审批要求）                  |
 | GET      | `/api/quotes/:id/approval-view`                     | 审批卡详情：逐行 diff + 出处 + 版本历史        |
-| GET      | `/api/pricing/policies`                             | 策略列表（可按 scope 过滤）                    |
+| GET      | `/api/pricing/policies?limit=&cursor=`              | 策略列表（有界游标分页，按 scope 过滤）        |
 | POST     | `/api/pricing/policies`                             | 新建策略（审计 + 变更日志）                    |
 | PATCH    | `/api/pricing/policies/:id`                         | 更新策略                                       |
 | GET      | `/api/pricing/resolve?key=...`                      | 生效值 + 来源                                  |
+| GET      | `/api/approvals?limit=&cursor=`                     | 审批队列（有界游标分页，只含 DRAFT）           |
 | POST     | `/api/approvals/decide`                             | 批准 / 驳回（支持 `baseVersion` / `reasonId`） |
 | GET      | `/api/customers/:id/decision-deltas`                | 决策增量历史（训练信号）                       |
 | GET/POST | `/api/revision-reasons`                             | 改稿原因字典                                   |
@@ -166,3 +167,26 @@ pnpm test
 - `apps/api/test/track-a.e2e.test.ts`：真实 HTTP 走完改稿 / 审批卡 / 定价解析 / 带版本批准。
 - `apps/api/test/approval-policy.test.ts`：金额分级与改幅升级纯函数。
 - `packages/schema/test/track-a-contracts.test.ts`：新契约的 strict 校验与向后兼容。
+
+## 8. 列表分页与审计角色快照（WAN-103）
+
+### 8.1 审批队列 / 策略列表
+
+- `GET /api/approvals`：游标分页，默认 50 条/页、上限 100。响应增加
+  `nextCursor`（null 表示最后一页）与 `hasMore`。DRAFT 过滤下推到 SQL，
+  因此不会出现「取前 100 条再过滤」导致的审批饥饿；前端队列页用
+  「加载更多」逐页加载，第 101 条起同样可达。
+- 审批卡详情按 `id` 精确读取，不再从队列第一页里找。
+- `GET /api/pricing/policies`：游标分页，默认 50 条/页、上限 200。
+  人员可见范围（PERSON / TEAM）与分页在同一条 SQL 中完成——先过滤再分页，
+  翻页条数稳定。
+- 游标是不透明的 base64url JSON，只承载排序键（`createdAt+id` 或
+  `rank+priority+id`）；格式非法返回 `INVALID_INPUT`，不会静默跳回第一页。
+
+### 8.2 审计角色快照
+
+- `audit_log.actor_role` 由迁移 `0007_young_sprite` 引入，`appendAudit`
+  在写入时记录 `ctx.actor.role`（角色快照，非外键）。
+- **历史行**：该迁移之前写入的审计行 `actor_role IS NULL`，表示
+  「升级前未采集角色」。系统不做猜测性回填（当时的角色已不可考），
+  读取模型保持 `null`，前端按「未知」展示即可。

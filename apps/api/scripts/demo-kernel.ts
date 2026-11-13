@@ -13,6 +13,7 @@ import { createKernel, errorChainMessage } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
 import { formatMoney } from "../src/kernel/money";
 import { createTools } from "../src/tools";
+import { demoWriteContext, ensureDemoIdentity } from "./demo-identity";
 
 // 可选：仓库根目录存在 .env 时加载（Node 20.12+）。
 try {
@@ -21,7 +22,6 @@ try {
   // 没有 .env 就用默认值。
 }
 
-const HUMAN: KernelContext = { actor: { type: "HUMAN", id: "demo-operator" } };
 const AGENT: KernelContext = { actor: { type: "AGENT", id: "sample-followup-agent" } };
 
 function section(title: string): void {
@@ -73,7 +73,10 @@ async function main(): Promise<void> {
   }
   ok("迁移已应用（customers / audit_log 等表存在）");
 
-  const kernel = createKernel(db);
+  // 演示写入同样要带归属人，否则 dataScope=OWN 的成员看不到这些数据（WAN-106）。
+  const identity = await ensureDemoIdentity(db);
+  const human = demoWriteContext(identity, "demo-operator");
+  const kernel = createKernel(db, undefined, { tenantId: identity.tenantId });
   const tools = createTools(kernel);
   const suffix = Date.now().toString(36);
 
@@ -87,7 +90,7 @@ async function main(): Promise<void> {
       contactPhone: "13800000000",
       contactEmail: "zhangsan@example.com",
     },
-    HUMAN,
+    human,
   );
   ok(`客户已创建：${customer.name}（id=${customer.id}）`);
   ok("customer_contexts 已自动初始化（护城河数据默认值）");
@@ -102,7 +105,7 @@ async function main(): Promise<void> {
       unit: "meter",
       costFloor: { amount: 1200, currency: "CNY" },
     },
-    HUMAN,
+    human,
   );
   ok(
     `样品已创建：${sample.code} / ${sample.name}，成本底线 ${formatMoney({ amount: 1200, currency: "CNY" })}/米`,
@@ -137,7 +140,7 @@ async function main(): Promise<void> {
   }
   if (!deniedByKernel) throw new Error("内核没有拒绝智能体确认寄样单，铁律失守！");
 
-  const confirmedShipment = await kernel.shipments.confirm(shipment.id, HUMAN);
+  const confirmedShipment = await kernel.shipments.confirm(shipment.id, human);
   ok(
     `人类确认后状态 = ${confirmedShipment.status}，confirmedBy = ${confirmedShipment.confirmedBy}`,
   );
@@ -201,7 +204,7 @@ async function main(): Promise<void> {
     if (message.includes("铁律失守")) throw error;
     ok(`智能体确认报价被拒绝：${message}`);
   }
-  await kernel.quotes.confirmDraft(draft.id, HUMAN);
+  await kernel.quotes.confirmDraft(draft.id, human);
   ok("人类确认后报价草稿已转 SENT");
 
   section("⑨ 找样工具：参数匹配（T-002）与以图搜图（T-001）");

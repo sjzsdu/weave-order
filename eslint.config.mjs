@@ -47,6 +47,9 @@ export default tseslint.config(
       "**/*.config.mjs",
       "**/*.config.cjs",
       "**/*.config.ts",
+      // 纯 Node ESM 运维脚本不参与类型检查（不在任何 tsconfig 的 project 里），
+      // 由 prettier 统一风格；CI 用例见 scripts/ 与 apps/mobile/scripts/。
+      "**/scripts/**/*.mjs",
       "apps/mobile/src/pwa/**",
       "apps/print-agent/src/**",
       "packages/db/drizzle/**",

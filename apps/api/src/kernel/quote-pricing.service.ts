@@ -2,6 +2,7 @@ import { QuotePricingBasis, T006SuggestLinePriceInput } from "@weave-order/schem
 import type { PricingBasisComponent } from "@weave-order/schema";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
+import { requireSampleCostFloor } from "./price-rules";
 import { PricingService, numericValue } from "./pricing.service";
 import type { SampleService } from "./samples.service";
 
@@ -38,25 +39,20 @@ export class QuotePricingService {
         { reason: "UNIT_MISMATCH" },
       );
     }
-    if (!sample.costFloor) {
-      throw new KernelError("KERNEL_REJECTED", `样品 ${sample.code} 未维护成本底线，无法定价`, {
-        reason: "COST_FLOOR_MISSING",
-      });
-    }
-    if (sample.costFloor.currency !== parsed.currency) {
-      throw new KernelError("KERNEL_REJECTED", "成本底线币种与报价币种不一致", {
-        reason: "CURRENCY_MISMATCH",
-      });
-    }
+    // 与 T-004 / 改稿共用同一口径：缺失或为 0 的成本底线一律拒绝，绝不「无下限放行」。
+    const sampleCostFloor = requireSampleCostFloor(sample, parsed.currency);
 
-    const [marginResolved, floorResolved] = await Promise.all([
-      this.pricing.resolve("pricing.default_margin_pct", { customerId: customer.id }),
-      this.pricing.resolve("pricing.cost_floor_amount", { customerId: customer.id }),
-    ]);
+    // 顺序执行：报价路径跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
+    const marginResolved = await this.pricing.resolve("pricing.default_margin_pct", {
+      customerId: customer.id,
+    });
+    const floorResolved = await this.pricing.resolve("pricing.cost_floor_amount", {
+      customerId: customer.id,
+    });
     const marginPct = numericValue(marginResolved.value) ?? 20;
     const companyFloor = parsed.currency === "CNY" ? (numericValue(floorResolved.value) ?? 0) : 0;
 
-    const costFloorAmount = Math.max(sample.costFloor.amount, companyFloor);
+    const costFloorAmount = Math.max(sampleCostFloor, companyFloor);
     const markupBps = Math.max(0, Math.round(marginPct * 100));
     const markupAmount = Math.round((costFloorAmount * markupBps) / 10_000);
     const beforeRounding = costFloorAmount + markupAmount;
@@ -70,7 +66,7 @@ export class QuotePricingService {
         amount: { amount: costFloorAmount, currency: parsed.currency },
         rateBps: null,
         source:
-          companyFloor > sample.costFloor.amount
+          companyFloor > sampleCostFloor
             ? `pricing_policies: pricing.cost_floor_amount（${floorResolved.source.scopeType}）`
             : `samples.cost_floor（${sample.code}）`,
         note: "低于该价格的报价会被内核拒绝",

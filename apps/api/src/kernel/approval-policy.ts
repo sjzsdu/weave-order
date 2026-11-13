@@ -5,6 +5,7 @@ import {
   PricingKey,
   ResolvedPricingValue,
   approvalLevelRank,
+  hasQuoteEditCapability,
   roleApprovalLevel,
 } from "@weave-order/schema";
 import type { MemberRole, PricingContext } from "@weave-order/schema";
@@ -77,9 +78,13 @@ export function computeRequirement(input: RequirementInput): ApprovalRequirement
   const reasons = new Set<EscalationReason>(input.extraReasons ?? []);
 
   let changePctBps: number | null = null;
+  let changeAmountCents: number | undefined;
   const baseline = input.baselineCents;
   if (baseline !== null && baseline > 0) {
-    const delta = Math.abs(input.amountCents - baseline);
+    // 涨价/降价都按绝对改幅判阈值，但把带符号的差额一并带出去，
+    // 审批卡可以直接说「从 X 涨到 Y」，不用前端自己再算一遍。
+    changeAmountCents = input.amountCents - baseline;
+    const delta = Math.abs(changeAmountCents);
     changePctBps = Math.round((delta * 10_000) / baseline);
 
     const pctThreshold = limitOf(input.policies, "pricing.reprice_escalation_pct", 5, numeric);
@@ -108,6 +113,8 @@ export function computeRequirement(input: RequirementInput): ApprovalRequirement
     level,
     role: LEVEL_TO_ROLE[level],
     amountCents: input.amountCents,
+    baselineAmountCents: baseline ?? null,
+    ...(changeAmountCents !== undefined ? { changeAmountCents } : {}),
     changePctBps,
     escalated: level !== "SALES" || reasons.size > 0,
     reasons: [...reasons],
@@ -124,10 +131,16 @@ export async function resolveApprovalPolicies(
   return resolved;
 }
 
-/** 审批人角色必须不低于单据要求，否则拒绝（内核兜底，不信任前端）。 */
+/**
+ * 审批人必须同时满足三点，否则拒绝（内核兜底，不信任前端）：
+ * 1. 角色具备审批能力（白名单 OWNER / MANAGER / SALES），否则 fail-closed；
+ * 2. 角色等级不低于单据要求的审批等级；
+ * 3. 金额不超过成员级审批额度（未配置时回落到定价策略里的公司级阈值，即上面第 2 点）。
+ */
 export function assertCanApprove(
   actorRole: MemberRole | undefined,
   requirement: ApprovalRequirement,
+  approvalLimitAmount?: number | null,
 ): void {
   // 生产态（NODE_ENV=production 或 AUTH_MODE=oidc）必须由网关注入真实角色；缺角色 fail-closed。
   // 仅本地/测试保留 OWNER 回退，方便既有 demo 与集成测试。
@@ -136,12 +149,39 @@ export function assertCanApprove(
     throw new KernelError("PERMISSION_DENIED", "缺少审批人角色，拒绝审批");
   }
   const actual = roleApprovalLevel(role);
+  if (actual === null) {
+    throw new KernelError("PERMISSION_DENIED", `角色 ${role} 不具备报价审批能力，拒绝审批`);
+  }
   if (approvalLevelRank(actual) < approvalLevelRank(requirement.level)) {
     throw new KernelError(
       "PERMISSION_DENIED",
       `该单据需要 ${requirement.level} 审批，当前角色 ${role} 权限不足`,
     );
   }
+  if (approvalLimitAmount != null && requirement.amountCents > approvalLimitAmount) {
+    throw new KernelError(
+      "PERMISSION_DENIED",
+      `金额 ${requirement.amountCents} 分超过成员审批额度 ${approvalLimitAmount} 分，需上级复核`,
+    );
+  }
 }
 
 export { roleApprovalLevel };
+
+/**
+ * 改稿能力门：只有产品矩阵里「生成报价草稿」的角色可以改账本。
+ *
+ * 与人审不同，这里不比较金额等级：改稿本身不限额，改到什么程度由
+ * computeRequirement 的改幅/改额阈值把审批层级顶上去，再由 assertCanApprove 拦人。
+ * 角色缺省时与 assertCanApprove 同一套 fail-closed 约定：
+ * 生产态直接拒，本地/测试保留 OWNER 回退。
+ */
+export function assertCanEditQuote(actorRole: MemberRole | undefined): void {
+  const role = actorRole ?? (isProductionLike(process.env) ? undefined : "OWNER");
+  if (!role) {
+    throw new KernelError("PERMISSION_DENIED", "缺少改稿人角色，拒绝改稿");
+  }
+  if (!hasQuoteEditCapability(role)) {
+    throw new KernelError("PERMISSION_DENIED", `角色 ${role} 不具备报价编辑能力，拒绝改稿`);
+  }
+}

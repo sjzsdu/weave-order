@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { AuthService } from "../gateway/auth.service";
+import type { TokenScope } from "@weave-order/schema";
 import type { KernelContext } from "../kernel";
 import { AGENT_CONTEXT } from "./context";
 
@@ -15,7 +16,10 @@ import { AGENT_CONTEXT } from "./context";
 export class AgentActorService {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
-  async context(authorization: string | undefined): Promise<KernelContext> {
+  async context(
+    authorization: string | undefined,
+    scope: Extract<TokenScope, "read" | "write"> = "write",
+  ): Promise<KernelContext> {
     if (!authorization) return AGENT_CONTEXT;
 
     let identity;
@@ -25,11 +29,11 @@ export class AgentActorService {
       throw new UnauthorizedException(error instanceof Error ? error.message : "认证失败");
     }
 
-    if (identity.tokenScopes && !identity.tokenScopes.includes("write")) {
+    if (identity.tokenScopes && !identity.tokenScopes.includes(scope)) {
       throw new ForbiddenException({
         error: {
           code: "SCOPE_REQUIRED",
-          message: "当前凭据缺少 write 作用域，不能调用写工具",
+          message: `当前凭据缺少 ${scope} 作用域，不能调用该工具`,
         },
       });
     }

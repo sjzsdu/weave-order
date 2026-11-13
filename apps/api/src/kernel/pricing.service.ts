@@ -7,7 +7,7 @@ import {
   PricingPolicyValue,
   ResolvedPricingValue,
   UpdatePricingPolicyInput,
-  isControlPricingKey,
+  controlDirection,
 } from "@weave-order/schema";
 import type {
   JsonValue,
@@ -16,10 +16,14 @@ import type {
   PricingScopeType,
   PricingSource,
 } from "@weave-order/schema";
-import { and, eq, lte } from "drizzle-orm";
+import { and, asc, eq, gt, lte, ne, or, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
 import { KernelError, isUniqueViolation } from "./errors";
+import { scopeWindowOf } from "./data-scope";
+import type { ScopeWindow } from "./data-scope";
 import { toIso } from "./mappers";
 
 type PolicyRow = typeof pricingPolicies.$inferSelect;
@@ -33,6 +37,61 @@ const SCOPE_RANK: Record<PricingScopeType, number> = {
   CUSTOMER: 2,
   PERSON: 3,
 };
+
+/** 策略列表单页上限：默认 50，硬上限 200（防止一次拉爆）。 */
+const POLICY_PAGE_DEFAULT = 50;
+const POLICY_PAGE_MAX = 200;
+
+export interface PricingPolicyPage {
+  policies: PricingPolicy[];
+  /** 下一页游标；null 表示已到最后一页。 */
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+function clampPolicyLimit(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) return POLICY_PAGE_DEFAULT;
+  return Math.min(Math.max(Math.trunc(raw), 1), POLICY_PAGE_MAX);
+}
+
+/** 与 SCOPE_RANK 一致，但放在 SQL 里排序（分页必须在数据库完成）。 */
+function scopeRankSql(): SQL {
+  return sql`case ${pricingPolicies.scopeType}
+    when 'SYSTEM' then 0
+    when 'COMPANY' then 1
+    when 'PERSON' then 3
+    else 2 end`;
+}
+
+/**
+ * 人的维度过滤下推到 SQL：没有 ALL 范围时，隐藏别人的 PERSON 策略
+ * 与其它团队的 TEAM 策略，公司/系统/品类/客户策略始终可见。
+ * 必须在 limit 之前执行，否则分页会在过滤后出现空洞。
+ */
+function policyScopeConditions(window: ScopeWindow | null): SQL[] {
+  if (!window || window.dataScope === "ALL") return [];
+  return [
+    window.ownerId
+      ? or(ne(pricingPolicies.scopeType, "PERSON"), eq(pricingPolicies.scopeId, window.ownerId))!
+      : ne(pricingPolicies.scopeType, "PERSON"),
+    window.teamId
+      ? or(ne(pricingPolicies.scopeType, "TEAM"), eq(pricingPolicies.scopeId, window.teamId))!
+      : ne(pricingPolicies.scopeType, "TEAM"),
+  ];
+}
+
+function parsePolicyCursor(
+  raw: Record<string, unknown> | null,
+): { rank: number; priority: number; id: string } | null {
+  if (!raw) return null;
+  const { rank, priority, id } = raw;
+  if (typeof rank !== "number" || !Number.isInteger(rank) || rank < 0 || rank > 3) {
+    throw invalidCursor();
+  }
+  if (typeof priority !== "number" || !Number.isInteger(priority)) throw invalidCursor();
+  if (typeof id !== "string" || id.length === 0) throw invalidCursor();
+  return { rank, priority, id };
+}
 
 /**
  * 内核内置默认值（没有任何租户策略时使用）。
@@ -154,13 +213,6 @@ const SYSTEM_SOURCE: PricingSource = {
   locked: false,
   kind: "SYSTEM_DEFAULT",
 };
-
-/** 管控类键的夹取方向：MIN 只允许抬高，MAX 只允许压低。 */
-function controlDirection(key: PricingKey): "MIN" | "MAX" | null {
-  if (key === "pricing.min_margin_pct" || key === "pricing.cost_floor_amount") return "MIN";
-  if (key.startsWith("approval.")) return "MAX";
-  return null;
-}
 
 /**
  * 定价策略内核服务：唯一写 pricing_policies 的入口。
@@ -307,19 +359,78 @@ export class PricingService {
     return mapPolicy(row);
   }
 
+  /**
+   * 策略列表。人的维度（PERSON / TEAM）按登录成员的可见范围过滤：
+   * 没有 ALL 范围时只看自己的个人策略和本团队策略，公司/系统/品类/客户策略不受限。
+   *
+   * 保留旧签名供内核内部调用，默认最多返回 200 条；HTTP 面请用 `listPage`
+   * 拿游标与 hasMore。
+   */
   async list(
     filter: { scopeType?: PricingScopeType; scopeId?: string } = {},
+    ctx?: KernelContext,
   ): Promise<PricingPolicy[]> {
-    const conditions = [eq(pricingPolicies.tenantId, this.tenantId)];
+    const page = await this.listPage(filter, ctx, { limit: POLICY_PAGE_MAX });
+    return page.policies;
+  }
+
+  /**
+   * 策略列表（有界 + 游标分页）。
+   *
+   * 作用域过滤必须与分页在同一条 SQL 里：先过滤再 limit，翻页时条数才稳定。
+   * 排序键 `(scopeRank, priority, id)` 与旧的内存排序一致，额外用 id 兜底，
+   * 保证同一优先级的多条策略顺序确定、游标不漏不重。
+   */
+  async listPage(
+    filter: { scopeType?: PricingScopeType; scopeId?: string } = {},
+    ctx?: KernelContext,
+    page: { limit?: number; cursor?: string | null } = {},
+  ): Promise<PricingPolicyPage> {
+    const limit = clampPolicyLimit(page.limit);
+    const rankExpr = scopeRankSql();
+    const conditions: SQL[] = [eq(pricingPolicies.tenantId, this.tenantId)];
     if (filter.scopeType) conditions.push(eq(pricingPolicies.scopeType, filter.scopeType));
     if (filter.scopeId) conditions.push(eq(pricingPolicies.scopeId, filter.scopeId));
+    conditions.push(...policyScopeConditions(scopeWindowOf(ctx)));
+
+    const cursor = parsePolicyCursor(decodeCursor(page.cursor));
+    if (cursor) {
+      conditions.push(
+        or(
+          sql`${rankExpr} > ${cursor.rank}`,
+          and(
+            sql`${rankExpr} = ${cursor.rank}`,
+            or(
+              gt(pricingPolicies.priority, cursor.priority),
+              and(eq(pricingPolicies.priority, cursor.priority), gt(pricingPolicies.id, cursor.id)),
+            ),
+          ),
+        )!,
+      );
+    }
+
     const rows = await this.db
       .select()
       .from(pricingPolicies)
-      .where(and(...conditions));
-    return rows
-      .map(mapPolicy)
-      .sort((a, b) => SCOPE_RANK[a.scopeType] - SCOPE_RANK[b.scopeType] || a.priority - b.priority);
+      .where(and(...conditions))
+      .orderBy(rankExpr, asc(pricingPolicies.priority), asc(pricingPolicies.id))
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const last = pageRows[pageRows.length - 1];
+    return {
+      policies: pageRows.map(mapPolicy),
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? encodeCursor({
+              rank: SCOPE_RANK[last.scopeType],
+              priority: last.priority,
+              id: last.id,
+            })
+          : null,
+    };
   }
 
   /** 解析一个策略键的生效值与来源（含完整继承链）。 */
@@ -352,8 +463,11 @@ export class PricingService {
     let source: PricingSource = baseRow ? sourceOf(baseRow) : SYSTEM_SOURCE;
     let clamped = false;
 
-    const direction = isControlPricingKey(key) ? controlDirection(key) : null;
+    const direction = controlDirection(key);
     if (direction) {
+      // 夹取边界只取 locked 的租户策略。系统推荐值不是边界：公司层（OWNER）是
+      // 管控类的唯一出口，可以把自己的阈值设在推荐值之上；限制的是「下级不能放宽
+      // 公司层」，而不是「公司不能放宽系统推荐值」（对齐 product-design §3.5）。
       for (const row of applicable) {
         if (!row.locked) continue;
         const boundaryRaw = PricingPolicyValue.parse(row.value);
@@ -403,7 +517,11 @@ export class PricingService {
     keys: readonly PricingKey[],
     context: PricingContext,
   ): Promise<Record<string, ResolvedPricingValue>> {
-    const entries = await Promise.all(keys.map((key) => this.resolve(key, context)));
+    // 顺序执行：调用方可能跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
+    const entries: ResolvedPricingValue[] = [];
+    for (const key of keys) {
+      entries.push(await this.resolve(key, context));
+    }
     return Object.fromEntries(entries.map((entry) => [entry.key, entry]));
   }
 

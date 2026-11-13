@@ -16,6 +16,7 @@ import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { createApprovalService } from "../approval";
 import { isKernelError } from "../kernel";
+import { narrowPricingContext } from "../kernel/pricing-scope";
 import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
@@ -60,19 +61,35 @@ export class CatalogController {
   constructor(
     @Inject(KERNEL) private readonly kernel: Kernel,
     @Inject(TOOLS) private readonly tools: Tools,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
     @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
   ) {}
 
   @Get("customers")
-  async customers(@Query("limit") limit?: string) {
-    const rows = await this.kernel.customers.list(clampLimit(limit, 20, 100));
-    return { customers: rows };
+  async customers(
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => ({
+        customers: await kernel.customers.list(clampLimit(limit, 20, 100), ctx),
+      }),
+      { scope: "read" },
+    );
   }
 
   @Get("samples")
-  async samples(@Query("limit") limit?: string) {
-    const rows = await this.kernel.search.listSamples(clampLimit(limit, 50, 200));
-    return { samples: rows };
+  async samples(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => ({
+        samples: await kernel.search.listSamples(clampLimit(limit, 50, 200), ctx),
+      }),
+      { scope: "read" },
+    );
   }
 
   @Post("tools/search-by-spec")
@@ -100,7 +117,10 @@ export class CatalogController {
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.tools.getCustomerHistory.execute(body, await this.agent.context(authorization));
+    return this.tools.getCustomerHistory.execute(
+      body,
+      await this.agent.context(authorization, "read"),
+    );
   }
 }
 
@@ -143,8 +163,8 @@ export class QuoteController {
   @Get("quotes/:id/approval-view")
   async approvalView(@Param("id") id: string, @Headers("authorization") authorization?: string) {
     try {
-      return await this.human.run(authorization, this.kernel, async (kernel) => ({
-        view: await kernel.quotes.getApprovalView(id),
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+        view: await kernel.quotes.getApprovalView(id, ctx),
       }));
     } catch (error) {
       rethrowHttp(error);
@@ -154,8 +174,8 @@ export class QuoteController {
   @Get("quotes/:id")
   async draft(@Param("id") id: string, @Headers("authorization") authorization?: string) {
     try {
-      return await this.human.run(authorization, this.kernel, async (kernel) => ({
-        draft: await kernel.quotes.getDraft(id),
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+        draft: await kernel.quotes.getDraft(id, ctx),
       }));
     } catch (error) {
       rethrowHttp(error);
@@ -175,14 +195,24 @@ export class PricingController {
   async list(
     @Query("scopeType") scopeType?: string,
     @Query("scopeId") scopeId?: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.human.run(authorization, this.kernel, async (kernel) => ({
-      policies: await kernel.pricing.list({
-        ...(scopeType ? { scopeType: scopeType as never } : {}),
-        ...(scopeId ? { scopeId } : {}),
-      }),
-    }));
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await kernel.pricing.listPage(
+          {
+            ...(scopeType ? { scopeType: scopeType as never } : {}),
+            ...(scopeId ? { scopeId } : {}),
+          },
+          ctx,
+          { limit: clampLimit(limit, 50, 200), cursor: cursor ?? null },
+        );
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
   }
 
   @Post("policies")
@@ -222,13 +252,12 @@ export class PricingController {
     @Headers("authorization") authorization?: string,
   ) {
     try {
-      return await this.human.run(authorization, this.kernel, async (kernel) => ({
-        resolved: await kernel.pricing.resolve(key as PricingKey, {
-          ...(customerId ? { customerId } : {}),
-          ...(teamId ? { teamId } : {}),
-          ...(categoryId ? { categoryId } : {}),
-          ...(personId ? { personId } : {}),
-        }),
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+        resolved: await kernel.pricing.resolve(
+          key as PricingKey,
+          // teamId / personId 不再直接采信 query，统一按登录成员身份收敛。
+          narrowPricingContext({ customerId, teamId, categoryId, personId }, ctx),
+        ),
       }));
     } catch (error) {
       rethrowHttp(error);
@@ -246,16 +275,16 @@ export class OrderController {
 
   @Get("orders")
   async list(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel) => ({
-      orders: await kernel.orders.list(clampLimit(limit, 20, 100)),
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      orders: await kernel.orders.list(clampLimit(limit, 20, 100), ctx),
     }));
   }
 
   @Get("orders/:id")
   async detail(@Param("id") id: string, @Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel) => {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
       try {
-        return { order: await kernel.orders.getById(id) };
+        return { order: await kernel.orders.getById(id, ctx) };
       } catch (error) {
         rethrowHttp(error);
       }
@@ -289,8 +318,8 @@ export class OrderController {
     @Query("limit") limit?: string,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.human.run(authorization, this.kernel, async (kernel) => ({
-      receivables: await kernel.receivables.list(clampLimit(limit, 20, 100)),
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      receivables: await kernel.receivables.list(clampLimit(limit, 20, 100), ctx),
     }));
   }
 
@@ -337,8 +366,8 @@ export class RevisionController {
     @Headers("authorization") authorization?: string,
   ) {
     try {
-      return await this.human.run(authorization, this.kernel, async (kernel) => ({
-        deltas: await kernel.customers.listDecisionDeltas(id, clampLimit(limit, 50, 200)),
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+        deltas: await kernel.customers.listDecisionDeltas(id, clampLimit(limit, 50, 200), ctx),
       }));
     } catch (error) {
       rethrowHttp(error);
@@ -420,11 +449,24 @@ export class ApprovalController {
   ) {}
 
   @Get()
-  async list(@Headers("authorization") authorization?: string) {
+  async list(
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
     return this.human.run(
       authorization,
       this.kernel,
-      async (kernel) => createApprovalService(kernel).listPending(),
+      async (kernel, ctx) => {
+        try {
+          return await createApprovalService(kernel).listPending(ctx, {
+            limit: clampLimit(limit, 50, 100),
+            cursor: cursor ?? null,
+          });
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
       { scope: "read" },
     );
   }
@@ -445,8 +487,8 @@ export class ApprovalController {
     return this.human.run(
       authorization,
       this.kernel,
-      async (kernel) => {
-        const detail = await createApprovalService(kernel).detail(id, parsed.data);
+      async (kernel, ctx) => {
+        const detail = await createApprovalService(kernel).detail(id, parsed.data, ctx);
         if (!detail) {
           throw new NotFoundException({
             error: { code: "NOT_FOUND", message: "审批单据不存在或已不在可查看范围" },
@@ -484,7 +526,7 @@ export class PanoramaController {
     return this.human.run(
       authorization,
       this.kernel,
-      async (kernel) => createApprovalService(kernel).panorama(),
+      async (kernel, ctx) => createApprovalService(kernel).panorama(ctx),
       { scope: "read" },
     );
   }

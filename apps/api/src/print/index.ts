@@ -28,13 +28,12 @@ export function createPrintCenter(db: Db, tenantId: string): PrintCenter {
     jobs,
     devices,
     async snapshot() {
-      const [queue, templateList, deviceList, logs, pendingShipments] = await Promise.all([
-        jobs.list({ limit: 40 }),
-        templates.list(),
-        devices.list(),
-        jobs.logs(30),
-        views.listPendingShipping(10),
-      ]);
+      // 顺序执行：打印中心跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
+      const queue = await jobs.list({ limit: 40 });
+      const templateList = await templates.list();
+      const deviceList = await devices.list();
+      const logs = await jobs.logs(30);
+      const pendingShipments = await views.listPendingShipping(10);
       return PrintCenterSnapshot.parse({
         queue,
         templates: templateList,
@@ -50,5 +49,11 @@ export { PrintError } from "./template-engine";
 export type { PrintErrorCode } from "./template-engine";
 export { buildBoxQr, parseBoxQr } from "./qr";
 export { renderBoxLabel, renderTestLabel } from "./labels";
-export { renderA4Pdf, renderBuiltinA4Pdf } from "./pdf";
+export { chromePrintArgs, renderA4Pdf, renderBuiltinA4Pdf } from "./pdf";
+export {
+  assertHtmlTemplateSafe,
+  sanitizeHtmlForPrint,
+  templateSafetyViolation,
+} from "./html-safety";
+export { assertTemplatePublishAllowed } from "./print-templates.service";
 export { analyzeTemplate, renderTemplate } from "./template-engine";

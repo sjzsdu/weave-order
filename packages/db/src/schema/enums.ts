@@ -128,6 +128,12 @@ export const llmTaskEnum = pgEnum("llm_task", [
   "REPLY_CLASSIFICATION",
 ]);
 
+/**
+ * 用量记录生命周期：RESERVED（调用前占预算）/ SETTLED（按实际结算）/ FAILED（上游失败仍计量）。
+ * 预算按「已用 + 预留」汇总，见 apps/api/src/kernel/usage.service.ts。
+ */
+export const tokenUsageStatusEnum = pgEnum("token_usage_status", ["RESERVED", "SETTLED", "FAILED"]);
+
 /** 打印单据类型（文档与标签共用）。 */
 export const printDocumentKindEnum = pgEnum("print_document_kind", [
   "PICKING_LIST",

@@ -10,6 +10,7 @@ import {
   Timestamp,
   Unit,
 } from "./domain";
+import { MemberRole } from "./tenancy";
 /**
  * 确定性内核的输入契约。
  *
@@ -155,6 +156,8 @@ export const AuditLogEntry = z
     seq: z.number().int().positive(),
     actorType: z.enum(["AGENT", "HUMAN", "SYSTEM"]),
     actorId: z.string().min(1).max(128),
+    /** 审批人当时的角色快照（智能体/系统为空），用于还原审批时点的权限。 */
+    actorRole: MemberRole.nullable().optional(),
     action: AuditAction,
     entityType: z.string().min(1).max(64),
     entityId: EntityId,

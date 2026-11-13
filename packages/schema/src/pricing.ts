@@ -45,19 +45,53 @@ export const PricingKey = z.enum([
 ]);
 export type PricingKey = z.infer<typeof PricingKey>;
 
-/** 管控类键：下级只能收紧不能放宽。 */
-export const CONTROL_PRICING_KEYS = [
-  "pricing.min_margin_pct",
-  "pricing.cost_floor_amount",
-  "approval.sales.limit",
-  "approval.manager.limit",
-  "approval.owner.limit",
-] as const satisfies readonly PricingKey[];
+/** 管控方向：MIN 只允许抬高（收紧），MAX 只允许压低（收紧）。 */
+export type ControlDirection = "MIN" | "MAX";
 
-export type ControlPricingKey = (typeof CONTROL_PRICING_KEYS)[number];
+/**
+ * 每个策略键的管控口径（是否管控 + 收紧方向），必须逐键显式声明。
+ *
+ * `satisfies Record<PricingKey, ...>` 保证键集合封闭：在 `PricingKey` 里新增键
+ * 而忘了在这里补一行，会直接编译失败（红），而不是靠运行期兜底。
+ */
+export const CONTROL_DIRECTION = {
+  /** 最低毛利（下限，只能抬高） */
+  "pricing.min_margin_pct": "MIN",
+  /** 默认毛利（建议值，非管控） */
+  "pricing.default_margin_pct": null,
+  /** 公司成本底线（下限，只能抬高） */
+  "pricing.cost_floor_amount": "MIN",
+  /** 改价幅度升级阈值（上限，只能压低，压得越低越容易触发升级） */
+  "pricing.reprice_escalation_pct": "MAX",
+  /** 改价金额升级阈值（上限，只能压低） */
+  "pricing.reprice_escalation_amount": "MAX",
+  /** 业务员审批上限（上限，只能压低） */
+  "approval.sales.limit": "MAX",
+  /** 主管审批上限（上限，只能压低） */
+  "approval.manager.limit": "MAX",
+  /** 老板审批上限（上限；null 表示无上限，不参与夹取） */
+  "approval.owner.limit": "MAX",
+} as const satisfies Record<PricingKey, ControlDirection | null>;
+
+/** 管控类键联合类型（由 CONTROL_DIRECTION 推导：方向非 null 的键）。 */
+export type ControlPricingKey = {
+  [K in keyof typeof CONTROL_DIRECTION]: (typeof CONTROL_DIRECTION)[K] extends ControlDirection
+    ? K
+    : never;
+}[keyof typeof CONTROL_DIRECTION];
+
+/** 管控类键数组：下级只能收紧不能放宽。 */
+export const CONTROL_PRICING_KEYS = Object.keys(CONTROL_DIRECTION).filter(
+  (key) => CONTROL_DIRECTION[key as PricingKey] !== null,
+) as ControlPricingKey[];
+
+/** 取某键的管控方向；非管控键返回 null。 */
+export function controlDirection(key: PricingKey): ControlDirection | null {
+  return CONTROL_DIRECTION[key];
+}
 
 export function isControlPricingKey(key: PricingKey): key is ControlPricingKey {
-  return (CONTROL_PRICING_KEYS as readonly string[]).includes(key);
+  return CONTROL_DIRECTION[key] !== null;
 }
 
 /**
@@ -227,6 +261,10 @@ export const ApprovalRequirement = z
     level: ApprovalLevel,
     role: MemberRole,
     amountCents: z.number().int().nonnegative(),
+    /** 改稿前的总额（分）；非改稿场景为 null。审批卡据此展示「从多少涨到多少」。 */
+    baselineAmountCents: z.number().int().nonnegative().nullable().optional(),
+    /** 本次总额变化（分）：正数涨价、负数降价；未改稿时缺省。 */
+    changeAmountCents: z.number().int().optional(),
     changePctBps: z.number().int().nonnegative().nullable(),
     escalated: z.boolean(),
     reasons: z.array(EscalationReason),
@@ -236,13 +274,44 @@ export const ApprovalRequirement = z
   .strict();
 export type ApprovalRequirement = z.infer<typeof ApprovalRequirement>;
 
-/** 角色审批等级排序：OWNER > MANAGER > SALES。 */
-export function roleApprovalLevel(role: MemberRole): ApprovalLevel {
+/**
+ * 具备报价审批能力的角色白名单（对齐 product-design §3.3：
+ * 批准报价只有 owner / manager / sales）。
+ * 能力与「等级」是两回事：能力回答「这个角色能不能批」，等级回答「能批到哪一档」。
+ */
+export const APPROVAL_CAPABLE_ROLES = ["OWNER", "MANAGER", "SALES"] as const;
+export type ApprovalCapableRole = (typeof APPROVAL_CAPABLE_ROLES)[number];
+
+export function hasApprovalCapability(role: MemberRole): role is ApprovalCapableRole {
+  return (APPROVAL_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
+}
+
+/**
+ * 具备「生成/编辑报价」能力的角色白名单（对齐 product-design §3.3：
+ * 「生成报价草稿」只有 owner / manager / sales）。
+ *
+ * 取舍：当前与 APPROVAL_CAPABLE_ROLES 的集合完全相同，但仍然单独声明。
+ * 两行能力在产品矩阵里是两条独立规则（例如未来允许 merchandiser 预填草稿、
+ * 或把改价交给专门的核价岗），共用常量会在那天迫使一次语义含混的拆分。
+ * 判定逻辑复用同一套 fail-closed 约定：不在白名单 = 没有能力。
+ */
+export const QUOTE_EDIT_CAPABLE_ROLES = ["OWNER", "MANAGER", "SALES"] as const;
+export type QuoteEditCapableRole = (typeof QUOTE_EDIT_CAPABLE_ROLES)[number];
+
+export function hasQuoteEditCapability(role: MemberRole): role is QuoteEditCapableRole {
+  return (QUOTE_EDIT_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
+}
+
+/**
+ * 角色审批等级排序：OWNER > MANAGER > SALES。
+ * 不具备审批能力的角色返回 `null`，调用方据此 fail-closed，
+ * 而不是给它们落一个「看起来能批」的等级。
+ */
+export function roleApprovalLevel(role: MemberRole): ApprovalLevel | null {
   if (role === "OWNER") return "OWNER";
   if (role === "MANAGER") return "MANAGER";
-  if (role === "SALES" || role === "MERCHANDISER") return "SALES";
-  if (role === "FINANCE") return "MANAGER";
-  return "SALES";
+  if (role === "SALES") return "SALES";
+  return null;
 }
 
 export function approvalLevelRank(level: ApprovalLevel): number {

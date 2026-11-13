@@ -151,7 +151,14 @@ export function createApiClient(options: ApiClientOptions) {
 
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 
-    approvals: async () => ApprovalQueue.parse(await request("/api/approvals")),
+    /** 审批队列（游标分页）：不传 cursor 即第一页。 */
+    approvals: async (options: { cursor?: string | null; limit?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.cursor) params.set("cursor", options.cursor);
+      const qs = params.toString();
+      return ApprovalQueue.parse(await request(`/api/approvals${qs ? `?${qs}` : ""}`));
+    },
 
     /** 审批卡详情：出处 / diff / 草稿态由后端只读聚合，前端不推导。 */
     approvalDetail: async (id: string, kind: ApprovalKind) =>

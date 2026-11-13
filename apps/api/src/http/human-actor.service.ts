@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable, UnauthorizedException } from "@
 import type { AuthClaims, Membership, TokenScope } from "@weave-order/schema";
 import { AuthService } from "../gateway/auth.service";
 import type { Kernel, KernelContext } from "../kernel";
+import { humanScopeOf } from "../kernel/data-scope";
 import { isProductionLike } from "../platform/runtime-mode";
 
 /**
@@ -11,6 +12,10 @@ import { isProductionLike } from "../platform/runtime-mode";
  */
 export const DEV_HUMAN_CONTEXT: KernelContext = {
   actor: { type: "HUMAN", id: "web-approver", role: "OWNER" },
+  // 本地演示/既有集成测试没有真实成员记录，按全租户可见，避免把演示数据全部隐藏。
+  dataScope: "ALL",
+  ownerId: null,
+  teamId: null,
 };
 
 /**
@@ -58,7 +63,14 @@ export class HumanActorService {
       const scope = await this.auth.openScope(membership);
       try {
         const ctx: KernelContext = {
-          actor: { type: "HUMAN", id: claims.sub, role: membership.role },
+          actor: {
+            type: "HUMAN",
+            id: claims.sub,
+            role: membership.role,
+            approvalLimitAmount: membership.approvalLimitAmount,
+          },
+          // 应用层数据范围：RLS 之外的第二道闸，读路径统一按它过滤。
+          ...humanScopeOf(membership),
         };
         return await fn(scope.kernel, ctx);
       } finally {

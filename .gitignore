@@ -1,5 +1,9 @@
 node_modules/
 dist/
+dist-gate/
+target/
+# Tauri 构建期生成的 schema / 图标缓存
+apps/print-agent/src-tauri/gen/
 .turbo/
 coverage/
 .env
@@ -15,3 +19,6 @@ coverage/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# vitest JSON 报告（CI 打印用例守卫的输入）
+test-results/

@@ -1,4 +1,11 @@
-import { draftRevisions, quoteItems, quotes, revisionRequests, samples } from "@weave-order/db";
+import {
+  customers,
+  draftRevisions,
+  quoteItems,
+  quotes,
+  revisionRequests,
+  samples,
+} from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import {
   ApprovalItem,
@@ -7,10 +14,13 @@ import {
   ReviseQuoteDraftInput,
   RevisionDiff,
   T004GenerateQuoteDraftInput,
+  approvalLevelRank,
+  roleApprovalLevel,
 } from "@weave-order/schema";
 import type {
   ApprovalRequirement,
   Currency,
+  EscalationReason,
   JsonValue,
   PricingContext,
   PricingKey,
@@ -22,15 +32,24 @@ import type {
   Unit,
 } from "@weave-order/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
-import { assertCanApprove, computeRequirement, resolveApprovalPolicies } from "./approval-policy";
+import { approvalListConditions } from "./approval-list";
+import type { ApprovalListQuery } from "./approval-list";
+import {
+  assertCanApprove,
+  assertCanEditQuote,
+  computeRequirement,
+  resolveApprovalPolicies,
+} from "./approval-policy";
 import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
+import { isOwnerInScope, ownerScopeFilter } from "./data-scope";
 import { formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
 import { currencyOf, toIso } from "./mappers";
-import { priceFloorOf } from "./price-rules";
+import { priceFloorOf, requireSampleCostFloor } from "./price-rules";
 import { numericValue } from "./pricing.service";
 import type { PricingService } from "./pricing.service";
 import type { SampleService } from "./samples.service";
@@ -133,17 +152,42 @@ function mapQuote(
   };
 }
 
+/**
+ * 一次审批要用到的要求。
+ *
+ * 草稿生成 / 改稿时是用完整上下文（person / category / team）算出审批角色后落库的；
+ * 这里**以落库值为准**。只用 `customerId` 重算会丢掉更严的个人/品类限额，等于在批准
+ * 那一刻把门槛偷偷降回去（业务员可自批超个人限额的报价）。重算结果更严时采信重算，
+ * 保证任何口径变化都只会收紧、不会放宽。
+ */
 function requirementFromRow(
   row: QuoteRow,
   policies: Partial<Record<PricingKey, ResolvedPricingValue>>,
   baselineCents: number | null,
 ): ApprovalRequirement {
-  return computeRequirement({
+  const computed = computeRequirement({
     amountCents: row.totalAmount,
     baselineCents,
     policies,
     numeric: numericValue,
   });
+  const storedRole = row.requiredApprovalRole;
+  const storedLevel = storedRole === null ? null : roleApprovalLevel(storedRole);
+  if (storedRole === null || storedLevel === null) return computed;
+
+  const storedReasons = row.escalationReasons as EscalationReason[];
+  const reasons = [...new Set<EscalationReason>([...storedReasons, ...computed.reasons])];
+  const storedIsStricter = approvalLevelRank(storedLevel) >= approvalLevelRank(computed.level);
+  const level = storedIsStricter ? storedLevel : computed.level;
+  return {
+    level,
+    role: storedIsStricter ? storedRole : computed.role,
+    amountCents: computed.amountCents,
+    changePctBps: row.changePctBps ?? computed.changePctBps,
+    escalated: level !== "SALES" || reasons.length > 0,
+    reasons,
+    policySources: computed.policySources,
+  };
 }
 
 function diffBetween(
@@ -290,13 +334,15 @@ export class QuoteService {
         companyFloorByCategory.set(category, companyFloor);
       }
 
+      // 缺失 / 为 0 的成本底线直接拒绝：没有下限不等于什么价都能批（与 T-006 同口径）。
+      requireSampleCostFloor(sample, parsed.currency);
       const floor = priceFloorOf(
         sample,
         parsed.currency,
         numericValue(minMargin.value) ?? 0,
         numericValue(companyFloor.value) ?? 0,
       );
-      if (floor > 0 && item.unitPrice.amount < floor) {
+      if (item.unitPrice.amount < floor) {
         throw new KernelError(
           "KERNEL_REJECTED",
           `第 ${index + 1} 行单价低于成本底线/最低毛利：${item.unitPrice.amount} < ${floor}（分）`,
@@ -449,8 +495,8 @@ export class QuoteService {
     });
   }
 
-  async getDraft(quoteId: string): Promise<QuoteDraft> {
-    const { row, lines } = await this.loadQuote(quoteId, true);
+  async getDraft(quoteId: string, ctx?: KernelContext): Promise<QuoteDraft> {
+    const { row, lines } = await this.loadQuote(quoteId, true, ctx);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
@@ -460,8 +506,8 @@ export class QuoteService {
   }
 
   /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
-  async getApprovalView(quoteId: string): Promise<QuoteApprovalView> {
-    const { row, lines } = await this.loadQuote(quoteId, false);
+  async getApprovalView(quoteId: string, ctx?: KernelContext): Promise<QuoteApprovalView> {
+    const { row, lines } = await this.loadQuote(quoteId, false, ctx);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
@@ -507,12 +553,15 @@ export class QuoteService {
    * AI 只产出 Patch，不能调用这里直接改账本（G10）。
    */
   async reviseDraft(input: unknown, ctx: KernelContext): Promise<QuoteRevisionData> {
+    // 改稿是账本写入（版本 +1、审计、决策差额），先过能力门再解析输入：
+    // 非报价角色（merchandiser / sample_admin / finance / viewer）连参数都不该看到被校验。
     if (ctx.actor.type !== "HUMAN") {
       throw new KernelError(
         "PERMISSION_DENIED",
         "改稿必须由人类确认后执行；智能体只能产出 Patch（G10）",
       );
     }
+    assertCanEditQuote(ctx.actor.role);
     const parsed = ReviseQuoteDraftInput.parse(input);
 
     return this.db.transaction(async (tx) => {
@@ -524,6 +573,21 @@ export class QuoteService {
         .for("update");
       const row = quoteRows[0];
       if (!row) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${parsed.quoteId}`, {
+          resourceType: "quote",
+          resourceId: parsed.quoteId,
+        });
+      }
+      // 报价没有自己的归属人列：归属随客户（与 list / loadQuote 同口径）。
+      // 看得到不等于改得了 —— dataScope=OWN 的成员只能改自己名下客户的草稿；
+      // 越权一律当作「不存在」返回，不给 403 枚举同租户单据的机会。
+      const ownerRows = await tx
+        .select({ ownerId: customers.ownerId })
+        .from(customers)
+        .where(and(eq(customers.id, row.customerId), eq(customers.tenantId, this.tenantId)))
+        .limit(1);
+      const ownerId = ownerRows[0]?.ownerId ?? null;
+      if (!(await isOwnerInScope(tx, ctx, this.tenantId, ownerId))) {
         throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${parsed.quoteId}`, {
           resourceType: "quote",
           resourceId: parsed.quoteId,
@@ -579,6 +643,44 @@ export class QuoteService {
 
       const minMarginByCategory = new Map<string, ResolvedPricingValue>();
       const companyFloorByCategory = new Map<string, ResolvedPricingValue>();
+      /**
+       * 每行的价格下限。改单价、换样、改数量任何一项都会影响是否合规，
+       * 所以下限不跟着 patch 走：落库前对所有行统一重算，换样后低于新样品底线同样被拒。
+       * 缺失 / 为 0 的成本底线直接拒绝，与 T-004 / T-006 同口径。
+       */
+      const floorBySample = new Map<string, number>();
+      const floorForSample = async (
+        sample: (typeof sampleRows)[number] | undefined,
+      ): Promise<number> => {
+        const key = sample?.id ?? "";
+        const cached = floorBySample.get(key);
+        if (cached !== undefined) return cached;
+        requireSampleCostFloor(sample, row.currency);
+        const category = sample?.category ?? "";
+        const pricingContext: PricingContext = {
+          customerId: row.customerId,
+          personId: ctx.actor.id,
+          ...(category ? { categoryId: category } : {}),
+        };
+        let minMargin = minMarginByCategory.get(category);
+        if (!minMargin) {
+          minMargin = await this.pricing.resolve("pricing.min_margin_pct", pricingContext);
+          minMarginByCategory.set(category, minMargin);
+        }
+        let companyFloor = companyFloorByCategory.get(category);
+        if (!companyFloor) {
+          companyFloor = await this.pricing.resolve("pricing.cost_floor_amount", pricingContext);
+          companyFloorByCategory.set(category, companyFloor);
+        }
+        const floor = priceFloorOf(
+          sample,
+          row.currency,
+          numericValue(minMargin.value) ?? 0,
+          numericValue(companyFloor.value) ?? 0,
+        );
+        floorBySample.set(key, floor);
+        return floor;
+      };
       const priceChanges: Array<{
         lineIndex: number;
         beforeAmount: number;
@@ -599,6 +701,15 @@ export class QuoteService {
               resourceType: "sample",
               resourceId: patch.fabricSampleId,
             });
+          }
+          // 换样且单位不同：数量必须显式折算，否则 1000 meter 会悄悄变成 1000 kilogram，
+          // 行金额不变、diff 也看不出，客户拿到的其实是另一回事。
+          if (nextSample.unit !== line.unit && !patch.quantity) {
+            throw new KernelError(
+              "KERNEL_REJECTED",
+              `第 ${line.lineIndex + 1} 行换样后单位由 ${line.unit} 变为 ${nextSample.unit}，必须显式给出折算后的数量`,
+              { reason: "UNIT_MISMATCH" },
+            );
           }
           if (patch.quantity && patch.quantity.unit !== nextSample.unit) {
             throw new KernelError("KERNEL_REJECTED", `数量单位与样品 ${nextSample.code} 不一致`, {
@@ -663,35 +774,8 @@ export class QuoteService {
           }
           const previousAmount = line.unitPriceAmount;
           const sample = samplesById.get(line.sampleId);
-          const category = sample?.category ?? "";
-          const pricingContext: PricingContext = {
-            customerId: row.customerId,
-            personId: ctx.actor.id,
-            ...(category ? { categoryId: category } : {}),
-          };
-          let minMargin = minMarginByCategory.get(category);
-          if (!minMargin) {
-            minMargin = await this.pricing.resolve("pricing.min_margin_pct", pricingContext);
-            minMarginByCategory.set(category, minMargin);
-          }
-          let companyFloor = companyFloorByCategory.get(category);
-          if (!companyFloor) {
-            companyFloor = await this.pricing.resolve("pricing.cost_floor_amount", pricingContext);
-            companyFloorByCategory.set(category, companyFloor);
-          }
-          const floor = priceFloorOf(
-            sample,
-            row.currency,
-            numericValue(minMargin.value) ?? 0,
-            numericValue(companyFloor.value) ?? 0,
-          );
-          if (floor > 0 && patch.unitPrice.amount < floor) {
-            throw new KernelError(
-              "KERNEL_REJECTED",
-              `第 ${line.lineIndex + 1} 行单价低于成本底线/最低毛利：${patch.unitPrice.amount} < ${floor}（分）`,
-              { reason: "PRICE_BELOW_COST_FLOOR" },
-            );
-          }
+          const floor = await floorForSample(sample);
+          const minMargin = minMarginByCategory.get(sample?.category ?? "") as ResolvedPricingValue;
           line.unitPriceAmount = patch.unitPrice.amount;
           line.provenance = asJson({
             ...provenanceRecord(line.provenance),
@@ -715,7 +799,17 @@ export class QuoteService {
         }
       }
 
+      // 落库前对所有行统一复核价格下限：不依赖本次是否传了单价，
+      // 换样后单价没动但新样品底线更高的行也会在这里被拦下。
       for (const line of lines) {
+        const floor = await floorForSample(samplesById.get(line.sampleId));
+        if (line.unitPriceAmount < floor) {
+          throw new KernelError(
+            "KERNEL_REJECTED",
+            `第 ${line.lineIndex + 1} 行单价低于成本底线/最低毛利：${line.unitPriceAmount} < ${floor}（分）`,
+            { reason: "PRICE_BELOW_COST_FLOOR" },
+          );
+        }
         line.lineTotalAmount = multiplyCents(line.unitPriceAmount, line.quantityMilli);
       }
       const subtotalAmount = lines.reduce((sum, line) => sum + line.lineTotalAmount, 0);
@@ -973,44 +1067,84 @@ export class QuoteService {
         "报价确认必须由人类在审批窗口执行，智能体无权确认",
       );
     }
-    const { row, lines } = await this.loadQuote(quoteId, true);
-    const baseline = parseBaseline(row);
-    const policies = await resolveApprovalPolicies(this.pricing, {
-      customerId: row.customerId,
-    });
-    const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
-    assertCanApprove(ctx.actor.role, requirement);
-    if (baseVersion !== undefined && baseVersion !== row.version) {
-      throw new KernelError(
-        "KERNEL_REJECTED",
-        `版本冲突：当前 v${row.version}，审批的是 v${baseVersion}`,
-        { reason: "VERSION_CONFLICT" },
-      );
-    }
-
     const confirmedAt = new Date();
+    let confirmedVersion = 0;
+
+    // 「读状态 → 判状态 → 改状态」必须在同一个事务里对同一行加锁完成。
+    // 事务外判 DRAFT + UPDATE 只带版本谓词但不自增版本，会让并发两次确认都成功。
     await this.db.transaction(async (tx) => {
-      const rows = await tx
+      const locked = await tx
+        .select()
+        .from(quotes)
+        .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
+        .limit(1)
+        .for("update");
+      const row = locked[0];
+      if (!row) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
+          resourceType: "quote",
+          resourceId: quoteId,
+        });
+      }
+      if (row.status !== "DRAFT") {
+        throw new KernelError("KERNEL_REJECTED", `报价单不是草稿状态：${row.status}`, {
+          reason: "INVALID_STATE_TRANSITION",
+        });
+      }
+      if (baseVersion !== undefined && baseVersion !== row.version) {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `版本冲突：当前 v${row.version}，审批的是 v${baseVersion}`,
+          { reason: "VERSION_CONFLICT" },
+        );
+      }
+      if (row.expiresAt.getTime() <= confirmedAt.getTime()) {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `报价已过有效期（${toIso(row.expiresAt)}），不能用过期价格对客户生效`,
+          { reason: "QUOTE_EXPIRED" },
+        );
+      }
+
+      const itemRows = await tx
+        .select()
+        .from(quoteItems)
+        .where(eq(quoteItems.quoteId, quoteId))
+        .orderBy(asc(quoteItems.position));
+      const lines = itemRows.map((item, index) => lineFromRow(item, index));
+
+      const baseline = parseBaseline(row);
+      const policies = await resolveApprovalPolicies(this.pricing, {
+        customerId: row.customerId,
+      });
+      // 以落库的审批要求为准，不用 customerId 单点重算放宽个人/品类限额。
+      const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
+      assertCanApprove(ctx.actor.role, requirement, ctx.actor.approvalLimitAmount);
+
+      const updated = await tx
         .update(quotes)
         .set({
           status: "SENT",
           confirmedBy: ctx.actor.id,
           confirmedAt,
+          version: row.version + 1,
           updatedAt: confirmedAt,
         })
         .where(
           and(
             eq(quotes.id, quoteId),
             eq(quotes.tenantId, this.tenantId),
+            eq(quotes.status, "DRAFT"),
             eq(quotes.version, row.version),
           ),
         )
-        .returning();
-      if (!rows[0]) {
+        .returning({ id: quotes.id });
+      if (!updated[0]) {
         throw new KernelError("KERNEL_REJECTED", "版本冲突：报价已被其他人修改", {
           reason: "VERSION_CONFLICT",
         });
       }
+      confirmedVersion = row.version;
       await appendAudit(
         tx,
         ctx,
@@ -1025,7 +1159,7 @@ export class QuoteService {
           },
           after: {
             status: "SENT",
-            version: row.version,
+            version: row.version + 1,
             confirmedBy: ctx.actor.id,
             requiredApprovalRole: requirement.role,
             changePctBps: requirement.changePctBps,
@@ -1040,7 +1174,7 @@ export class QuoteService {
       status: "SENT",
       confirmedBy: ctx.actor.id,
       confirmedAt: confirmedAt.toISOString(),
-      version: row.version,
+      version: confirmedVersion,
     };
   }
 
@@ -1057,30 +1191,51 @@ export class QuoteService {
         "报价驳回必须由人类在审批窗口执行，智能体无权驳回",
       );
     }
-    const { row } = await this.loadQuote(quoteId, true);
-    const baseline = parseBaseline(row);
-    const policies = await resolveApprovalPolicies(this.pricing, {
-      customerId: row.customerId,
-    });
-    const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
-    assertCanApprove(ctx.actor.role, requirement);
     const rejectedAt = new Date();
+
+    // 与 confirm 同一把行锁：确认与驳回是互斥决策，不能都成功、更不能留下矛盾状态行。
     await this.db.transaction(async (tx) => {
-      const rows = await tx
+      const locked = await tx
+        .select()
+        .from(quotes)
+        .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
+        .limit(1)
+        .for("update");
+      const row = locked[0];
+      if (!row) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
+          resourceType: "quote",
+          resourceId: quoteId,
+        });
+      }
+      if (row.status !== "DRAFT") {
+        throw new KernelError("KERNEL_REJECTED", `报价单不是草稿状态：${row.status}`, {
+          reason: "INVALID_STATE_TRANSITION",
+        });
+      }
+
+      const baseline = parseBaseline(row);
+      const policies = await resolveApprovalPolicies(this.pricing, {
+        customerId: row.customerId,
+      });
+      const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
+      assertCanApprove(ctx.actor.role, requirement, ctx.actor.approvalLimitAmount);
+
+      const updated = await tx
         .update(quotes)
-        .set({ status: "REJECTED", updatedAt: rejectedAt })
+        .set({ status: "REJECTED", version: row.version + 1, updatedAt: rejectedAt })
         .where(
           and(
             eq(quotes.id, quoteId),
             eq(quotes.tenantId, this.tenantId),
+            eq(quotes.status, "DRAFT"),
             eq(quotes.version, row.version),
           ),
         )
-        .returning();
-      if (!rows[0]) {
-        throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
-          resourceType: "quote",
-          resourceId: quoteId,
+        .returning({ id: quotes.id });
+      if (!updated[0]) {
+        throw new KernelError("KERNEL_REJECTED", "版本冲突：报价已被其他人修改", {
+          reason: "VERSION_CONFLICT",
         });
       }
       await appendDecisionDeltaWithin(tx, this.tenantId, ctx, {
@@ -1107,7 +1262,8 @@ export class QuoteService {
           },
           after: {
             status: "REJECTED",
-            confirmedBy: ctx.actor.id,
+            version: row.version + 1,
+            rejectedBy: ctx.actor.id,
             note: note ?? null,
             reasonId: reasonId ?? null,
           },
@@ -1118,14 +1274,33 @@ export class QuoteService {
     return { status: "REJECTED" };
   }
 
-  /** 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。 */
-  async list(limit = 50): Promise<ApprovalItem[]> {
-    const rows = await this.db
-      .select()
-      .from(quotes)
-      .where(eq(quotes.tenantId, this.tenantId))
-      .orderBy(desc(quotes.createdAt))
-      .limit(limit);
+  /**
+   * 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。
+   * 数据范围按客户负责人过滤（报价本身没有归属人列）。
+   *
+   * 过滤（租户 + 数据范围 + DRAFT）全部在 SQL 里完成，`limit` / `after`
+   * 才生效：先过滤再分页，翻页时不会出现条数忽多忽少。
+   */
+  async list(
+    limit = 50,
+    ctx?: KernelContext,
+    query: ApprovalListQuery = {},
+  ): Promise<ApprovalItem[]> {
+    const conditions: SQL[] = [eq(quotes.tenantId, this.tenantId)];
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) conditions.push(scope);
+    if (query.pendingOnly) conditions.push(eq(quotes.status, "DRAFT"));
+    conditions.push(...approvalListConditions(quotes.createdAt, quotes.id, query));
+
+    const rows = (
+      await this.db
+        .select({ quote: quotes })
+        .from(quotes)
+        .innerJoin(customers, eq(customers.id, quotes.customerId))
+        .where(and(...conditions))
+        .orderBy(desc(quotes.createdAt), desc(quotes.id))
+        .limit(limit)
+    ).map((entry) => entry.quote);
     if (rows.length === 0) return [];
 
     const ids = rows.map((row) => row.id);
@@ -1186,13 +1361,22 @@ export class QuoteService {
   private async loadQuote(
     quoteId: string,
     requireDraft: boolean,
+    ctx?: KernelContext,
   ): Promise<{ row: QuoteRow; lines: CurrentLine[] }> {
+    // 报价没有自己的归属人列：归属随客户，越权时按「不存在」返回。
     const rows = await this.db
-      .select()
+      .select({ quote: quotes })
       .from(quotes)
-      .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
+      .innerJoin(customers, eq(customers.id, quotes.customerId))
+      .where(
+        and(
+          eq(quotes.id, quoteId),
+          eq(quotes.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
-    const row = rows[0];
+    const row = rows[0]?.quote;
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
         resourceType: "quote",

@@ -50,13 +50,13 @@ jobs:
       PLATFORM_AUTH_MODE: dev
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.34.9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -79,5 +79,189 @@ jobs:
       - name: Test (含跨租户 RLS 常驻用例)
         run: pnpm test
 
+      # WAN-102：打印用例不允许静默 skip，执行数为 0 即构红。
+      - name: 打印用例执行数守卫
+        run: pnpm --filter @weave-order/api test:print:guard
+
       - name: Lint
         run: pnpm lint
+
+  # 迁移升级演练（WAN-98）：在「上一个已发布修订」的库上，升级到 PR 头。
+  # 守卫两件事：
+  #   1. migrate:guard —— 已合并的迁移文件与 journal（tag/when/idx）不可改写，
+  #      改写 when 会让存量库重放老迁移并卡死（正是 WAN-98 的根因）；
+  #   2. 两段式迁移 —— 先按基线的 drizzle/sql 迁移出「旧库」，再恢复 PR 头迁移一次，
+  #      新增迁移必须能从旧库增量升级；最后 db:check 验收记录与 journal 一致。
+  migrate-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave_order
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U weave -d weave_order"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://weave:weave@localhost:5432/weave_order
+      NODE_ENV: test
+      AUTH_MODE: dev
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 守卫与两段式迁移都需要完整历史来解析基线。
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: 解析基线（PR 的 base / push 的 before）
+        id: base
+        run: |
+          ZERO=0000000000000000000000000000000000000000
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "$ZERO" ] \
+            && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            BASE="${{ github.event.before }}"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            BASE="$(git rev-parse HEAD~1)"
+          else
+            BASE="skip"
+          fi
+          echo "ref=$BASE" >> "$GITHUB_OUTPUT"
+          echo "基线：$BASE"
+
+      - name: 迁移纪律守卫（已合并迁移不可改写）
+        run: pnpm --filter @weave-order/db migrate:guard -- "${{ steps.base.outputs.ref }}"
+
+      - name: 迁移到上一个已发布修订
+        if: steps.base.outputs.ref != 'skip'
+        run: |
+          BASE="${{ steps.base.outputs.ref }}"
+          git checkout "$BASE" -- packages/db/drizzle packages/db/sql
+          # git checkout 不会删除基线之后新增的文件：按基线文件列表清理，只留基线状态。
+          comm -23 \
+            <(git ls-files packages/db/drizzle packages/db/sql | sort) \
+            <(git ls-tree -r --name-only "$BASE" -- packages/db/drizzle packages/db/sql | sort) \
+            | xargs -r rm -f
+          pnpm --filter @weave-order/db migrate
+
+      - name: 升级到 PR 头并验收（旧库 → HEAD）
+        run: |
+          git reset -q --hard HEAD
+          pnpm --filter @weave-order/db migrate
+          pnpm --filter @weave-order/db migrate:check
+
+  # 打印代理（Tauri 2 + Rust）：此前 10 个 .rs 从不被 CI 编译。
+  # 独立作业，不塞进 verify，避免拖慢主链路；无 GUI 环境只需要系统库即可 cargo check/test。
+  print-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri 2 在 Linux 上编译需要 webkit2gtk / gtk / 托盘库（cargo check 也要，build script 走 pkg-config）。
+      - name: 安装 Tauri 2 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/print-agent/src-tauri -> target
+
+      # --locked：Cargo.lock 已提交，依赖漂移会直接变红（供应链可复现）。
+      - name: cargo check
+        working-directory: apps/print-agent/src-tauri
+        run: cargo check --all-targets --locked
+
+      - name: cargo test（lib 单元测试）
+        working-directory: apps/print-agent/src-tauri
+        run: cargo test --lib --locked
+
+  # 依赖漏洞扫描：只告警，不阻断（存量告警不应该卡住所有 PR）。
+  # 报告写到 Job Summary，阈值（critical/high 限期评估）由人按报告推进。
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: 扫描生产依赖（只告警）
+        continue-on-error: true
+        run: |
+          set +e
+          timeout 180 pnpm audit --prod --json > audit.json
+          echo "pnpm audit exit=$?（非 0 表示有告警或 registry 不可达，均不阻断）"
+          node scripts/dependency-audit-summary.mjs audit.json >> "$GITHUB_STEP_SUMMARY"
+
+  # 移动端 mock 门禁自检：demo 构建（带 mock）必须被 check-prod-bundle 判红，
+  # 证明生产构建的「产物无 mock」断言不是永远为真。
+  mobile-mock-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建依赖（contracts → core）
+        run: pnpm --filter @weave-order/schema... --filter @weave-order/core... build
+
+      - name: 生产构建产物不含 mock（build 脚本内已内置检查）
+        run: pnpm --filter @weave-order/mobile build
+
+      - name: 门禁自检：带 mock 的构建必须被拒绝
+        run: pnpm --filter @weave-order/mobile verify:mock-gate

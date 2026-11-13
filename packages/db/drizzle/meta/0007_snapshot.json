@@ -1,5 +1,5 @@
 {
-  "id": "48c19711-9a0a-4011-a6a0-9345a3436efc",
+  "id": "3b8e3135-d3d3-4e90-8ef9-76d33fdaeb7e",
   "prevId": "951f8042-07a4-43d7-b051-ce3f648559df",
   "version": "7",
   "dialect": "postgresql",
@@ -2931,6 +2931,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "member_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
         "action": {
           "name": "action",
           "type": "varchar(64)",
@@ -3036,267 +3043,6 @@
           ]
         }
       },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.api_tokens": {
-      "name": "api_tokens",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "membership_id": {
-          "name": "membership_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "public_id": {
-          "name": "public_id",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scopes": {
-          "name": "scopes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "api_tokens_public_id_idx": {
-          "name": "api_tokens_public_id_idx",
-          "columns": [
-            {
-              "expression": "public_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "api_tokens_membership_id_idx": {
-          "name": "api_tokens_membership_id_idx",
-          "columns": [
-            {
-              "expression": "membership_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "api_tokens_membership_id_memberships_id_fk": {
-          "name": "api_tokens_membership_id_memberships_id_fk",
-          "tableFrom": "api_tokens",
-          "tableTo": "memberships",
-          "columnsFrom": [
-            "membership_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.device_authorizations": {
-      "name": "device_authorizations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "device_code_hash": {
-          "name": "device_code_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_code": {
-          "name": "user_code",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_name": {
-          "name": "client_name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "device_auth_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'PENDING'"
-        },
-        "membership_id": {
-          "name": "membership_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scopes": {
-          "name": "scopes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "interval_seconds": {
-          "name": "interval_seconds",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 5
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_polled_at": {
-          "name": "last_polled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consumed_at": {
-          "name": "consumed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "device_authorizations_device_code_idx": {
-          "name": "device_authorizations_device_code_idx",
-          "columns": [
-            {
-              "expression": "device_code_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "device_authorizations_user_code_idx": {
-          "name": "device_authorizations_user_code_idx",
-          "columns": [
-            {
-              "expression": "user_code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "device_authorizations_membership_id_memberships_id_fk": {
-          "name": "device_authorizations_membership_id_memberships_id_fk",
-          "tableFrom": "device_authorizations",
-          "tableTo": "memberships",
-          "columnsFrom": [
-            "membership_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -5797,25 +5543,6 @@
         "kilogram",
         "yard",
         "piece"
-      ]
-    },
-    "public.device_auth_status": {
-      "name": "device_auth_status",
-      "schema": "public",
-      "values": [
-        "PENDING",
-        "APPROVED",
-        "CONSUMED",
-        "DENIED"
-      ]
-    },
-    "public.token_scope": {
-      "name": "token_scope",
-      "schema": "public",
-      "values": [
-        "read",
-        "write",
-        "approve"
       ]
     }
   },

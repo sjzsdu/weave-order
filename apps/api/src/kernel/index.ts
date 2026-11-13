@@ -94,7 +94,7 @@ export function createKernel(
     shares,
     print,
     audit: {
-      list: (limit?: number) => listAuditLog(db, limit, tenantId),
+      list: (limit?: number, entityId?: string) => listAuditLog(db, limit, tenantId, entityId),
     },
   };
 }
@@ -105,5 +105,7 @@ export { KernelError, isKernelError, errorChainMessage } from "./errors";
 export { QuoteLinkError } from "./shares.service";
 export { parseShareToken } from "./share-token";
 export type { KernelContext } from "./audit";
+export { mayViewCost } from "./mappers";
+export { ownerScopeFilter, scopeWindowOf } from "./data-scope";
 export type { EmbeddingProvider } from "../platform/embedding";
 export { formatMoney } from "./money";

@@ -1,12 +1,16 @@
-import { sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
+import { customers, sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { ApprovalItem, CreateSampleShipmentInput } from "@weave-order/schema";
 import type { SampleShipment, SampleShipmentItem } from "@weave-order/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { approvalListConditions } from "./approval-list";
+import type { ApprovalListQuery } from "./approval-list";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
+import { ownerScopeFilter } from "./data-scope";
 import { milliToQuantity, quantityToMilli } from "./money";
 import { toIso, toIsoOrNull } from "./mappers";
 
@@ -166,17 +170,31 @@ export class ShipmentService {
         "寄样单确认必须由人类在审批窗口执行，智能体无权确认",
       );
     }
-    const current = await this.getById(shipmentId);
-    if (current.status !== "DRAFT") {
-      throw new KernelError(
-        "KERNEL_REJECTED",
-        `寄样单当前状态为 ${current.status}，只有 DRAFT 可以确认`,
-        { reason: "INVALID_STATE_TRANSITION" },
-      );
-    }
 
     const confirmedAt = new Date();
     await this.db.transaction(async (tx) => {
+      // 状态判断与写入必须在同一事务的锁内：否则并发双击会各自读到 DRAFT，
+      // 双双确认并各写一条审计。
+      const lockedRows = await tx
+        .select()
+        .from(sampleShipments)
+        .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
+        .limit(1)
+        .for("update");
+      const current = lockedRows[0];
+      if (!current) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
+          resourceType: "sample_shipment",
+          resourceId: shipmentId,
+        });
+      }
+      if (current.status !== "DRAFT") {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `寄样单当前状态为 ${current.status}，只有 DRAFT 可以确认`,
+          { reason: "INVALID_STATE_TRANSITION" },
+        );
+      }
       const rows = await tx
         .update(sampleShipments)
         .set({
@@ -185,12 +203,17 @@ export class ShipmentService {
           confirmedAt,
           updatedAt: confirmedAt,
         })
-        .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
+        .where(
+          and(
+            eq(sampleShipments.id, shipmentId),
+            eq(sampleShipments.tenantId, this.tenantId),
+            eq(sampleShipments.status, "DRAFT"),
+          ),
+        )
         .returning();
       if (!rows[0]) {
-        throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
-          resourceType: "sample_shipment",
-          resourceId: shipmentId,
+        throw new KernelError("KERNEL_REJECTED", "寄样单状态已变化，请刷新后重试", {
+          reason: "VERSION_CONFLICT",
         });
       }
       await appendAudit(
@@ -210,14 +233,34 @@ export class ShipmentService {
     return this.getById(shipmentId);
   }
 
-  /** 审批队列 / 全景的只读视图：把账本里的寄样单映射成 ApprovalItem。 */
-  async list(limit = 50): Promise<ApprovalItem[]> {
-    const rows = await this.db
-      .select()
-      .from(sampleShipments)
-      .where(eq(sampleShipments.tenantId, this.tenantId))
-      .orderBy(desc(sampleShipments.createdAt))
-      .limit(limit);
+  /**
+   * 审批队列 / 全景的只读视图：把账本里的寄样单映射成 ApprovalItem。
+   * 寄样单归属随客户，按客户负责人过滤。
+   *
+   * 同 `quotes.list`：数据范围与 DRAFT 过滤先于 `limit` / `after`。
+   */
+  async list(
+    limit = 50,
+    ctx?: KernelContext,
+    query: ApprovalListQuery = {},
+  ): Promise<ApprovalItem[]> {
+    const conditions: SQL[] = [eq(sampleShipments.tenantId, this.tenantId)];
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) conditions.push(scope);
+    if (query.pendingOnly) conditions.push(eq(sampleShipments.status, "DRAFT"));
+    conditions.push(
+      ...approvalListConditions(sampleShipments.createdAt, sampleShipments.id, query),
+    );
+
+    const rows = (
+      await this.db
+        .select({ shipment: sampleShipments })
+        .from(sampleShipments)
+        .innerJoin(customers, eq(customers.id, sampleShipments.customerId))
+        .where(and(...conditions))
+        .orderBy(desc(sampleShipments.createdAt), desc(sampleShipments.id))
+        .limit(limit)
+    ).map((entry) => entry.shipment);
     if (rows.length === 0) return [];
 
     const ids = rows.map((row) => row.id);
@@ -265,26 +308,42 @@ export class ShipmentService {
         "寄样单驳回必须由人类在审批窗口执行，智能体无权驳回",
       );
     }
-    const current = await this.getById(shipmentId);
-    if (current.status !== "DRAFT") {
-      throw new KernelError(
-        "KERNEL_REJECTED",
-        `寄样单当前状态为 ${current.status}，只有 DRAFT 可以驳回`,
-        { reason: "INVALID_STATE_TRANSITION" },
-      );
-    }
-
     const cancelledAt = new Date();
     await this.db.transaction(async (tx) => {
-      const rows = await tx
-        .update(sampleShipments)
-        .set({ status: "CANCELLED", updatedAt: cancelledAt })
+      const lockedRows = await tx
+        .select()
+        .from(sampleShipments)
         .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
-        .returning();
-      if (!rows[0]) {
+        .limit(1)
+        .for("update");
+      const current = lockedRows[0];
+      if (!current) {
         throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
           resourceType: "sample_shipment",
           resourceId: shipmentId,
+        });
+      }
+      if (current.status !== "DRAFT") {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `寄样单当前状态为 ${current.status}，只有 DRAFT 可以驳回`,
+          { reason: "INVALID_STATE_TRANSITION" },
+        );
+      }
+      const rows = await tx
+        .update(sampleShipments)
+        .set({ status: "CANCELLED", updatedAt: cancelledAt })
+        .where(
+          and(
+            eq(sampleShipments.id, shipmentId),
+            eq(sampleShipments.tenantId, this.tenantId),
+            eq(sampleShipments.status, "DRAFT"),
+          ),
+        )
+        .returning();
+      if (!rows[0]) {
+        throw new KernelError("KERNEL_REJECTED", "寄样单状态已变化，请刷新后重试", {
+          reason: "VERSION_CONFLICT",
         });
       }
       await appendAudit(

@@ -100,7 +100,30 @@ describe("HumanActorService：有令牌时注入真实角色与租户作用域",
       Promise.resolve({ kernel, ctx }),
     );
     expect(result.kernel).toBe(scopedKernel);
-    expect(result.ctx.actor).toEqual({ type: "HUMAN", id: claims.sub, role: "MANAGER" });
+    expect(result.ctx.actor).toEqual({
+      type: "HUMAN",
+      id: claims.sub,
+      role: "MANAGER",
+      approvalLimitAmount: null,
+    });
+  });
+
+  it("membership.approvalLimitAmount 注入 KernelContext，供内核判定成员额度", async () => {
+    const service = new HumanActorService(
+      fakeAuth({
+        claims,
+        membership: { ...membership, role: "SALES", approvalLimitAmount: 5000 },
+      }),
+    );
+    const result = await service.run("Bearer token", fallbackKernel, (kernel, ctx) =>
+      Promise.resolve(ctx),
+    );
+    expect(result.actor).toEqual({
+      type: "HUMAN",
+      id: claims.sub,
+      role: "SALES",
+      approvalLimitAmount: 5000,
+    });
   });
 
   it("成员身份未启用 → 403", async () => {

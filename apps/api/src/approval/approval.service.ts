@@ -15,8 +15,18 @@ import type {
   ToolError,
   ZodIssueSummary,
 } from "@weave-order/schema";
-import { formatMoney, isKernelError } from "../kernel";
+import { formatMoney, isKernelError, mayViewCost } from "../kernel";
+import { decodeCursor, encodeCursor, parseApprovalCursor } from "../kernel/cursor";
 import type { Kernel, KernelContext } from "../kernel";
+
+/** 审批队列分页参数：默认一页 50 条，单页最多 100 条（防止一次拉爆）。 */
+export interface ApprovalQueueQuery {
+  limit?: number;
+  cursor?: string | null;
+}
+
+const QUEUE_PAGE_DEFAULT = 50;
+const QUEUE_PAGE_MAX = 100;
 
 /**
  * 审批服务（审批窗口的服务端核心）。
@@ -75,41 +85,54 @@ function failure(error: unknown): DecisionResult {
 
 export function createApprovalService(kernel: Kernel) {
   return {
-    /** 审批队列：从账本读出所有 DRAFT 单据（报价 + 寄样），纯只读聚合。 */
-    async listPending(): Promise<ApprovalQueue> {
-      const [quotes, shipments] = await Promise.all([
-        kernel.quotes.list(100),
-        kernel.shipments.list(100),
-      ]);
-      const items = [...quotes, ...shipments]
-        .filter((entry) => entry.pending)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return ApprovalQueue.parse({ items });
+    /**
+     * 审批队列：从账本读出可见范围内的 DRAFT 单据（报价 + 寄样），纯只读聚合。
+     *
+     * 游标分页：每类各取 `limit + 1` 条（`+1` 只用于判断是否还有下一页），
+     * 合并排序后截到 `limit`。DRAFT 过滤下推到 SQL，因此第 101 条起的
+     * 待办不会再被「取前 100 条再过滤」静默丢掉。
+     */
+    async listPending(ctx?: KernelContext, query: ApprovalQueueQuery = {}): Promise<ApprovalQueue> {
+      const limit = clampLimit(query.limit, QUEUE_PAGE_DEFAULT, QUEUE_PAGE_MAX);
+      const after = parseApprovalCursor(decodeCursor(query.cursor));
+      const options = { pendingOnly: true, after };
+
+      // 顺序执行：审批窗口跑在一条独占的租户连接上，同一 client 并发 query 已被 pg 弃用。
+      const quotes = await kernel.quotes.list(limit + 1, ctx, options);
+      const shipments = await kernel.shipments.list(limit + 1, ctx, options);
+      const merged = [...quotes, ...shipments].sort(compareQueueItems);
+      const hasMore = merged.length > limit;
+      const items = merged.slice(0, limit);
+      const last = items[items.length - 1];
+      return ApprovalQueue.parse({
+        items,
+        hasMore,
+        nextCursor:
+          hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null,
+      });
     },
 
     /**
      * 审批卡详情：出处 / 生效值 / diff 一次聚合。
      * 只读，不落账；金额与风险全部由后端给出，前端只展示。
      */
-    async detail(id: string, kind: ApprovalKind): Promise<Detail | null> {
-      const [quotes, shipments] = await Promise.all([
-        kernel.quotes.list(100),
-        kernel.shipments.list(100),
-      ]);
-      const item = [...quotes, ...shipments].find(
-        (entry) => entry.id === id && entry.kind === kind,
-      );
+    async detail(id: string, kind: ApprovalKind, ctx?: KernelContext): Promise<Detail | null> {
+      // 按 id 精确读取：不能从队列前 N 条里找，否则第 N+1 条永远打不开。
+      const [item] =
+        kind === "quote"
+          ? await kernel.quotes.list(1, ctx, { id })
+          : await kernel.shipments.list(1, ctx, { id });
       if (!item) return null;
 
-      const [customer, audit] = await Promise.all([
-        kernel.customers.getById(item.customerId).catch(() => null),
-        kernel.audit.list(20),
-      ]);
+      const customer = await kernel.customers.getById(item.customerId, ctx).catch(() => null);
+      const audit = await kernel.audit.list(20);
 
       if (kind === "quote") {
-        const view = await kernel.quotes.getApprovalView(id).catch(() => null);
+        const view = await kernel.quotes.getApprovalView(id, ctx).catch(() => null);
         if (!view) return null;
 
+        // 成本底线属于敏感字段：sales 等角色看不到具体数字，但单据本身照常可审。
+        const showCost = mayViewCost(ctx?.actor.role);
         const provenance: Detail["provenance"] = view.items.flatMap((line) => {
           const raw = jsonRecord(line.provenance);
           const sample = jsonRecord(raw.sample);
@@ -131,7 +154,7 @@ export function createApprovalService(kernel: Kernel) {
               kind: "COST",
               label: "样品 / 成本底线",
               value:
-                typeof costFloor.amount === "number"
+                showCost && typeof costFloor.amount === "number"
                   ? `${String(sample.code)} · ${formatMoney({
                       amount: costFloor.amount,
                       currency: view.currency,
@@ -148,7 +171,7 @@ export function createApprovalService(kernel: Kernel) {
               label: "定价来源",
               value: unitPrice.source,
               detail:
-                typeof unitPrice.floorCents === "number"
+                showCost && typeof unitPrice.floorCents === "number"
                   ? `成本/毛利底线 ${formatMoney({ amount: unitPrice.floorCents, currency: view.currency })}`
                   : null,
               sourceRef: null,
@@ -306,14 +329,13 @@ export function createApprovalService(kernel: Kernel) {
     },
 
     /** 业务全景（只读）：一次拉取，前端纯展示。 */
-    async panorama(): Promise<Panorama> {
-      const [customers, samples, quotes, shipments, audit] = await Promise.all([
-        kernel.customers.list(100),
-        kernel.search.listSamples(100),
-        kernel.quotes.list(100),
-        kernel.shipments.list(100),
-        kernel.audit.list(20),
-      ]);
+    async panorama(ctx?: KernelContext): Promise<Panorama> {
+      // 顺序执行，避免单连接租户会话上同一 client 并发 query。
+      const customers = await kernel.customers.list(100, ctx);
+      const samples = await kernel.search.listSamples(100, ctx);
+      const quotes = await kernel.quotes.list(100, ctx);
+      const shipments = await kernel.shipments.list(100, ctx);
+      const audit = await kernel.audit.list(20);
       const items = [...quotes, ...shipments].sort((a, b) =>
         b.createdAt.localeCompare(a.createdAt),
       );
@@ -340,6 +362,20 @@ export function createApprovalService(kernel: Kernel) {
       });
     },
   };
+}
+
+/**
+ * 队列排序：`createdAt DESC, id DESC`。加 id 做二级键，保证同一毫秒创建的
+ * 两条单据顺序稳定，游标翻页不会重复也不会跳条。
+ */
+function compareQueueItems(a: ApprovalItem, b: ApprovalItem): number {
+  const byTime = b.createdAt.localeCompare(a.createdAt);
+  return byTime !== 0 ? byTime : b.id.localeCompare(a.id);
+}
+
+function clampLimit(raw: number | undefined, fallback: number, max: number): number {
+  if (raw === undefined || !Number.isFinite(raw)) return fallback;
+  return Math.min(Math.max(Math.trunc(raw), 1), max);
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> {

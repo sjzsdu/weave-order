@@ -203,3 +203,77 @@ impl Spool {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(id: &str) -> SpoolJob {
+        SpoolJob {
+            id: id.to_string(),
+            format: "ZPL".to_string(),
+            copies: 1,
+            payload: "^XA^XZ".to_string(),
+            printer_id: None,
+            printer_name: Some("Zebra".to_string()),
+            printer_kind: Some("THERMAL".to_string()),
+        }
+    }
+
+    #[test]
+    fn enqueue_is_idempotent_per_task_id() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = Spool::open(&dir.path().join("spool.sqlite")).expect("open");
+        assert!(spool.enqueue(&job("task-1")).expect("enqueue"));
+        // 重连补传同一个任务不能重复出纸。
+        assert!(!spool.enqueue(&job("task-1")).expect("enqueue"));
+        assert_eq!(spool.status().expect("status").pending, 1);
+    }
+
+    #[test]
+    fn next_pending_returns_jobs_in_creation_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = Spool::open(&dir.path().join("spool.sqlite")).expect("open");
+        spool.enqueue(&job("task-1")).expect("enqueue");
+        spool.enqueue(&job("task-2")).expect("enqueue");
+        assert_eq!(
+            spool.next_pending().expect("next").map(|job| job.id),
+            Some("task-1".to_string())
+        );
+        spool.mark_printed("task-1").expect("printed");
+        assert_eq!(
+            spool.next_pending().expect("next").map(|job| job.id),
+            Some("task-2".to_string())
+        );
+    }
+
+    #[test]
+    fn printed_and_failed_jobs_are_reported_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = Spool::open(&dir.path().join("spool.sqlite")).expect("open");
+        spool.enqueue(&job("task-1")).expect("enqueue");
+        spool.mark_printed("task-1").expect("printed");
+        spool.mark_failed("task-1", "纸卷用完").expect("failed");
+
+        let unreported = spool.unreported().expect("unreported");
+        assert_eq!(unreported.len(), 1);
+        assert_eq!(unreported[0].1, "failed");
+        assert_eq!(unreported[0].2.as_deref(), Some("纸卷用完"));
+
+        spool.mark_reported("task-1").expect("reported");
+        assert!(spool.unreported().expect("unreported").is_empty());
+        let status = spool.status().expect("status");
+        assert_eq!((status.pending, status.failed, status.printed), (0, 0, 1));
+    }
+
+    #[test]
+    fn clear_removes_every_job() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = Spool::open(&dir.path().join("spool.sqlite")).expect("open");
+        spool.enqueue(&job("task-1")).expect("enqueue");
+        spool.enqueue(&job("task-2")).expect("enqueue");
+        spool.clear().expect("clear");
+        assert_eq!(spool.status().expect("status").pending, 0);
+        assert!(spool.next_pending().expect("next").is_none());
+    }
+}

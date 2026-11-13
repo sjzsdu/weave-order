@@ -68,8 +68,20 @@ export const ApprovalItem = z
 export type ApprovalItem = z.infer<typeof ApprovalItem>;
 export type ApprovalItemStatus = ApprovalItem["status"];
 
-/** 审批队列：只含 pending（DRAFT）单据。 */
-export const ApprovalQueue = z.object({ items: z.array(ApprovalItem) }).strict();
+/**
+ * 审批队列：只含 pending（DRAFT）单据。
+ *
+ * 游标分页：`nextCursor` 为空表示到最后一页；`hasMore` 是给前端的
+ * 「还有更多」提示，两者都由后端计算，前端不得按条数猜测。
+ * 字段可选是为了兼容旧 mock / 旧快照，缺失时视为「单页、无更多」。
+ */
+export const ApprovalQueue = z
+  .object({
+    items: z.array(ApprovalItem),
+    nextCursor: z.string().min(1).max(512).nullable().optional(),
+    hasMore: z.boolean().optional(),
+  })
+  .strict();
 export type ApprovalQueue = z.infer<typeof ApprovalQueue>;
 
 /** 审批决策入参。note 用于驳回时的异常分诊备注，只进审计、不进业务字段。 */

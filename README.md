@@ -291,6 +291,12 @@ pnpm dev           # http://localhost:3001
   （Excel，两个 sheet）。环境变量 `IMPORT_CUSTOMERS` / `IMPORT_SAMPLES` / `IMPORT_XLSX`
   可覆盖（见 `.env.example`）；解析在 `apps/api/src/import/parse.ts`（CSV: `csv-parse`，
   XLSX: `exceljs`），CLI 在 `apps/api/scripts/import-data.ts`。
+- **归属**：seed 客户挂到演示业务员成员（默认 `demo-sales`，dataScope=`OWN`），
+  所以 `Bearer dev:demo-sales:demo` 能看到；`Bearer dev:demo:demo`（OWNER，ALL）看全量。
+  subject / 租户可用 `SEED_*` 环境变量覆盖，详见 `docs/data-ownership.md`。
+- **历史无归属数据**：`owner_id IS NULL` 的客户对 `OWN` 一律不可见；
+  `pnpm db:backfill-owner`（只读）检查，`pnpm db:backfill-owner -- --apply`
+  单事务归给各租户最早的 ACTIVE OWNER 成员，详见 `docs/data-ownership.md`。
 - HTTP 入口：`POST /api/import` 收结构化 `ImportBatch`（HUMAN 上下文），与 CLI 共用同一
   内核 `ImportService`。前端三个窗口不提供导入表单（逐条录入是明令禁止的），导入是
   **人类运维动作**：CLI 或 HTTP 都可发起，但一律落到内核。
@@ -404,6 +410,8 @@ SEED_RESET=1 pnpm seed
 | LangGraph 检查点表                           | `checkpoints` / `checkpoint_blobs` / `checkpoint_writes`（saver setup 创建） |
 
 迁移在 `packages/db/drizzle/`，由 `drizzle-kit generate` 生成、`pnpm db:migrate` 应用。
+迁移纪律（已合并迁移/journal 只增不改）、存量库修复（`pnpm db:repair`）与 CI 升级演练见
+`packages/db/README.md` 与 `docs/development-guide.md` §5「数据库迁移纪律」。
 检查点表由 LangGraph `PostgresSaver.setup()` 幂等创建（与业务迁移分离）。
 
 ## 本轮范围

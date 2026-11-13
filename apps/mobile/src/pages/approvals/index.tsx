@@ -18,7 +18,7 @@ import {
   Stat,
 } from "../../components/ui";
 import { SwipeCard } from "../../components/SwipeCard";
-import { useApprovals, useOfflineBanner } from "../../lib/hooks";
+import { useApprovalQueue, useOfflineBanner } from "../../lib/hooks";
 import { formatMoneyShort, relativeTime } from "../../lib/format";
 import { verifyLargeAmount } from "../../lib/biometric";
 import { useVoiceNote } from "../../lib/recorder";
@@ -37,9 +37,9 @@ const REJECT_REASONS = ["价格高了", "交期不行", "规格不对", "客户�
 
 export default function ApprovalsPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading, refetch } = useApprovals();
+  const { isLoading, refetch, items, hasMore, isFetchingNextPage, fetchNextPage } =
+    useApprovalQueue();
   const banner = useOfflineBanner();
-  const items = data?.items ?? [];
 
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -75,9 +75,17 @@ export default function ApprovalsPage() {
 
   const removeFromCache = (id: string) => {
     queryClient.setQueryData(
-      queryKeys.approvals,
-      (current: { items: ApprovalItem[] } | undefined) =>
-        current ? { items: current.items.filter((item) => item.id !== id) } : current,
+      queryKeys.approvalQueue(30),
+      (current: { pages: { items: ApprovalItem[] }[] } | undefined) =>
+        current
+          ? {
+              ...current,
+              pages: current.pages.map((page) => ({
+                ...page,
+                items: page.items.filter((item) => item.id !== id),
+              })),
+            }
+          : current,
     );
   };
 
@@ -248,84 +256,96 @@ export default function ApprovalsPage() {
 
       <SectionTitle title="待你决定" hint="草稿用虚线，批准后生效" />
 
-      {isLoading && !data ? (
+      {isLoading && items.length === 0 ? (
         <Loading />
       ) : items.length === 0 ? (
         <EmptyState title="没有待批的事" desc="小织在跟客户；有新的草稿会出现在这里。" />
       ) : (
-        items.map((item) => (
-          <SwipeCard
-            key={item.id}
-            disabled={busy}
-            onApprove={() => schedule(item, "APPROVE")}
-            onReject={() => {
-              setRejecting(item);
-              setNote("");
-              setReason(REJECT_REASONS[0] ?? "其他");
-            }}
-          >
-            <Card className="card-draft">
-              <View className="row">
-                <View>
-                  <View className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
-                    <Badge tone="warn">{item.kind === "quote" ? "报价草稿" : "寄样草稿"}</Badge>
-                    <Badge>v{item.kind === "quote" ? "草稿" : "草稿"}</Badge>
-                    <Text className="tiny">{relativeTime(item.createdAt)}</Text>
+        <View>
+          {items.map((item) => (
+            <SwipeCard
+              key={item.id}
+              disabled={busy}
+              onApprove={() => schedule(item, "APPROVE")}
+              onReject={() => {
+                setRejecting(item);
+                setNote("");
+                setReason(REJECT_REASONS[0] ?? "其他");
+              }}
+            >
+              <Card className="card-draft">
+                <View className="row">
+                  <View>
+                    <View className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
+                      <Badge tone="warn">{item.kind === "quote" ? "报价草稿" : "寄样草稿"}</Badge>
+                      <Badge>v{item.kind === "quote" ? "草稿" : "草稿"}</Badge>
+                      <Text className="tiny">{relativeTime(item.createdAt)}</Text>
+                    </View>
+                    <View className="list-title" style={{ marginTop: 8 }}>
+                      {item.title}
+                    </View>
                   </View>
-                  <View className="list-title" style={{ marginTop: 8 }}>
-                    {item.title}
-                  </View>
+                  {item.amountCents !== null && (
+                    <Amount size="lg">
+                      {formatMoneyShort(item.amountCents, item.currency ?? "CNY")}
+                    </Amount>
+                  )}
                 </View>
-                {item.amountCents !== null && (
-                  <Amount size="lg">
-                    {formatMoneyShort(item.amountCents, item.currency ?? "CNY")}
-                  </Amount>
-                )}
-              </View>
 
-              <View className="muted" style={{ marginTop: 10 }}>
-                {item.summary}
-              </View>
+                <View className="muted" style={{ marginTop: 10 }}>
+                  {item.summary}
+                </View>
 
-              <View className="section-head" style={{ margin: "16px 0 8px" }}>
-                <View className="tiny">智能体依据与缺失项都在摘要里；点客户名看 360</View>
-                <Text className="link" onClick={() => openCustomer(item.customerId)}>
-                  客户 360
-                </Text>
-              </View>
+                <View className="section-head" style={{ margin: "16px 0 8px" }}>
+                  <View className="tiny">智能体依据与缺失项都在摘要里；点客户名看 360</View>
+                  <Text className="link" onClick={() => openCustomer(item.customerId)}>
+                    客户 360
+                  </Text>
+                </View>
 
-              <View className="actions">
-                <Button
-                  variant="danger"
-                  small
-                  onClick={() => {
-                    setRejecting(item);
-                    setNote("");
-                    setReason(REJECT_REASONS[0] ?? "其他");
-                  }}
-                >
-                  驳回
-                </Button>
-                {item.kind === "quote" && (
+                <View className="actions">
                   <Button
-                    variant="ghost"
+                    variant="danger"
                     small
-                    onClick={() =>
-                      void Taro.navigateTo({
-                        url: `/pages/quote/index?quoteId=${encodeURIComponent(item.id)}`,
-                      })
-                    }
+                    onClick={() => {
+                      setRejecting(item);
+                      setNote("");
+                      setReason(REJECT_REASONS[0] ?? "其他");
+                    }}
                   >
-                    改价
+                    驳回
                   </Button>
-                )}
-                <Button small onClick={() => schedule(item, "APPROVE")}>
-                  批准
-                </Button>
-              </View>
-            </Card>
-          </SwipeCard>
-        ))
+                  {item.kind === "quote" && (
+                    <Button
+                      variant="ghost"
+                      small
+                      onClick={() =>
+                        void Taro.navigateTo({
+                          url: `/pages/quote/index?quoteId=${encodeURIComponent(item.id)}`,
+                        })
+                      }
+                    >
+                      改价
+                    </Button>
+                  )}
+                  <Button small onClick={() => schedule(item, "APPROVE")}>
+                    批准
+                  </Button>
+                </View>
+              </Card>
+            </SwipeCard>
+          ))}
+          {hasMore && (
+            <Button
+              block
+              variant="ghost"
+              loading={isFetchingNextPage}
+              onClick={() => void fetchNextPage()}
+            >
+              加载更多（已显示 {items.length} 条）
+            </Button>
+          )}
+        </View>
       )}
 
       {undo && (

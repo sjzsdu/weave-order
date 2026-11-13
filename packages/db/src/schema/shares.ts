@@ -54,5 +54,21 @@ export const quoteShareEvents = pgTable(
     uaHash: varchar("ua_hash", { length: 128 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("quote_share_events_share_created_idx").on(table.shareId, table.createdAt)],
+  (table) => [
+    index("quote_share_events_share_created_idx").on(table.shareId, table.createdAt),
+    // 分享面板的 SQL 聚合按 (租户, 链接, 事件类型) 过滤后取时间；没有这条索引会退化为整表扫。
+    index("quote_share_events_tenant_share_event_created_idx").on(
+      table.tenantId,
+      table.shareId,
+      table.event,
+      table.createdAt,
+    ),
+    // `count(distinct ip_hash)` 若没有按 ip_hash 有序的索引，会对全部 VIEWED 行做外部排序。
+    index("quote_share_events_tenant_share_event_ip_idx").on(
+      table.tenantId,
+      table.shareId,
+      table.event,
+      table.ipHash,
+    ),
+  ],
 );

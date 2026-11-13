@@ -9,6 +9,7 @@ import { WebSocket } from "ws";
 import { AppModule } from "../src/app.module";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
+import { requirePrintTestEnv } from "./support/print-env";
 
 /**
  * 打印中心 HTTP + 代理 WSS：真起 Nest、真连 PG。
@@ -116,7 +117,7 @@ describe("打印中心 HTTP / WSS（e2e）", () => {
   it("人工建发货单/箱 → 一键打印 → 代理 token 只打印不读业务数据", async (ctx) => {
     const database = db;
     if (!available || !database) {
-      ctx.skip();
+      requirePrintTestEnv(ctx, "Nest 应用或打印表不可用（PostgreSQL 未迁移）");
       return;
     }
     const kernel = createKernel(database, undefined, { tenantId });
@@ -276,7 +277,7 @@ describe("打印中心 HTTP / WSS（e2e）", () => {
   it("代理 WSS 连接：token 鉴权后收到 hello，并可通过连接领任务", async (ctx) => {
     const database = db;
     if (!available || !database) {
-      ctx.skip();
+      requirePrintTestEnv(ctx, "Nest 应用或打印表不可用（PostgreSQL 未迁移）");
       return;
     }
     const kernel = createKernel(database, undefined, { tenantId });

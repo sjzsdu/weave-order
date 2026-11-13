@@ -20,6 +20,9 @@
     "build": "tsc -p tsconfig.build.json",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "migrate:repair": "tsx src/repair-migration-state.ts",
+    "migrate:check": "tsx src/check-migration-state.ts",
+    "migrate:guard": "tsx src/check-migration-immutability.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src"
   },
