@@ -5,6 +5,7 @@ const RANDOM_SECRET = "a".repeat(64);
 const base = {
   QUOTE_SHARE_SECRET: RANDOM_SECRET,
   PRINT_AGENT_SECRET: RANDOM_SECRET,
+  PERSONAL_TOKEN_PEPPER: RANDOM_SECRET,
 } as const;
 
 describe("LiteLLM key 的生产门控（与 QUOTE_SHARE_SECRET 同一处）", () => {

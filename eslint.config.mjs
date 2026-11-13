@@ -41,6 +41,8 @@ export default tseslint.config(
       "**/.next/**",
       "**/next-env.d.ts",
       "**/coverage/**",
+      // CLI 启动器是纯 JS 薄壳，不进 TS project service（逻辑在 src/）。
+      "apps/cli/bin/**",
       "**/*.config.js",
       "**/*.config.mjs",
       "**/*.config.cjs",
@@ -98,6 +100,8 @@ export default tseslint.config(
       "apps/api/src/tools/**/*.ts",
       "apps/api/src/approval/**/*.ts",
       "apps/api/src/import/**/*.ts",
+      // 凭据层同样不得直连数据库：令牌表只能经 kernel.access 读写。
+      "apps/api/src/auth/**/*.ts",
     ],
     rules: {
       "no-restricted-imports": [

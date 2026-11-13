@@ -4,6 +4,7 @@ import { AppDatabaseProvider, DatabaseProvider } from "../platform/database.prov
 import { loadEnv } from "../platform/env";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
+import { PersonalAccessService } from "../auth/personal-access.service";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { createCasdoorVerifier, createDevVerifier } from "./oidc";
@@ -40,19 +41,27 @@ const providers: Provider[] = [
     inject: [DatabaseProvider],
   },
   {
+    // 凭据表是控制面数据，用 owner 连接（DIRECTORY_KERNEL 的 db）读写。
+    provide: PersonalAccessService,
+    useFactory: (directory: Kernel): PersonalAccessService =>
+      new PersonalAccessService(directory.access),
+    inject: [DIRECTORY_KERNEL],
+  },
+  {
     provide: AuthService,
     useFactory: (
       app: AppDatabaseProvider,
       verifier: TokenVerifier,
       directory: Kernel,
-    ): AuthService => new AuthService(app.pool, verifier, directory),
-    inject: [AppDatabaseProvider, TOKEN_VERIFIER, DIRECTORY_KERNEL],
+      personalTokens: PersonalAccessService,
+    ): AuthService => new AuthService(app.pool, verifier, directory, personalTokens),
+    inject: [AppDatabaseProvider, TOKEN_VERIFIER, DIRECTORY_KERNEL, PersonalAccessService],
   },
 ];
 
 @Module({
   controllers: [AuthController],
   providers,
-  exports: [AuthService],
+  exports: [AuthService, PersonalAccessService],
 })
 export class GatewayModule {}

@@ -2,6 +2,8 @@
 export const KERNEL = Symbol("WEAVE_KERNEL");
 export const TOOLS = Symbol("WEAVE_TOOLS");
 export const HUMAN_ACTOR = Symbol("WEAVE_HUMAN_ACTOR");
+/** 工具调用身份：PAT 的 write 作用域与驱动者审计从这里注入。 */
+export const AGENT_ACTOR = Symbol("WEAVE_AGENT_ACTOR");
 
 export const QUOTE_AGENT = Symbol("QUOTE_AGENT");
 export const PUBLIC_SHARE = Symbol("WEAVE_PUBLIC_SHARE");

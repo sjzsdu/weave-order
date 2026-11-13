@@ -71,6 +71,13 @@
       "when": 1794551120412,
       "tag": "0009_chubby_venom",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794559216616,
+      "tag": "0010_personal-access-tokens",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { Controller, Get, Headers, HttpException, HttpStatus, Inject, Query } fr
 import { ApiErrorResponse } from "@weave-order/schema";
 import type { Membership } from "@weave-order/schema";
 import { isKernelError } from "../kernel";
+import { AuthError } from "../auth/errors";
 import { humanScopeOf } from "../kernel/data-scope";
 import { AuthService } from "./auth.service";
 
@@ -13,6 +14,9 @@ function fail(status: number, code: string, message: string): HttpException {
 /** 统一把鉴权 / 内核错误映射成契约里的 ApiErrorResponse。 */
 function toHttpError(error: unknown): HttpException {
   if (error instanceof HttpException) return error;
+  if (error instanceof AuthError) {
+    return fail(error.status, error.code, error.message);
+  }
   if (isKernelError(error)) {
     if (error.code === "PERMISSION_DENIED") {
       return fail(HttpStatus.FORBIDDEN, "FORBIDDEN", error.message);

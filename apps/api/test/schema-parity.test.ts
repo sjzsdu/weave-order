@@ -17,6 +17,7 @@ import {
   SampleShipmentStatus,
   ShipmentStatus,
   TenantStatus,
+  TokenScope,
   Unit,
 } from "@weave-order/schema";
 import {
@@ -25,8 +26,10 @@ import {
   customerTierEnum,
   dataScopeEnum,
   isolationModeEnum,
+  deviceAuthStatusEnum,
   llmScopeEnum,
   llmTaskEnum,
+  tokenScopeEnum,
   memberRoleEnum,
   membershipStatusEnum,
   orderShipmentStatusEnum,
@@ -88,6 +91,11 @@ describe("数据库枚举与契约枚举一致", () => {
     expect(revisionSourceEnum.enumValues).toEqual(RevisionSource.options);
     expect(revisionRequestStatusEnum.enumValues).toEqual(RevisionRequestStatus.options);
     expect(quoteShareEventEnum.enumValues).toEqual(QuoteShareEventType.options);
+  });
+
+  it("个人访问凭据作用域 / 设备授权状态（WAN-78）", () => {
+    expect(tokenScopeEnum.enumValues).toEqual(TokenScope.options);
+    expect(deviceAuthStatusEnum.enumValues).toEqual(["PENDING", "APPROVED", "CONSUMED", "DENIED"]);
   });
 
   it("LLM 配置 / 任务", () => {

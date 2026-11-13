@@ -5,6 +5,8 @@ import { isProductionLike } from "./runtime-mode";
 export const DEV_QUOTE_SHARE_SECRET = "dev-only-quote-share-secret-change-me-0001";
 /** 打印代理 token 的本地占位密钥；生产必须覆盖。 */
 export const DEV_PRINT_AGENT_SECRET = "dev-only-print-agent-secret-change-me-0001";
+/** 个人访问凭据（PAT）哈希的本地占位密钥；生产必须覆盖。 */
+export const DEV_PERSONAL_TOKEN_PEPPER = "dev-only-personal-token-pepper-change-me-0001";
 
 /** 仅本地/测试使用的 LiteLLM 占位 key；生产 + litellm provider 时拒绝启动。 */
 export const DEV_LITELLM_MASTER_KEY = "sk-local-dev";
@@ -53,6 +55,13 @@ const EnvSchema = z.object({
   PRINT_CJK_FONT_PATH: z.string().optional(),
   /** 可选：headless Chromium 路径，用于 HTML→PDF 精确渲染；缺省走内置版式。 */
   PRINT_CHROME_PATH: z.string().optional(),
+  /** 个人访问凭据（CLI / agent）哈希的 pepper；生产必须覆盖为 ≥32 字节随机值。 */
+  PERSONAL_TOKEN_PEPPER: z.string().min(16).default(DEV_PERSONAL_TOKEN_PEPPER),
+  /** CLI 登录确认页所在的租户端 Web 地址（与 API 分开部署）。 */
+  WEB_APP_URL: z.string().url().default("http://localhost:3001"),
+  /** CLI 设备登录确认码有效期与轮询间隔（秒）。 */
+  DEVICE_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  DEVICE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -65,6 +74,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(
       "生产/OIDC 模式必须显式配置 QUOTE_SHARE_SECRET（≥32 字节随机值，例如 openssl rand -hex 32）；" +
         "否则报价链接与匿名 IP 哈希会使用公开的默认密钥。",
+    );
+  }
+  if (isProductionLike(env) && env.PERSONAL_TOKEN_PEPPER === DEV_PERSONAL_TOKEN_PEPPER) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 PERSONAL_TOKEN_PEPPER（≥16 字节随机值，例如 openssl rand -hex 32）；" +
+        "否则 PAT 的哈希 pepper 是公开默认值。",
     );
   }
   if (isProductionLike(env) && env.PRINT_AGENT_SECRET === DEV_PRINT_AGENT_SECRET) {
