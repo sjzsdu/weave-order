@@ -98,6 +98,7 @@ weave-order/
 | G8  | 依赖方向单向         | `apps → packages`，禁止反向与循环依赖（Turborepo 边界 + ESLint no-restricted-imports 强制）      |
 | G9  | 敏感字段脱敏         | 手机号、银行账号出网/进 LLM 前脱敏；成本底线、合同价、客户名单默认不进外部模型                   |
 | G10 | 草稿即默认           | 所有 AI 产出为 `DRAFT`，批准后经内核 confirm 才生效；金额类动作永不低于 L1                       |
+| G11 | 数据库迁移只增不改   | 已合并的迁移文件与 journal（`tag`/`when`/`idx`）永不改写；变更一律 `pnpm db:generate` 新增迁移（`migrate:guard` + CI `migrate-upgrade` 强制，见 §5） |
 
 ---
 
@@ -160,6 +161,30 @@ weave-order/
 | `packages/db`     | Drizzle schema + 迁移 + RLS 策略；所有业务表带 `tenant_id`；只在 `apps/api` 被 import            |
 | `packages/core`   | 前端业务逻辑（hooks/API client/离线队列）；不依赖具体端框架，供 web/mobile/admin 复用            |
 | `packages/ui`     | 设计系统组件与 tokens；桌面 + admin 复用；移动端用 Taro 组件（对齐 tokens，不直接复用 DOM 组件） |
+
+### packages/db：数据库迁移纪律（G11 的执行细则）
+
+**机制事实**：drizzle 的 `migrate()` 是否重放某条迁移，只看 `drizzle.__drizzle_migrations.created_at`
+最大值与 journal 条目 `when` 的大小（`when > max(created_at)` 即重放该条及之后的迁移），`hash` 只写入、
+不参与判定。所以**任何对已合并迁移文件或 journal `when` 的改写，都会让存量库重放老迁移**，撞上
+`type/table already exists` 卡死——这正是 WAN-98 的根因。
+
+纪律（append-only）：
+
+1. 已合并的 `packages/db/drizzle/*.sql` 不可改写、不可删除；`meta/_journal.json` 中既有条目的
+   `tag` / `when` / `idx` 不可变。需要变更就 `pnpm db:generate` **新增**一条迁移。
+2. 迁移文件与 journal 条目同一 PR 原子提交（`drizzle-kit generate` 自动成对生成）。
+3. 新增迁移优先 `IF NOT EXISTS` 幂等写法；不依赖隐式执行顺序。
+
+强制手段：
+
+- `pnpm --filter @weave-order/db migrate:guard -- <base-ref>`：对比基线，改写/删除已合并迁移直接红。
+- CI `migrate-upgrade` job（`.github/workflows/ci.yml`，每次 PR 运行）：守卫 → 按基线迁移出
+  「上一个已发布修订」的库 → 恢复 PR 头做增量迁移 → `pnpm db:check` 验收。
+
+存量库已卡死（`already exists` / 记录漂移）：`pnpm db:repair` 只读体检 → 审阅计划 →
+`pnpm db:repair -- --apply`（单事务对齐 + 直接执行水位空洞迁移）→ `pnpm db:migrate` → `pnpm db:check`。
+完整手册见 `packages/db/README.md`。
 
 ---
 
