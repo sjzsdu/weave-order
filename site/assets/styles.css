@@ -1812,13 +1812,15 @@ h3 {
 
 /* --------------------------------------------------------------- reveal */
 
-.reveal {
+/* 入场动画只在 JS 可用时启用：无 JS 或脚本失败时内容原样可见 */
+.js .reveal {
   opacity: 0;
   transform: translateY(18px);
   transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.js .reveal.is-in,
 .reveal.is-in {
   opacity: 1;
   transform: none;
