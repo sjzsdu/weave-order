@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import type { Provider } from "@nestjs/common";
+import { PersonalAccessController } from "../auth/auth.controller";
 import { GatewayModule } from "../gateway/gateway.module";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
@@ -25,10 +26,19 @@ import {
   RevisionController,
   QuoteAgentController,
 } from "./controllers";
+import { AgentActorService } from "./agent-actor.service";
 import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
 import { PrintAgentController, PrintController } from "./print.controllers";
-import { HUMAN_ACTOR, KERNEL, PUBLIC_RATE_LIMIT, PUBLIC_SHARE, QUOTE_AGENT, TOOLS } from "./tokens";
+import {
+  AGENT_ACTOR,
+  HUMAN_ACTOR,
+  KERNEL,
+  PUBLIC_RATE_LIMIT,
+  PUBLIC_SHARE,
+  QUOTE_AGENT,
+  TOOLS,
+} from "./tokens";
 
 const providers: Provider[] = [
   {
@@ -45,6 +55,11 @@ const providers: Provider[] = [
   {
     provide: HUMAN_ACTOR,
     useExisting: HumanActorService,
+  },
+  AgentActorService,
+  {
+    provide: AGENT_ACTOR,
+    useExisting: AgentActorService,
   },
   QuoteAgentService,
   PrintAgentAuthService,
@@ -71,6 +86,7 @@ const providers: Provider[] = [
   imports: [DatabaseModule, GatewayModule],
   controllers: [
     HealthController,
+    PersonalAccessController,
     CatalogController,
     QuoteController,
     AuditController,

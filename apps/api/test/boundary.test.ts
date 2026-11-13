@@ -52,6 +52,12 @@ async function importRule(): Promise<RuleEntry | undefined> {
   return (await resolvedRules("apps/api/src/import/parse.ts"))["no-restricted-imports"];
 }
 
+async function authRule(): Promise<RuleEntry | undefined> {
+  return (await resolvedRules("apps/api/src/auth/personal-access.service.ts"))[
+    "no-restricted-imports"
+  ];
+}
+
 async function httpRule(): Promise<RuleEntry | undefined> {
   return (await resolvedRules("apps/api/src/http/controllers.ts"))["no-restricted-imports"];
 }
@@ -67,6 +73,7 @@ describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", (
     const approvalRules = await resolvedRules("apps/api/src/approval/foo.ts");
     const importRules = await resolvedRules("apps/api/src/import/parse.ts");
     const httpRules = await resolvedRules("apps/api/src/http/controllers.ts");
+    const authRules = await resolvedRules("apps/api/src/auth/personal-access.service.ts");
     const kernelRules = await resolvedRules("apps/api/src/kernel/foo.ts");
     const schemaRules = await resolvedRules("packages/schema/src/index.ts");
 
@@ -75,6 +82,7 @@ describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", (
     expect(approvalRules["no-restricted-imports"]).toBeDefined();
     expect(importRules["no-restricted-imports"]).toBeDefined();
     expect(httpRules["no-restricted-imports"]).toBeDefined();
+    expect(authRules["no-restricted-imports"]).toBeDefined();
     expect(kernelRules["no-restricted-imports"]).toBeUndefined();
     expect(schemaRules["no-restricted-imports"]).toBeUndefined();
   });
@@ -173,6 +181,26 @@ describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", (
         ).toContain("no-restricted-imports");
       }
     }
+  });
+
+  it("凭据层绕过 kernel.access 直连数据库被拦（WAN-78）", async () => {
+    const rule = await authRule();
+    for (const source of ["drizzle-orm", "@weave-order/db", "pg"]) {
+      expect(
+        restrictedRuleIds(
+          "apps/api/src/auth/personal-access.service.ts",
+          `import x from "${source}";`,
+          rule,
+        ),
+      ).toContain("no-restricted-imports");
+    }
+    expect(
+      restrictedRuleIds(
+        "apps/api/src/auth/personal-access.service.ts",
+        'import { createKernel } from "../kernel";',
+        rule,
+      ),
+    ).not.toContain("no-restricted-imports");
   });
 
   it("非 kernel 路径（../tools）不误伤 agent", async () => {

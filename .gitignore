@@ -23,6 +23,9 @@ coverage/
 # vitest JSON 报告（CI 打印用例守卫的输入）
 test-results/
 
-# Python 缓存（品牌生成脚本）
+# Rust / Tauri 构建产物与自动生成文件
+**/gen/schemas/
+
+# Python 缓存（品牌生成脚本 brand/tools）
 __pycache__/
 *.pyc

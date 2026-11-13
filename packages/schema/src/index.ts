@@ -12,6 +12,7 @@ export * from "./llm";
 export * from "./kernel";
 export * from "./approval";
 export * from "./import";
+export * from "./auth";
 export * from "./tools/t001-search-fabric-by-image";
 export * from "./tools/t002-search-fabric-by-spec";
 export * from "./tools/t003-get-customer-history";

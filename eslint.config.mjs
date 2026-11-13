@@ -41,6 +41,8 @@ export default tseslint.config(
       "**/.next/**",
       "**/next-env.d.ts",
       "**/coverage/**",
+      // CLI 启动器是纯 JS 薄壳，不进 TS project service（逻辑在 src/）。
+      "apps/cli/bin/**",
       "**/*.config.js",
       "**/*.config.mjs",
       "**/*.config.cjs",
@@ -48,6 +50,9 @@ export default tseslint.config(
       // 纯 Node ESM 运维脚本不参与类型检查（不在任何 tsconfig 的 project 里），
       // 由 prettier 统一风格；CI 用例见 scripts/ 与 apps/mobile/scripts/。
       "**/scripts/**/*.mjs",
+      // 官网是零构建静态站（原生 JS，不在任何 tsconfig project 里），
+      // 不参与类型检查与 lint；改动由 site/README.md 的预览步骤自查。
+      "site/**",
       "apps/mobile/src/pwa/**",
       "apps/print-agent/src/**",
       "packages/db/drizzle/**",
@@ -98,6 +103,8 @@ export default tseslint.config(
       "apps/api/src/tools/**/*.ts",
       "apps/api/src/approval/**/*.ts",
       "apps/api/src/import/**/*.ts",
+      // 凭据层同样不得直连数据库：令牌表只能经 kernel.access 读写。
+      "apps/api/src/auth/**/*.ts",
     ],
     rules: {
       "no-restricted-imports": [

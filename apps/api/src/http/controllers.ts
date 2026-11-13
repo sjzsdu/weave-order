@@ -21,9 +21,9 @@ import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
 import { toToolError } from "../tools/errors";
-import { AGENT_CONTEXT } from "./context";
+import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
-import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
@@ -62,6 +62,7 @@ export class CatalogController {
     @Inject(KERNEL) private readonly kernel: Kernel,
     @Inject(TOOLS) private readonly tools: Tools,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+    @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
   ) {}
 
   @Get("customers")
@@ -69,32 +70,57 @@ export class CatalogController {
     @Query("limit") limit?: string,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
-      customers: await kernel.customers.list(clampLimit(limit, 20, 100), ctx),
-    }));
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => ({
+        customers: await kernel.customers.list(clampLimit(limit, 20, 100), ctx),
+      }),
+      { scope: "read" },
+    );
   }
 
   @Get("samples")
   async samples(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
-      samples: await kernel.search.listSamples(clampLimit(limit, 50, 200), ctx),
-    }));
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => ({
+        samples: await kernel.search.listSamples(clampLimit(limit, 50, 200), ctx),
+      }),
+      { scope: "read" },
+    );
   }
 
   @Post("tools/search-by-spec")
-  async searchBySpec(@Body() body: unknown) {
-    return this.tools.searchFabricBySpec.execute(body, AGENT_CONTEXT);
+  async searchBySpec(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.tools.searchFabricBySpec.execute(body, await this.agent.context(authorization));
   }
 
   @Post("tools/search-by-image")
-  async searchByImage(@Body() body: unknown) {
-    return this.tools.searchFabricByImage.execute(body, AGENT_CONTEXT);
+  async searchByImage(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.tools.searchFabricByImage.execute(body, await this.agent.context(authorization));
   }
 
   /** 意图派发（Intent Bar）：建寄样单只能得到 DRAFT，确认走审批窗口。 */
   @Post("tools/create-sample-shipment")
-  async createSampleShipment(@Body() body: unknown) {
-    return this.tools.createSampleShipment.execute(body, AGENT_CONTEXT);
+  async createSampleShipment(
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.tools.createSampleShipment.execute(body, await this.agent.context(authorization));
+  }
+
+  /** 客户 360：读客户档案 + 最近报价 / 订单 / 样品，供 CLI / agent 在报价前取上下文。 */
+  @Post("tools/get-customer-history")
+  async getCustomerHistory(
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.tools.getCustomerHistory.execute(
+      body,
+      await this.agent.context(authorization, "read"),
+    );
   }
 }
 
@@ -109,11 +135,12 @@ export class QuoteController {
     @Inject(TOOLS) private readonly tools: Tools,
     @Inject(KERNEL) private readonly kernel: Kernel,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+    @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
   ) {}
 
   @Post("tools/generate-quote-draft")
-  async generateDraft(@Body() body: unknown) {
-    return this.tools.generateQuoteDraft.execute(body, AGENT_CONTEXT);
+  async generateDraft(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.tools.generateQuoteDraft.execute(body, await this.agent.context(authorization));
   }
 
   /** 人类改稿：版本 +1、重算、审计、改幅升级审批。 */
@@ -427,16 +454,21 @@ export class ApprovalController {
     @Query("cursor") cursor?: string,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
-      try {
-        return await createApprovalService(kernel).listPending(ctx, {
-          limit: clampLimit(limit, 50, 100),
-          cursor: cursor ?? null,
-        });
-      } catch (error) {
-        rethrowHttp(error);
-      }
-    });
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await createApprovalService(kernel).listPending(ctx, {
+            limit: clampLimit(limit, 50, 100),
+            cursor: cursor ?? null,
+          });
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
+      { scope: "read" },
+    );
   }
 
   /** 审批卡详情：出处 / diff / 草稿态，一次只读聚合。 */
@@ -452,21 +484,31 @@ export class ApprovalController {
         error: { code: "INVALID_INPUT", message: "kind 必须是 quote 或 sample_shipment" },
       });
     }
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
-      const detail = await createApprovalService(kernel).detail(id, parsed.data, ctx);
-      if (!detail) {
-        throw new NotFoundException({
-          error: { code: "NOT_FOUND", message: "审批单据不存在或已不在可查看范围" },
-        });
-      }
-      return detail;
-    });
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        const detail = await createApprovalService(kernel).detail(id, parsed.data, ctx);
+        if (!detail) {
+          throw new NotFoundException({
+            error: { code: "NOT_FOUND", message: "审批单据不存在或已不在可查看范围" },
+          });
+        }
+        return detail;
+      },
+      { scope: "read" },
+    );
   }
 
   @Post("decide")
   async decide(@Body() body: unknown, @Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) =>
-      createApprovalService(kernel).decide(body, ctx),
+    // 审批是唯一需要 approve 作用域的写操作：默认登录凭据没有它，
+    // agent 无法用登录 token 自己批准自己。
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => createApprovalService(kernel).decide(body, ctx),
+      { scope: "approve" },
     );
   }
 }
@@ -481,8 +523,11 @@ export class PanoramaController {
 
   @Get("panorama")
   async panorama(@Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) =>
-      createApprovalService(kernel).panorama(ctx),
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => createApprovalService(kernel).panorama(ctx),
+      { scope: "read" },
     );
   }
 }
