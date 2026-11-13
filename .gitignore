@@ -22,3 +22,6 @@ coverage/
 
 # vitest JSON 报告（CI 打印用例守卫的输入）
 test-results/
+
+# Rust / Tauri 构建产物与自动生成文件
+**/gen/schemas/
