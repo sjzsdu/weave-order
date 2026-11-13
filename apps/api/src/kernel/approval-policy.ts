@@ -11,6 +11,7 @@ import type { MemberRole, PricingContext } from "@weave-order/schema";
 import { numericValue } from "./pricing.service";
 import type { PricingService } from "./pricing.service";
 import { KernelError } from "./errors";
+import { isProductionLike } from "../platform/runtime-mode";
 
 /**
  * 审批分级与改幅升级的纯函数层。
@@ -128,8 +129,9 @@ export function assertCanApprove(
   actorRole: MemberRole | undefined,
   requirement: ApprovalRequirement,
 ): void {
-  // 生产必须由网关注入真实角色；缺角色 fail-closed。仅非生产兼容旧测试与 demo。
-  const role = actorRole ?? (process.env.NODE_ENV === "production" ? undefined : "OWNER");
+  // 生产态（NODE_ENV=production 或 AUTH_MODE=oidc）必须由网关注入真实角色；缺角色 fail-closed。
+  // 仅本地/测试保留 OWNER 回退，方便既有 demo 与集成测试。
+  const role = actorRole ?? (isProductionLike(process.env) ? undefined : "OWNER");
   if (!role) {
     throw new KernelError("PERMISSION_DENIED", "缺少审批人角色，拒绝审批");
   }

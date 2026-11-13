@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { isProductionLike } from "./runtime-mode";
 
 /**
  * 业务连接池的启动期守卫。
@@ -20,7 +21,7 @@ export interface AppDatabaseResolution {
 export function resolveAppDatabaseUrl(
   env: Pick<Env, "APP_DATABASE_URL" | "DATABASE_URL" | "NODE_ENV" | "AUTH_MODE">,
 ): AppDatabaseResolution {
-  const strict = env.NODE_ENV === "production" || env.AUTH_MODE === "oidc";
+  const strict = isProductionLike(env);
   if (!env.APP_DATABASE_URL) {
     if (strict) {
       throw new Error(
