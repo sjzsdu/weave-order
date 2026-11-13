@@ -46,6 +46,7 @@ export default tseslint.config(
       "**/*.config.cjs",
       "**/*.config.ts",
       "apps/mobile/src/pwa/**",
+      "apps/print-agent/src/**",
       "packages/db/drizzle/**",
     ],
   },

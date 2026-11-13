@@ -237,6 +237,17 @@ export class OrderController {
     }));
   }
 
+  @Get("orders/:id")
+  async detail(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      try {
+        return { order: await kernel.orders.getById(id) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
   @Post("orders")
   async create(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     return this.human.run(authorization, this.kernel, async (kernel, ctx) => {

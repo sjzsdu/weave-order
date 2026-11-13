@@ -4,9 +4,15 @@ import {
   ApprovalQueue,
   AuthContextResponse,
   CreatedQuoteShare,
+  PrintCenterSnapshot,
+  PrintDevices,
+  PrintJobList,
+  PrintLogList,
+  PrintTemplateList,
   PanoramaSnapshot,
   QuoteShareStats,
   QuoteShareStatsList,
+  ShipmentView,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
 } from "@weave-order/schema";
@@ -28,6 +34,7 @@ const QUOTE_ID = "44444444-4444-4444-8444-444444444444";
 const MEMBERSHIP_ID = "55555555-5555-4555-8555-555555555555";
 const AUDIT_ID = "66666666-6666-4666-8666-666666666666";
 const REVISION_ID = "77777777-7777-4777-8777-777777777777";
+const SHIPMENT_ID = "88888888-8888-4888-8888-888888888888";
 
 const NOW = "2026-11-12T09:00:00.000Z";
 const EXPIRES = "2026-11-26T09:00:00.000Z";
@@ -384,6 +391,72 @@ export function createMockApiClient(): ApiClient {
           lastViewedAt: NOW,
           lastActivityAt: NOW,
           questions: [],
+        }),
+      ),
+
+    // ---- 打印中心（demo 没有代理与任务，保持空态；真实写入一律走后端） ----
+    orders: () => Promise.resolve([]),
+
+    order: () => Promise.reject(new Error("演示模式没有订单详情")),
+
+    orderShipments: () => Promise.resolve([]),
+
+    shippingPending: () => Promise.resolve([]),
+
+    printCenter: () =>
+      Promise.resolve(
+        PrintCenterSnapshot.parse({
+          queue: { jobs: [], counts: { queued: 0, failed: 0, done: 0 } },
+          templates: [],
+          devices: { agents: [], printers: [] },
+          logs: [],
+          pendingShipments: [],
+        }),
+      ),
+
+    printJobs: () =>
+      Promise.resolve(PrintJobList.parse({ jobs: [], counts: { queued: 0, failed: 0, done: 0 } })),
+
+    enqueuePrintJob: () => Promise.reject(new Error("演示模式不实际打印")),
+    printShipmentBundle: () => Promise.reject(new Error("演示模式不实际打印")),
+    cancelPrintJob: () => Promise.reject(new Error("演示模式没有打印任务")),
+    retryPrintJob: () => Promise.reject(new Error("演示模式没有打印任务")),
+    printLogs: () => Promise.resolve(PrintLogList.parse({ logs: [] }).logs),
+    printTemplates: () => Promise.resolve(PrintTemplateList.parse({ templates: [] })),
+    publishPrintTemplate: () => Promise.reject(new Error("演示模式不发布模板")),
+    publishPrintTemplateVersion: () => Promise.reject(new Error("演示模式不发布模板")),
+    printDevices: () => Promise.resolve(PrintDevices.parse({ agents: [], printers: [] })),
+    registerPrintAgent: () => Promise.reject(new Error("演示模式不注册代理")),
+    disablePrintAgent: () => Promise.reject(new Error("演示模式不管理代理")),
+    createShipment: () => Promise.reject(new Error("演示模式不创建发货单")),
+    shipShipment: () => Promise.reject(new Error("演示模式不确认发货")),
+    createBoxes: () => Promise.reject(new Error("演示模式不建箱")),
+    pickScan: () => Promise.reject(new Error("演示模式不扫码")),
+    verifyScan: () => Promise.reject(new Error("演示模式不扫码")),
+    reprintBox: () => Promise.reject(new Error("演示模式不补打")),
+    voidBox: () => Promise.reject(new Error("演示模式不作废箱")),
+    resolveDiscrepancy: () => Promise.reject(new Error("演示模式不处理差异")),
+    shipment: () =>
+      Promise.resolve(
+        ShipmentView.parse({
+          id: SHIPMENT_ID,
+          orderId: QUOTE_ID,
+          orderNo: "WO-DEMO-001",
+          customerId: CUSTOMER_ID,
+          customerName: customer.name,
+          status: "DRAFT",
+          currency: "CNY",
+          carrier: "顺丰",
+          trackingNumber: null,
+          address: "绍兴市柯桥区创意路 8 号",
+          items: [],
+          boxes: [],
+          scans: [],
+          totalQuantity: 0,
+          boxQuantity: 0,
+          printBlockedReason: "NO_BOXES",
+          createdAt: NOW,
+          shippedAt: null,
         }),
       ),
   };

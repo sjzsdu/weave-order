@@ -3,6 +3,7 @@ import type { Db } from "@weave-order/db";
 import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { loadEnv } from "../platform/env";
+import { createPrintCenter } from "../print";
 import { listAuditLog } from "./audit";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
@@ -10,6 +11,7 @@ import { UsageService } from "./usage.service";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
 import { OrderService } from "./orders.service";
+import { OrderShipmentService } from "./order-shipments.service";
 import { PricingService } from "./pricing.service";
 import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
@@ -53,6 +55,7 @@ export function createKernel(
   const shipments = new ShipmentService(db, customers, tenantId);
   const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
   const orders = new OrderService(db, customers, pricing, tenantId);
+  const orderShipments = new OrderShipmentService(db, tenantId);
   const receivables = new ReceivableService(db, tenantId);
   const revisions = new RevisionService(db, tenantId);
   const search = new SearchService(db, embedder, tenantId);
@@ -66,6 +69,7 @@ export function createKernel(
     secret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
   });
+  const print = createPrintCenter(db, tenantId);
 
   return {
     tenantId,
@@ -75,6 +79,7 @@ export function createKernel(
     shipments,
     quotes,
     orders,
+    orderShipments,
     receivables,
     revisions,
     search,
@@ -84,6 +89,7 @@ export function createKernel(
     llmSettings,
     usage,
     shares,
+    print,
     audit: {
       list: (limit?: number) => listAuditLog(db, limit, tenantId),
     },

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>织序打印代理</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>织序打印代理</h1>
+        <p class="hint">常驻办公室/仓库 · WSS 出站长连接 · 不开放入站端口</p>
+      </div>
+      <span id="status" class="status offline">未连接</span>
+    </header>
+
+    <main>
+      <section>
+        <h2>1. 连接云端</h2>
+        <p class="hint">
+          token 只能打印、不能读业务数据；在织序「打印中心 → 设备 → 注册打印代理」生成。
+        </p>
+        <label
+          >云端地址（API 根）<input id="serverUrl" placeholder="https://api.weaveorder.cn"
+        /></label>
+        <label
+          >代理 token<textarea id="token" rows="3" placeholder="eyJhbGciOiJIUzI1NiIs…"></textarea>
+        </label>
+        <label>代理名称<input id="agentName" placeholder="仓库打印代理" /></label>
+        <button id="save" class="primary">保存并重连</button>
+      </section>
+
+      <section>
+        <div class="row">
+          <h2>2. 打印机</h2>
+          <button id="discover">重新发现</button>
+        </div>
+        <p class="hint">热敏打印机建议填网络地址（RAW TCP 9100）；A4 走系统驱动。</p>
+        <ul id="printers" class="printers"></ul>
+        <button id="savePrinters">保存打印机 profile</button>
+      </section>
+
+      <section>
+        <div class="row">
+          <h2>3. 本地数据</h2>
+          <button id="clear">一键清空</button>
+        </div>
+        <p class="hint">任务载荷只在本地保留 ≤24h；日志只记录任务 ID/结果，不记录客户数据。</p>
+        <p>待打印：<strong id="pending">0</strong> · 失败：<strong id="failed">0</strong></p>
+        <button id="test">打印测试标签</button>
+      </section>
+
+      <section>
+        <h2>日志（脱敏）</h2>
+        <pre id="log"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

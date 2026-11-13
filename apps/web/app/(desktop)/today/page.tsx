@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useApprovals, useDecideApproval, usePanorama } from "@weave-order/core";
+import {
+  useApprovals,
+  useDecideApproval,
+  usePanorama,
+  useShippingPending,
+} from "@weave-order/core";
 import {
   AgentRunStrip,
   Badge,
@@ -37,6 +42,7 @@ function TodayPageContent() {
   const api = useApi();
   const panorama = usePanorama(api);
   const approvals = useApprovals(api);
+  const shipping = useShippingPending(api);
   const decide = useDecideApproval(api);
   const [notice, setNotice] = useState<string | null>(null);
   const [intents, setIntents] = useState<string[]>([]);
@@ -124,6 +130,42 @@ function TodayPageContent() {
         )}
       </section>
 
+      {(shipping.data?.length ?? 0) > 0 && (
+        <section className="rounded-lg border border-line bg-surface px-5 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-medium text-ink-700">待发货</h2>
+              <p className="mt-0.5 text-xs text-ink-400">
+                扫码拣货 → 建箱 → 一键打「拣货单 + 箱唛 + 发货单」→ 扫码复核。
+              </p>
+            </div>
+            <Badge tone="info">{shipping.data?.length} 单</Badge>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {shipping.data?.slice(0, 4).map((item) => (
+              <Link
+                key={item.orderId}
+                href={`/shipping/${item.orderId}`}
+                className="flex items-center justify-between rounded-md border border-line px-3 py-2 hover:border-indigo-600"
+              >
+                <span>
+                  <span className="text-sm font-medium text-ink-900">{item.orderNo}</span>
+                  <span className="ml-2 text-xs text-ink-400">{item.customerName}</span>
+                  {item.hasDiscrepancy && (
+                    <Badge tone="danger" className="ml-2">
+                      差异
+                    </Badge>
+                  )}
+                </span>
+                <span className="text-xs text-ink-400">
+                  发 {item.shippedQuantity} / {item.totalQuantity} · {item.shipmentCount} 张
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
         <section className="grid content-start gap-3">
           <h2 className="text-sm font-medium text-ink-700">等你决定</h2>
@@ -133,7 +175,10 @@ function TodayPageContent() {
               title="今天没有要你决定的事。"
               description="小织在跟 12 个客户；新的草稿会出现在这里。"
               actions={
-                <Link href="/panorama" className="text-sm text-indigo-600 underline underline-offset-2">
+                <Link
+                  href="/panorama"
+                  className="text-sm text-indigo-600 underline underline-offset-2"
+                >
                   看业务全景
                 </Link>
               }
@@ -185,7 +230,10 @@ function TodayPageContent() {
 
         <section className="grid content-start gap-3">
           <h2 className="text-sm font-medium text-ink-700">正在进行</h2>
-          <AgentRunStrip runs={runs} empty={<p className="text-sm text-ink-400">今天没有智能体动态。</p>} />
+          <AgentRunStrip
+            runs={runs}
+            empty={<p className="text-sm text-ink-400">今天没有智能体动态。</p>}
+          />
 
           <h2 className="mt-2 text-sm font-medium text-ink-700">出事了</h2>
           <div

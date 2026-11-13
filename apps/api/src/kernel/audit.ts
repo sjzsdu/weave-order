@@ -33,7 +33,7 @@ export interface AuditWrite {
  * 审计写入失败 => 整个事务回滚，账本不会出现「改了但没有记录」的状态。
  */
 export async function appendAudit(
-  tx: Tx,
+  tx: Db | Tx,
   ctx: KernelContext,
   entry: AuditWrite,
   tenantId: string = ctx.tenantId ?? DEFAULT_TENANT_ID,

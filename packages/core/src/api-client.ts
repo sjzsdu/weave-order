@@ -7,17 +7,37 @@ import {
   AuthContextResponse,
   CreatedQuoteShare,
   CreateQuoteShareInput,
+  CreateBoxesInput,
+  CreatePrintJobInput,
+  CreateShipmentInput,
   Customer,
   FabricSample,
+  Order,
+  OrderShippingSummary,
   PanoramaSnapshot,
+  PrintCenterSnapshot,
+  PrintDevices,
+  PrintJob,
+  PrintJobBatchResult,
+  PrintJobList,
+  PrintLogList,
+  PrintTemplateList,
+  PublishPrintTemplateInput,
+  PublishPrintTemplateVersionInput,
+  PickScanInput,
   QuoteShareStats,
   QuoteShareStatsList,
+  RegisterPrintAgentInput,
+  ScanResult,
+  Shipment,
+  ShipmentView,
   T002SearchFabricBySpecInput,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
+  VerifyScanInput,
 } from "@weave-order/schema";
-import type { ApprovalKind } from "@weave-order/schema";
+import type { ApprovalKind, ReprintReason } from "@weave-order/schema";
 
 /**
  * 前端唯一 API 入口。
@@ -45,6 +65,16 @@ export class ApiError extends Error {
 
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
 const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
+const OrdersResponse = z.object({ orders: z.array(Order) }).strict();
+const PendingShippingResponse = z.object({ orders: z.array(OrderShippingSummary) }).strict();
+const EnqueuePrintJobResponse = z
+  .object({
+    job: PrintJob,
+    deduplicated: z.boolean(),
+    message: z.string(),
+  })
+  .strict();
+const TemplateResponse = z.object({ template: z.unknown() }).passthrough();
 const OkQuoteShareStats = z.object({ ok: z.literal(true), data: QuoteShareStats }).strict();
 const OkQuoteShareStatsList = z.object({ ok: z.literal(true), data: QuoteShareStatsList }).strict();
 const AuditResponse = z.object({
@@ -157,6 +187,164 @@ export function createApiClient(options: ApiClientOptions) {
     revokeQuoteShare: async (shareId: string) =>
       OkQuoteShareStats.parse(await post(`/api/shares/${encodeURIComponent(shareId)}/revoke`, {}))
         .data,
+
+    // ---- 打印中心（E5）----
+    orders: async (limit = 50) =>
+      OrdersResponse.parse(await request(`/api/orders?limit=${limit}`)).orders,
+
+    order: async (orderId: string) =>
+      z.object({ order: Order }).parse(await request(`/api/orders/${orderId}`)).order,
+
+    orderShipments: async (orderId: string) =>
+      z
+        .object({ shipments: z.array(Shipment) })
+        .parse(await request(`/api/orders/${orderId}/shipments`)).shipments,
+
+    shippingPending: async () =>
+      PendingShippingResponse.parse(await request("/api/shipping/pending")).orders,
+
+    printCenter: async () => PrintCenterSnapshot.parse(await request("/api/print/center")),
+
+    printJobs: async (status?: string) =>
+      PrintJobList.parse(
+        await request(`/api/print/jobs${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+      ),
+
+    enqueuePrintJob: async (input: z.input<typeof CreatePrintJobInput>) =>
+      EnqueuePrintJobResponse.parse(
+        await post("/api/print/jobs", CreatePrintJobInput.parse(input)),
+      ),
+
+    printShipmentBundle: async (input: {
+      shipmentId: string;
+      pickingListCopies?: number;
+      deliveryNoteCopies?: number;
+      boxLabelCopies?: number;
+      printerId?: string | null;
+      labelPrinterId?: string | null;
+    }) => PrintJobBatchResult.parse(await post("/api/print/jobs/bundle", input)),
+
+    cancelPrintJob: async (jobId: string) =>
+      z.object({ job: PrintJob }).parse(await post(`/api/print/jobs/${jobId}/cancel`, {})).job,
+
+    retryPrintJob: async (jobId: string) =>
+      z.object({ job: PrintJob }).parse(await post(`/api/print/jobs/${jobId}/retry`, {})).job,
+
+    printLogs: async () => PrintLogList.parse(await request("/api/print/logs")).logs,
+
+    printTemplates: async () => PrintTemplateList.parse(await request("/api/print/templates")),
+
+    publishPrintTemplate: async (input: z.input<typeof PublishPrintTemplateInput>) =>
+      TemplateResponse.parse(
+        await post("/api/print/templates", PublishPrintTemplateInput.parse(input)),
+      ).template,
+
+    publishPrintTemplateVersion: async (
+      templateId: string,
+      input: z.input<typeof PublishPrintTemplateVersionInput>,
+    ) =>
+      TemplateResponse.parse(
+        await post(
+          `/api/print/templates/${templateId}/versions`,
+          PublishPrintTemplateVersionInput.parse({
+            ...input,
+            templateId,
+          }),
+        ),
+      ).template,
+
+    printDevices: async () => PrintDevices.parse(await request("/api/print/devices")),
+
+    registerPrintAgent: async (input: z.input<typeof RegisterPrintAgentInput>) =>
+      z
+        .object({ agent: z.unknown(), token: z.string() })
+        .parse(await post("/api/print/devices/agents", RegisterPrintAgentInput.parse(input))),
+
+    disablePrintAgent: async (agentId: string) =>
+      post(`/api/print/devices/agents/${agentId}/disable`, {}),
+
+    createShipment: async (
+      orderId: string,
+      input: Omit<z.input<typeof CreateShipmentInput>, "orderId">,
+    ) =>
+      z
+        .object({ shipment: z.unknown(), view: ShipmentView })
+        .parse(
+          await post(
+            `/api/orders/${orderId}/shipments`,
+            CreateShipmentInput.parse({ ...input, orderId }),
+          ),
+        ),
+
+    shipment: async (shipmentId: string) =>
+      ShipmentView.parse(await request(`/api/shipments/${shipmentId}`)),
+
+    shipShipment: async (shipmentId: string) =>
+      z
+        .object({ shipment: z.unknown(), view: ShipmentView })
+        .parse(await post(`/api/shipments/${shipmentId}/ship`, {})),
+
+    createBoxes: async (
+      shipmentId: string,
+      input: Omit<z.input<typeof CreateBoxesInput>, "shipmentId">,
+    ) =>
+      z
+        .object({ shipment: ShipmentView })
+        .passthrough()
+        .parse(
+          await post(`/api/shipments/${shipmentId}/boxes`, {
+            ...CreateBoxesInput.parse({ ...input, shipmentId }),
+          }),
+        ),
+
+    pickScan: async (
+      shipmentId: string,
+      input: Omit<z.input<typeof PickScanInput>, "shipmentId">,
+    ) =>
+      ScanResult.parse(
+        await post(
+          `/api/shipments/${shipmentId}/pick-scan`,
+          PickScanInput.parse({ ...input, shipmentId }),
+        ),
+      ),
+
+    verifyScan: async (
+      shipmentId: string,
+      input: Omit<z.input<typeof VerifyScanInput>, "shipmentId">,
+    ) =>
+      ScanResult.parse(
+        await post(
+          `/api/shipments/${shipmentId}/verify-scan`,
+          VerifyScanInput.parse({ ...input, shipmentId }),
+        ),
+      ),
+
+    reprintBox: async (
+      boxId: string,
+      reason: ReprintReason,
+      copies = 1,
+      printerId?: string | null,
+    ) =>
+      z
+        .object({ shipment: ShipmentView })
+        .passthrough()
+        .parse(
+          await post(`/api/print/boxes/${boxId}/reprint`, {
+            reason,
+            copies,
+            ...(printerId ? { printerId } : {}),
+          }),
+        ),
+
+    voidBox: async (boxId: string, reason: string) =>
+      z
+        .object({ shipment: ShipmentView })
+        .parse(await post(`/api/print/boxes/${boxId}/void`, { reason })),
+
+    resolveDiscrepancy: async (boxId: string, note: string) =>
+      z
+        .object({ shipment: ShipmentView })
+        .parse(await post(`/api/print/boxes/${boxId}/resolve-discrepancy`, { note })),
   };
 }
 

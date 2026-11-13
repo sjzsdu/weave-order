@@ -47,7 +47,18 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   llm_settings,
   token_usage,
   usage_monthly,
-  audit_log
+  audit_log,
+  print_templates,
+  print_template_versions,
+  print_agents,
+  printers,
+  document_snapshots,
+  print_jobs,
+  print_job_events,
+  order_boxes,
+  order_box_items,
+  box_labels,
+  scan_events
 TO weave_app;
 
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO weave_app;
@@ -81,7 +92,18 @@ DECLARE
     'quote_share_events',
     'token_usage',
     'usage_monthly',
-    'audit_log'
+    'audit_log',
+    'print_templates',
+    'print_template_versions',
+    'print_agents',
+    'printers',
+    'document_snapshots',
+    'print_jobs',
+    'print_job_events',
+    'order_boxes',
+    'order_box_items',
+    'box_labels',
+    'scan_events'
   ];
 BEGIN
   FOREACH t IN ARRAY business_tables LOOP

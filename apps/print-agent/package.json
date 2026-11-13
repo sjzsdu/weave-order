@@ -1,0 +1,16 @@
+{
+  "name": "@weave-order/print-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "E5 打印代理（Tauri 2 + Rust）：WSS 出站、本地 spool、A4/热敏打印",
+  "scripts": {
+    "dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build": "node -e \"console.log('print-agent: build 需 Rust 工具链，请用 pnpm --filter @weave-order/print-agent tauri:build')\"",
+    "typecheck": "node -e \"process.exit(0)\"",
+    "test": "node -e \"process.exit(0)\""
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}
