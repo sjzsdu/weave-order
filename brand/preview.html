@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>织序 WeaveOrder · 品牌板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #efe9df; color: #14202b; padding: 56px 64px 72px;
+    font-family: "Inter", "Noto Sans CJK SC", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.65; -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: "Noto Serif CJK SC", "Songti SC", serif; }
+  .label { font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8896; margin-bottom: 18px; }
+  .row { display: flex; gap: 48px; align-items: flex-end; flex-wrap: wrap; }
+  section { margin-bottom: 56px; }
+  .card { background: #f7f4ee; border: 1px solid #e3ded4; padding: 32px; }
+  .dark { background: #14202b; border-color: #14202b; }
+  h1 { font-family: "Noto Serif CJK SC", serif; font-size: 44px; line-height: 1.25; letter-spacing: -0.01em; }
+  .top { display: flex; gap: 20px; align-items: center; margin-bottom: 14px; }
+  .top img { width: 48px; height: 48px; }
+  .top .cn { font-family: "Noto Serif CJK SC", serif; font-size: 24px; font-weight: 700; letter-spacing: 0.1em; }
+  .top .en { font-size: 9px; letter-spacing: 0.28em; color: #7a8896; }
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .swatch { border: 1px solid #e3ded4; }
+  .swatch i { display: block; height: 76px; }
+  .swatch span { display: block; padding: 9px 11px; font-size: 11px; background: #f7f4ee; }
+  .swatch b { display: block; font-weight: 600; font-size: 11.5px; }
+  .swatch em { font-style: normal; color: #7a8896; font-family: ui-monospace, monospace; font-size: 10.5px; }
+  .type-row { display: flex; align-items: baseline; gap: 20px; border-bottom: 1px solid #e3ded4; padding: 12px 0; }
+  .type-row .meta { width: 150px; flex: none; font-size: 11px; color: #7a8896; font-family: ui-monospace, monospace; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .do { border-left: 2px solid #3f6b4f; padding-left: 16px; }
+  .dont { border-left: 2px solid #c0492f; padding-left: 16px; }
+  ul { list-style: none; }
+  li { padding: 5px 0; font-size: 13px; color: #2b3b4a; }
+  .tag { display: inline-block; border: 1px solid #e3ded4; border-radius: 999px; padding: 2px 10px; font-size: 11px; color: #7a8896; }
+  .footer { border-top: 1px solid #d3ccc0; padding-top: 16px; font-size: 11.5px; color: #7a8896; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<section>
+  <div class="top">
+    <img src="logo-mark.svg" alt="" />
+    <div>
+      <div class="cn">织序</div>
+      <div class="en">WEAVE ORDER</div>
+    </div>
+    <span class="tag" style="margin-left:12px">品牌板 v1.0</span>
+  </div>
+  <h1>你说生意，系统做单。</h1>
+  <p style="color:#4e5f6e;margin-top:10px">纺织贸易的智能体原生操作系统 · 找样、报价、寄样、跟单、对账由智能体完成，人只负责审批结果。</p>
+</section>
+
+<section>
+  <p class="label">01 · 标记与组合</p>
+  <div class="row">
+    <div>
+      <img src="logo-mark.svg" style="width:132px;height:132px" alt="主标记" />
+      <div class="label" style="margin:10px 0 0">主标记</div>
+    </div>
+    <div>
+      <img src="logo-mark-mono.svg" style="width:132px;height:132px" alt="单色标记" />
+      <div class="label" style="margin:10px 0 0">单色 · 小尺寸</div>
+    </div>
+    <div class="card dark" style="padding:22px">
+      <img src="logo-mark-inverse.svg" style="width:88px;height:88px" alt="反白标记" />
+    </div>
+    <div class="card dark" style="padding:18px 24px">
+      <img src="logo-mark-mono-inverse.svg" style="width:56px;height:56px" alt="单色反白" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:28px;align-items:stretch">
+    <div class="card" style="flex:1;min-width:420px;display:flex;align-items:center;justify-content:center">
+      <img src="logo-horizontal.svg" style="height:84px" alt="横版组合" />
+    </div>
+    <div class="card dark" style="flex:1;min-width:420px;display:flex;align-items:center;justify-content:center">
+      <img src="logo-horizontal-inverse.svg" style="height:84px" alt="横版组合反白" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:28px;align-items:center;gap:24px">
+    <span class="label" style="margin:0">最小尺寸</span>
+    <img src="logo-mark.svg" style="width:56px;height:56px" alt="" />
+    <img src="logo-mark.svg" style="width:40px;height:40px" alt="" />
+    <img src="logo-mark.svg" style="width:32px;height:32px" alt="" />
+    <img src="logo-mark-mono.svg" style="width:24px;height:24px" alt="" />
+    <img src="logo-mark-mono.svg" style="width:20px;height:20px" alt="" />
+    <img src="favicon.svg" style="width:16px;height:16px" alt="" />
+    <span class="label" style="margin:0 0 0 auto">安全边距 = 1/4 标记高度</span>
+  </div>
+</section>
+
+<section>
+  <p class="label">02 · 色彩</p>
+  <div class="swatches">
+    <div class="swatch"><i style="background:#14202B"></i><span><b>ink</b><em>#14202B</em></span></div>
+    <div class="swatch"><i style="background:#1F4E79"></i><span><b>indigo</b><em>#1F4E79</em></span></div>
+    <div class="swatch"><i style="background:#C0492F"></i><span><b>vermilion</b><em>#C0492F</em></span></div>
+    <div class="swatch"><i style="background:#F7F4EE"></i><span><b>paper</b><em>#F7F4EE</em></span></div>
+    <div class="swatch"><i style="background:#3F6B4F"></i><span><b>moss</b><em>#3F6B4F</em></span></div>
+    <div class="swatch"><i style="background:#B7791F"></i><span><b>amber</b><em>#B7791F</em></span></div>
+  </div>
+  <p style="margin-top:12px;font-size:12px;color:#7a8896">比例：米白 70% · 墨 20% · 靛蓝 8% · 朱砂 2%。朱砂只给「人的一笔」，一屏一次。</p>
+</section>
+
+<section>
+  <p class="label">03 · 字体</p>
+  <div class="type-row"><span class="meta">Noto Serif SC Bold / 44</span><span class="serif" style="font-size:44px;font-weight:700">把生意织成有序的单</span></div>
+  <div class="type-row"><span class="meta">Noto Serif SC Bold / 24</span><span class="serif" style="font-size:24px;font-weight:700">客户一句话，10 分钟出报价</span></div>
+  <div class="type-row"><span class="meta">Inter / 16</span><span>报价、寄样、跟单、对账，智能体做完，你只点头。</span></div>
+  <div class="type-row"><span class="meta">Inter / 13</span><span style="color:#4e5f6e">智能体只出草稿。批准是唯一能让它生效的动作。</span></div>
+  <div class="type-row"><span class="meta">JetBrains Mono / 22</span><span style="font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums">¥76,160.00</span></div>
+</section>
+
+<section>
+  <p class="label">04 · 图形语言</p>
+  <div class="grid2">
+    <div class="card" style="display:flex;gap:26px;align-items:center">
+      <div style="border:1px dashed #d3ccc0;background:#fff;padding:16px 18px;min-width:150px">
+        <div style="font-size:10px;letter-spacing:.16em;color:#7a8896">DRAFT · v3</div>
+        <div style="font-family:ui-monospace,monospace;font-size:20px;margin-top:4px">¥23.80</div>
+      </div>
+      <div>
+        <b style="font-size:13px">虚线即草稿，实线即生效</b>
+        <p style="font-size:12.5px;color:#4e5f6e;margin-top:4px">全站与产品共用的唯一状态规则：未经人确认的一律虚线。</p>
+      </div>
+    </div>
+    <div class="card" style="display:flex;gap:26px;align-items:center">
+      <div style="width:96px;height:96px;background:#14202b;border-radius:6px;position:relative;overflow:hidden">
+        <div style="position:absolute;inset:0;background-image:repeating-linear-gradient(to right,rgba(247,244,238,.16) 0 1px,transparent 1px 7px),repeating-linear-gradient(to bottom,rgba(247,244,238,.16) 0 1px,transparent 1px 7px)"></div>
+      </div>
+      <div>
+        <b style="font-size:13px">经纬纹理</b>
+        <p style="font-size:12.5px;color:#4e5f6e;margin-top:4px">1px 网格，3% 到 5% 透明度，只在边缘，做渐隐。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="label">05 · 用与不用</p>
+  <div class="grid2">
+    <div class="do">
+      <b style="font-size:13px;color:#3f6b4f">要</b>
+      <ul>
+        <li>标记四周留 1/4 高度的空白</li>
+        <li>深色底用反白版，浅色底用主版</li>
+        <li>口号完整出现：你说生意，系统做单。</li>
+        <li>数字用等宽，金额右对齐</li>
+      </ul>
+    </div>
+    <div class="dont">
+      <b style="font-size:13px;color:#c0492f">不要</b>
+      <ul>
+        <li>加渐变、发光、投影、描边</li>
+        <li>拉伸、旋转、裁掉针脚</li>
+        <li>把针脚改成实线或加粗抢字</li>
+        <li>用朱砂做普通按钮或大面积底色</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="footer">
+  <span>织序 WeaveOrder · 品牌板 v1.0 · 2026-11</span>
+  <span>你说生意，系统做单。</span>
+</div>
+
+</body>
+</html>

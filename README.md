@@ -7,6 +7,8 @@
 > 产品设计（定位、角色与权限、布管家能力对照、双端 IA、设计系统、指标与分期）：`docs/product-design.md`。
 > 可点击原型（桌面三窗口 + 手机四 Tab）：`prototype/product-design.html`，直接用浏览器打开。
 > 用户凭据 / CLI / agent 接入（codex 等）：`docs/cli-and-agent-access.md`，skill 源文件 `skills/weave-order/SKILL.md`。
+> 品牌（logo、口号、色彩与字体）：`brand/`，入口 `brand/brand-guide.md`，品牌板 `brand/preview.html`。
+> 官方网站（功能介绍，静态站）：`site/`，`cd site && python3 -m http.server 8080` 后打开 `localhost:8080`。
 
 ## 技术栈
 
