@@ -347,30 +347,20 @@ export class PricingService {
 
     const direction = controlDirection(key);
     if (direction) {
-      // 系统推荐值作为 SYSTEM 层硬边界参与夹取：哪怕没有任何租户策略命中，
-      // 下级（含公司）也不能把管控键放宽到系统推荐值之外。这样「没配置」不等于「不设防」。
-      const boundaries: Array<{
-        boundaryRaw: PricingPolicyValue;
-        source: PricingSource;
-        isBase: boolean;
-      }> = [{ boundaryRaw: SYSTEM_DEFAULTS[key], source: SYSTEM_SOURCE, isBase: !baseRow }];
+      // 夹取边界只取 locked 的租户策略。系统推荐值不是边界：公司层（OWNER）是
+      // 管控类的唯一出口，可以把自己的阈值设在推荐值之上；限制的是「下级不能放宽
+      // 公司层」，而不是「公司不能放宽系统推荐值」（对齐 product-design §3.5）。
       for (const row of applicable) {
         if (!row.locked) continue;
-        boundaries.push({
-          boundaryRaw: PricingPolicyValue.parse(row.value),
-          source: sourceOf(row),
-          isBase: baseRow === row,
-        });
-      }
-      for (const boundary of boundaries) {
-        const boundaryValue = numericValue(boundary.boundaryRaw);
+        const boundaryRaw = PricingPolicyValue.parse(row.value);
+        const boundary = numericValue(boundaryRaw);
         const current = numericValue(effective);
-        if (boundaryValue === null || current === null) continue;
-        const tighten = direction === "MIN" ? boundaryValue > current : boundaryValue < current;
+        if (boundary === null || current === null) continue;
+        const tighten = direction === "MIN" ? boundary > current : boundary < current;
         if (tighten) {
-          effective = revalued(effective, boundary.boundaryRaw, boundaryValue);
-          source = boundary.source;
-          clamped = boundary.isBase ? false : true;
+          effective = revalued(effective, boundaryRaw, boundary);
+          source = sourceOf(row);
+          clamped = baseRow === row ? false : true;
         }
       }
     }
@@ -388,7 +378,7 @@ export class PricingService {
         note: isSource ? null : row.locked ? "管控策略，仅作为边界夹取" : "被更具体的作用域覆盖",
       };
     });
-    if (source.kind === "SYSTEM_DEFAULT") {
+    if (!baseRow) {
       chain.unshift({
         policyId: null,
         scopeType: "SYSTEM",
@@ -397,7 +387,7 @@ export class PricingService {
         priority: 0,
         locked: false,
         applied: true,
-        note: baseRow ? "系统推荐值，作为管控边界夹取了下级的放宽" : "内核内置默认值",
+        note: "内核内置默认值",
       });
     }
 

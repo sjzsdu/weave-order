@@ -8,11 +8,14 @@ import type { Kernel, KernelContext } from "../src/kernel";
 /**
  * 管控键口径收敛（WAN-97）的集成回归。
  *
- * 覆盖两个曾被绕过的缺口：
- * 1. `pricing.reprice_escalation_*` 之前不在 CONTROL 集合里，MANAGER 在
- *    CUSTOMER/PERSON 层放大阈值即可让「改价超阈值升级」失效。
- * 2. 系统推荐值之前不参与夹取，公司层没配 `approval.*` 时，CUSTOMER 层的
- *    巨大值可以直接生效。
+ * 语义（对齐 product-design §3.5）：系统是「推荐值」，公司级才是「硬边界」。
+ * - 公司层（OWNER）可以把自己的阈值设在推荐值之上；
+ * - 下级（TEAM/CUSTOMER/CATEGORY/PERSON）只能收紧，不能放宽公司层。
+ *
+ * 本文件覆盖两件事：
+ * 1. `pricing.reprice_escalation_*` 属于管控键（MAX：只能压低），locked 的公司层
+ *    策略能把下级试图放宽的值夹回。
+ * 2. 系统推荐值**不是**夹取边界——只在没有任何 applicable 策略行时作为默认生效值。
  *
  * 与仓库既有集成测试同款「无库探测」：有 PG 就真跑，没有则整组跳过
  * （CI 上必须有库并真的跑，参考 track-a.integration.test.ts）。
@@ -62,14 +65,83 @@ async function tenantKernel(id: string): Promise<Kernel> {
   return createKernel(db, undefined, { tenantId: tenant.id });
 }
 
-describe("管控键口径收敛：系统推荐值参与夹取（WAN-97）", () => {
-  it("MANAGER 在 PERSON 层放大 reprice_escalation_pct 被夹回系统推荐值", async (ctx) => {
+describe("管控键口径收敛：系统推荐值非边界（WAN-97）", () => {
+  it("OWNER 在 COMPANY 层放大 approval.sales.limit（锁定）→ 生效值就是他设的值", async (ctx) => {
+    if (!available) ctx.skip();
+    const id = suffix();
+    const kernel = await tenantKernel(id);
+
+    await kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "approval.sales.limit",
+        value: 10_000_000,
+        locked: true,
+      },
+      OWNER,
+    );
+
+    const resolved = await kernel.pricing.resolve("approval.sales.limit", {});
+    // 公司层是硬边界的「来源」，不是被系统推荐值（500 万）夹回的。
+    expect(resolved.value).toBe(10_000_000);
+    expect(resolved.clamped).toBe(false);
+    expect(resolved.source.scopeType).toBe("COMPANY");
+    expect(resolved.source.kind).toBe("POLICY");
+  }, 20_000);
+
+  it("CUSTOMER 层放大 approval.sales.limit → 被公司层 locked 边界夹回", async (ctx) => {
+    if (!available) ctx.skip();
+    const id = suffix();
+    const kernel = await tenantKernel(id);
+    const customer = await kernel.customers.create(
+      { code: `PC-A-${id}`, name: "审批上限客户" },
+      OWNER,
+    );
+
+    await kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "approval.sales.limit",
+        value: 5_000_000,
+        locked: true,
+      },
+      OWNER,
+    );
+    await kernel.pricing.create(
+      {
+        scopeType: "CUSTOMER",
+        scopeId: customer.id,
+        key: "approval.sales.limit",
+        value: 100_000_000,
+      },
+      MANAGER,
+    );
+
+    const resolved = await kernel.pricing.resolve("approval.sales.limit", {
+      customerId: customer.id,
+    });
+    // CUSTOMER 想放成 1 亿分，被公司层 locked 的 500 万分夹回。
+    expect(resolved.value).toBe(5_000_000);
+    expect(resolved.clamped).toBe(true);
+    expect(resolved.source.scopeType).toBe("COMPANY");
+    expect(resolved.source.locked).toBe(true);
+  }, 20_000);
+
+  it("PERSON 层放大 reprice_escalation_pct → 被公司层 locked 边界夹回", async (ctx) => {
     if (!available) ctx.skip();
     const id = suffix();
     const kernel = await tenantKernel(id);
     const personId = "sales-lina";
 
-    // MANAGER 可以建 PERSON 层策略，但不能把管控键放宽到系统推荐值之外。
+    await kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "pricing.reprice_escalation_pct",
+        value: 5,
+        locked: true,
+      },
+      OWNER,
+    );
     await kernel.pricing.create(
       {
         scopeType: "PERSON",
@@ -82,21 +154,30 @@ describe("管控键口径收敛：系统推荐值参与夹取（WAN-97）", () =
     );
 
     const resolved = await kernel.pricing.resolve("pricing.reprice_escalation_pct", { personId });
-    // 系统推荐 5%，PERSON 想放成 100000%，被夹回 5%。
+    // PERSON 想放成 100000%，被公司层 locked 的 5% 夹回。
     expect(resolved.value).toBe(5);
     expect(resolved.clamped).toBe(true);
-    expect(resolved.source.kind).toBe("SYSTEM_DEFAULT");
+    expect(resolved.source.scopeType).toBe("COMPANY");
   }, 20_000);
 
-  it("MANAGER 在 CUSTOMER 层放大 reprice_escalation_amount 被夹回系统推荐值", async (ctx) => {
+  it("reprice_escalation_amount 同样只被 locked 的公司层夹取", async (ctx) => {
     if (!available) ctx.skip();
     const id = suffix();
     const kernel = await tenantKernel(id);
     const customer = await kernel.customers.create(
-      { code: `PC-C-${id}`, name: "管控键客户" },
+      { code: `PC-C-${id}`, name: "改价金额客户" },
       OWNER,
     );
 
+    await kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "pricing.reprice_escalation_amount",
+        value: 1_000_000,
+        locked: true,
+      },
+      OWNER,
+    );
     await kernel.pricing.create(
       {
         scopeType: "CUSTOMER",
@@ -110,39 +191,10 @@ describe("管控键口径收敛：系统推荐值参与夹取（WAN-97）", () =
     const resolved = await kernel.pricing.resolve("pricing.reprice_escalation_amount", {
       customerId: customer.id,
     });
-    // 系统推荐 100 万分，CUSTOMER 想放成 1 亿分，被夹回 100 万分。
+    // CUSTOMER 想放成 1 亿分，被公司层 locked 的 100 万分夹回。
     expect(resolved.value).toBe(1_000_000);
     expect(resolved.clamped).toBe(true);
-    expect(resolved.source.kind).toBe("SYSTEM_DEFAULT");
-  }, 20_000);
-
-  it("未配置 approval.* 时，CUSTOMER 层不能把审批上限放到超过系统推荐值", async (ctx) => {
-    if (!available) ctx.skip();
-    const id = suffix();
-    const kernel = await tenantKernel(id);
-    const customer = await kernel.customers.create(
-      { code: `PC-A-${id}`, name: "审批上限客户" },
-      OWNER,
-    );
-
-    // 公司层从未建过 approval.sales.limit。
-    await kernel.pricing.create(
-      {
-        scopeType: "CUSTOMER",
-        scopeId: customer.id,
-        key: "approval.sales.limit",
-        value: 100_000_000,
-      },
-      OWNER,
-    );
-
-    const resolved = await kernel.pricing.resolve("approval.sales.limit", {
-      customerId: customer.id,
-    });
-    // 系统推荐 500 万分，CUSTOMER 想放成 1 亿分，被夹回 500 万分。
-    expect(resolved.value).toBe(5_000_000);
-    expect(resolved.clamped).toBe(true);
-    expect(resolved.source.kind).toBe("SYSTEM_DEFAULT");
+    expect(resolved.source.scopeType).toBe("COMPANY");
   }, 20_000);
 
   it("下级收紧仍生效：CUSTOMER 把 reprice_escalation_pct 压到 2 不被夹回", async (ctx) => {
@@ -170,14 +222,19 @@ describe("管控键口径收敛：系统推荐值参与夹取（WAN-97）", () =
     expect(resolved.source.scopeType).toBe("CUSTOMER");
   }, 20_000);
 
-  it("owner 上限为 null（无上限）不参与夹取，仍可解析为 null", async (ctx) => {
+  it("无任何策略时系统推荐值作为默认生效值，且不参与夹取", async (ctx) => {
     if (!available) ctx.skip();
     const id = suffix();
     const kernel = await tenantKernel(id);
 
-    const resolved = await kernel.pricing.resolve("approval.owner.limit", {});
-    expect(resolved.value).toBeNull();
+    const resolved = await kernel.pricing.resolve("approval.sales.limit", {});
+    // 没有 applicable 策略行 → 落到系统推荐值 500 万分，来源 SYSTEM_DEFAULT。
+    expect(resolved.value).toBe(5_000_000);
     expect(resolved.source.kind).toBe("SYSTEM_DEFAULT");
     expect(resolved.clamped).toBe(false);
+
+    const ownerLimit = await kernel.pricing.resolve("approval.owner.limit", {});
+    expect(ownerLimit.value).toBeNull();
+    expect(ownerLimit.source.kind).toBe("SYSTEM_DEFAULT");
   }, 20_000);
 });
