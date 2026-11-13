@@ -7,6 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DocumentView } from "@weave-order/schema";
+import { sanitizeHtmlForPrint } from "./html-safety";
 import { PrintError } from "./template-engine";
 
 const A4_WIDTH = 595.28;
@@ -284,6 +285,36 @@ function chromePath(): string | null {
   return configured && existsSync(configured) ? configured : null;
 }
 
+/**
+ * headless Chromium 的渲染参数。
+ *
+ * 模板正文来自成员，渲染进程必须假设它可能带脚本或远程资源：
+ *   - `--blink-settings=scriptEnabled=false` + `--disable-javascript` 关掉 JS；
+ *   - `--host-resolver-rules=MAP * ~NOTFOUND` 让所有域名解析失败，
+ *     即便有残留的远程 img/iframe 也连不出去（防内网 / 云元数据探测）。
+ * 单独导出便于离线断言「参数没有被改回去」。
+ */
+export function chromePrintArgs(htmlPath: string, pdfPath: string): string[] {
+  return [
+    "--headless=new",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--disable-javascript",
+    "--blink-settings=scriptEnabled=false",
+    "--host-resolver-rules=MAP * ~NOTFOUND",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-domain-reliability",
+    "--disable-sync",
+    "--disable-client-side-phishing-detection",
+    "--disable-remote-fonts",
+    "--no-pings",
+    "--no-pdf-header-footer",
+    `--print-to-pdf=${pdfPath}`,
+    `file://${htmlPath}`,
+  ];
+}
+
 /** HTML → PDF：仅在部署了 Chromium 时启用；否则返回 null 走内置版式。 */
 export async function renderHtmlWithChrome(html: string): Promise<Buffer | null> {
   const chrome = chromePath();
@@ -292,20 +323,10 @@ export async function renderHtmlWithChrome(html: string): Promise<Buffer | null>
   const htmlPath = path.join(dir, "document.html");
   const pdfPath = path.join(dir, "document.pdf");
   try {
-    await writeFile(htmlPath, html, "utf8");
+    // 发布时已拒绝危险模板；这里再洗一遍，覆盖历史上已入库的模板。
+    await writeFile(htmlPath, sanitizeHtmlForPrint(html), "utf8");
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(
-        chrome,
-        [
-          "--headless=new",
-          "--disable-gpu",
-          "--no-sandbox",
-          "--no-pdf-header-footer",
-          `--print-to-pdf=${pdfPath}`,
-          `file://${htmlPath}`,
-        ],
-        { stdio: "ignore" },
-      );
+      const child = spawn(chrome, chromePrintArgs(htmlPath, pdfPath), { stdio: "ignore" });
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
         reject(new Error("Chromium 渲染超时"));

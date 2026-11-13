@@ -3,13 +3,15 @@ import type { Db } from "@weave-order/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createKernel, isKernelError } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
+import { requirePrintTestEnv } from "./support/print-env";
 
 /**
  * 一单发货的真实流水线（真连 PG）：
  * 建单 → 发货单 → 建箱 → 一键打印（幂等）→ 代理领任务/回执
  * → 扫码复核不一致拦截 → 人工核对 → 补打留痕。
  *
- * 没有数据库时整组跳过（离线 `pnpm test` 仍全绿）。
+ * 没有数据库时整组报错而不是跳过（见 test/support/print-env.ts）；
+ * 只有显式 `PRINT_TEST_SKIP_REASON` 才允许离线跳过，CI 还会断言执行数。
  */
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://weave:weave@localhost:5433/weave_order";
@@ -108,7 +110,7 @@ async function seedShipment(kernel: Kernel) {
 describe("打印中心（集成）", () => {
   it("一单发货：建箱 → 一键打印 → 幂等 → 回执 → 差异拦截 → 补打", async (ctx) => {
     if (!available || !db) {
-      ctx.skip();
+      requirePrintTestEnv(ctx, "缺少 print_jobs 等打印表（PostgreSQL 未迁移）");
       return;
     }
     const kernel = kernelOf();
@@ -282,7 +284,7 @@ describe("打印中心（集成）", () => {
 
   it("模板版本化：发布 v1 → 改版 v2，未知变量在发布时拒绝", async (ctx) => {
     if (!available || !db) {
-      ctx.skip();
+      requirePrintTestEnv(ctx, "缺少 print_jobs 等打印表（PostgreSQL 未迁移）");
       return;
     }
     const kernel = kernelOf();
@@ -316,11 +318,56 @@ describe("打印中心（集成）", () => {
     if (isKernelError(rejected)) {
       expect(rejected.details.reason).toBe("PRINT_TEMPLATE_UNKNOWN_VARIABLE");
     }
+
+    // 含 <script> 的 HTML 模板发布即拒（渲染沙箱之外的第一道闸）。
+    const scripted = await kernel.print.templates
+      .publish(
+        {
+          kind: "DELIVERY_NOTE",
+          scope: "COMPANY",
+          name: `${name} 脚本`,
+          format: "HTML",
+          body: '<script>fetch("http://169.254.169.254/latest/meta-data/")</script>{{order.no}}',
+        },
+        HUMAN,
+      )
+      .catch((error: unknown) => error);
+    expect(isKernelError(scripted)).toBe(true);
+    if (isKernelError(scripted)) {
+      expect(scripted.details.reason).toBe("PRINT_TEMPLATE_UNSAFE");
+    }
+
+    // 远程图片同理：渲染时不能替成员去探测外部地址。
+    const remoteImage = await kernel.print.templates
+      .publishVersion(
+        {
+          templateId: template.id,
+          body: '<img src="https://evil.example/pixel.png"><p>{{order.no}}</p>',
+        },
+        HUMAN,
+      )
+      .catch((error: unknown) => error);
+    expect(isKernelError(remoteImage)).toBe(true);
+    if (isKernelError(remoteImage)) {
+      expect(remoteImage.details.reason).toBe("PRINT_TEMPLATE_UNSAFE");
+    }
+
+    // HTML 模板只允许 OWNER 发布：销售成员直接被权限拦住。
+    const notOwner = await kernel.print.templates
+      .publishVersion(
+        { templateId: template.id, body: "<p>{{order.no}}</p>" },
+        { actor: { type: "HUMAN", id: "print-integration-sales", role: "SALES" } },
+      )
+      .catch((error: unknown) => error);
+    expect(isKernelError(notOwner)).toBe(true);
+    if (isKernelError(notOwner)) {
+      expect(notOwner.code).toBe("PERMISSION_DENIED");
+    }
   });
 
   it("代理 token 只能打印：签名作用域错误即拒绝", async (ctx) => {
     if (!available || !db) {
-      ctx.skip();
+      requirePrintTestEnv(ctx, "缺少 print_jobs 等打印表（PostgreSQL 未迁移）");
       return;
     }
     const kernel = kernelOf();

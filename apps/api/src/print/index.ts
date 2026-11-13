@@ -50,5 +50,11 @@ export { PrintError } from "./template-engine";
 export type { PrintErrorCode } from "./template-engine";
 export { buildBoxQr, parseBoxQr } from "./qr";
 export { renderBoxLabel, renderTestLabel } from "./labels";
-export { renderA4Pdf, renderBuiltinA4Pdf } from "./pdf";
+export { chromePrintArgs, renderA4Pdf, renderBuiltinA4Pdf } from "./pdf";
+export {
+  assertHtmlTemplateSafe,
+  sanitizeHtmlForPrint,
+  templateSafetyViolation,
+} from "./html-safety";
+export { assertTemplatePublishAllowed } from "./print-templates.service";
 export { analyzeTemplate, renderTemplate } from "./template-engine";
