@@ -43,6 +43,13 @@
       "when": 1794524037764,
       "tag": "0005_colorful_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794527078043,
+      "tag": "0006_crazy_mandarin",
+      "breakpoints": true
     }
   ]
 }

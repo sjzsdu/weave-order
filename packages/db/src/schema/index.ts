@@ -12,3 +12,4 @@ export * from "./shares";
 export * from "./audit";
 export * from "./embeddings";
 export * from "./llm";
+export * from "./print";

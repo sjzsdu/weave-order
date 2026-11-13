@@ -127,3 +127,59 @@ export const llmTaskEnum = pgEnum("llm_task", [
   "FOLLOWUP_SUGGESTION",
   "REPLY_CLASSIFICATION",
 ]);
+
+/** 打印单据类型（文档与标签共用）。 */
+export const printDocumentKindEnum = pgEnum("print_document_kind", [
+  "PICKING_LIST",
+  "DELIVERY_NOTE",
+  "PACKING_LIST",
+  "BOX_LABEL",
+  "SAMPLE_LABEL",
+  "SHELF_LABEL",
+  "TEST_LABEL",
+]);
+
+/** 模板输出格式：A4 HTML/PDF 与热敏标签指令。 */
+export const printTemplateFormatEnum = pgEnum("print_template_format", ["HTML", "ZPL", "TSPL"]);
+
+/** 模板层级：系统 → 公司 → 单据类型。 */
+export const printTemplateScopeEnum = pgEnum("print_template_scope", [
+  "SYSTEM",
+  "COMPANY",
+  "DOCUMENT_TYPE",
+]);
+
+export const printJobStatusEnum = pgEnum("print_job_status", [
+  "QUEUED",
+  "SENT",
+  "PRINTING",
+  "DONE",
+  "FAILED",
+  "CANCELLED",
+]);
+
+export const printAgentStatusEnum = pgEnum("print_agent_status", ["ONLINE", "OFFLINE", "DISABLED"]);
+
+export const printerKindEnum = pgEnum("printer_kind", ["A4", "THERMAL", "BLUETOOTH"]);
+
+export const printerConnectionEnum = pgEnum("printer_connection", [
+  "SYSTEM_DRIVER",
+  "RAW_TCP",
+  "USB",
+  "BLUETOOTH",
+]);
+
+export const printerStatusEnum = pgEnum("printer_status", ["READY", "OFFLINE", "NEEDS_ATTENTION"]);
+
+export const boxStatusEnum = pgEnum("order_box_status", ["OPEN", "PACKED", "VOIDED"]);
+
+export const boxLabelStatusEnum = pgEnum("box_label_status", ["ACTIVE", "VOIDED"]);
+
+export const scanTypeEnum = pgEnum("scan_event_type", ["PICK", "VERIFY"]);
+
+export const scanResultEnum = pgEnum("scan_result", [
+  "OK",
+  "MISMATCH",
+  "UNKNOWN_CODE",
+  "WRONG_BOX",
+]);
