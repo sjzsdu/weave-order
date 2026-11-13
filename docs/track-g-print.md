@@ -19,6 +19,8 @@ flowchart LR
 
 - 模板只能写 `{{path}}` 与 `{{#lines}}`/`{{#boxes}}` 循环，变量必须命中后端白名单；未知变量在**发布时**和**渲染时**都失败。
 - 金额、数量、批次只来自 `DocumentView`（内核只读视图），模板不能查库、不能写表达式。
+- HTML 模板正文是渲染输入，必须先过安全闸：发布时拒绝 `<script>`/`<iframe>`/`<object>`/`<embed>` 等可执行标签、`on*` 事件属性、`javascript:` 伪协议，以及远程 `src`/`href`/CSS `url()`/`@import`；渲染前还会再清洗一遍，存量模板也不能外联。
+- `format=HTML` 的模板只允许 **OWNER** 发布（ZPL/TSPL 不受限）；渲染用 headless Chromium 统一关闭 JS，并用 `--host-resolver-rules=MAP * ~NOTFOUND` 阻断域名解析，防止借渲染探内网 / 云元数据。
 - `idempotency_key = sha256(单据 + 模板版本 + 份数 + 操作人 [+ 箱唛标签序号])`，唯一索引去重；重复点击不重复出纸。
 - 每次打印写 `document_snapshots`（不可变视图）+ `print_job_events`（回执流水）+ `audit_log`。
 - 一箱一码 `tenant/order/box/seq`，不含价格；重打 seq+1，旧标签 `voided_at`，旧码立即失效。
@@ -85,4 +87,6 @@ flowchart LR
 | 补打选原因 / 旧标签作废     | `reprintBox` + `box_labels.voided_at`                     | 集成测试                               |
 | 幂等不重复出纸              | 唯一索引 + 去重返回                                       | 集成 + e2e                             |
 | 代理 token 只打印           | scope 中间件 + 无业务路由                                 | e2e                                    |
+| 模板脚本 / 远程资源被拒     | `html-safety.ts` 发布拒绝 + 渲染前清洗 + Chromium 关 JS / 断 DNS | `print.safety.test.ts` + 集成    |
+| 打印用例不允许静默 skip     | `requirePrintTestEnv` + CI `test:print:guard`             | `assert-print-tests.ts`                |
 | 离线补打 / 状态回传         | 本地 SQLite spool + 回执重传                              | 代理代码（需 Rust 环境 `cargo check`） |

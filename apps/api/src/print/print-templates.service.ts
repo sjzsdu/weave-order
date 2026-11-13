@@ -12,6 +12,7 @@ import { appendAudit } from "../kernel/audit";
 import type { KernelContext } from "../kernel/audit";
 import { KernelError } from "../kernel/errors";
 import { toIso } from "../kernel/mappers";
+import { assertHtmlTemplateSafe } from "./html-safety";
 import { analyzeTemplate, PrintError } from "./template-engine";
 import { builtinTemplate, SYSTEM_TEMPLATES } from "./templates";
 
@@ -38,6 +39,21 @@ function versionFromRow(row: typeof printTemplateVersions.$inferSelect): PrintTe
     publishedBy: row.publishedBy,
     publishedAt: toIso(row.publishedAt),
   };
+}
+
+/**
+ * HTML 模板最终交给 headless Chromium 渲染，天然拥有「影响渲染宿主机」的能力；
+ * 因此格式维度上单列一条：HTML 只允许 OWNER 发布，ZPL/TSPL 仍是普通成员可发。
+ */
+export function assertTemplatePublishAllowed(
+  format: PrintTemplateFormat,
+  ctx: KernelContext,
+): void {
+  if (format !== "HTML") return;
+  if (ctx.actor.type === "HUMAN" && ctx.actor.role === "OWNER") return;
+  throw new KernelError("PERMISSION_DENIED", "HTML 打印模板只能由 OWNER 发布", {
+    reason: "PRINT_TEMPLATE_FORBIDDEN",
+  });
 }
 
 export class PrintTemplateService {
@@ -226,7 +242,8 @@ export class PrintTemplateService {
 
   async publish(input: unknown, ctx: KernelContext): Promise<PrintTemplate> {
     const parsed = PublishPrintTemplateInput.parse(input);
-    const analysis = this.validate(parsed.body, parsed.kind);
+    assertTemplatePublishAllowed(parsed.format, ctx);
+    const analysis = this.validate(parsed.body, parsed.kind, parsed.format);
     const existing = await this.db
       .select()
       .from(printTemplates)
@@ -309,7 +326,8 @@ export class PrintTemplateService {
   async publishVersion(input: unknown, ctx: KernelContext): Promise<PrintTemplate> {
     const parsed = PublishPrintTemplateVersionInput.parse(input);
     const { template } = await this.loadWithVersion(parsed.templateId);
-    const analysis = this.validate(parsed.body, template.kind);
+    assertTemplatePublishAllowed(template.format, ctx);
+    const analysis = this.validate(parsed.body, template.kind, template.format);
     const latest = await this.db
       .select()
       .from(printTemplateVersions)
@@ -364,8 +382,9 @@ export class PrintTemplateService {
     });
   }
 
-  private validate(body: string, kind: PrintDocumentKind) {
+  private validate(body: string, kind: PrintDocumentKind, format: PrintTemplateFormat) {
     try {
+      if (format === "HTML") assertHtmlTemplateSafe(body);
       return analyzeTemplate(body, kind);
     } catch (error) {
       if (error instanceof PrintError) {

@@ -79,6 +79,10 @@ jobs:
       - name: Test (含跨租户 RLS 常驻用例)
         run: pnpm test
 
+      # WAN-102：打印用例不允许静默 skip，执行数为 0 即构红。
+      - name: 打印用例执行数守卫
+        run: pnpm --filter @weave-order/api test:print:guard
+
       - name: Lint
         run: pnpm lint
 
