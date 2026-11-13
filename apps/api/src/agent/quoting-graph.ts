@@ -127,6 +127,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
         customerId: state.customerId ?? undefined,
         currency: state.currency,
         image: state.image ?? undefined,
+        imageUrl: state.imageUrl ?? undefined,
         topK: state.topK,
       });
     } catch (error) {
@@ -218,10 +219,12 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
       }
     }
 
-    if (state.image) {
+    if (state.image || state.imageUrl) {
       try {
         const result = await tools.searchFabricByImage.execute(
-          { image: state.image, topK: state.topK, minSimilarity: 0.3 },
+          state.imageUrl
+            ? { imageUrl: state.imageUrl, topK: state.topK, minSimilarity: 0.3 }
+            : { image: state.image, topK: state.topK, minSimilarity: 0.3 },
           QUOTING_AGENT_CONTEXT,
         );
         if (!result.ok) {

@@ -48,10 +48,11 @@ flowchart LR
 2. **不直连厂商**：所有模型请求只发往 `LITELLM_BASE_URL/chat/completions`，使用 OpenAI 兼容协议；厂商 key 只存在 LiteLLM 侧。
 3. **每租户虚拟 Key**：`llm_settings.key_ref` 存引用（环境变量名 / KMS key），运行时解析后放进 `Authorization` 头；数据库与日志不落明文。
 4. **模型白名单 + 预算**：调用前检查 `model_allowlist` 与 `daily_token_budget` / `monthly_token_budget`；超限直接拒绝，不发外网请求。
-5. **默认模型**：日常任务 `deepseek-chat`，复杂任务 `deepseek-reasoner`；两者都在默认白名单。
+5. **模型路由**：日常任务 `deepseek-chat`；`QUOTE_DRAFT` 以及超过 1200 字符的 `QUOTE_INTENT` 自动切 `deepseek-reasoner`。两者都在默认白名单。
 6. **脱敏**：手机号 / 邮箱 / 银行账号在出网前替换为保形掩码；成本底线、客户名单、合同价不进入 prompt。
 7. **prompt 不落原文**：`token_usage.prompt_hash` 只存 SHA-256；`log_prompts` 默认 false。
 8. **草稿即默认**：agent 的最终产物只能是 `DRAFT` / `NEEDS_INPUT` / `FAILED`。
+9. **生产 key fail-fast**：`keyRef` 未命中环境变量/KMS，或解析结果仍是 `sk-local-dev` 时，生产环境拒绝启动（与 T0 的 `APP_DATABASE_URL` 同一口径），不会静默落到 dev 默认值。
 
 ## 4. token 计量
 

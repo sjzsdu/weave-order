@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LiteLlmProvider, LocalRuleLlmProvider } from "../src/platform/llm";
+import { LiteLlmProvider, LocalRuleLlmProvider, createLlmProvider } from "../src/platform/llm";
 import type { LlmUsageSink } from "../src/platform/llm";
 import { redactSensitiveText } from "../src/platform/privacy";
 import type { LlmBudgetStatus, ResolvedLlmSettings } from "@weave-order/schema";
@@ -159,5 +159,85 @@ describe("本地规则槽位抽取（零 key 降级路径）", () => {
     expect(redacted).not.toContain("a@b.com");
     expect(redacted).not.toContain("6222021234567890123");
     expect(redacted).toContain("8000");
+  });
+});
+
+describe("LiteLLM 模型路由与生产密钥 fail-fast", () => {
+  it("长客户原话升级到 reasoner，短文本用 daily 模型", async () => {
+    const { usage } = sink();
+    const models: string[] = [];
+    const fetchImpl = ((_url: string, init: RequestInit) => {
+      const body = JSON.parse(typeof init.body === "string" ? init.body : "{}") as {
+        model: string;
+      };
+      models.push(body.model);
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            model: "deepseek-reasoner",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    productKeywords: ["棉"],
+                    composition: "棉",
+                    weight: null,
+                    quantity: { value: 500, unit: "meter" },
+                    priceRequested: true,
+                    deliveryDate: null,
+                    confidence: 0.8,
+                  }),
+                },
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }),
+      });
+    }) as unknown as typeof fetch;
+    const provider = new LiteLlmProvider({
+      settings,
+      usage,
+      apiKey: "sk",
+      timeoutMs: 1000,
+      fetchImpl,
+    });
+
+    await provider.extractQuoteIntent({ text: "棉 500 米" });
+    await provider.extractQuoteIntent({ text: `棉 500 米 ${"很长的规格说明".repeat(200)}` });
+    expect(models[0]).toBe("deepseek-chat");
+    expect(models[1]).toBe("deepseek-reasoner");
+  });
+
+  it("生产环境 keyRef 未命中 env 直接拒绝；不接受 sk-local-dev", () => {
+    const { usage } = sink();
+    const env = {
+      NODE_ENV: "production" as const,
+      LITELLM_MASTER_KEY: "sk-production",
+      LITELLM_TIMEOUT_MS: 1000,
+    };
+    expect(() =>
+      createLlmProvider("litellm", {
+        settings: { ...settings, keyRef: "TENANT_KEY_NOT_SET" },
+        usage,
+        env,
+      }),
+    ).toThrow(/keyRef/);
+
+    expect(() =>
+      createLlmProvider("litellm", {
+        settings: { ...settings, keyRef: "LITELLM_MASTER_KEY" },
+        usage,
+        env: { ...env, LITELLM_MASTER_KEY: "sk-local-dev" },
+      }),
+    ).toThrow(/dev 默认值/);
+
+    expect(
+      createLlmProvider("litellm", {
+        settings,
+        usage,
+        env: { ...env, NODE_ENV: "development" },
+      }).name,
+    ).toBe("litellm");
   });
 });
