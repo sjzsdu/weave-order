@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ApprovalDecisionInput, ApprovalKind } from "@weave-order/schema";
+import type { ApprovalDecisionInput, ApprovalKind, Unit } from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
 
 /** 统一的 query key，避免各端自造字符串。 */
@@ -10,6 +10,12 @@ export const queryKeys = {
   approvals: ["approvals"] as const,
   approvalDetail: (id: string, kind: ApprovalKind) => ["approvals", id, kind] as const,
   audit: (limit: number) => ["audit", limit] as const,
+  orders: (limit: number) => ["orders", limit] as const,
+  order: (id: string) => ["order", id] as const,
+  orderShipments: (id: string) => ["order", id, "shipments"] as const,
+  shippingPending: ["shipping", "pending"] as const,
+  printCenter: ["print", "center"] as const,
+  shipment: (id: string) => ["shipment", id] as const,
 };
 
 export function useAuthContext(client: ApiClient) {
@@ -55,6 +61,193 @@ export function useDecideApproval(client: ApiClient) {
           queryKey: queryKeys.approvalDetail(input.id, input.kind),
         }),
       ]);
+    },
+  });
+}
+
+export function useOrders(client: ApiClient, limit = 50) {
+  return useQuery({
+    queryKey: queryKeys.orders(limit),
+    queryFn: () => client.orders(limit),
+  });
+}
+
+export function useOrder(client: ApiClient, orderId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.order(orderId ?? "none"),
+    queryFn: () => client.order(orderId as string),
+    enabled: orderId !== null,
+  });
+}
+
+export function useOrderShipments(client: ApiClient, orderId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.orderShipments(orderId ?? "none"),
+    queryFn: () => client.orderShipments(orderId as string),
+    enabled: orderId !== null,
+  });
+}
+
+export function useShippingPending(client: ApiClient) {
+  return useQuery({
+    queryKey: queryKeys.shippingPending,
+    queryFn: () => client.shippingPending(),
+  });
+}
+
+/** 打印中心抽屉首屏：队列 / 模板 / 设备 / 记录一次读全。 */
+export function usePrintCenter(client: ApiClient) {
+  return useQuery({
+    queryKey: queryKeys.printCenter,
+    queryFn: () => client.printCenter(),
+    refetchInterval: 8000,
+  });
+}
+
+export function useShipment(client: ApiClient, shipmentId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.shipment(shipmentId ?? "none"),
+    queryFn: () => client.shipment(shipmentId as string),
+    enabled: shipmentId !== null,
+    refetchInterval: 10_000,
+  });
+}
+
+function usePrinting(client: ApiClient, shipmentId: string | null) {
+  const queryClient = useQueryClient();
+  return async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.printCenter }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.shippingPending }),
+      shipmentId
+        ? queryClient.invalidateQueries({ queryKey: queryKeys.shipment(shipmentId) })
+        : Promise.resolve(),
+    ]);
+  };
+}
+
+export function usePrintShipmentBundle(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: (copies: {
+      pickingListCopies?: number;
+      deliveryNoteCopies?: number;
+      boxLabelCopies?: number;
+    }) =>
+      client.printShipmentBundle({
+        shipmentId: shipmentId as string,
+        ...copies,
+      }),
+    onSuccess: refresh,
+  });
+}
+
+export function useCreateBoxes(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: (count: number) =>
+      client.createBoxes(shipmentId as string, { count, autoAssign: true }),
+    onSuccess: refresh,
+  });
+}
+
+export function usePickScan(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: (input: { code: string; quantity?: number }) =>
+      client.pickScan(shipmentId as string, input),
+    onSuccess: refresh,
+  });
+}
+
+export function useVerifyScan(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: (input: { boxQr: string; itemCode: string; quantity: number }) =>
+      client.verifyScan(shipmentId as string, input),
+    onSuccess: refresh,
+  });
+}
+
+export function useReprintBox(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: (input: { boxId: string; reason: Parameters<ApiClient["reprintBox"]>[1] }) =>
+      client.reprintBox(input.boxId, input.reason),
+    onSuccess: refresh,
+  });
+}
+
+export function useResolveDiscrepancy(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: (input: { boxId: string; note: string }) =>
+      client.resolveDiscrepancy(input.boxId, input.note),
+    onSuccess: refresh,
+  });
+}
+
+export function useShipShipment(client: ApiClient, shipmentId: string | null) {
+  const refresh = usePrinting(client, shipmentId);
+  return useMutation({
+    mutationFn: () => client.shipShipment(shipmentId as string),
+    onSuccess: refresh,
+  });
+}
+
+export function useCreateShipment(client: ApiClient) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      orderId: string;
+      carrier?: string | null;
+      trackingNumber?: string | null;
+      address?: string | null;
+      items: Array<{ orderItemId: string; quantity: { value: number; unit: Unit } }>;
+    }) =>
+      client.createShipment(input.orderId, {
+        carrier: input.carrier,
+        trackingNumber: input.trackingNumber,
+        address: input.address,
+        items: input.items,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.shippingPending }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orders(50) }),
+        queryClient.invalidateQueries({ queryKey: ["order"] }),
+      ]);
+    },
+  });
+}
+
+export function useCancelPrintJob(client: ApiClient) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => client.cancelPrintJob(jobId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.printCenter });
+    },
+  });
+}
+
+export function useRetryPrintJob(client: ApiClient) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => client.retryPrintJob(jobId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.printCenter });
+    },
+  });
+}
+
+export function useRegisterPrintAgent(client: ApiClient) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; location?: string | null }) =>
+      client.registerPrintAgent(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.printCenter });
     },
   });
 }
