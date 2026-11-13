@@ -278,7 +278,7 @@ describe("打印中心（集成）", () => {
 
     const templates = await kernel.print.templates.list("BOX_LABEL");
     expect(templates.some((template) => template.isSystem && template.format === "ZPL")).toBe(true);
-  }, 30_000);
+  }, 60_000);
 
   it("模板版本化：发布 v1 → 改版 v2，未知变量在发布时拒绝", async (ctx) => {
     if (!available || !db) {

@@ -278,14 +278,10 @@ export async function renderBuiltinA4Pdf(view: DocumentView): Promise<Buffer> {
 }
 
 function chromePath(): string | null {
-  const candidates = [
-    process.env.PRINT_CHROME_PATH,
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ].filter((candidate): candidate is string => Boolean(candidate));
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  // 只认显式配置：不自动探测系统 Chrome，避免开发机/CI 上误触发
+  // 几十秒级的 headless 渲染，且保证渲染路径可预期。
+  const configured = process.env.PRINT_CHROME_PATH;
+  return configured && existsSync(configured) ? configured : null;
 }
 
 /** HTML → PDF：仅在部署了 Chromium 时启用；否则返回 null 走内置版式。 */
@@ -313,7 +309,7 @@ export async function renderHtmlWithChrome(html: string): Promise<Buffer | null>
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
         reject(new Error("Chromium 渲染超时"));
-      }, 25_000);
+      }, 10_000);
       child.on("error", (error) => {
         clearTimeout(timer);
         reject(error);

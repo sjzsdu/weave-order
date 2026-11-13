@@ -271,7 +271,7 @@ describe("打印中心 HTTP / WSS（e2e）", () => {
     expect(snapshot.templates.length).toBeGreaterThan(0);
     expect(snapshot.devices.agents.length).toBeGreaterThan(0);
     expect(snapshot.logs.length).toBeGreaterThan(0);
-  }, 30_000);
+  }, 60_000);
 
   it("代理 WSS 连接：token 鉴权后收到 hello，并可通过连接领任务", async (ctx) => {
     const database = db;

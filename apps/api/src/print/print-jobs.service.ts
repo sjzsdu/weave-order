@@ -253,14 +253,6 @@ export class PrintJobService {
       operator: ctx.actor.id,
       ...(parsed.reprintReason ? { reprintReason: parsed.reprintReason } : {}),
     });
-    const payload = await this.renderPayload({
-      kind: parsed.kind,
-      view,
-      box,
-      resolved,
-      format,
-      reprintReason: parsed.reprintReason ?? null,
-    });
     const key = jobKey({
       kind: parsed.kind,
       documentId,
@@ -278,6 +270,16 @@ export class PrintJobService {
       .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.idempotencyKey, key)))
       .limit(1);
     if (existing[0]) return { job: mapJob(existing[0]), deduplicated: true };
+
+    // 幂等命中在渲染之前返回：重复点击不会重新生成 PDF，也不会重复出纸。
+    const payload = await this.renderPayload({
+      kind: parsed.kind,
+      view,
+      box,
+      resolved,
+      format,
+      reprintReason: parsed.reprintReason ?? null,
+    });
 
     let jobRow: typeof printJobs.$inferSelect | undefined;
     try {
