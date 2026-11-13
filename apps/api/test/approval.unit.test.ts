@@ -36,6 +36,30 @@ function item(overrides: Partial<ApprovalItemT> = {}): ApprovalItemT {
   });
 }
 
+interface ListQuery {
+  pendingOnly?: boolean;
+  id?: string;
+  after?: { createdAt: string; id: string } | null;
+}
+
+/** 复刻内核的过滤 + keyset 分页语义，让单测能真正走翻页路径。 */
+function pageOf(items: ApprovalItemT[], limit: number, query: ListQuery = {}): ApprovalItemT[] {
+  let rows = items;
+  if (query.id) rows = rows.filter((entry) => entry.id === query.id);
+  if (query.pendingOnly) rows = rows.filter((entry) => entry.pending);
+  const after = query.after;
+  if (after) {
+    rows = rows.filter(
+      (entry) =>
+        entry.createdAt < after.createdAt ||
+        (entry.createdAt === after.createdAt && entry.id < after.id),
+    );
+  }
+  return [...rows]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+    .slice(0, limit);
+}
+
 function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[] } = {}) {
   const spies = {
     confirmDraft: vi.fn((_id: string, _ctx: KernelContext) =>
@@ -51,14 +75,20 @@ function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[
       Promise.resolve({ status: "CANCELLED" as const }),
     ),
   };
+  const quotes = opts.quotes ?? [];
+  const shipments = opts.shipments ?? [];
   const kernel = {
     quotes: {
-      list: vi.fn(() => Promise.resolve(opts.quotes ?? [])),
+      list: vi.fn((limit: number, _ctx?: KernelContext, query?: ListQuery) =>
+        Promise.resolve(pageOf(quotes, limit, query)),
+      ),
       confirmDraft: spies.confirmDraft,
       rejectDraft: spies.rejectDraft,
     },
     shipments: {
-      list: vi.fn(() => Promise.resolve(opts.shipments ?? [])),
+      list: vi.fn((limit: number, _ctx?: KernelContext, query?: ListQuery) =>
+        Promise.resolve(pageOf(shipments, limit, query)),
+      ),
       confirm: spies.confirm,
       reject: spies.reject,
     },
@@ -88,6 +118,46 @@ describe("审批服务（离线，假内核）", () => {
     expect(queue.items).toHaveLength(2);
     expect(queue.items.map((entry) => entry.kind)).toEqual(["sample_shipment", "quote"]);
     expect(queue.items.every((entry) => entry.pending)).toBe(true);
+  });
+
+  it("150 条待办按游标翻页全部可见（超过旧上限 100 也不漏单）", async () => {
+    const base = Date.UTC(2026, 0, 1, 0, 0, 0);
+    const quotes = Array.from({ length: 150 }, (_, index) =>
+      item({
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        createdAt: new Date(base + index * 1000).toISOString(),
+      }),
+    );
+    const { kernel } = makeKernel({ quotes });
+    const service = createApprovalService(kernel);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 10; page += 1) {
+      const queue = await service.listPending(undefined, { limit: 40, cursor });
+      expect(queue.items.length).toBeLessThanOrEqual(40);
+      seen.push(...queue.items.map((entry) => entry.id));
+      if (!queue.hasMore) {
+        expect(queue.nextCursor ?? null).toBeNull();
+        break;
+      }
+      expect(queue.nextCursor).toBeTruthy();
+      cursor = queue.nextCursor ?? null;
+    }
+
+    const expected = [...quotes]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((entry) => entry.id);
+    expect(seen).toHaveLength(150);
+    expect(new Set(seen).size).toBe(150);
+    expect(seen).toEqual(expected);
+  });
+
+  it("非法游标 -> KERNEL_REJECTED/INVALID_INPUT（不静默回到第一页）", async () => {
+    const { kernel } = makeKernel();
+    await expect(
+      createApprovalService(kernel).listPending(undefined, { cursor: "not-a-cursor" }),
+    ).rejects.toMatchObject({ code: "KERNEL_REJECTED", details: { reason: "INVALID_INPUT" } });
   });
 
   it("批准报价 -> confirmDraft(HUMAN) -> SENT", async () => {

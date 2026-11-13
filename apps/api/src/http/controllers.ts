@@ -168,17 +168,24 @@ export class PricingController {
   async list(
     @Query("scopeType") scopeType?: string,
     @Query("scopeId") scopeId?: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
-      policies: await kernel.pricing.list(
-        {
-          ...(scopeType ? { scopeType: scopeType as never } : {}),
-          ...(scopeId ? { scopeId } : {}),
-        },
-        ctx,
-      ),
-    }));
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await kernel.pricing.listPage(
+          {
+            ...(scopeType ? { scopeType: scopeType as never } : {}),
+            ...(scopeId ? { scopeId } : {}),
+          },
+          ctx,
+          { limit: clampLimit(limit, 50, 200), cursor: cursor ?? null },
+        );
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
   }
 
   @Post("policies")
@@ -415,10 +422,21 @@ export class ApprovalController {
   ) {}
 
   @Get()
-  async list(@Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) =>
-      createApprovalService(kernel).listPending(ctx),
-    );
+  async list(
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await createApprovalService(kernel).listPending(ctx, {
+          limit: clampLimit(limit, 50, 100),
+          cursor: cursor ?? null,
+        });
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
   }
 
   /** 审批卡详情：出处 / diff / 草稿态，一次只读聚合。 */

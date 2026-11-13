@@ -39,6 +39,10 @@ export interface AuditWrite {
 /**
  * 在写业务表的同一事务内追加审计记录。
  * 审计写入失败 => 整个事务回滚，账本不会出现「改了但没有记录」的状态。
+ *
+ * `actor_role` 是动作发生时的角色快照（员工调岗后仍能还原当时权限），
+ * 不是指向成员表的引用。迁移 `0007_young_sprite` 之前写入的历史行
+ * 该列为 NULL，语义是「升级前未采集角色」，不做猜测性回填。
  */
 export async function appendAudit(
   tx: Db | Tx,

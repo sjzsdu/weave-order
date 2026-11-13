@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useApprovalDetail, useApprovals, useDecideApproval } from "@weave-order/core";
+import { useApprovalDetail, useApprovalQueue, useDecideApproval } from "@weave-order/core";
 import type { ApprovalItem, ApprovalKind, CreatedQuoteShare } from "@weave-order/schema";
 import { ApprovalSheet, Badge, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
@@ -34,7 +34,7 @@ export default function ApprovalsPage() {
 
 function ApprovalsPageContent() {
   const api = useApi();
-  const approvals = useApprovals(api);
+  const approvals = useApprovalQueue(api);
   const decide = useDecideApproval(api);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
@@ -46,7 +46,7 @@ function ApprovalsPageContent() {
   } | null>(null);
   const urlSelectionRef = useRef(false);
 
-  const items = approvals.data?.items ?? [];
+  const items = approvals.items;
   const detail = useApprovalDetail(api, selection?.id ?? null, selection?.kind ?? "quote");
 
   // 从工作台「看详情」带着 ?id=&kind= 进来，直接定位。
@@ -138,7 +138,14 @@ function ApprovalsPageContent() {
             快捷键：J/K 切换 · A 批准 · R 驳回 · Esc 关闭详情
           </p>
         </div>
-        <Badge tone={items.length > 0 ? "danger" : "success"}>{items.length} 件待批</Badge>
+        <div className="flex items-center gap-2">
+          {approvals.hasMore && (
+            <span className="text-xs text-ink-400">已加载 {items.length} 条，下面还有更多</span>
+          )}
+          <Badge tone={items.length > 0 ? "danger" : "success"}>
+            {approvals.hasMore ? `${items.length}+` : items.length} 件待批
+          </Badge>
+        </div>
       </header>
 
       {notice && (
@@ -170,6 +177,18 @@ function ApprovalsPageContent() {
               }}
             />
           ))}
+          {approvals.hasMore && (
+            <button
+              type="button"
+              disabled={approvals.isFetchingNextPage}
+              onClick={() => void approvals.fetchNextPage()}
+              className="rounded-lg border border-dashed border-line px-3 py-2 text-xs text-ink-400 transition-colors hover:border-ink-400 hover:text-ink-900 disabled:opacity-50"
+            >
+              {approvals.isFetchingNextPage
+                ? "正在加载更多…"
+                : `加载更多待批单据（已显示 ${items.length} 条）`}
+            </button>
+          )}
         </aside>
 
         <section aria-live="polite">

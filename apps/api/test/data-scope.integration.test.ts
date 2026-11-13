@@ -253,6 +253,32 @@ describe("数据范围 OWN / TEAM / ALL", () => {
     expect(policiesForB.map((policy) => policy.scopeId)).toEqual([salesB.id]);
     const policiesForAll = await scoped.pricing.list({ scopeType: "PERSON" }, asC);
     expect(policiesForAll.map((policy) => policy.scopeId)).toEqual([salesB.id]);
+
+    // 策略列表游标分页：先按可见范围过滤，再分页，翻页不漏不重。
+    await scoped.pricing.create(
+      {
+        scopeType: "PERSON",
+        scopeId: salesB.id,
+        key: "pricing.default_margin_pct",
+        value: 18,
+      },
+      asManager,
+    );
+    const pageOne = await scoped.pricing.listPage({ scopeType: "PERSON" }, asB, { limit: 1 });
+    expect(pageOne.policies).toHaveLength(1);
+    expect(pageOne.hasMore).toBe(true);
+    expect(pageOne.nextCursor).toBeTruthy();
+    const pageTwo = await scoped.pricing.listPage({ scopeType: "PERSON" }, asB, {
+      limit: 1,
+      cursor: pageOne.nextCursor,
+    });
+    const pagedIds = [...pageOne.policies, ...pageTwo.policies].map((policy) => policy.id);
+    expect(pageTwo.hasMore).toBe(false);
+    expect(new Set(pagedIds).size).toBe(2);
+    // 他人依旧看不到：过滤与分页在同一条 SQL，不会因翻页泄露。
+    expect(
+      (await scoped.pricing.listPage({ scopeType: "PERSON" }, asA, { limit: 1 })).policies,
+    ).toHaveLength(0);
   }, 60_000);
 });
 

@@ -16,7 +16,17 @@ import type {
   ZodIssueSummary,
 } from "@weave-order/schema";
 import { formatMoney, isKernelError, mayViewCost } from "../kernel";
+import { decodeCursor, encodeCursor, parseApprovalCursor } from "../kernel/cursor";
 import type { Kernel, KernelContext } from "../kernel";
+
+/** 审批队列分页参数：默认一页 50 条，单页最多 100 条（防止一次拉爆）。 */
+export interface ApprovalQueueQuery {
+  limit?: number;
+  cursor?: string | null;
+}
+
+const QUEUE_PAGE_DEFAULT = 50;
+const QUEUE_PAGE_MAX = 100;
 
 /**
  * 审批服务（审批窗口的服务端核心）。
@@ -75,15 +85,31 @@ function failure(error: unknown): DecisionResult {
 
 export function createApprovalService(kernel: Kernel) {
   return {
-    /** 审批队列：从账本读出可见范围内的 DRAFT 单据（报价 + 寄样），纯只读聚合。 */
-    async listPending(ctx?: KernelContext): Promise<ApprovalQueue> {
+    /**
+     * 审批队列：从账本读出可见范围内的 DRAFT 单据（报价 + 寄样），纯只读聚合。
+     *
+     * 游标分页：每类各取 `limit + 1` 条（`+1` 只用于判断是否还有下一页），
+     * 合并排序后截到 `limit`。DRAFT 过滤下推到 SQL，因此第 101 条起的
+     * 待办不会再被「取前 100 条再过滤」静默丢掉。
+     */
+    async listPending(ctx?: KernelContext, query: ApprovalQueueQuery = {}): Promise<ApprovalQueue> {
+      const limit = clampLimit(query.limit, QUEUE_PAGE_DEFAULT, QUEUE_PAGE_MAX);
+      const after = parseApprovalCursor(decodeCursor(query.cursor));
+      const options = { pendingOnly: true, after };
+
       // 顺序执行：审批窗口跑在一条独占的租户连接上，同一 client 并发 query 已被 pg 弃用。
-      const quotes = await kernel.quotes.list(100, ctx);
-      const shipments = await kernel.shipments.list(100, ctx);
-      const items = [...quotes, ...shipments]
-        .filter((entry) => entry.pending)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return ApprovalQueue.parse({ items });
+      const quotes = await kernel.quotes.list(limit + 1, ctx, options);
+      const shipments = await kernel.shipments.list(limit + 1, ctx, options);
+      const merged = [...quotes, ...shipments].sort(compareQueueItems);
+      const hasMore = merged.length > limit;
+      const items = merged.slice(0, limit);
+      const last = items[items.length - 1];
+      return ApprovalQueue.parse({
+        items,
+        hasMore,
+        nextCursor:
+          hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null,
+      });
     },
 
     /**
@@ -91,12 +117,11 @@ export function createApprovalService(kernel: Kernel) {
      * 只读，不落账；金额与风险全部由后端给出，前端只展示。
      */
     async detail(id: string, kind: ApprovalKind, ctx?: KernelContext): Promise<Detail | null> {
-      // 顺序执行，避免单连接租户会话上同一 client 并发 query。
-      const quotes = await kernel.quotes.list(100, ctx);
-      const shipments = await kernel.shipments.list(100, ctx);
-      const item = [...quotes, ...shipments].find(
-        (entry) => entry.id === id && entry.kind === kind,
-      );
+      // 按 id 精确读取：不能从队列前 N 条里找，否则第 N+1 条永远打不开。
+      const [item] =
+        kind === "quote"
+          ? await kernel.quotes.list(1, ctx, { id })
+          : await kernel.shipments.list(1, ctx, { id });
       if (!item) return null;
 
       const customer = await kernel.customers.getById(item.customerId, ctx).catch(() => null);
@@ -337,6 +362,20 @@ export function createApprovalService(kernel: Kernel) {
       });
     },
   };
+}
+
+/**
+ * 队列排序：`createdAt DESC, id DESC`。加 id 做二级键，保证同一毫秒创建的
+ * 两条单据顺序稳定，游标翻页不会重复也不会跳条。
+ */
+function compareQueueItems(a: ApprovalItem, b: ApprovalItem): number {
+  const byTime = b.createdAt.localeCompare(a.createdAt);
+  return byTime !== 0 ? byTime : b.id.localeCompare(a.id);
+}
+
+function clampLimit(raw: number | undefined, fallback: number, max: number): number {
+  if (raw === undefined || !Number.isFinite(raw)) return fallback;
+  return Math.min(Math.max(Math.trunc(raw), 1), max);
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> {
