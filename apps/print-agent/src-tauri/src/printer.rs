@@ -3,7 +3,7 @@ use std::net::TcpStream;
 use std::process::Command;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::Engine;
 
 use crate::config::PrinterProfileConfig;
@@ -119,7 +119,7 @@ fn raw_system(payload: &str, printer_name: &str) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 fn raw_system(_payload: &str, printer_name: &str) -> Result<()> {
-    Err(anyhow!(
+    Err(anyhow::anyhow!(
         "Windows 热敏打印机请把连接方式改成 RAW_TCP，并填 {printer_name} 的 IP:9100"
     ))
 }
@@ -192,4 +192,48 @@ pub fn test_print(profile: &PrinterProfileConfig) -> Result<()> {
         return Ok(());
     };
     print_job(&test_job, profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Calibration;
+
+    fn profile(kind: &str, format: &str) -> PrinterProfileConfig {
+        PrinterProfileConfig {
+            name: "printer".to_string(),
+            kind: kind.to_string(),
+            connection: "RAW_TCP".to_string(),
+            address: Some("127.0.0.1:9100".to_string()),
+            format: format.to_string(),
+            calibration: Calibration::default(),
+        }
+    }
+
+    #[test]
+    fn zpl_calibration_is_injected_right_after_start() {
+        let out = apply_calibration("^XA\n^FDhi^FS\n^XZ", "ZPL", &profile("THERMAL", "ZPL"));
+        assert_eq!(out, "^XA\n^LH0,0\n^MD8\n^FDhi^FS\n^XZ");
+    }
+
+    #[test]
+    fn zpl_payload_without_start_gets_full_header() {
+        let out = apply_calibration("^FDhi^FS", "ZPL", &profile("THERMAL", "ZPL"));
+        assert_eq!(out, "^XA\n^LH0,0\n^MD8\n^FDhi^FS");
+    }
+
+    #[test]
+    fn tspl_density_is_clamped_to_printer_range() {
+        let mut target = profile("THERMAL", "TSPL");
+        target.calibration.density = 99;
+        assert_eq!(
+            apply_calibration("CLS\n", "TSPL", &target),
+            "SET DENSITY 15\nCLS\n"
+        );
+    }
+
+    #[test]
+    fn unknown_format_passes_through_untouched() {
+        assert_eq!(apply_calibration("raw", "PDF", &profile("A4", "PDF")), "raw");
+    }
 }

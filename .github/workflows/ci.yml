@@ -171,3 +171,97 @@ jobs:
           git reset -q --hard HEAD
           pnpm --filter @weave-order/db migrate
           pnpm --filter @weave-order/db migrate:check
+
+  # 打印代理（Tauri 2 + Rust）：此前 10 个 .rs 从不被 CI 编译。
+  # 独立作业，不塞进 verify，避免拖慢主链路；无 GUI 环境只需要系统库即可 cargo check/test。
+  print-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri 2 在 Linux 上编译需要 webkit2gtk / gtk / 托盘库（cargo check 也要，build script 走 pkg-config）。
+      - name: 安装 Tauri 2 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/print-agent/src-tauri -> target
+
+      # --locked：Cargo.lock 已提交，依赖漂移会直接变红（供应链可复现）。
+      - name: cargo check
+        working-directory: apps/print-agent/src-tauri
+        run: cargo check --all-targets --locked
+
+      - name: cargo test（lib 单元测试）
+        working-directory: apps/print-agent/src-tauri
+        run: cargo test --lib --locked
+
+  # 依赖漏洞扫描：只告警，不阻断（存量告警不应该卡住所有 PR）。
+  # 报告写到 Job Summary，阈值（critical/high 限期评估）由人按报告推进。
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 扫描生产依赖（只告警）
+        continue-on-error: true
+        run: |
+          set +e
+          timeout 180 pnpm audit --prod --json > audit.json
+          echo "pnpm audit exit=$?（非 0 表示有告警或 registry 不可达，均不阻断）"
+          node scripts/dependency-audit-summary.mjs audit.json >> "$GITHUB_STEP_SUMMARY"
+
+  # 移动端 mock 门禁自检：demo 构建（带 mock）必须被 check-prod-bundle 判红，
+  # 证明生产构建的「产物无 mock」断言不是永远为真。
+  mobile-mock-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建依赖（contracts → core）
+        run: pnpm --filter @weave-order/schema... --filter @weave-order/core... build
+
+      - name: 生产构建产物不含 mock（build 脚本内已内置检查）
+        run: pnpm --filter @weave-order/mobile build
+
+      - name: 门禁自检：带 mock 的构建必须被拒绝
+        run: pnpm --filter @weave-order/mobile verify:mock-gate

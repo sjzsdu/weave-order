@@ -66,4 +66,12 @@ Windows 热敏打印机**必须**配置 RAW TCP（`IP:9100`）：Windows 打印�
 
 ## 验证状态
 
-Rust 代码需要在安装 Rust 工具链的机器上 `cargo check` / `tauri build` 验证；本仓库 CI 默认不装 Rust，因此该端未纳入 `pnpm test`。服务端契约、WSS 协议与打印数据流由 `apps/api/test/print.e2e.test.ts` 覆盖。
+CI 的 `print-agent` 作业（`.github/workflows/ci.yml`）会安装 Tauri 2 的 Linux 系统依赖，跑
+`cargo check --all-targets --locked` 与 `cargo test --lib --locked`：Rust 编译失败或单元测试失败都会让 PR 变红。
+`Cargo.lock` 已提交，依赖漂移同样会变红。`tauri build` 打安装包仍需在本机（或发布流水线）上按上文的签名步骤执行。
+
+单元测试覆盖纯逻辑：配置读写与 WSS 地址推导（`config.rs`）、ZPL/TSPL 校准注入（`printer.rs`）、
+spool 幂等 / 顺序 / 回执 / 清空（`spool.rs`）。涉及真实打印机的路径（`lp`、RAW TCP）不做自动化，
+首次部署按上文「打印路径」手测。
+
+服务端契约、WSS 协议与打印数据流由 `apps/api/test/print.e2e.test.ts` 覆盖。

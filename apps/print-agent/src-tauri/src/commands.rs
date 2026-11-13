@@ -1,7 +1,6 @@
 use tauri::State;
 
 use crate::config::{PrinterProfileConfig, Calibration};
-use crate::printer::test_print;
 use crate::printers::{self, DiscoveredPrinter};
 use crate::spool::SpoolStatus;
 use crate::state::AppState;
@@ -103,5 +102,5 @@ pub async fn test_print(state: State<'_, AppState>) -> Result<(), String> {
         .first()
         .cloned()
         .ok_or_else(|| "还没有保存打印机 profile".to_string())?;
-    test_print(&profile).map_err(|error| error.to_string())
+    crate::printer::test_print(&profile).map_err(|error| error.to_string())
 }

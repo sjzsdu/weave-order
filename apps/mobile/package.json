@@ -4,13 +4,14 @@
   "private": true,
   "description": "E2 移动端（Taro 一套代码：H5/PWA + 小程序 + RN App）",
   "scripts": {
-    "build": "taro build --type h5",
-    "build:demo": "TARO_APP_MOCK=1 taro build --type h5",
+    "build": "taro build --type h5 && node scripts/check-prod-bundle.mjs",
+    "build:demo": "TARO_APP_MOCK=1 NODE_ENV=development taro build --type h5",
     "dev": "TARO_APP_MOCK=1 taro build --type h5 --watch",
     "dev:h5": "TARO_APP_MOCK=1 taro build --type h5 --watch",
     "dev:live": "taro build --type h5 --watch",
-    "build:weapp": "TARO_APP_OUTPUT=dist/weapp taro build --type weapp",
+    "build:weapp": "TARO_APP_OUTPUT=dist/weapp taro build --type weapp && node scripts/check-prod-bundle.mjs",
     "dev:weapp": "TARO_APP_OUTPUT=dist/weapp TARO_APP_MOCK=1 taro build --type weapp --watch",
+    "verify:mock-gate": "TARO_APP_OUTPUT=dist-gate TARO_APP_MOCK=1 NODE_ENV=development taro build --type h5 >/dev/null && ! TARO_APP_OUTPUT=dist-gate node scripts/check-prod-bundle.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src config"

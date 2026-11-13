@@ -34,19 +34,33 @@ async function loadPrinters() {
   try {
     const printers = await invoke("discovered_printers");
     const list = $("printers");
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const printer of printers) {
+      // 打印机名来自本机队列发现，仍按不可信文本处理：只用 textContent / 属性赋值，不拼 HTML。
       const li = document.createElement("li");
-      li.innerHTML = `
-        <div>
-          <strong>${printer.name}</strong><br />
-          <small>${printer.kind} · ${printer.connection}</small>
-        </div>
-        <div>
-          <input data-name="${printer.name}" data-field="address" value="${printer.address ?? ""}" placeholder="host:9100 或系统队列" />
-          <input data-name="${printer.name}" data-field="format" value="${printer.format ?? "ZPL"}" placeholder="ZPL/TSPL" />
-        </div>`;
-      list.appendChild(li);
+      const info = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = printer.name;
+      info.append(name, document.createElement("br"));
+      const meta = document.createElement("small");
+      meta.textContent = `${printer.kind} · ${printer.connection}`;
+      info.append(meta);
+
+      const fields = document.createElement("div");
+      const address = document.createElement("input");
+      address.dataset.name = printer.name;
+      address.dataset.field = "address";
+      address.value = printer.address ?? "";
+      address.placeholder = "host:9100 或系统队列";
+      const format = document.createElement("input");
+      format.dataset.name = printer.name;
+      format.dataset.field = "format";
+      format.value = printer.format ?? "ZPL";
+      format.placeholder = "ZPL/TSPL";
+      fields.append(address, format);
+
+      li.append(info, fields);
+      list.append(li);
       li._printer = printer;
     }
     log(`发现 ${printers.length} 台打印机`);
