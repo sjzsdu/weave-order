@@ -1,11 +1,12 @@
 import { sampleEmbeddings, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { T002SearchFabricBySpecInput } from "@weave-order/schema";
-import type { SpecMatch, T002SearchFabricBySpecData } from "@weave-order/schema";
+import type { FabricSample, SpecMatch, T002SearchFabricBySpecData } from "@weave-order/schema";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import type { AnyColumn, SQL } from "drizzle-orm";
-import { mapSample } from "./samples.service";
+import type { KernelContext } from "./audit";
+import { mapSample, presentSample } from "./samples.service";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 
 type SampleRow = typeof samples.$inferSelect;
@@ -174,14 +175,18 @@ export class SearchService {
     return { matches };
   }
 
-  /** 只读目录，给前端页面用。 */
-  async listSamples(limit = 50): Promise<ReturnType<typeof mapSample>[]> {
+  /**
+   * 只读目录，给前端页面用。
+   * 样品库是全租户共享目录（无归属人字段），因此不按 dataScope 过滤；
+   * 但成本底线属于敏感字段，按角色裁剪（sales 不可见）。
+   */
+  async listSamples(limit = 50, ctx?: KernelContext): Promise<FabricSample[]> {
     const rows = await this.db
       .select()
       .from(samples)
       .where(eq(samples.tenantId, this.tenantId))
       .orderBy(desc(samples.createdAt))
       .limit(limit);
-    return rows.map((row: SampleRow) => mapSample(row));
+    return rows.map((row: SampleRow) => presentSample(row, ctx?.actor.role));
   }
 }

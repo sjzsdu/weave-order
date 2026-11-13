@@ -1,4 +1,11 @@
-import { draftRevisions, quoteItems, quotes, revisionRequests, samples } from "@weave-order/db";
+import {
+  customers,
+  draftRevisions,
+  quoteItems,
+  quotes,
+  revisionRequests,
+  samples,
+} from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import {
   ApprovalItem,
@@ -31,6 +38,7 @@ import { assertCanApprove, computeRequirement, resolveApprovalPolicies } from ".
 import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
+import { ownerScopeFilter } from "./data-scope";
 import { formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
 import { currencyOf, toIso } from "./mappers";
 import { priceFloorOf, requireSampleCostFloor } from "./price-rules";
@@ -479,8 +487,8 @@ export class QuoteService {
     });
   }
 
-  async getDraft(quoteId: string): Promise<QuoteDraft> {
-    const { row, lines } = await this.loadQuote(quoteId, true);
+  async getDraft(quoteId: string, ctx?: KernelContext): Promise<QuoteDraft> {
+    const { row, lines } = await this.loadQuote(quoteId, true, ctx);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
@@ -490,8 +498,8 @@ export class QuoteService {
   }
 
   /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
-  async getApprovalView(quoteId: string): Promise<QuoteApprovalView> {
-    const { row, lines } = await this.loadQuote(quoteId, false);
+  async getApprovalView(quoteId: string, ctx?: KernelContext): Promise<QuoteApprovalView> {
+    const { row, lines } = await this.loadQuote(quoteId, false, ctx);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
@@ -1240,14 +1248,25 @@ export class QuoteService {
     return { status: "REJECTED" };
   }
 
-  /** 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。 */
-  async list(limit = 50): Promise<ApprovalItem[]> {
-    const rows = await this.db
-      .select()
-      .from(quotes)
-      .where(eq(quotes.tenantId, this.tenantId))
-      .orderBy(desc(quotes.createdAt))
-      .limit(limit);
+  /**
+   * 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。
+   * 数据范围按客户负责人过滤（报价本身没有归属人列）。
+   */
+  async list(limit = 50, ctx?: KernelContext): Promise<ApprovalItem[]> {
+    const rows = (
+      await this.db
+        .select({ quote: quotes })
+        .from(quotes)
+        .innerJoin(customers, eq(customers.id, quotes.customerId))
+        .where(
+          and(
+            eq(quotes.tenantId, this.tenantId),
+            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+          ),
+        )
+        .orderBy(desc(quotes.createdAt))
+        .limit(limit)
+    ).map((entry) => entry.quote);
     if (rows.length === 0) return [];
 
     const ids = rows.map((row) => row.id);
@@ -1308,13 +1327,22 @@ export class QuoteService {
   private async loadQuote(
     quoteId: string,
     requireDraft: boolean,
+    ctx?: KernelContext,
   ): Promise<{ row: QuoteRow; lines: CurrentLine[] }> {
+    // 报价没有自己的归属人列：归属随客户，越权时按「不存在」返回。
     const rows = await this.db
-      .select()
+      .select({ quote: quotes })
       .from(quotes)
-      .where(and(eq(quotes.id, quoteId), eq(quotes.tenantId, this.tenantId)))
+      .innerJoin(customers, eq(customers.id, quotes.customerId))
+      .where(
+        and(
+          eq(quotes.id, quoteId),
+          eq(quotes.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
-    const row = rows[0];
+    const row = rows[0]?.quote;
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
         resourceType: "quote",

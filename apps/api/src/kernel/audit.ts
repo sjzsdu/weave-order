@@ -1,7 +1,7 @@
 import { auditLog, DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { AuditLogEntry } from "@weave-order/schema";
-import type { AuditAction, JsonValue, MemberRole } from "@weave-order/schema";
+import type { AuditAction, DataScope, JsonValue, MemberRole } from "@weave-order/schema";
 import { and, desc, eq } from "drizzle-orm";
 
 /** 谁在写账本：智能体 / 人类 / 系统任务。 */
@@ -20,6 +20,12 @@ export interface KernelContext {
   correlationId?: string;
   /** 网关注入的租户；内核调用不传时使用内核绑定的租户（仅演示/测试路径）。 */
   tenantId?: string;
+  /** 应用层数据范围；仅 HUMAN 请求由网关注入，缺省 = 不受限（系统 / 智能体内部）。 */
+  dataScope?: DataScope;
+  /** 归属人 = memberships.id；OWN 范围据此过滤，写入时作为默认负责人。 */
+  ownerId?: string | null;
+  /** 成员所属团队；TEAM 范围据此取同组负责人。 */
+  teamId?: string | null;
 }
 
 export interface AuditWrite {

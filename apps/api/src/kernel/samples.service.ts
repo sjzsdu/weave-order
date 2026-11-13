@@ -1,12 +1,12 @@
 import { sampleEmbeddings, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { CreateSampleInput } from "@weave-order/schema";
-import type { FabricSample } from "@weave-order/schema";
+import type { FabricSample, MemberRole } from "@weave-order/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
-import { toIso } from "./mappers";
+import { mayViewCost, toIso } from "./mappers";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 
@@ -29,6 +29,17 @@ export function mapSample(row: SampleRow): FabricSample {
     status: row.status,
     createdAt: toIso(row.createdAt),
   };
+}
+
+/**
+ * 面向人的样品读模型：按角色裁剪成本底线。
+ * 内核内部（计价、工具层）继续用 mapSample 拿到完整底线，裁剪只在这一层发生。
+ */
+export function presentSample(row: SampleRow, role?: MemberRole): FabricSample {
+  const sample = mapSample(row);
+  if (mayViewCost(role)) return sample;
+  // 契约里 costFloor 是必填可空字段：裁剪后给 null，前端语义等同「不可见/未设置」。
+  return { ...sample, costFloor: null };
 }
 
 /** 样品内核服务：samples 的唯一写入入口。 */

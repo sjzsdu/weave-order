@@ -1,4 +1,4 @@
-import { sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
+import { customers, sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { ApprovalItem, CreateSampleShipmentInput } from "@weave-order/schema";
 import type { SampleShipment, SampleShipmentItem } from "@weave-order/schema";
@@ -7,6 +7,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
+import { ownerScopeFilter } from "./data-scope";
 import { milliToQuantity, quantityToMilli } from "./money";
 import { toIso, toIsoOrNull } from "./mappers";
 
@@ -174,9 +175,7 @@ export class ShipmentService {
       const lockedRows = await tx
         .select()
         .from(sampleShipments)
-        .where(
-          and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)),
-        )
+        .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
         .limit(1)
         .for("update");
       const current = lockedRows[0];
@@ -231,14 +230,25 @@ export class ShipmentService {
     return this.getById(shipmentId);
   }
 
-  /** 审批队列 / 全景的只读视图：把账本里的寄样单映射成 ApprovalItem。 */
-  async list(limit = 50): Promise<ApprovalItem[]> {
-    const rows = await this.db
-      .select()
-      .from(sampleShipments)
-      .where(eq(sampleShipments.tenantId, this.tenantId))
-      .orderBy(desc(sampleShipments.createdAt))
-      .limit(limit);
+  /**
+   * 审批队列 / 全景的只读视图：把账本里的寄样单映射成 ApprovalItem。
+   * 寄样单归属随客户，按客户负责人过滤。
+   */
+  async list(limit = 50, ctx?: KernelContext): Promise<ApprovalItem[]> {
+    const rows = (
+      await this.db
+        .select({ shipment: sampleShipments })
+        .from(sampleShipments)
+        .innerJoin(customers, eq(customers.id, sampleShipments.customerId))
+        .where(
+          and(
+            eq(sampleShipments.tenantId, this.tenantId),
+            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+          ),
+        )
+        .orderBy(desc(sampleShipments.createdAt))
+        .limit(limit)
+    ).map((entry) => entry.shipment);
     if (rows.length === 0) return [];
 
     const ids = rows.map((row) => row.id);
@@ -291,9 +301,7 @@ export class ShipmentService {
       const lockedRows = await tx
         .select()
         .from(sampleShipments)
-        .where(
-          and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)),
-        )
+        .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
         .limit(1)
         .for("update");
       const current = lockedRows[0];

@@ -2,6 +2,7 @@ import { Controller, Get, Headers, HttpException, HttpStatus, Inject, Query } fr
 import { ApiErrorResponse } from "@weave-order/schema";
 import type { Membership } from "@weave-order/schema";
 import { isKernelError } from "../kernel";
+import { humanScopeOf } from "../kernel/data-scope";
 import { AuthService } from "./auth.service";
 
 function fail(status: number, code: string, message: string): HttpException {
@@ -68,7 +69,10 @@ export class AuthController {
     }
     const scope = await this.auth.openScope(membership);
     try {
-      const rows = await scope.kernel.customers.list(clampLimit(limit, 20, 100));
+      const rows = await scope.kernel.customers.list(clampLimit(limit, 20, 100), {
+        actor: { type: "HUMAN", id: membership.subject, role: membership.role },
+        ...humanScopeOf(membership),
+      });
       return { customers: rows, tenantId: membership.tenantId };
     } catch (error) {
       throw toHttpError(error);

@@ -20,6 +20,7 @@ import { and, eq, lte } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
+import { scopeWindowOf } from "./data-scope";
 import { toIso } from "./mappers";
 
 type PolicyRow = typeof pricingPolicies.$inferSelect;
@@ -300,8 +301,13 @@ export class PricingService {
     return mapPolicy(row);
   }
 
+  /**
+   * 策略列表。人的维度（PERSON / TEAM）按登录成员的可见范围过滤：
+   * 没有 ALL 范围时只看自己的个人策略和本团队策略，公司/系统/品类/客户策略不受限。
+   */
   async list(
     filter: { scopeType?: PricingScopeType; scopeId?: string } = {},
+    ctx?: KernelContext,
   ): Promise<PricingPolicy[]> {
     const conditions = [eq(pricingPolicies.tenantId, this.tenantId)];
     if (filter.scopeType) conditions.push(eq(pricingPolicies.scopeType, filter.scopeType));
@@ -310,7 +316,15 @@ export class PricingService {
       .select()
       .from(pricingPolicies)
       .where(and(...conditions));
+    const window = scopeWindowOf(ctx);
     return rows
+      .filter((row) => {
+        if (!window || window.dataScope === "ALL") return true;
+        if (row.scopeType === "PERSON") return row.scopeId === window.ownerId;
+        if (row.scopeType === "TEAM")
+          return window.teamId !== null && row.scopeId === window.teamId;
+        return true;
+      })
       .map(mapPolicy)
       .sort((a, b) => SCOPE_RANK[a.scopeType] - SCOPE_RANK[b.scopeType] || a.priority - b.priority);
   }

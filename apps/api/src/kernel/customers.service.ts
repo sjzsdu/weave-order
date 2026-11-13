@@ -26,6 +26,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
+import { ownerScopeFilter } from "./data-scope";
 import { currencyOf, toIso } from "./mappers";
 
 const DEFAULT_PRICING_BEHAVIOR: PricingBehavior = {
@@ -116,6 +117,8 @@ export class CustomerService {
       .insert(customers)
       .values({
         tenantId: this.tenantId,
+        // 人类创建即归属创建人（OWN 范围据此可见）；系统/智能体创建不设归属人。
+        ownerId: ctx.ownerId ?? null,
         code: parsed.code,
         name: parsed.name,
         tier: parsed.tier,
@@ -154,11 +157,18 @@ export class CustomerService {
     return mapCustomer(row);
   }
 
-  async getById(customerId: string): Promise<Customer> {
+  /** 单条读取；`ctx` 带数据范围时越权一律按「不存在」处理。 */
+  async getById(customerId: string, ctx?: KernelContext): Promise<Customer> {
     const rows = await this.db
       .select()
       .from(customers)
-      .where(and(eq(customers.id, customerId), eq(customers.tenantId, this.tenantId)))
+      .where(
+        and(
+          eq(customers.id, customerId),
+          eq(customers.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     if (!row) {
@@ -277,12 +287,17 @@ export class CustomerService {
     });
   }
 
-  /** 只读列表，给页面选择演示客户用。 */
-  async list(limit = 20): Promise<Customer[]> {
+  /** 只读列表，给页面选择演示客户用；按数据范围过滤。 */
+  async list(limit = 20, ctx?: KernelContext): Promise<Customer[]> {
     const rows = await this.db
       .select()
       .from(customers)
-      .where(eq(customers.tenantId, this.tenantId))
+      .where(
+        and(
+          eq(customers.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .orderBy(desc(customers.createdAt))
       .limit(limit);
     return rows.map(mapCustomer);
@@ -312,6 +327,7 @@ export class CustomerService {
   async listDecisionDeltas(
     customerId: string,
     limit = 50,
+    ctx?: KernelContext,
   ): Promise<
     Array<{
       id: string;
@@ -328,7 +344,7 @@ export class CustomerService {
       createdAt: string;
     }>
   > {
-    await this.getById(customerId);
+    await this.getById(customerId, ctx);
     const rows = await this.db
       .select()
       .from(decisionDeltas)
