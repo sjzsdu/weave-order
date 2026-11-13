@@ -1,19 +1,23 @@
 import { z } from "zod";
 import { EntityId, Timestamp } from "./domain";
+import { Membership, Tenant } from "./tenancy";
 
 /**
- * 用户侧凭据契约：个人 API token + CLI 设备登录。
+ * 个人访问凭据（personal access token，PAT）：CLI / agent 的长期凭据。
  *
- * 设计约束（与产品铁律一致）：
- * 1. 明文 token 只在创建那一刻返回一次，数据库只存 SHA-256 哈希与可展示前缀。
- * 2. 作用域是封闭集合：read（读目录/全景/审计）、write（调用工具产出草稿）、
- *    approve（人类审批）。默认只给 read + write，approve 必须显式授予，
- *    避免「智能体拿着登录 token 自己批准自己」。
- * 3. CLI 登录走设备码流程（RFC 8628 思路）：CLI 拿 device_code 轮询，
- *    人类在浏览器确认，凭据不经过命令行回显，也不需要把密码交给第三方 agent。
+ * 与网关的 Casdoor OIDC 令牌互补：
+ * - OIDC 令牌有 15 分钟寿命、只存在浏览器 httpOnly Cookie，适合人；
+ * - PAT 有明确作用域与可撤销生命周期，适合 codex 等非交互 agent。
+ *
+ * 安全约束：
+ * 1. 明文只返回一次；库里只存 `sha256(pepper + token)` 与可展示前缀。
+ * 2. 凭据绑定到一条 `membership`（租户 + 角色），认证后仍走同一套
+ *    membership → tenant 作用域 → RLS，不另开权限旁路。
+ * 3. 作用域：read / write / approve。默认只发 read + write；approve 必须
+ *    人类显式授予，避免 agent 用登录凭据自己批准自己。
+ * 4. CLI 登录用设备码（RFC 8628 思路）：`/cli-login` 页面由已登录的人确认，
+ *    浏览器里的 OIDC 会话决定凭据归属，CLI 只拿到一次性凭据。
  */
-
-/** token 作用域：读 / 写（工具、草稿、导入）/ 审批（人类决策入口）。 */
 export const TokenScope = z.enum(["read", "write", "approve"]);
 export type TokenScope = z.infer<typeof TokenScope>;
 
@@ -22,27 +26,15 @@ export const TOKEN_SCOPES: readonly TokenScope[] = ["read", "write", "approve"];
 /** 默认作用域：登录即得到的「干活但不能审批」的凭据。 */
 export const DEFAULT_TOKEN_SCOPES: readonly TokenScope[] = ["read", "write"];
 
-/** 账号（MVP：邮箱唯一；接入 Casdoor 后由 OIDC sub 映射，邮箱仍是展示字段）。 */
-export const WeaveUser = z
-  .object({
-    id: EntityId,
-    email: z.string().email().max(255),
-    name: z.string().min(1).max(120),
-    createdAt: Timestamp,
-  })
-  .strict();
-export type WeaveUser = z.infer<typeof WeaveUser>;
-
-/** token 的状态由服务端派生，不允许调用方写入。 */
 export const ApiTokenStatus = z.enum(["ACTIVE", "REVOKED", "EXPIRED"]);
 export type ApiTokenStatus = z.infer<typeof ApiTokenStatus>;
 
-/** token 的只读视图：永远不含明文与哈希。 */
+/** 凭据只读视图：永远不含明文与哈希。 */
 export const ApiToken = z
   .object({
     id: EntityId,
     name: z.string().min(1).max(64),
-    /** 可展示前缀，如 `wo_ab12cd34`；用于让用户分辨是哪个 token。 */
+    /** 可展示前缀，如 `wo_ab12cd34`。 */
     prefix: z.string().min(1).max(32),
     scopes: z.array(TokenScope).min(1),
     status: ApiTokenStatus,
@@ -54,7 +46,6 @@ export const ApiToken = z
   .strict();
 export type ApiToken = z.infer<typeof ApiToken>;
 
-/** 创建 token（已登录用户 / 设备登录确认时由服务端内部调用）。 */
 export const CreateApiTokenInput = z
   .object({
     name: z.string().trim().min(1).max(64),
@@ -80,19 +71,21 @@ export type CreatedApiToken = z.infer<typeof CreatedApiToken>;
 export const ApiTokenList = z.object({ tokens: z.array(ApiToken) }).strict();
 export type ApiTokenList = z.infer<typeof ApiTokenList>;
 
-/** 当前凭据自述：`weave whoami` / `GET /api/auth/me`。 */
-export const AuthIdentity = z
+/** `GET /api/auth/whoami`：CLI 自述，含租户与成员身份。 */
+export const PersonalAccessIdentity = z
   .object({
-    user: WeaveUser,
-    token: ApiToken,
+    subject: z.string().min(1).max(128),
+    tenant: Tenant,
+    membership: Membership,
+    token: ApiToken.nullable(),
   })
   .strict();
-export type AuthIdentity = z.infer<typeof AuthIdentity>;
+export type PersonalAccessIdentity = z.infer<typeof PersonalAccessIdentity>;
 
 /** 设备登录：CLI 发起。 */
 export const DeviceAuthorizationStartInput = z
   .object({
-    /** 便于用户在「已授权的 CLI」列表里识别来源，如 `codex-cli/0.52.0`。 */
+    /** 便于用户识别来源，如 `weave-cli/0.1.0`。 */
     clientName: z.string().trim().min(1).max(64).optional(),
   })
   .strict();
@@ -102,9 +95,8 @@ export const DeviceAuthorizationStart = z
   .object({
     deviceCode: z.string().min(16),
     userCode: z.string().min(4),
-    /** 人类打开的确认页，如 `http://localhost:3000/cli-login`。 */
+    /** 人类打开的确认页，如 `http://localhost:5174/cli-login`。 */
     verificationUri: z.string().url(),
-    /** 已带 user_code 的完整链接，CLI 直接拉起浏览器。 */
     verificationUriComplete: z.string().url(),
     expiresIn: z.number().int().positive(),
     interval: z.number().int().positive(),
@@ -113,22 +105,18 @@ export const DeviceAuthorizationStart = z
 export type DeviceAuthorizationStart = z.infer<typeof DeviceAuthorizationStart>;
 
 /**
- * 人类在确认页上的决定。MVP 用邮箱自证（无密码），
- * 接入 Casdoor 后这里改为 OIDC 会话，入参不再需要 email。
+ * 确认页的决定。身份来自浏览器会话（OIDC），不再由表单自报邮箱；
+ * `scopes` 由页面上的勾选项决定，approve 默认不勾。
  */
 export const DeviceAuthorizationDecision = z
   .object({
     userCode: z.string().trim().min(1).max(16),
-    email: z.string().email().max(255),
-    name: z.string().trim().min(1).max(120).optional(),
     approve: z.boolean().default(true),
-    /** 是否允许这台 CLI 审批。默认关闭，人类可显式勾选。 */
     scopes: z
       .array(TokenScope)
       .min(1)
       .max(TOKEN_SCOPES.length)
       .default([...DEFAULT_TOKEN_SCOPES]),
-    tokenName: z.string().trim().min(1).max(64).optional(),
   })
   .strict();
 export type DeviceAuthorizationDecision = z.infer<typeof DeviceAuthorizationDecision>;
@@ -137,21 +125,17 @@ export const DeviceAuthorizationDecisionResult = z
   .object({
     userCode: z.string(),
     approved: z.boolean(),
-    email: z.string().email(),
+    subject: z.string(),
   })
   .strict();
 export type DeviceAuthorizationDecisionResult = z.infer<typeof DeviceAuthorizationDecisionResult>;
 
-/** CLI 轮询凭证。 */
 export const DeviceAuthorizationPollInput = z.object({ deviceCode: z.string().min(16) }).strict();
 export type DeviceAuthorizationPollInput = z.infer<typeof DeviceAuthorizationPollInput>;
 
 /**
  * 轮询结果。`status` 是判别键：
- * - pending：人类还没确认（CLI 继续等）
- * - slow_down：轮询过快（CLI 拉长间隔）
- * - approved：一次性返回明文 token
- * - denied / expired：终态，CLI 应提示重新登录
+ * pending / slow_down / approved（一次性返回明文）/ denied / expired。
  */
 export const DeviceAuthorizationPollResult = z.discriminatedUnion("status", [
   z.object({ status: z.literal("pending") }).strict(),
@@ -161,7 +145,8 @@ export const DeviceAuthorizationPollResult = z.discriminatedUnion("status", [
       status: z.literal("approved"),
       token: z.string().min(1),
       tokenView: ApiToken,
-      user: WeaveUser,
+      membership: Membership,
+      tenant: Tenant,
     })
     .strict(),
   z.object({ status: z.literal("denied") }).strict(),

@@ -6,8 +6,8 @@ import type {
   ApiTokenView,
   DevicePollView,
   DeviceStartView,
-  IdentityView,
   ToolResultView,
+  WhoAmIView,
 } from "./api";
 import { flagBool, flagNumber, flagString } from "./args";
 import type { ParsedArgs } from "./args";
@@ -61,18 +61,23 @@ export async function login(args: ParsedArgs, ctx: CliContext): Promise<number> 
 
   if (providedToken) {
     const client = createClient({ serverUrl, token: providedToken });
-    const identity = await client.get<IdentityView>("/api/auth/me");
+    const identity = await client.get<WhoAmIView>("/api/auth/whoami");
+    if (!identity.token) {
+      throw new ApiError("INVALID_TOKEN", "该 token 不是个人访问凭据", 401);
+    }
     writeConfig({
       serverUrl,
       token: providedToken,
       tokenPrefix: identity.token.prefix,
-      email: identity.user.email,
+      email: undefined,
       updatedAt: new Date().toISOString(),
     });
     if (ctx.json) {
-      printJson({ ok: true, serverUrl, user: identity.user, token: identity.token });
+      printJson({ ok: true, serverUrl, ...identity });
     } else {
-      printLine(`✔ 已登录 ${identity.user.email}（${identity.token.prefix}）→ ${serverUrl}`);
+      printLine(
+        `✔ 已登录 ${identity.membership.subject} @ ${identity.tenant.name}（${identity.token.prefix}）→ ${serverUrl}`,
+      );
     }
     return EXIT.OK;
   }
@@ -129,19 +134,22 @@ export async function login(args: ParsedArgs, ctx: CliContext): Promise<number> 
         serverUrl,
         token: result.token,
         tokenPrefix: result.tokenView.prefix,
-        email: result.user.email,
         updatedAt: new Date().toISOString(),
       });
       if (ctx.json) {
         printJson({
           ok: true,
           serverUrl,
-          user: result.user,
+          subject: result.membership.subject,
+          tenant: result.tenant,
+          membership: result.membership,
           token: result.tokenView,
         });
       } else {
         printLine("");
-        printLine(`✔ 已登录 ${result.user.email}（${result.tokenView.prefix}）`);
+        printLine(
+          `✔ 已登录 ${result.membership.subject} @ ${result.tenant.name}（${result.tokenView.prefix}）`,
+        );
         printLine(`  凭据已保存到 ${writeConfigPathHint()}`);
       }
       return EXIT.OK;
@@ -179,16 +187,22 @@ export function logout(ctx: CliContext): number {
 
 export async function whoami(ctx: CliContext): Promise<number> {
   if (!resolveToken()) requireTokenHint();
-  const identity = await clientFor(ctx).get<IdentityView>("/api/auth/me");
+  const identity = await clientFor(ctx).get<WhoAmIView>("/api/auth/whoami");
   if (ctx.json) {
     printJson(identity);
     return EXIT.OK;
   }
-  printLine(`账号：${identity.user.name} <${identity.user.email}>`);
-  printLine(`凭据：${identity.token.prefix}（${identity.token.name}）`);
-  printLine(`作用域：${identity.token.scopes.join(", ")}`);
-  printLine(`状态：${identity.token.status}`);
-  printLine(`最近使用：${shortTime(identity.token.lastUsedAt)}`);
+  printLine(`账号：${identity.membership.subject}`);
+  printLine(`租户：${identity.tenant.name}（${identity.tenant.slug}）`);
+  printLine(`角色：${identity.membership.role} · 数据范围 ${identity.membership.dataScope}`);
+  if (identity.token) {
+    printLine(`凭据：${identity.token.prefix}（${identity.token.name}）`);
+    printLine(`作用域：${identity.token.scopes.join(", ")}`);
+    printLine(`状态：${identity.token.status}`);
+    printLine(`最近使用：${shortTime(identity.token.lastUsedAt)}`);
+  } else {
+    printLine("凭据：OIDC 会话（非个人访问凭据）");
+  }
   return EXIT.OK;
 }
 
@@ -490,11 +504,13 @@ export async function doctor(ctx: CliContext): Promise<number> {
 
   if (token) {
     try {
-      const identity = await createClient({ serverUrl, token }).get<IdentityView>("/api/auth/me");
+      const identity = await createClient({ serverUrl, token }).get<WhoAmIView>("/api/auth/whoami");
       report.identity = {
-        email: identity.user.email,
-        token: identity.token.prefix,
-        scopes: identity.token.scopes,
+        subject: identity.membership.subject,
+        tenant: identity.tenant.slug,
+        role: identity.membership.role,
+        token: identity.token?.prefix ?? null,
+        scopes: identity.token?.scopes ?? null,
       };
     } catch (error) {
       report.identity = {

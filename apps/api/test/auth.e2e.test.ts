@@ -1,43 +1,71 @@
-import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { NestFactory } from "@nestjs/core";
+import type { Server } from "node:http";
 import type { INestApplication } from "@nestjs/common";
-import type { DeviceAuthorizationPollResult, DeviceAuthorizationStart } from "@weave-order/schema";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppModule } from "../src/app.module";
+import { NestFactory } from "@nestjs/core";
 import { createDb } from "@weave-order/db";
-import type { Db } from "@weave-order/db";
+import type { Pool } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type {
+  DeviceAuthorizationPollResult,
+  DeviceAuthorizationStart,
+  PersonalAccessIdentity,
+} from "@weave-order/schema";
+import { AppModule } from "../src/app.module";
+import { createKernel } from "../src/kernel";
+import type { KernelContext } from "../src/kernel";
 
 /**
- * 凭据与 CLI 登录端到端：真实 Nest + 真实 PG。
- * 没有本地 PG 时整组跳过，与既有 http.e2e 的策略一致。
+ * 个人访问凭据 + CLI 设备登录端到端（WAN-78）。
+ *
+ * 使用网关的 dev 令牌（`dev:<sub>:<org>`）模拟「已登录的人类」：
+ * 设备登录批准必须带登录态，凭据绑定到该成员的 membership，
+ * 之后 PAT 认证走同一条 membership → tenant → RLS 链路。
  */
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://weave:weave@localhost:5433/weave_order";
+const SYSTEM: KernelContext = { actor: { type: "SYSTEM", id: "e2e-pat" } };
 
 let app: INestApplication | null = null;
 let baseUrl = "";
-let db: Db | null = null;
+let pool: Pool | null = null;
 let available = false;
+let tenantId = "";
+let subject = "";
+let org = "";
+const createdTenants: string[] = [];
+const suffix = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 interface JsonError {
   error: { code: string; message: string };
 }
 
 beforeAll(async () => {
-  process.env.AUTH_TOKEN_PEPPER = process.env.AUTH_TOKEN_PEPPER ?? "e2e-pepper";
-  process.env.AUTH_REQUIRED = "false";
   try {
     const handle = createDb(DATABASE_URL);
+    pool = handle.pool;
     const check = await handle.pool.query<{ exists: boolean }>(
       "SELECT to_regclass('public.api_tokens') IS NOT NULL AS exists",
     );
-    db = handle.db;
     available = check.rows[0]?.exists === true;
     if (!available) {
       await handle.pool.end();
       return;
     }
+
+    const bootstrap = createKernel(handle.db);
+    org = `pat-org-${suffix()}`;
+    const tenant = await bootstrap.tenancy.createTenant(
+      { slug: `pat-${suffix()}`, name: "PAT 租户", casdoorOrg: org },
+      SYSTEM,
+    );
+    tenantId = tenant.id;
+    subject = `pat-user-${suffix()}`;
+    createdTenants.push(tenant.id);
+    await bootstrap.tenancy.createMembership(
+      { tenantId: tenant.id, subject, casdoorOrg: org, role: "OWNER", dataScope: "ALL" },
+      SYSTEM,
+    );
+
     app = await NestFactory.create(AppModule, { logger: false });
     await app.listen(0);
     const address = (app.getHttpServer() as Server).address() as AddressInfo;
@@ -49,102 +77,110 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  if (pool && createdTenants.length > 0) {
+    await pool.query("DELETE FROM tenants WHERE id = ANY($1::uuid[])", [createdTenants]);
+  }
 });
 
-async function json<T>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> {
+async function call<T>(
+  path: string,
+  init: RequestInit & { authorization?: string } = {},
+): Promise<{ status: number; body: T }> {
+  const { authorization, ...rest } = init;
   const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
+    ...rest,
     headers: {
       "content-type": "application/json",
-      ...(init?.headers ?? {}),
+      ...(authorization ? { authorization: `Bearer ${authorization}` } : {}),
+      ...(rest.headers ?? {}),
     },
   });
-  const body = (await response.json()) as T;
+  const text = await response.text();
+  const body = (text ? JSON.parse(text) : undefined) as T;
   return { status: response.status, body };
 }
 
-function bearer(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}` };
-}
+const devToken = () => `dev:${subject}:${org}`;
 
-async function login(): Promise<{ token: string; email: string; userCode: string }> {
-  const email = `cli-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}@weave.test`;
-  const start = await json<DeviceAuthorizationStart>("/api/auth/device/start", {
+async function deviceLogin(scopes?: string[]): Promise<{ token: string; userCode: string }> {
+  const start = await call<DeviceAuthorizationStart>("/api/auth/device/start", {
     method: "POST",
     body: JSON.stringify({ clientName: "vitest-cli/1.0.0" }),
   });
   expect(start.status).toBe(201);
 
-  const pending = await json<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
+  const pending = await call<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
     method: "POST",
     body: JSON.stringify({ deviceCode: start.body.deviceCode }),
   });
   expect(pending.body.status).toBe("pending");
 
-  const decided = await json<{ approved: boolean; email: string }>("/api/auth/device/decide", {
+  const decided = await call<{ approved: boolean; subject: string }>("/api/auth/device/decide", {
     method: "POST",
-    body: JSON.stringify({ userCode: start.body.userCode, email, approve: true }),
+    authorization: devToken(),
+    body: JSON.stringify({
+      userCode: start.body.userCode,
+      approve: true,
+      ...(scopes ? { scopes } : {}),
+    }),
   });
   expect(decided.status).toBe(200);
   expect(decided.body.approved).toBe(true);
+  expect(decided.body.subject).toBe(subject);
 
-  const approved = await json<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
+  const approved = await call<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
     method: "POST",
     body: JSON.stringify({ deviceCode: start.body.deviceCode }),
   });
   expect(approved.body.status).toBe("approved");
   if (approved.body.status !== "approved") throw new Error("登录未批准");
-  expect(approved.body.user.email).toBe(email);
-  expect(approved.body.tokenView.scopes).toEqual(["read", "write"]);
-  return { token: approved.body.token, email, userCode: start.body.userCode };
+  expect(approved.body.membership.id).toBeTypeOf("string");
+  expect(approved.body.tenant.id).toBe(tenantId);
+  return { token: approved.body.token, userCode: start.body.userCode };
 }
 
-describe("用户凭据与 CLI 设备登录（e2e）", () => {
-  it("设备登录：pending → approve → 一次性换取 token", async (ctx) => {
+describe("个人访问凭据与 CLI 设备登录（e2e）", () => {
+  it("设备登录：pending → 人类批准 → 一次性换取 token → whoami 带租户", async (ctx) => {
     if (!available) ctx.skip();
-    const { token } = await login();
+    const { token } = await deviceLogin();
 
-    const me = await json<{ user: { email: string }; token: { prefix: string } }>("/api/auth/me", {
-      headers: bearer(token),
+    const who = await call<PersonalAccessIdentity>("/api/auth/whoami", {
+      authorization: token,
+    });
+    expect(who.status).toBe(200);
+    expect(who.body.subject).toBe(subject);
+    expect(who.body.tenant.id).toBe(tenantId);
+    expect(who.body.membership.role).toBe("OWNER");
+    expect(who.body.token?.scopes).toEqual(["read", "write"]);
+
+    // 网关的 /auth/me 也接受 PAT：同一套 membership 解析。
+    const me = await call<{ subject: string; tenant: { id: string } }>("/api/auth/me", {
+      authorization: token,
     });
     expect(me.status).toBe(200);
-    expect(me.body.token.prefix).toMatch(/^wo_[a-z0-9]{10}$/);
-
-    // 默认登录凭据没有 approve 作用域：能干活，不能自己审批。
-    const denied = await json<JsonError>("/api/approvals/decide", {
-      method: "POST",
-      headers: bearer(token),
-      body: JSON.stringify({
-        id: "00000000-0000-4000-8000-000000000000",
-        kind: "quote",
-        decision: "APPROVE",
-      }),
-    });
-    expect(denied.status).toBe(403);
-    expect(denied.body.error.code).toBe("SCOPE_REQUIRED");
+    expect(me.body.subject).toBe(subject);
+    expect(me.body.tenant.id).toBe(tenantId);
   });
 
   it("device_code 只能换取一次凭据", async (ctx) => {
-    if (!available || !db) {
-      ctx.skip();
-      return;
-    }
-    const { email } = await login();
-    const start = await json<DeviceAuthorizationStart>("/api/auth/device/start", {
+    if (!available) ctx.skip();
+    // 手动走一遍，保留 deviceCode 用于重放。
+    const start = await call<DeviceAuthorizationStart>("/api/auth/device/start", {
       method: "POST",
       body: JSON.stringify({ clientName: "replay-test" }),
     });
-    await json("/api/auth/device/decide", {
+    await call("/api/auth/device/decide", {
       method: "POST",
-      body: JSON.stringify({ userCode: start.body.userCode, email, approve: true }),
+      authorization: devToken(),
+      body: JSON.stringify({ userCode: start.body.userCode, approve: true }),
     });
-    const first = await json<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
+    const first = await call<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
       method: "POST",
       body: JSON.stringify({ deviceCode: start.body.deviceCode }),
     });
     expect(first.body.status).toBe("approved");
 
-    const replay = await json<JsonError>("/api/auth/device/poll", {
+    const replay = await call<JsonError>("/api/auth/device/poll", {
       method: "POST",
       body: JSON.stringify({ deviceCode: start.body.deviceCode }),
     });
@@ -154,99 +190,125 @@ describe("用户凭据与 CLI 设备登录（e2e）", () => {
 
   it("拒绝登录：CLI 拿到 denied，且不签发凭据", async (ctx) => {
     if (!available) ctx.skip();
-    const start = await json<DeviceAuthorizationStart>("/api/auth/device/start", {
+    const start = await call<DeviceAuthorizationStart>("/api/auth/device/start", {
       method: "POST",
       body: JSON.stringify({}),
     });
-    await json("/api/auth/device/decide", {
+    const denied = await call<{ approved: boolean }>("/api/auth/device/decide", {
       method: "POST",
-      body: JSON.stringify({
-        userCode: start.body.userCode,
-        email: "deny@weave.test",
-        approve: false,
-      }),
+      authorization: devToken(),
+      body: JSON.stringify({ userCode: start.body.userCode, approve: false }),
     });
-    const polled = await json<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
+    expect(denied.status).toBe(200);
+    expect(denied.body.approved).toBe(false);
+
+    const polled = await call<DeviceAuthorizationPollResult>("/api/auth/device/poll", {
       method: "POST",
       body: JSON.stringify({ deviceCode: start.body.deviceCode }),
     });
     expect(polled.body.status).toBe("denied");
   });
 
-  it("token 管理：创建（含 approve 作用域）、列出、撤销后立即失效", async (ctx) => {
+  it("设备登录批准必须带登录态", async (ctx) => {
     if (!available) ctx.skip();
-    const { token } = await login();
+    const start = await call<DeviceAuthorizationStart>("/api/auth/device/start", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const anonymous = await call<JsonError>("/api/auth/device/decide", {
+      method: "POST",
+      body: JSON.stringify({ userCode: start.body.userCode, approve: true }),
+    });
+    expect(anonymous.status).toBe(401);
+  });
 
-    const created = await json<{ token: string; tokenView: { id: string; scopes: string[] } }>(
+  it("默认凭据不能审批；approve 需人类显式签发", async (ctx) => {
+    if (!available) ctx.skip();
+    const { token } = await deviceLogin();
+
+    // read/write 凭据调用审批 → 403 SCOPE_REQUIRED（HumanActorService 收口）。
+    const blocked = await call<JsonError>("/api/approvals/decide", {
+      method: "POST",
+      authorization: token,
+      body: JSON.stringify({
+        id: "00000000-0000-4000-8000-000000000000",
+        kind: "quote",
+        decision: "APPROVE",
+      }),
+    });
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe("SCOPE_REQUIRED");
+
+    // 低权凭据也不能给自己签发 approve。
+    const escalate = await call<JsonError>("/api/auth/tokens", {
+      method: "POST",
+      authorization: token,
+      body: JSON.stringify({ name: "越权", scopes: ["read", "approve"] }),
+    });
+    expect(escalate.status).toBe(403);
+
+    // 人类 OIDC 会话可以签发 approve。
+    const created = await call<{ token: string; tokenView: { scopes: string[] } }>(
       "/api/auth/tokens",
       {
         method: "POST",
-        headers: bearer(token),
+        authorization: devToken(),
         body: JSON.stringify({ name: "审批终端", scopes: ["read", "approve"], expiresInDays: 30 }),
       },
     );
     expect(created.status).toBe(201);
-    expect(created.body.token).toMatch(/^wo_/);
     expect(created.body.tokenView.scopes).toEqual(["read", "approve"]);
 
-    const list = await json<{ tokens: { id: string; prefix: string }[] }>("/api/auth/tokens", {
-      headers: bearer(token),
-    });
-    expect(list.body.tokens.some((item) => item.id === created.body.tokenView.id)).toBe(true);
-
-    // approve 作用域生效：审批接口不再是 403（对象不存在时由 approval 层返回业务错误）。
-    const panorama = await json<{ panels: unknown }>("/api/panorama", {
-      headers: bearer(created.body.token),
-    });
-    expect(panorama.status).toBe(200);
-
-    const revoked = await json<{ status: string }>(
-      `/api/auth/tokens/${created.body.tokenView.id}`,
+    // 带 approve 的凭据：审批不再被作用域拦截（对象不存在时返回业务错误）。
+    const decide = await call<{ ok?: boolean; error?: { code?: string } }>(
+      "/api/approvals/decide",
       {
-        method: "DELETE",
-        headers: bearer(token),
+        method: "POST",
+        authorization: created.body.token,
+        body: JSON.stringify({
+          id: "00000000-0000-4000-8000-000000000000",
+          kind: "quote",
+          decision: "APPROVE",
+        }),
       },
     );
+    expect(decide.body.error?.code).not.toBe("SCOPE_REQUIRED");
+  });
+
+  it("token 管理：列出、撤销后立即失效", async (ctx) => {
+    if (!available) ctx.skip();
+    const { token } = await deviceLogin();
+
+    const list = await call<{ tokens: { id: string; prefix: string }[] }>("/api/auth/tokens", {
+      authorization: token,
+    });
+    expect(list.status).toBe(200);
+    expect(list.body.tokens.length).toBeGreaterThan(0);
+
+    const own = list.body.tokens[0];
+    expect(own).toBeDefined();
+    const revoked = await call<{ status: string }>(`/api/auth/tokens/${own?.id}`, {
+      method: "DELETE",
+      authorization: token,
+    });
     expect(revoked.status).toBe(200);
     expect(revoked.body.status).toBe("REVOKED");
 
-    const after = await json<JsonError>("/api/auth/me", { headers: bearer(created.body.token) });
+    const after = await call<JsonError>("/api/auth/whoami", { authorization: token });
     expect(after.status).toBe(401);
     expect(after.body.error.code).toBe("TOKEN_REVOKED");
   });
 
-  it("未带凭据的身份端点 401，伪造凭据 401，缺 scope 403", async (ctx) => {
+  it("伪造凭据 401；健康检查不受影响", async (ctx) => {
     if (!available) ctx.skip();
-    const anonymous = await json<JsonError>("/api/auth/me");
-    expect(anonymous.status).toBe(401);
-    expect(anonymous.body.error.code).toBe("AUTH_REQUIRED");
-
-    const forged = await json<JsonError>("/api/auth/me", {
-      headers: bearer(`wo_${"a".repeat(10)}_${"b".repeat(32)}`),
+    const forged = await call<JsonError>("/api/auth/whoami", {
+      authorization: `wo_${"a".repeat(10)}_${"b".repeat(32)}`,
     });
     expect(forged.status).toBe(401);
     expect(forged.body.error.code).toBe("INVALID_TOKEN");
 
-    const { token } = await login();
-    const approveOnly = await json<{ token: string }>("/api/auth/tokens", {
-      method: "POST",
-      headers: bearer(token),
-      body: JSON.stringify({ name: "只读审批", scopes: ["approve"] }),
-    });
-    const read = await json<JsonError>("/api/samples", {
-      headers: bearer(approveOnly.body.token),
-    });
-    expect(read.status).toBe(403);
-    expect(read.body.error.code).toBe("SCOPE_REQUIRED");
-  });
-
-  it("浏览器确认页可打开，且不泄露用户输入", async (ctx) => {
-    if (!available) ctx.skip();
-    const page = await fetch(`${baseUrl}/cli-login?user_code=%3Cscript%3Ealert(1)%3C%2Fscript%3E`);
-    expect(page.status).toBe(200);
-    expect(page.headers.get("content-type")).toContain("text/html");
-    const html = await page.text();
-    expect(html).toContain("确认码");
-    expect(html).not.toContain("<script>alert(1)</script>");
+    const health = await call<{ ok: boolean }>("/api/health");
+    expect(health.status).toBe(200);
+    expect(health.body.ok).toBe(true);
   });
 });

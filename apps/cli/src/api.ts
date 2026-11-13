@@ -120,16 +120,28 @@ export interface ApiTokenView {
   revokedAt: string | null;
 }
 
-export interface UserView {
+export interface MembershipView {
   id: string;
-  email: string;
-  name: string;
-  createdAt: string;
+  tenantId: string;
+  subject: string;
+  casdoorOrg: string | null;
+  role: string;
+  dataScope: string;
+  status: string;
 }
 
-export interface IdentityView {
-  user: UserView;
-  token: ApiTokenView;
+export interface TenantView {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+/** `GET /api/auth/whoami`：凭据 + 成员身份 + 租户。 */
+export interface WhoAmIView {
+  subject: string;
+  tenant: TenantView;
+  membership: MembershipView;
+  token: ApiTokenView | null;
 }
 
 export interface DeviceStartView {
@@ -144,7 +156,13 @@ export interface DeviceStartView {
 export type DevicePollView =
   | { status: "pending" }
   | { status: "slow_down"; interval: number }
-  | { status: "approved"; token: string; tokenView: ApiTokenView; user: UserView }
+  | {
+      status: "approved";
+      token: string;
+      tokenView: ApiTokenView;
+      membership: MembershipView;
+      tenant: TenantView;
+    }
   | { status: "denied" }
   | { status: "expired" };
 

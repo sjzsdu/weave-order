@@ -1,19 +1,18 @@
 import {
-  ApiTokenList,
-  AuthIdentity,
   CreateApiTokenInput,
   DeviceAuthorizationDecision,
-  DeviceAuthorizationPollResult,
   TOKEN_SCOPES,
 } from "@weave-order/schema";
 import type {
   ApiToken,
   CreatedApiToken,
   DeviceAuthorizationStart,
+  Membership,
+  PersonalAccessIdentity,
+  Tenant,
   TokenScope,
-  WeaveUser,
 } from "@weave-order/schema";
-import type { Kernel } from "../kernel";
+import type { AccessService } from "../kernel/access.service";
 import { loadEnv } from "../platform/env";
 import {
   generateApiToken,
@@ -28,10 +27,11 @@ import {
 import { isUniqueViolation } from "../kernel/errors";
 import { authError } from "./errors";
 
-/** 已认证的请求身份：谁（user）+ 用哪个凭据（token）。 */
-export interface AuthContext {
-  user: WeaveUser;
+export interface VerifiedPersonalToken {
   token: ApiToken;
+  membership: Membership;
+  tenant: Tenant;
+  scopes: TokenScope[];
 }
 
 function dedupeScopes(scopes: readonly TokenScope[]): TokenScope[] {
@@ -39,31 +39,46 @@ function dedupeScopes(scopes: readonly TokenScope[]): TokenScope[] {
 }
 
 /**
- * 凭据服务的应用层：只做「生成 / 校验 / 流程编排」，不碰数据库。
+ * 个人访问凭据的应用层：生成 / 校验 / 设备登录编排，不碰数据库。
  * 所有读写都经 kernel.access（唯一写入者，签发与撤销自动落审计）。
  */
-export class AuthService {
+export class PersonalAccessService {
   private readonly env = loadEnv();
 
-  /** 由 HTTP 组合根注入内核句柄；测试可直接 new AuthService(kernel)。 */
-  constructor(private readonly kernel: Kernel) {}
-
-  /** 生产环境强制要求凭据；开发环境保留匿名只读入口，便于本地页面直接跑。 */
-  get authRequired(): boolean {
-    return this.env.AUTH_REQUIRED || this.env.NODE_ENV === "production";
-  }
+  constructor(private readonly access: AccessService) {}
 
   private get pepper(): string {
-    return this.env.AUTH_TOKEN_PEPPER;
+    return this.env.PERSONAL_TOKEN_PEPPER;
   }
 
-  private get publicUrl(): string {
-    return this.env.PUBLIC_API_URL.replace(/\/+$/, "");
+  private get webUrl(): string {
+    return this.env.WEB_APP_URL.replace(/\/+$/, "");
   }
 
-  /** 签发个人 token；明文只在这里返回一次。 */
-  async createTokenForUser(input: {
-    userId: string;
+  /** 校验 `wo_...` 凭据；格式 / 哈希不匹配返回 null，状态异常抛 AuthError。 */
+  async verify(rawToken: string): Promise<VerifiedPersonalToken | null> {
+    const parsed = parseApiToken(rawToken);
+    if (!parsed) return null;
+
+    const found = await this.access.findTokenByPublicId(parsed.publicId);
+    if (!found || !hashesEqual(found.tokenHash, hashToken(rawToken, this.pepper))) return null;
+    if (found.token.status === "REVOKED") throw authError("TOKEN_REVOKED", "凭据已被撤销");
+    if (found.token.status === "EXPIRED") throw authError("TOKEN_EXPIRED", "凭据已过期");
+    if (found.membership.status !== "ACTIVE") {
+      throw authError("INVALID_TOKEN", "凭据所属成员身份未启用");
+    }
+
+    void this.access.touchToken(found.token.id);
+    return {
+      token: found.token,
+      membership: found.membership,
+      tenant: found.tenant,
+      scopes: found.token.scopes,
+    };
+  }
+
+  async createTokenForMembership(input: {
+    membership: Membership;
     actorId: string;
     body: CreateApiTokenInput;
   }): Promise<CreatedApiToken> {
@@ -77,9 +92,12 @@ export class AuthService {
       parsed.expiresInDays === undefined
         ? null
         : new Date(Date.now() + parsed.expiresInDays * 24 * 60 * 60 * 1000);
+    // 允许持有 approve 的只有人类（OIDC 会话或已持 approve 的凭据），
+    // 调用方（控制器）已校验调用者权限。
 
-    const tokenView = await this.kernel.access.createToken({
-      userId: input.userId,
+    const tokenView = await this.access.createToken({
+      membershipId: input.membership.id,
+      tenantId: input.membership.tenantId,
       name: parsed.name,
       publicId: generated.publicId,
       tokenHash: hashToken(generated.token, this.pepper),
@@ -90,16 +108,21 @@ export class AuthService {
     return { token: generated.token, tokenView };
   }
 
-  async listTokens(userId: string): Promise<ApiTokenList> {
-    return { tokens: await this.kernel.access.listTokens(userId) };
+  async listTokens(membershipId: string): Promise<ApiToken[]> {
+    return this.access.listTokens(membershipId);
   }
 
   async revokeToken(input: {
-    userId: string;
+    membership: Membership;
     actorId: string;
     tokenId: string;
   }): Promise<ApiToken> {
-    const revoked = await this.kernel.access.revokeToken(input);
+    const revoked = await this.access.revokeToken({
+      membershipId: input.membership.id,
+      tenantId: input.membership.tenantId,
+      tokenId: input.tokenId,
+      actorId: input.actorId,
+    });
     if (!revoked) throw authError("INVALID_TOKEN", "token 不存在或不属于当前账号");
     return revoked;
   }
@@ -114,7 +137,7 @@ export class AuthService {
     let userCode = generateUserCode();
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await this.kernel.access.createDeviceAuthorization({
+        await this.access.createDeviceAuthorization({
           deviceCodeHash: hashSecret(deviceCode, this.pepper),
           userCode,
           clientName: input.clientName?.trim() || null,
@@ -128,7 +151,7 @@ export class AuthService {
       }
     }
 
-    const verificationUri = `${this.publicUrl}/cli-login`;
+    const verificationUri = `${this.webUrl}/cli-login`;
     return {
       deviceCode,
       userCode,
@@ -139,15 +162,14 @@ export class AuthService {
     };
   }
 
-  /** 人类在确认页上的决定（批准 / 拒绝）。 */
-  async decideDevice(input: DeviceAuthorizationDecision): Promise<{
-    userCode: string;
-    approved: boolean;
-    email: string;
-  }> {
-    const parsed = DeviceAuthorizationDecision.parse(input);
+  /** 已登录的人类在确认页上批准 / 拒绝。身份来自 OIDC 会话，不由表单自报。 */
+  async decideDevice(input: {
+    decision: DeviceAuthorizationDecision;
+    membership: Membership;
+  }): Promise<{ userCode: string; approved: boolean; subject: string }> {
+    const parsed = DeviceAuthorizationDecision.parse(input.decision);
     const userCode = normalizeUserCode(parsed.userCode);
-    const device = await this.kernel.access.findDeviceByUserCode(userCode);
+    const device = await this.access.findDeviceByUserCode(userCode);
     if (!device) throw authError("INVALID_USER_CODE", "确认码不存在，请检查后重试");
     if (device.expiresAt.getTime() <= Date.now()) {
       throw authError("USER_CODE_EXPIRED", "确认码已过期，请在 CLI 重新执行 weave login");
@@ -157,83 +179,78 @@ export class AuthService {
     }
 
     if (!parsed.approve) {
-      await this.kernel.access.decideDevice({ userCode, approve: false, userId: null, scopes: [] });
-      return { userCode, approved: false, email: parsed.email };
+      await this.access.decideDevice({ userCode, approve: false, membershipId: null, scopes: [] });
+      return { userCode, approved: false, subject: input.membership.subject };
     }
 
-    const user = await this.kernel.access.findOrCreateUser({
-      email: parsed.email,
-      name: parsed.name,
-    });
     const scopes = dedupeScopes(parsed.scopes);
-    await this.kernel.access.decideDevice({ userCode, approve: true, userId: user.id, scopes });
-    return { userCode, approved: true, email: user.email };
+    await this.access.decideDevice({
+      userCode,
+      approve: true,
+      membershipId: input.membership.id,
+      scopes,
+    });
+    return { userCode, approved: true, subject: input.membership.subject };
   }
 
   /** CLI 轮询：pending / slow_down / approved / denied / expired。 */
-  async pollDevice(deviceCode: string): Promise<DeviceAuthorizationPollResult> {
+  async pollDevice(deviceCode: string) {
     const hash = hashSecret(deviceCode.trim(), this.pepper);
-    const device = await this.kernel.access.findDeviceByCodeHash(hash);
+    const device = await this.access.findDeviceByCodeHash(hash);
     if (!device) throw authError("DEVICE_CODE_INVALID", "登录会话不存在，请重新执行 weave login");
 
     if (device.status === "CONSUMED") {
       throw authError("DEVICE_CODE_INVALID", "登录会话已换取过凭据，请重新执行 weave login");
     }
-    if (device.status === "DENIED") return { status: "denied" };
+    if (device.status === "DENIED") return { status: "denied" as const };
     if (device.expiresAt.getTime() <= Date.now() && device.status === "PENDING") {
-      return { status: "expired" };
+      return { status: "expired" as const };
     }
 
     if (device.status === "PENDING") {
       const intervalMs = device.intervalSeconds * 1000;
       const last = device.lastPolledAt?.getTime() ?? 0;
       if (Date.now() - last < intervalMs) {
-        return { status: "slow_down", interval: device.intervalSeconds + 5 };
+        return { status: "slow_down" as const, interval: device.intervalSeconds + 5 };
       }
-      await this.kernel.access.markDevicePolled(device.id);
-      return { status: "pending" };
+      await this.access.markDevicePolled(device.id);
+      return { status: "pending" as const };
     }
 
     // APPROVED：一次性消费，再签发 token（并发轮询只有一个能走到这里）。
-    const consumed = await this.kernel.access.consumeDevice(hash);
-    if (!consumed || !consumed.userId) {
+    const consumed = await this.access.consumeDevice(hash);
+    if (!consumed || !consumed.membershipId) {
       throw authError("DEVICE_CODE_INVALID", "登录会话已失效，请重新执行 weave login");
     }
-    const user = await this.kernel.access.getUser(consumed.userId);
-    if (!user) throw authError("INVALID_TOKEN", "账号不存在");
+    const context = await this.access.getMembershipContext(consumed.membershipId);
+    if (!context) throw authError("INVALID_TOKEN", "账号不存在");
 
-    const created = await this.createTokenForUser({
-      userId: user.id,
-      actorId: `user:${user.id}`,
+    const created = await this.createTokenForMembership({
+      membership: context.membership,
+      actorId: `oidc:${context.membership.subject}`,
       body: {
         name: consumed.clientName ?? "CLI login",
         scopes: (consumed.scopes ?? ["read", "write"]) as TokenScope[],
       },
     });
-    return { status: "approved", token: created.token, tokenView: created.tokenView, user };
+    return {
+      status: "approved" as const,
+      token: created.token,
+      tokenView: created.tokenView,
+      membership: context.membership,
+      tenant: context.tenant,
+    };
   }
 
-  /** 校验 `Authorization: Bearer <token>`；没有凭据时返回 null（是否放行由守卫决定）。 */
-  async authenticate(header: string | undefined): Promise<AuthContext | null> {
-    if (!header) return null;
-    const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-    if (!match?.[1]) throw authError("INVALID_TOKEN", "Authorization 头格式应为 `Bearer <token>`");
-
-    const parsed = parseApiToken(match[1]);
-    if (!parsed) throw authError("INVALID_TOKEN", "凭据格式不正确，请重新执行 weave login");
-
-    const found = await this.kernel.access.findTokenByPublicId(parsed.publicId);
-    if (!found || !hashesEqual(found.tokenHash, hashToken(match[1], this.pepper))) {
-      throw authError("INVALID_TOKEN", "凭据无效，请重新执行 weave login");
-    }
-    if (found.token.status === "REVOKED") throw authError("TOKEN_REVOKED", "凭据已被撤销");
-    if (found.token.status === "EXPIRED") throw authError("TOKEN_EXPIRED", "凭据已过期");
-
-    void this.kernel.access.touchToken(found.token.id);
-    return { user: found.user, token: found.token };
-  }
-
-  identity(auth: AuthContext): AuthIdentity {
-    return { user: auth.user, token: auth.token };
+  /** CLI 自述：凭据 + 成员身份 + 租户。 */
+  async identity(membership: Membership, token: ApiToken | null): Promise<PersonalAccessIdentity> {
+    const context = await this.access.getMembershipContext(membership.id);
+    if (!context) throw authError("INVALID_TOKEN", "成员身份不存在");
+    return {
+      subject: context.membership.subject,
+      tenant: context.tenant,
+      membership: context.membership,
+      token,
+    };
   }
 }

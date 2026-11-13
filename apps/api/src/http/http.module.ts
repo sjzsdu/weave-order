@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
-import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import type { Provider } from "@nestjs/common";
+import { PersonalAccessController } from "../auth/auth.controller";
 import { GatewayModule } from "../gateway/gateway.module";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
@@ -25,10 +25,11 @@ import {
   RevisionController,
   QuoteAgentController,
 } from "./controllers";
+import { AgentActorService } from "./agent-actor.service";
 import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
 import { PrintAgentController, PrintController } from "./print.controllers";
-import { HUMAN_ACTOR, KERNEL, PUBLIC_SHARE, QUOTE_AGENT, TOOLS } from "./tokens";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, PUBLIC_SHARE, QUOTE_AGENT, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
   {
@@ -46,6 +47,11 @@ const providers: Provider[] = [
     provide: HUMAN_ACTOR,
     useExisting: HumanActorService,
   },
+  AgentActorService,
+  {
+    provide: AGENT_ACTOR,
+    useExisting: AgentActorService,
+  },
   QuoteAgentService,
   PrintAgentAuthService,
   PrintAgentHub,
@@ -60,23 +66,13 @@ const providers: Provider[] = [
       new PublicShareService(database.pool),
     inject: [AppDatabaseProvider],
   },
-  {
-    provide: AuthService,
-    useFactory: (kernel: Kernel): AuthService => new AuthService(kernel),
-    inject: [KERNEL],
-  },
-  // 全局凭据守卫：任何路由都可声明 @RequireScope，未声明则只校验凭据有效性。
-  { provide: APP_GUARD, useClass: AuthGuard },
-  // 守卫抛出的 AuthError 与控制器一致，统一映射成 { error: { code, message } }。
-  { provide: APP_FILTER, useClass: AuthErrorFilter },
 ];
 
 @Module({
   imports: [DatabaseModule, GatewayModule],
   controllers: [
     HealthController,
-    AuthController,
-    CliLoginPageController,
+    PersonalAccessController,
     CatalogController,
     QuoteController,
     AuditController,

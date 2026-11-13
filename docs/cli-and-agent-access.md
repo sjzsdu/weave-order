@@ -1,114 +1,97 @@
 # 用户凭据、CLI 与 agent 接入（WAN-78）
 
 > 目标：让每个用户拥有自己的凭据，并能从织序之外的 agent（codex 等）安全地操作织序。
-> 一句话：**人类登录一次，agent 拿着「只能干活、不能审批」的 token 调用工具，草稿回到审批窗口由人确认。**
+> 一句话：**人类用 Casdoor 登录一次，agent 拿着「只能干活、不能审批」的 token 调用工具，草稿回到审批窗口由人确认。**
 
-## 1. 为什么这样设计
+## 1. 在既有认证之上补了什么
 
-产品铁律决定了凭据的形态：
+WAN-88 已经把租户认证交给 Casdoor OIDC：浏览器拿 httpOnly 会话，BFF 注入
+`Authorization`，网关验签后解析 `(sub, org) → membership → tenant`，业务请求在
+RLS 会话里执行。
 
-| 铁律               | 对凭据的要求                                       |
-| ------------------ | -------------------------------------------------- |
-| 智能体是默认操作者 | agent 必须能独立调用工具，不能靠人点页面           |
-| 写操作只出草稿     | agent 的 token 需要 `write`，但不需要 `approve`    |
-| 审批只能由人类发起 | `approve` 作用域必须显式授予，默认登录不给         |
-| 每一步都有审计     | 签发 / 撤销 token 写审计；工具调用记录 `user:<id>` |
+OIDC token 有两个特点不适合 agent：15 分钟寿命、只存在于浏览器 Cookie。
+WAN-78 因此增加**个人访问凭据（PAT）**，它复用同一条认证链路：
 
-因此用**三档作用域**而不是「一把万能 key」：
+| 凭据         | 谁用               | 生命周期                | 权限                |
+| ------------ | ------------------ | ----------------------- | ------------------- |
+| OIDC 会话    | 人（浏览器）       | 8 小时，httpOnly Cookie | 角色 + RLS          |
+| PAT `wo_...` | CLI / codex / 脚本 | 可设 1–365 天，随时撤销 | 角色 + RLS + 作用域 |
 
-| 作用域    | 允许                                     | 典型持有者            |
-| --------- | ---------------------------------------- | --------------------- |
-| `read`    | 客户、样品、审批队列、全景、审计         | 任何 agent / 只读看板 |
-| `write`   | 找样、客户 360、报价草稿、寄样草稿、导入 | codex / 自动化脚本    |
-| `approve` | 审批通过 / 驳回                          | 人类本人的终端        |
+**关键设计：PAT 绑定 `membership.id`，不是另建一套用户。**
+认证后仍然是同一个 tenant、同一个 role、同一条 RLS 会话，不会因为「走 CLI」
+而绕过租户隔离或角色约束。
 
-默认登录（`weave login`）签发 `read,write`。这意味着即使 agent 完全控制了这个
-token，也无法自己把草稿变成生效单据——它最多把草稿堆满审批窗口，而这是**可见
-且可撤销**的。
+## 2. 作用域
 
-## 2. 凭据模型
+| 作用域    | 允许                                                       | 默认            |
+| --------- | ---------------------------------------------------------- | --------------- |
+| `read`    | 审批队列 / 详情 / 全景等只读聚合                           | ✅              |
+| `write`   | 调用工具（找样、客户 360、报价草稿、寄样草稿）、改稿、导入 | ✅              |
+| `approve` | `POST /api/approvals/decide`                               | ❌ 必须显式授予 |
 
-```
-users ──1:N── api_tokens
-users ──1:N── device_authorizations（CLI 登录会话）
-```
+默认登录只发 `read,write`。即使 agent 完全掌握了这枚 token，也无法把草稿变成
+生效单据——它最多把草稿堆满审批窗口，而这是**可见且可撤销**的。
 
-- `api_tokens` 只存 `sha256(pepper + 明文 token)` 与可展示前缀 `wo_<publicId>`；
-  明文只在创建那一刻返回一次。
-- 撤销 = 写 `revoked_at`，不物理删除；撤销立即生效（每次请求校验状态）。
-- `last_used_at` 每分钟最多更新一次，避免每个请求一次写入。
-- token 形态：`wo_<10 位 publicId>_<32 位 secret>`，publicId 用于查找，
-  比较用 `timingSafeEqual`。
-- 有效期可选（`--days N`），过期状态由服务端派生（`ACTIVE / REVOKED / EXPIRED`）。
+低权凭据也不能给自己扩权：用 `read,write` 的 PAT 调 `POST /api/auth/tokens`
+申请 `approve` 会被 `SCOPE_REQUIRED` 拒绝；只有 OIDC 人类会话或已持 `approve`
+的凭据可以签发 `approve`。
 
-## 3. CLI 登录：设备码流程
+## 3. CLI 登录：设备码 + 浏览器会话
 
 ```
-CLI                          API                        浏览器
- │  POST /api/auth/device/start │                           │
- │◀── deviceCode + userCode ────│                           │
- │                              │  打开 /cli-login?user_code │
- │                              │◀──── 填邮箱，点「批准」────│
- │                              │  POST /api/auth/device/decide
- │  POST /api/auth/device/poll  │                           │
- │◀── approved + 明文 token ────│（一次性消费，重放被拒）    │
- │  保存 ~/.config/weave-order/config.json (0600)            │
+CLI                                API                         浏览器（已登录）
+ │  POST /api/auth/device/start     │                              │
+ │◀── deviceCode + userCode ────────│                              │
+ │                                  │  GET /cli-login?user_code=…  │
+ │                                  │◀──── 打开确认页（BFF Cookie） │
+ │                                  │  POST /api/auth/device/decide│
+ │                                  │  （服务端注入 OIDC 令牌）      │
+ │  POST /api/auth/device/poll      │                              │
+ │◀── approved + 明文 token ────────│（一次性消费，重放被拒）       │
+ │  保存 ~/.config/weave-order/config.json (0600)                   │
 ```
 
 - `deviceCode` 40 位随机串，只存哈希；`userCode` 8 位易读字符，10 分钟有效、只能用一次。
-- 轮询过快返回 `slow_down`（间隔 +5s），CLI 自动退避。
-- 拒绝 / 过期 / 已使用都有明确终态，不会静默卡住。
+- 确认页在 `apps/web/app/cli-login/route.ts`：浏览器只带 httpOnly Cookie，
+  **由服务端**把 `Authorization` 注入后调用 API；令牌不进浏览器脚本。
+- 未登录访问确认页会跳 `/auth/login?next=/cli-login?user_code=…`。
+- 批准时记录的是当前会话的 membership，不需要也不允许表单自报邮箱。
 - `weave login --token <token>` 支持直接导入已有凭据（CI、远程 agent 环境）。
-
-### 当前限制（必须知道）
-
-确认页用**邮箱自证**（没有密码、没有 OIDC 会话），因为租户端登录尚未接入
-Casdoor。这意味着：
-
-- 只适合本地 / 可信内网；
-- **对外网暴露前必须接入 Casdoor**：把 `/cli-login` 换成租户端受保护路由，
-  用 OIDC 会话里的 `sub + org` 作为身份，`email` 字段随之删除。
-
-代码结构已经按这个演进方向切开：`AuthService.decideDevice` 只依赖
-「已经确认的人类身份（email / userId）」，换身份来源不动 token 逻辑。
 
 ## 4. HTTP 面
 
-| 方法   | 路径                      | 凭据             | 说明                           |
-| ------ | ------------------------- | ---------------- | ------------------------------ |
-| POST   | `/api/auth/device/start`  | 无               | CLI 申请登录会话               |
-| POST   | `/api/auth/device/poll`   | 无               | CLI 轮询；批准后一次性换 token |
-| POST   | `/api/auth/device/decide` | 无（浏览器确认） | 批准 / 拒绝                    |
-| GET    | `/cli-login`              | 无               | 确认页（HTML）                 |
-| GET    | `/api/auth/me`            | 任意             | 当前账号 + 凭据                |
-| GET    | `/api/auth/tokens`        | 任意             | 列出自己的凭据                 |
-| POST   | `/api/auth/tokens`        | `write`          | 签发新凭据（一次性明文）       |
-| DELETE | `/api/auth/tokens/:id`    | 任意             | 撤销自己的凭据                 |
+| 方法   | 路径                      | 凭据                 | 说明                           |
+| ------ | ------------------------- | -------------------- | ------------------------------ |
+| POST   | `/api/auth/device/start`  | 无                   | CLI 申请登录会话               |
+| POST   | `/api/auth/device/poll`   | 无                   | CLI 轮询；批准后一次性换 token |
+| POST   | `/api/auth/device/decide` | OIDC / `approve` PAT | 人类确认（页面调用）           |
+| GET    | `/cli-login`              | 浏览器会话           | 确认页（apps/web）             |
+| GET    | `/api/auth/whoami`        | 任意                 | 凭据 + 成员身份 + 租户         |
+| GET    | `/api/auth/tokens`        | 任意                 | 列出自己的凭据                 |
+| POST   | `/api/auth/tokens`        | OIDC / `write` PAT   | 签发新凭据（明文一次性）       |
+| DELETE | `/api/auth/tokens/:id`    | 任意                 | 撤销自己的凭据                 |
 
-业务端点的作用域要求：
+原有的 `/api/auth/me`（网关）不变；PAT 也可以调用它，返回同一个租户上下文契约。
 
-| 端点                                                                                  | 作用域                                      |
-| ------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `GET /api/customers`、`/api/samples`、`/api/panorama`、`/api/audit`、`/api/approvals` | `read`                                      |
-| `POST /api/tools/*`                                                                   | `write`（`get-customer-history` 为 `read`） |
-| `POST /api/approvals/decide`                                                          | `approve`                                   |
-| `POST /api/import`                                                                    | `write`                                     |
+作用域在 HTTP 面收口：
 
-错误体统一为：
+| 端点                                                        | 要求                                             |
+| ----------------------------------------------------------- | ------------------------------------------------ |
+| `POST /api/tools/*`（带 Authorization 时）                  | PAT 需要 `write`；审计 actor 记 `user:<subject>` |
+| `POST /api/approvals/decide`                                | PAT 需要 `approve`                               |
+| `GET /api/approvals`、`/api/approvals/:id`、`/api/panorama` | PAT 需要 `read`                                  |
+| 改稿、导入、收款、分享管理等人类写操作                      | PAT 需要 `write`                                 |
+
+OIDC 会话没有作用域概念，继续由 membership 角色 / RLS 约束。
+不带 Authorization 的请求维持既有本地/演示行为；生产态由网关 fail-closed。
+
+错误体保持网关契约：
 
 ```json
-{ "error": { "code": "SCOPE_REQUIRED", "message": "当前凭据缺少 approve 作用域：…" } }
+{ "error": { "code": "SCOPE_REQUIRED", "message": "当前凭据缺少 approve 作用域" } }
 ```
 
-`code` 是封闭集合（`packages/schema/src/auth.ts` 的 `AuthErrorCode` 加上工具错误码），
-CLI 与 agent 据此分流，不解析文案。
-
-### 开发模式的匿名降级
-
-`AUTH_REQUIRED=false`（默认，且非 production）时，**没带** `Authorization` 的请求
-仍然放行，保证既有的三窗口页面不需要登录即可演示。带了凭据则一定校验。
-
-生产环境（`NODE_ENV=production` 或 `AUTH_REQUIRED=true`）下所有端点都要求凭据。
+`AuthErrorCode` 是封闭集合（`packages/schema/src/auth.ts`），CLI 与 agent 据此分流。
 
 ## 5. CLI 安装与使用
 
@@ -119,12 +102,13 @@ pnpm --filter @weave-order/cli build
 # 仓库内直接运行
 node apps/cli/bin/weave.js --help
 # 或链接到 PATH
-cd apps/cli && pnpm link --global   # 之后可用 weave（回到仓库根目录）
+cd apps/cli && pnpm link --global
 ```
 
 ```bash
-weave login                            # 设备码登录
-weave whoami                           # 账号 + 作用域
+weave login                            # 设备码登录（浏览器需已登录织序）
+weave login --token wo_xxx             # 直接导入已有凭据
+weave whoami                           # 账号 + 租户 + 角色 + 作用域
 weave customers --limit 20 --json
 weave tool search-by-spec --query "棉 平纹" --json
 weave tool get-customer-history --customer-id <uuid> --json
@@ -143,6 +127,9 @@ weave skill install                    # 装到 ~/.codex/skills/weave-order/
 3. `~/.config/weave-order/config.json`（0600；`WEAVE_CONFIG_DIR` 可改）
 
 退出码：`0` 成功 / `1` 业务失败 / `2` 用法错误 / `3` 凭据问题 / `4` 网络不可达。
+
+> 本地没有 Casdoor 时，浏览器 BFF 与确认页都会回退 `DEV_AUTH_TOKEN`
+> （默认 `dev:demo:demo`，生产绝不回退）。
 
 ## 6. 接入 codex 等 agent
 
@@ -173,24 +160,37 @@ export WEAVE_SERVER=https://app.weaveorder.cn
 需要 agent 触发审批时，**不要**直接给它 `approve`。正确做法是 agent 把结果提交到
 审批队列，人类在网页或自己的终端审批。
 
-## 7. 安全清单
+## 7. 凭据模型与安全清单
 
-- [x] token 只存哈希 + 前缀；明文一次性返回
-- [x] 常量时间比较；无效 token 与不存在 token 统一 `INVALID_TOKEN`
-- [x] 设备码 / 确认码一次性、有 TTL、有轮询限速
-- [x] 撤销立即生效；过期由服务端判定
-- [x] 签发 / 撤销写审计（`API_TOKEN_CREATED` / `API_TOKEN_REVOKED` / `USER_CREATED`）
-- [x] 工具调用审计记录 `user:<id>`，能追到是谁驱动的 agent
+```
+memberships ──1:N── api_tokens
+memberships ──1:N── device_authorizations（CLI 登录会话）
+```
+
+- `api_tokens` 只存 `sha256(pepper + 明文 token)` 与可展示前缀 `wo_<publicId>`；
+  明文只在创建那一刻返回一次。
+- 撤销 = 写 `revoked_at`，不物理删除；撤销立即生效（每次请求校验状态）。
+- `last_used_at` 每分钟最多更新一次，避免每个请求一次写入。
+- token 形态：`wo_<10 位 publicId>_<32 位 secret>`；查找用 publicId，
+  比较用 `timingSafeEqual`。
+- 有效期可选（`--days N`），状态由服务端派生（`ACTIVE / REVOKED / EXPIRED`）。
+- 设备码 / 确认码一次性、有 TTL、有轮询限速（`slow_down`）。
+
+- [x] 明文不落库；哈希带生产必填 pepper（`PERSONAL_TOKEN_PEPPER`）
+- [x] 凭据绑定 membership，PAT 仍走 RLS，不另开权限旁路
+- [x] `approve` 默认不签发；低权凭据不能自我扩权
+- [x] 签发 / 撤销写审计（`API_TOKEN_CREATED` / `API_TOKEN_REVOKED`）
+- [x] 工具调用审计记录驱动者 `user:<subject>`
+- [x] 确认页由 OIDC 会话决定归属，令牌不进浏览器脚本
 - [x] 配置文件 0600、目录 0700
-- [x] `approve` 默认不签发，必须显式授予
-- [ ] 确认页替换为 Casdoor OIDC 会话（上线前必做）
 - [ ] token 轮换提醒 / 过期邮件（P1）
+- [ ] MCP server（P1，见下）
 
 ## 8. 后续（不在本次范围）
 
 - **MCP server**：把同一组工具暴露成 MCP，codex 等支持 MCP 的 agent 可以直接
-  以工具形式调用，无需 shell。CLI 已经把这层契约收敛成
-  「命令 → HTTP 端点 → 工具 Schema」，MCP 只是再包一层传输。
-- **Casdoor 登录**：`users` 增加 `idp_subject`，`/api/auth/device/decide` 改用会话身份。
-- **租户隔离**：token 绑定 `tenant_id`，RLS 在连接层生效。
+  以工具形式调用，无需 shell。CLI 已把契约收敛为「命令 → HTTP → 工具 Schema」，
+  MCP 只是再包一层传输。
+- **清理匿名工具入口**：工具层目前未迁移到租户作用域内核；WAN-78 只在
+  带 Authorization 时校验 PAT 作用域，后续随租户化一并收口。
 - **速率限制**：网关层按 token 限流（Redis 已有）。

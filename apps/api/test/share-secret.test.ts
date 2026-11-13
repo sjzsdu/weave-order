@@ -28,6 +28,7 @@ describe("报价链接密钥的生产门控", () => {
       AUTH_MODE: "oidc",
       QUOTE_SHARE_SECRET: RANDOM_SECRET,
       PRINT_AGENT_SECRET: RANDOM_SECRET,
+      PERSONAL_TOKEN_PEPPER: RANDOM_SECRET,
     });
     expect(env.QUOTE_SHARE_SECRET).toBe(RANDOM_SECRET);
     expect(env.PRINT_AGENT_SECRET).toBe(RANDOM_SECRET);
@@ -38,8 +39,19 @@ describe("报价链接密钥的生产门控", () => {
       loadEnv({
         NODE_ENV: "production",
         QUOTE_SHARE_SECRET: RANDOM_SECRET,
+        PERSONAL_TOKEN_PEPPER: RANDOM_SECRET,
       }),
     ).toThrow(/PRINT_AGENT_SECRET/);
+  });
+
+  it("个人访问凭据 pepper 同样有生产门控（WAN-78）", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        QUOTE_SHARE_SECRET: RANDOM_SECRET,
+        PRINT_AGENT_SECRET: RANDOM_SECRET,
+      }),
+    ).toThrow(/PERSONAL_TOKEN_PEPPER/);
   });
 
   it("太短的 secret 仍被 env 契约拒绝", () => {

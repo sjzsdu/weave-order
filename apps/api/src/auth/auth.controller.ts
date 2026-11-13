@@ -3,147 +3,175 @@ import {
   Controller,
   Delete,
   Get,
-  Header,
+  Headers,
   HttpCode,
+  HttpException,
+  HttpStatus,
   Inject,
   Param,
   Post,
-  Query,
-  Req,
   UseFilters,
 } from "@nestjs/common";
 import {
+  ApiTokenList,
   CreateApiTokenInput,
   DeviceAuthorizationDecision,
   DeviceAuthorizationPollInput,
   DeviceAuthorizationStartInput,
+  PersonalAccessIdentity,
 } from "@weave-order/schema";
-import { AuthService } from "./auth.service";
-import { RequireScope, requireAuth } from "./auth.guard";
-import type { AuthRequest } from "./auth.guard";
-import { renderCliLoginPage, renderCliLoginResult } from "./cli-login.page";
+import type { TokenScope } from "@weave-order/schema";
+import { AuthService } from "../gateway/auth.service";
+import type { AuthenticatedIdentity } from "../gateway/auth.service";
 import { AuthError, AuthErrorFilter } from "./errors";
 import { parseInput } from "./input";
+import { PersonalAccessService } from "./personal-access.service";
 
-const HTML = "text/html; charset=utf-8";
+function unauthenticated(message: string): HttpException {
+  return new HttpException(
+    { error: { code: "UNAUTHENTICATED", message } },
+    HttpStatus.UNAUTHORIZED,
+  );
+}
 
 /**
- * 个人凭据管理 + CLI 设备登录。
+ * 个人访问凭据 + CLI 设备登录（WAN-78）。
  *
- * - `/api/auth/me`、`/api/auth/tokens*` 必须带 bearer token（只能操作自己的凭据）；
- * - `/api/auth/device/start|poll` 面向尚未登录的 CLI，无需凭据；
- * - `/api/auth/device/decide` 由浏览器确认页调用，等于「人类本人确认」。
+ * 身份来源统一走网关：
+ * - OIDC 会话（浏览器 BFF / `/auth/dev`）：人类，无作用域限制，受角色 / RLS 约束；
+ * - PAT（`wo_...`）：agent / CLI，按 read / write / approve 作用域收窄。
+ *
+ * 凭据绑定的是 membership，因此 PAT 认证后仍然落到同一租户、同一 RLS 会话，
+ * 不会因为「走 CLI」而绕过租户隔离。
  */
 @Controller("api/auth")
 @UseFilters(AuthErrorFilter)
-export class AuthController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+export class PersonalAccessController {
+  constructor(
+    @Inject(AuthService) private readonly gateway: AuthService,
+    @Inject(PersonalAccessService) private readonly pat: PersonalAccessService,
+  ) {}
 
-  @Get("me")
-  me(@Req() request: AuthRequest) {
-    return this.auth.identity(requireAuth(request));
+  /** 认证并把网关错误统一成 401。AuthError 交给 AuthErrorFilter 保留 code。 */
+  private async identify(authorization: string | undefined): Promise<AuthenticatedIdentity> {
+    try {
+      return await this.gateway.authenticate(authorization);
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw unauthenticated(error instanceof Error ? error.message : "认证失败");
+    }
+  }
+
+  private static requireScope(identity: AuthenticatedIdentity, scope: TokenScope): void {
+    if (!identity.tokenScopes) return; // OIDC 人类会话：由角色 / RLS 决定
+    if (!identity.tokenScopes.includes(scope)) {
+      throw new HttpException(
+        {
+          error: {
+            code: "SCOPE_REQUIRED",
+            message: `当前凭据缺少 ${scope} 作用域：请用 weave token create --scope ${scope} 新建凭据`,
+          },
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+  }
+
+  /** CLI 自述：凭据（PAT 时返回视图）+ 成员身份 + 租户。 */
+  @Get("whoami")
+  async whoami(@Headers("authorization") authorization?: string): Promise<PersonalAccessIdentity> {
+    const identity = await this.identify(authorization);
+    return this.pat.identity(identity.membership, identity.tokenView ?? null);
   }
 
   @Get("tokens")
-  async listTokens(@Req() request: AuthRequest) {
-    const identity = requireAuth(request);
-    return this.auth.listTokens(identity.user.id);
+  async listTokens(@Headers("authorization") authorization?: string): Promise<ApiTokenList> {
+    const identity = await this.identify(authorization);
+    return { tokens: await this.pat.listTokens(identity.membership.id) };
   }
 
-  /** 签发新凭据属于敏感写操作：只读凭据不能给自己扩权。 */
+  /**
+   * 签发新凭据。
+   *
+   * PAT 调用者必须有 `write`；且不能让低权凭据给自己扩权：
+   * 只有 OIDC 人类会话或已经持有 approve 的凭据才能签发 approve。
+   */
   @Post("tokens")
-  @RequireScope("write")
   @HttpCode(201)
-  async createToken(@Req() request: AuthRequest, @Body() body: unknown) {
-    const identity = requireAuth(request);
-    return this.auth.createTokenForUser({
-      userId: identity.user.id,
-      actorId: `user:${identity.user.id}`,
-      body: parseInput(CreateApiTokenInput, body ?? {}),
+  async createToken(
+    @Headers("authorization") authorization: string | undefined,
+    @Body() body: unknown,
+  ) {
+    const identity = await this.identify(authorization);
+    PersonalAccessController.requireScope(identity, "write");
+    const input = parseInput(CreateApiTokenInput, body ?? {});
+    if (
+      input.scopes.includes("approve") &&
+      identity.tokenScopes &&
+      !identity.tokenScopes.includes("approve")
+    ) {
+      throw new HttpException(
+        {
+          error: {
+            code: "SCOPE_REQUIRED",
+            message: "当前凭据没有 approve 作用域，不能签发带 approve 的新凭据",
+          },
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    return this.pat.createTokenForMembership({
+      membership: identity.membership,
+      actorId: identity.tokenScopes
+        ? `token:${identity.tokenView?.id}`
+        : `oidc:${identity.claims.sub}`,
+      body: input,
     });
   }
 
   @Delete("tokens/:id")
-  async revokeToken(@Req() request: AuthRequest, @Param("id") id: string) {
-    const identity = requireAuth(request);
-    return this.auth.revokeToken({
-      userId: identity.user.id,
-      actorId: `user:${identity.user.id}`,
+  async revokeToken(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("id") id: string,
+  ) {
+    const identity = await this.identify(authorization);
+    return this.pat.revokeToken({
+      membership: identity.membership,
+      actorId: identity.tokenScopes
+        ? `token:${identity.tokenView?.id}`
+        : `oidc:${identity.claims.sub}`,
       tokenId: id,
     });
   }
 
-  /** CLI 第一步：申请登录会话。 */
+  /** CLI 第一步：申请登录会话（公开）。 */
   @Post("device/start")
   @HttpCode(201)
   async startDevice(@Body() body: unknown) {
-    const input = parseInput(DeviceAuthorizationStartInput, body ?? {});
-    return this.auth.startDevice(input);
+    return this.pat.startDevice(parseInput(DeviceAuthorizationStartInput, body ?? {}));
   }
 
-  /** CLI 第二步：轮询结果；批准后一次性换到明文 token。 */
+  /** CLI 第二步：轮询；批准后一次性换到明文 token（公开）。 */
   @Post("device/poll")
   @HttpCode(200)
   async pollDevice(@Body() body: unknown) {
     const { deviceCode } = parseInput(DeviceAuthorizationPollInput, body ?? {});
-    return this.auth.pollDevice(deviceCode);
+    return this.pat.pollDevice(deviceCode);
   }
 
-  /** 确认页用的 JSON 入口（表单提交走下面的 /cli-login）。 */
+  /**
+   * 人类在 `/cli-login` 页面确认。必须带登录态（OIDC 或已批准的 PAT）：
+   * 身份决定凭据归属，表单不再自报邮箱。
+   */
   @Post("device/decide")
   @HttpCode(200)
-  async decideDevice(@Body() body: unknown) {
-    return this.auth.decideDevice(parseInput(DeviceAuthorizationDecision, body ?? {}));
-  }
-}
-
-/**
- * 浏览器确认页。与 API 同一进程，便于本地 CLI 登录开箱即用；
- * 生产环境会把 verificationUri 指向租户端页面（PUBLIC_API_URL 控制）。
- */
-@Controller()
-export class CliLoginPageController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
-
-  @Get("cli-login")
-  @Header("Content-Type", HTML)
-  page(@Query("user_code") userCode?: string): string {
-    return renderCliLoginPage({ userCode: userCode ?? "" });
-  }
-
-  @Post("cli-login")
-  @HttpCode(200)
-  @Header("Content-Type", HTML)
-  async submit(@Body() body: Record<string, unknown>): Promise<string> {
-    const form = body ?? {};
-    const userCode = typeof form.userCode === "string" ? form.userCode : "";
-    const email = typeof form.email === "string" ? form.email : "";
-    const name = typeof form.name === "string" && form.name.trim() ? form.name : undefined;
-    // 只有显式点「批准登录」才算批准；回车 / 缺字段一律按拒绝处理。
-    const approve = form.decision === "approve";
-    const allowApprove = form.allowApprove === "1" || form.allowApprove === "true";
-
-    try {
-      const result = await this.auth.decideDevice({
-        userCode,
-        email,
-        name,
-        approve,
-        scopes: allowApprove ? ["read", "write", "approve"] : ["read", "write"],
-      });
-      return renderCliLoginResult({
-        approved: result.approved,
-        email: result.email,
-        userCode: result.userCode,
-      });
-    } catch (error) {
-      const message =
-        error instanceof AuthError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : "确认失败，请稍后重试";
-      return renderCliLoginPage({ userCode, error: message });
-    }
+  async decideDevice(
+    @Headers("authorization") authorization: string | undefined,
+    @Body() body: unknown,
+  ) {
+    const identity = await this.identify(authorization);
+    PersonalAccessController.requireScope(identity, "approve");
+    const decision = parseInput(DeviceAuthorizationDecision, body ?? {});
+    return this.pat.decideDevice({ decision, membership: identity.membership });
   }
 }

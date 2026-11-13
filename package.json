@@ -30,7 +30,8 @@
     "platform:migrate": "pnpm --filter @weave-order/control-db migrate",
     "platform:seed": "pnpm platform:migrate && pnpm --filter @weave-order/platform-api seed",
     "dev:platform": "pnpm --filter @weave-order/platform-api dev",
-    "dev:admin": "pnpm --filter @weave-order/admin dev"
+    "dev:admin": "pnpm --filter @weave-order/admin dev",
+    "cli": "pnpm --filter @weave-order/cli dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

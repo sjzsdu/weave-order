@@ -33,13 +33,19 @@ weave doctor --json
 ```bash
 weave login            # 打印确认码与链接，等用户在浏览器确认
 weave login --no-browser
+weave login --token wo_xxx   # 已有凭据时直接导入
 ```
+
+登录页是织序网页的 `/cli-login`，要求浏览器里**已经登录织序**（Casdoor OIDC）；
+凭据绑定的是那个登录账号的租户与角色。
 
 检查当前身份与权限：
 
 ```bash
 weave whoami --json
 ```
+
+返回 `subject`、`tenant`（租户）、`membership`（角色 / 数据范围）与 `token`（作用域）。
 
 返回 `token.scopes`：
 

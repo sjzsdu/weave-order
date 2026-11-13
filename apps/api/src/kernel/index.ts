@@ -4,6 +4,7 @@ import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { loadEnv } from "../platform/env";
 import { createPrintCenter } from "../print";
+import { AccessService } from "./access.service";
 import { listAuditLog } from "./audit";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
@@ -61,6 +62,7 @@ export function createKernel(
   const search = new SearchService(db, embedder, tenantId);
   const importing = new ImportService(db, customers, samples, embedder, tenantId);
   const tenancy = new TenancyService(db);
+  const access = new AccessService(db);
   const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
@@ -73,6 +75,7 @@ export function createKernel(
 
   return {
     tenantId,
+    access,
     customers,
     samples,
     pricing,

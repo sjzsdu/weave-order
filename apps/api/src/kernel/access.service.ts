@@ -1,35 +1,37 @@
-import { apiTokens, deviceAuthorizations, users } from "@weave-order/db";
+import { apiTokens, deviceAuthorizations, memberships, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import type { ApiToken, TokenScope, WeaveUser } from "@weave-order/schema";
+import type { ApiToken, Membership, Tenant, TokenScope } from "@weave-order/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { toIso, toIsoOrNull } from "./mappers";
+import { mapMembership, mapTenant } from "./tenancy.service";
 
 /**
- * 账号与凭据的确定性内核（WAN-78）。
+ * 个人访问凭据的确定性内核（WAN-78）。
  *
- * 这是 users / api_tokens / device_authorizations 三张表的唯一写入者：
- * - token 的明文永远不进入本层，本层只收 `publicId` 与 `tokenHash`；
- * - 签发 / 撤销都写审计（HUMAN 上下文由调用方传入），
- *   因此「谁在什么时候给哪台机器发了凭据」可追溯；
- * - 设备登录的确认 / 消费都是条件更新（WHERE status = ...），并发下不会重复发 token。
+ * 这是 api_tokens / device_authorizations 两张表的唯一写入者：
+ * - 明文 token 永远不进入本层，本层只收 `publicId` 与 `tokenHash`；
+ * - 签发 / 撤销写审计，tenantId 取凭据所属 member 的租户；
+ * - 设备登录的确认 / 消费都是条件更新，并发下不会重复发 token。
+ *
+ * 表本身不带 tenant_id（控制面）；认证后由网关解析 membership → tenant，
+ * 业务请求仍走 RLS 会话，不存在绕过租户隔离的旁路。
  */
 
-const SYSTEM_CTX: KernelContext = { actor: { type: "SYSTEM", id: "system:auth" } };
-
-type UserRow = typeof users.$inferSelect;
 type TokenRow = typeof apiTokens.$inferSelect;
 type DeviceRow = typeof deviceAuthorizations.$inferSelect;
+type MembershipRow = typeof memberships.$inferSelect;
 
 export interface CreateTokenRecord {
-  userId: string;
+  membershipId: string;
+  tenantId: string;
   name: string;
   publicId: string;
   tokenHash: string;
   scopes: TokenScope[];
   expiresAt: Date | null;
-  /** 审计中的操作者，如 `user:<uuid>`。 */
+  /** 审计中的操作者，如 `oidc:<sub>` 或 `user:<membershipId>`。 */
   actorId: string;
 }
 
@@ -41,13 +43,8 @@ export interface DeviceAuthorizationRecord {
   intervalSeconds: number;
 }
 
-function mapUser(row: UserRow): WeaveUser {
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-    createdAt: toIso(row.createdAt),
-  };
+function actorContext(actorId: string): KernelContext {
+  return { actor: { type: "HUMAN", id: actorId } };
 }
 
 export function tokenStatus(row: TokenRow, now: Date = new Date()): ApiToken["status"] {
@@ -73,42 +70,13 @@ function mapToken(row: TokenRow): ApiToken {
 export class AccessService {
   constructor(private readonly db: Db) {}
 
-  /** 按邮箱取账号；不存在则创建（MVP 的账号入口，接入 Casdoor 后改为 OIDC 映射）。 */
-  async findOrCreateUser(input: { email: string; name?: string }): Promise<WeaveUser> {
-    const email = input.email.trim().toLowerCase();
-    const existing = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
-    if (existing[0]) return mapUser(existing[0]);
-
-    return this.db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(users)
-        .values({ email, name: input.name?.trim() || email.split("@")[0] || email })
-        .onConflictDoNothing({ target: users.email })
-        .returning();
-      const row = inserted[0];
-      if (!row) {
-        // 并发插入：另一个请求先建好了这个账号。
-        const [found] = await tx.select().from(users).where(eq(users.email, email)).limit(1);
-        if (!found) throw new Error(`用户创建失败：${email}`);
-        return mapUser(found);
-      }
-      await appendAudit(tx, SYSTEM_CTX, {
-        action: "USER_CREATED",
-        entityType: "user",
-        entityId: row.id,
-        after: { email: row.email },
-      });
-      return mapUser(row);
-    });
-  }
-
   /** 签发 token（明文哈希由调用方算好）。 */
   async createToken(record: CreateTokenRecord): Promise<ApiToken> {
     return this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(apiTokens)
         .values({
-          userId: record.userId,
+          membershipId: record.membershipId,
           name: record.name,
           publicId: record.publicId,
           tokenHash: record.tokenHash,
@@ -119,30 +87,32 @@ export class AccessService {
       if (!row) throw new Error("token 写入失败");
       await appendAudit(
         tx,
-        { actor: { type: "HUMAN", id: record.actorId } },
+        actorContext(record.actorId),
         {
           action: "API_TOKEN_CREATED",
           entityType: "api_token",
           entityId: row.id,
           after: { name: row.name, scopes: row.scopes, prefix: `wo_${row.publicId}` },
         },
+        record.tenantId,
       );
       return mapToken(row);
     });
   }
 
-  async listTokens(userId: string): Promise<ApiToken[]> {
+  async listTokens(membershipId: string): Promise<ApiToken[]> {
     const rows = await this.db
       .select()
       .from(apiTokens)
-      .where(eq(apiTokens.userId, userId))
+      .where(eq(apiTokens.membershipId, membershipId))
       .orderBy(desc(apiTokens.createdAt));
     return rows.map(mapToken);
   }
 
   /** 撤销 token：只允许撤销自己的，幂等。 */
   async revokeToken(input: {
-    userId: string;
+    membershipId: string;
+    tenantId: string;
     tokenId: string;
     actorId: string;
   }): Promise<ApiToken | null> {
@@ -153,7 +123,7 @@ export class AccessService {
         .where(
           and(
             eq(apiTokens.id, input.tokenId),
-            eq(apiTokens.userId, input.userId),
+            eq(apiTokens.membershipId, input.membershipId),
             isNull(apiTokens.revokedAt),
           ),
         )
@@ -162,13 +132,15 @@ export class AccessService {
         const [existing] = await tx
           .select()
           .from(apiTokens)
-          .where(and(eq(apiTokens.id, input.tokenId), eq(apiTokens.userId, input.userId)))
+          .where(
+            and(eq(apiTokens.id, input.tokenId), eq(apiTokens.membershipId, input.membershipId)),
+          )
           .limit(1);
         return existing ? mapToken(existing) : null;
       }
       await appendAudit(
         tx,
-        { actor: { type: "HUMAN", id: input.actorId } },
+        actorContext(input.actorId),
         {
           action: "API_TOKEN_REVOKED",
           entityType: "api_token",
@@ -176,19 +148,25 @@ export class AccessService {
           before: { revokedAt: null },
           after: { revokedAt: toIso(row.revokedAt ?? new Date()) },
         },
+        input.tenantId,
       );
       return mapToken(row);
     });
   }
 
-  /** 按 publicId 取 token + 所属账号（认证入口）。 */
-  async findTokenByPublicId(
-    publicId: string,
-  ): Promise<{ token: ApiToken; tokenHash: string; user: WeaveUser } | null> {
+  /** 按 publicId 取 token + 所属 membership / 租户（认证入口）。 */
+  async findTokenByPublicId(publicId: string): Promise<{
+    token: ApiToken;
+    tokenHash: string;
+    membershipId: string;
+    membership: Membership;
+    tenant: Tenant;
+  } | null> {
     const rows = await this.db
-      .select({ token: apiTokens, user: users })
+      .select({ token: apiTokens, membership: memberships, tenant: tenants })
       .from(apiTokens)
-      .innerJoin(users, eq(apiTokens.userId, users.id))
+      .innerJoin(memberships, eq(apiTokens.membershipId, memberships.id))
+      .innerJoin(tenants, eq(memberships.tenantId, tenants.id))
       .where(eq(apiTokens.publicId, publicId))
       .limit(1);
     const row = rows[0];
@@ -196,14 +174,13 @@ export class AccessService {
     return {
       token: mapToken(row.token),
       tokenHash: row.token.tokenHash,
-      user: mapUser(row.user),
+      membershipId: row.token.membershipId,
+      membership: mapMembership(row.membership),
+      tenant: mapTenant(row.tenant),
     };
   }
 
-  /**
-   * 记录最近一次使用；失败不影响请求（认证已完成）。
-   * 一分钟内只写一次：避免每个请求都产生一次 UPDATE。
-   */
+  /** 记录最近一次使用；一分钟内只写一次，失败不影响请求。 */
   async touchToken(tokenId: string): Promise<void> {
     try {
       await this.db
@@ -218,6 +195,22 @@ export class AccessService {
     } catch {
       // 只用于展示「最近使用」，写失败不应让已经合法的请求失败。
     }
+  }
+
+  /** CLI 自述需要的 membership + tenant（不落库，只读）。 */
+  async getMembershipContext(
+    membershipId: string,
+  ): Promise<{ membership: Membership; tenant: Tenant } | null> {
+    const rows = await this.db
+      .select({ membership: memberships, tenant: tenants })
+      .from(memberships)
+      .innerJoin(tenants, eq(memberships.tenantId, tenants.id))
+      .where(eq(memberships.id, membershipId))
+      .limit(1);
+    const row = rows[0];
+    return row
+      ? { membership: mapMembership(row.membership), tenant: mapTenant(row.tenant) }
+      : null;
   }
 
   async createDeviceAuthorization(record: DeviceAuthorizationRecord): Promise<void> {
@@ -252,14 +245,14 @@ export class AccessService {
   async decideDevice(input: {
     userCode: string;
     approve: boolean;
-    userId: string | null;
+    membershipId: string | null;
     scopes: TokenScope[];
   }): Promise<DeviceRow | null> {
     const [row] = await this.db
       .update(deviceAuthorizations)
       .set({
         status: input.approve ? "APPROVED" : "DENIED",
-        userId: input.userId,
+        membershipId: input.membershipId,
         scopes: input.scopes,
         approvedAt: new Date(),
       })
@@ -274,7 +267,6 @@ export class AccessService {
     return row ?? null;
   }
 
-  /** 轮询时间戳：用于 slow_down 判定。 */
   async markDevicePolled(id: string): Promise<void> {
     await this.db
       .update(deviceAuthorizations)
@@ -296,12 +288,7 @@ export class AccessService {
       .returning();
     return row ?? null;
   }
-
-  async getUser(userId: string): Promise<WeaveUser | null> {
-    const [row] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
-    return row ? mapUser(row) : null;
-  }
 }
 
 export type Access = AccessService;
-export { mapToken as toApiToken };
+export type { DeviceRow, MembershipRow };

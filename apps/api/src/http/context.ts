@@ -1,5 +1,4 @@
 import type { KernelContext } from "../kernel";
-import type { AuthRequest } from "../auth/auth.guard";
 
 /** 页面上的「让智能体生成报价草稿」按钮：调用方永远是 AGENT。 */
 export const AGENT_CONTEXT: KernelContext = {

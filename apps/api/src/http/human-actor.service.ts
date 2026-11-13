@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
-import type { AuthClaims, Membership } from "@weave-order/schema";
+import type { AuthClaims, Membership, TokenScope } from "@weave-order/schema";
 import { AuthService } from "../gateway/auth.service";
 import type { Kernel, KernelContext } from "../kernel";
 import { isProductionLike } from "../platform/runtime-mode";
@@ -31,17 +31,29 @@ export class HumanActorService {
     authorization: string | undefined,
     fallbackKernel: Kernel,
     fn: (kernel: Kernel, ctx: KernelContext) => Promise<T>,
+    options: { scope?: TokenScope } = {},
   ): Promise<T> {
     if (authorization) {
       let claims: AuthClaims;
       let membership: Membership;
+      let tokenScopes: TokenScope[] | undefined;
       try {
-        ({ claims, membership } = await this.auth.authenticate(authorization));
+        ({ claims, membership, tokenScopes } = await this.auth.authenticate(authorization));
       } catch (error) {
         throw new UnauthorizedException(error instanceof Error ? error.message : "认证失败");
       }
       if (membership.status !== "ACTIVE") {
         throw new ForbiddenException("成员身份未启用");
+      }
+      // PAT 的作用域在这里收口：OIDC 会话没有 tokenScopes，由角色 / RLS 约束。
+      const required = options.scope ?? "write";
+      if (tokenScopes && !tokenScopes.includes(required)) {
+        throw new ForbiddenException({
+          error: {
+            code: "SCOPE_REQUIRED",
+            message: `当前凭据缺少 ${required} 作用域`,
+          },
+        });
       }
       const scope = await this.auth.openScope(membership);
       try {
