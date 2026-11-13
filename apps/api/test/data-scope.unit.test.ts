@@ -47,6 +47,13 @@ describe("isVisibleOwner", () => {
     expect(isVisibleOwner(human(), null)).toBe(false);
   });
 
+  it("无归属人数据：OWN 对任何角色都不可见（含 OWNER），ALL 可见", () => {
+    // 方案 A（WAN-106）：不放宽 OWN 的 fail-closed，历史 NULL 靠一次性回填解决。
+    const ownerOwn = human({ actor: { type: "HUMAN", id: "casdoor-o", role: "OWNER" } });
+    expect(isVisibleOwner(ownerOwn, null)).toBe(false);
+    expect(isVisibleOwner(human({ dataScope: "ALL" }), null)).toBe(true);
+  });
+
   it("TEAM 看同组；没配团队时退化为本人，不放大权限", () => {
     const team = human({ dataScope: "TEAM", teamId: TEAM });
     expect(isVisibleOwner(team, SELF)).toBe(true);

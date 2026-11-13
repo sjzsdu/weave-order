@@ -5,14 +5,13 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { createDemoContext, ok, section } from "./followup-demo-lib";
+import { demoWriteContext, ensureDemoIdentity } from "./demo-identity";
 import type { FollowupStateType } from "../src/agent";
-
-const HUMAN_OPERATOR = {
-  actor: { type: "HUMAN" as const, id: "demo-operator" },
-};
 
 async function main(): Promise<void> {
   const { handle, graph, kernel } = await createDemoContext();
+  const identity = await ensureDemoIdentity(handle.db);
+  const HUMAN_OPERATOR = demoWriteContext(identity, "demo-operator");
   const suffix = Date.now().toString(36);
 
   section("① 准备演示客户与样品（内核写入，带审计）");
