@@ -16,6 +16,7 @@ import type {
   TrackingSnapshot,
 } from "@weave-order/schema";
 import { redactSensitiveText } from "./privacy";
+import { isProductionLike } from "./runtime-mode";
 
 /** 用量写入端口：由 kernel.usage 实现，platform 不直接碰数据库。 */
 export interface LlmUsageSink {
@@ -236,6 +237,29 @@ interface ChatResponse {
   usage?: ChatUsage;
 }
 
+/**
+ * `llm_settings.params` 允许透传到 `/chat/completions` 的键：只留采样类参数。
+ *
+ * `model` / `messages` / `stream` / `max_tokens` / `response_format` 等协议控制字段
+ * 必须由服务端决定——params 曾展开在它们之后，配置里带 `model` 即可覆盖模型白名单（WAN-94）。
+ */
+const ALLOWED_CHAT_PARAMS = new Set([
+  "temperature",
+  "top_p",
+  "presence_penalty",
+  "frequency_penalty",
+  "stop",
+  "seed",
+]);
+
+function sanitizeChatParams(params: Record<string, unknown>): Record<string, unknown> {
+  const allowed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (ALLOWED_CHAT_PARAMS.has(key)) allowed[key] = value;
+  }
+  return allowed;
+}
+
 export interface LiteLlmOptions {
   settings: ResolvedLlmSettings;
   usage: LlmUsageSink;
@@ -403,7 +427,7 @@ export class LiteLlmProvider implements LlmProvider {
           messages: redactedMessages,
           temperature: task === "QUOTE_INTENT" ? 0 : 0.2,
           response_format: { type: "json_object" },
-          ...settings.params,
+          ...sanitizeChatParams(settings.params),
         }),
         signal: AbortSignal.timeout(this.options.timeoutMs),
       },
@@ -475,6 +499,17 @@ export interface CreateLlmOptions {
   now?: () => Date;
 }
 
+/**
+ * 密钥引用白名单（与控制面 `apps/platform-api/src/control/settings.service.ts` 同规则）：
+ * 只接受 `LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`（见 .env.example / docs/track-b-agents.md）。
+ * 两包不共享源码，改这里必须同步控制面那份。
+ */
+const LLM_KEY_REF_PATTERN = /^LITELLM_(MASTER|TENANT)_KEY(?:_[A-Za-z0-9]+)*$/;
+
+export function isAllowedLlmKeyRef(name: string): boolean {
+  return LLM_KEY_REF_PATTERN.test(name);
+}
+
 /** 按配置创建 LLM provider；未知实现显式报错，不静默降级。 */
 export function createLlmProvider(
   provider = "local-rule",
@@ -483,18 +518,30 @@ export function createLlmProvider(
   if (provider === "local-rule") return new LocalRuleLlmProvider();
   if (provider === "litellm") {
     if (!options) throw new Error("LLM_PROVIDER=litellm 需要 settings / usage 配置");
+    // 生产态判定统一走 isProductionLike（NODE_ENV=production 或 AUTH_MODE=oidc），
+    // 避免 OIDC 已接入但 NODE_ENV 不是 production 时 fail-open（WAN-94）。
+    const productionLike = isProductionLike({ ...process.env, ...options.env });
     const keyRef = options.settings.keyRef;
     const referenced = keyRef === "LITELLM_MASTER_KEY" ? undefined : keyRef;
-    const keyFromRef = referenced ? process.env[referenced] : undefined;
+    // 白名单外的引用名（如 DATABASE_URL）绝不读取：先判后读，禁止 process.env[引用名]。
+    const resolvable = referenced && isAllowedLlmKeyRef(referenced) ? referenced : undefined;
+    if (referenced && !resolvable) {
+      if (productionLike) {
+        throw new Error(
+          `LLM keyRef "${referenced}" 不在白名单内（允许 LITELLM_MASTER_KEY / LITELLM_TENANT_KEY_*）；拒绝启动，请修正 llm_settings.key_ref`,
+        );
+      }
+      // dev：白名单外的引用视为未配置，回退 LITELLM_MASTER_KEY（与旧的「未命中环境变量」同一路径）。
+    }
+    const keyFromRef = resolvable ? process.env[resolvable] : undefined;
     const keyFromMaster = options.env?.LITELLM_MASTER_KEY ?? process.env.LITELLM_MASTER_KEY;
-    if (referenced && !keyFromRef && options.env?.NODE_ENV === "production") {
+    if (resolvable && !keyFromRef && productionLike) {
       throw new Error(
-        `LLM keyRef "${referenced}" 未命中环境变量/KMS；生产环境拒绝启动，请配置该密钥或修正 llm_settings.key_ref`,
+        `LLM keyRef "${resolvable}" 未命中环境变量/KMS；生产环境拒绝启动，请配置该密钥或修正 llm_settings.key_ref`,
       );
     }
-    const apiKey =
-      keyFromRef ?? keyFromMaster ?? (options.env?.NODE_ENV === "production" ? "" : "sk-local-dev");
-    if (!apiKey || (options.env?.NODE_ENV === "production" && apiKey === "sk-local-dev")) {
+    const apiKey = keyFromRef ?? keyFromMaster ?? (productionLike ? "" : "sk-local-dev");
+    if (!apiKey || (productionLike && apiKey === "sk-local-dev")) {
       throw new Error(
         "生产环境缺少 LiteLLM Key（keyRef 未命中且未配置 LITELLM_MASTER_KEY），拒绝以 dev 默认值启动",
       );
