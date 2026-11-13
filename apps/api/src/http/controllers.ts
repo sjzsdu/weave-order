@@ -20,7 +20,7 @@ import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
 import { toToolError } from "../tools/errors";
-import { AGENT_CONTEXT, HUMAN_CONTEXT } from "./context";
+import { AGENT_CONTEXT } from "./context";
 import type { HumanActorService } from "./human-actor.service";
 import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
 
@@ -360,15 +360,22 @@ export class RevisionController {
 /**
  * 数据导入（第六步）：Excel/CSV 冷启动的 HTTP 入口。
  * 入参是结构化 `ImportBatch`，每行由内核用 `packages/schema` 契约严格校验；
- * 控制器只固定传 HUMAN 上下文，不碰数据库、不写业务表、不绕过 kernel。
+ * 控制器不碰数据库、不写业务表、不绕过 kernel。
+ * 人类身份统一走 `HumanActorService`：生产态从 OIDC membership 注入真实角色与租户作用域，
+ * 不再使用硬编码 OWNER 的占位上下文。
  */
 @Controller("api")
 export class ImportController {
-  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
   @Post("import")
-  async importBatch(@Body() body: unknown) {
-    return this.kernel.importing.execute(body, HUMAN_CONTEXT);
+  async importBatch(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, (kernel, ctx) =>
+      kernel.importing.execute(body, ctx),
+    );
   }
 }
 

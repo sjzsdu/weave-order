@@ -40,6 +40,7 @@ export class QuoteAgentService {
           customerId: input.customerId ?? null,
           currency: input.currency,
           image: input.image ?? null,
+          imageUrl: input.imageUrl ?? null,
           topK: input.topK,
         },
         { configurable: { thread_id: threadId } },

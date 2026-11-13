@@ -45,6 +45,7 @@ export const QuoteAgentState = Annotation.Root({
     default: () => "CNY",
   }),
   image: Annotation<ImagePayload | null>({ reducer: (_p, n) => n, default: () => null }),
+  imageUrl: Annotation<string | null>({ reducer: (_p, n) => n, default: () => null }),
   topK: Annotation<number>({ reducer: (_p, n) => n, default: () => 3 }),
   stage: Annotation<QuotingStage>({ reducer: (_p, n) => n, default: () => "NEW" }),
   intent: Annotation<QuoteIntentExtraction | null>({ reducer: (_p, n) => n, default: () => null }),
