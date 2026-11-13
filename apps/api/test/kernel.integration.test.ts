@@ -58,7 +58,7 @@ describe("确定性内核（集成）", () => {
     expect(context.customerId).toBe(customer.id);
     expect(context.decisionDeltas).toEqual([]);
 
-    const audit = await kernel.audit.list(5);
+    const audit = await kernel.audit.list(5, customer.id);
     const record = audit.find(
       (row) => row.action === "CUSTOMER_CREATED" && row.entityId === customer.id,
     );

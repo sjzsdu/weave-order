@@ -7,7 +7,7 @@ import {
   PricingPolicyValue,
   ResolvedPricingValue,
   UpdatePricingPolicyInput,
-  isControlPricingKey,
+  controlDirection,
 } from "@weave-order/schema";
 import type {
   JsonValue,
@@ -154,13 +154,6 @@ const SYSTEM_SOURCE: PricingSource = {
   locked: false,
   kind: "SYSTEM_DEFAULT",
 };
-
-/** 管控类键的夹取方向：MIN 只允许抬高，MAX 只允许压低。 */
-function controlDirection(key: PricingKey): "MIN" | "MAX" | null {
-  if (key === "pricing.min_margin_pct" || key === "pricing.cost_floor_amount") return "MIN";
-  if (key.startsWith("approval.")) return "MAX";
-  return null;
-}
 
 /**
  * 定价策略内核服务：唯一写 pricing_policies 的入口。
@@ -352,8 +345,11 @@ export class PricingService {
     let source: PricingSource = baseRow ? sourceOf(baseRow) : SYSTEM_SOURCE;
     let clamped = false;
 
-    const direction = isControlPricingKey(key) ? controlDirection(key) : null;
+    const direction = controlDirection(key);
     if (direction) {
+      // 夹取边界只取 locked 的租户策略。系统推荐值不是边界：公司层（OWNER）是
+      // 管控类的唯一出口，可以把自己的阈值设在推荐值之上；限制的是「下级不能放宽
+      // 公司层」，而不是「公司不能放宽系统推荐值」（对齐 product-design §3.5）。
       for (const row of applicable) {
         if (!row.locked) continue;
         const boundaryRaw = PricingPolicyValue.parse(row.value);

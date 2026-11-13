@@ -45,19 +45,53 @@ export const PricingKey = z.enum([
 ]);
 export type PricingKey = z.infer<typeof PricingKey>;
 
-/** 管控类键：下级只能收紧不能放宽。 */
-export const CONTROL_PRICING_KEYS = [
-  "pricing.min_margin_pct",
-  "pricing.cost_floor_amount",
-  "approval.sales.limit",
-  "approval.manager.limit",
-  "approval.owner.limit",
-] as const satisfies readonly PricingKey[];
+/** 管控方向：MIN 只允许抬高（收紧），MAX 只允许压低（收紧）。 */
+export type ControlDirection = "MIN" | "MAX";
 
-export type ControlPricingKey = (typeof CONTROL_PRICING_KEYS)[number];
+/**
+ * 每个策略键的管控口径（是否管控 + 收紧方向），必须逐键显式声明。
+ *
+ * `satisfies Record<PricingKey, ...>` 保证键集合封闭：在 `PricingKey` 里新增键
+ * 而忘了在这里补一行，会直接编译失败（红），而不是靠运行期兜底。
+ */
+export const CONTROL_DIRECTION = {
+  /** 最低毛利（下限，只能抬高） */
+  "pricing.min_margin_pct": "MIN",
+  /** 默认毛利（建议值，非管控） */
+  "pricing.default_margin_pct": null,
+  /** 公司成本底线（下限，只能抬高） */
+  "pricing.cost_floor_amount": "MIN",
+  /** 改价幅度升级阈值（上限，只能压低，压得越低越容易触发升级） */
+  "pricing.reprice_escalation_pct": "MAX",
+  /** 改价金额升级阈值（上限，只能压低） */
+  "pricing.reprice_escalation_amount": "MAX",
+  /** 业务员审批上限（上限，只能压低） */
+  "approval.sales.limit": "MAX",
+  /** 主管审批上限（上限，只能压低） */
+  "approval.manager.limit": "MAX",
+  /** 老板审批上限（上限；null 表示无上限，不参与夹取） */
+  "approval.owner.limit": "MAX",
+} as const satisfies Record<PricingKey, ControlDirection | null>;
+
+/** 管控类键联合类型（由 CONTROL_DIRECTION 推导：方向非 null 的键）。 */
+export type ControlPricingKey = {
+  [K in keyof typeof CONTROL_DIRECTION]: (typeof CONTROL_DIRECTION)[K] extends ControlDirection
+    ? K
+    : never;
+}[keyof typeof CONTROL_DIRECTION];
+
+/** 管控类键数组：下级只能收紧不能放宽。 */
+export const CONTROL_PRICING_KEYS = Object.keys(CONTROL_DIRECTION).filter(
+  (key) => CONTROL_DIRECTION[key as PricingKey] !== null,
+) as ControlPricingKey[];
+
+/** 取某键的管控方向；非管控键返回 null。 */
+export function controlDirection(key: PricingKey): ControlDirection | null {
+  return CONTROL_DIRECTION[key];
+}
 
 export function isControlPricingKey(key: PricingKey): key is ControlPricingKey {
-  return (CONTROL_PRICING_KEYS as readonly string[]).includes(key);
+  return CONTROL_DIRECTION[key] !== null;
 }
 
 /**

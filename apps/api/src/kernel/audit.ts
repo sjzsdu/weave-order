@@ -2,7 +2,7 @@ import { auditLog, DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { AuditLogEntry } from "@weave-order/schema";
 import type { AuditAction, JsonValue, MemberRole } from "@weave-order/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 /** 谁在写账本：智能体 / 人类 / 系统任务。 */
 export type ActorType = "AGENT" | "HUMAN" | "SYSTEM";
@@ -54,16 +54,19 @@ export async function appendAudit(
   });
 }
 
-/** 读取审计日志（最新在前），并用契约 Schema 校验读取模型。 */
+/** 读取审计日志（最新在前），并用契约 Schema 校验读取模型。可按 entityId 过滤。 */
 export async function listAuditLog(
   db: Db,
   limit = 20,
   tenantId: string = DEFAULT_TENANT_ID,
+  entityId?: string,
 ): Promise<AuditLogEntry[]> {
+  const conditions = [eq(auditLog.tenantId, tenantId)];
+  if (entityId !== undefined) conditions.push(eq(auditLog.entityId, entityId));
   const rows = await db
     .select()
     .from(auditLog)
-    .where(eq(auditLog.tenantId, tenantId))
+    .where(and(...conditions))
     .orderBy(desc(auditLog.seq))
     .limit(limit);
   return rows.map((row) =>

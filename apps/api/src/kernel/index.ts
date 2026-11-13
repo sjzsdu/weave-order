@@ -91,7 +91,7 @@ export function createKernel(
     shares,
     print,
     audit: {
-      list: (limit?: number) => listAuditLog(db, limit, tenantId),
+      list: (limit?: number, entityId?: string) => listAuditLog(db, limit, tenantId, entityId),
     },
   };
 }
