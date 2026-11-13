@@ -67,6 +67,15 @@ pnpm db:migrate
 
 `(sub, org)` → membership 由平台连接查询；业务请求永远不跨租户。`org` 只用于校验，租户以本地记录为准。
 
+**人类写路由的身份统一来自网关登录态**：
+
+- 审批 / 改稿 / 导入等 HUMAN 写路由一律经 `HumanActorService`，角色取自 `memberships.role`，
+  不再存在硬编码 `OWNER` 的静态上下文。
+- 生产态缺 Bearer 令牌直接 401；缺少审批角色时 `assertCanApprove` fail-closed。
+  仅 dev/test 在无令牌时回退 `DEV_HUMAN_CONTEXT`，只服务本地 demo 与既有集成测试。
+- 生产态判定只有一个入口：`platform/runtime-mode.ts#isProductionLike`
+  （`NODE_ENV=production` 或 `AUTH_MODE=oidc`），数据库守卫、分享密钥、审批角色共用同一条件。
+
 > 硬约束：`DatabaseProvider`（平台/控制面连接）拥有跨租户可见性，**永远不能用于业务数据请求**。
 > 业务请求只能经 `AppDatabaseProvider.openScope` 打开租户会话。`GatewayModule` 中
 > `DIRECTORY_KERNEL` 与 `AppDatabaseProvider` 是两个独立 provider，不要合并。

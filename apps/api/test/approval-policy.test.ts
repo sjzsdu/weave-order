@@ -111,4 +111,24 @@ describe("审批金额阈值（owner / manager / sales 分级）", () => {
       process.env.NODE_ENV = previous;
     }
   });
+
+  it("AUTH_MODE=oidc 的 staging 同样 fail-closed，不回退 OWNER", () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousAuthMode = process.env.AUTH_MODE;
+    process.env.NODE_ENV = "development";
+    process.env.AUTH_MODE = "oidc";
+    try {
+      const requirement = computeRequirement({
+        amountCents: 100_000,
+        baselineCents: null,
+        policies: DEFAULT_POLICIES,
+      });
+      expect(() => assertCanApprove(undefined, requirement)).toThrowError(/缺少审批人角色/);
+      expect(() => assertCanApprove("SALES", requirement)).not.toThrow();
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+      if (previousAuthMode === undefined) delete process.env.AUTH_MODE;
+      else process.env.AUTH_MODE = previousAuthMode;
+    }
+  });
 });

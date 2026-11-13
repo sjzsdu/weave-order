@@ -77,10 +77,17 @@ export const QuoteRequestInput = z
     /** 工作台当前选中的客户；没有时 agent 明确列为缺失项，不猜。 */
     customerId: EntityId.optional(),
     currency: Currency.default("CNY"),
+    /** 旧路径：base64 图像（脚本/内部专用，移动端禁止）。 */
     image: ImagePayload.optional(),
+    /** 移动端直传后的预签名 URL；与 image 二选一。 */
+    imageUrl: z.string().url().max(2048).optional(),
     topK: z.number().int().positive().max(10).default(3),
   })
-  .strict();
+  .strict()
+  .refine((value) => !(value.image && value.imageUrl), {
+    message: "image 与 imageUrl 只能二选一",
+    path: ["imageUrl"],
+  });
 export type QuoteRequestInput = z.infer<typeof QuoteRequestInput>;
 
 export const CandidateSource = z.enum(["SPEC", "IMAGE", "COMBINED"]);
