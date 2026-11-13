@@ -94,3 +94,65 @@ impl AgentConfig {
 pub fn config_path(dir: &Path) -> PathBuf {
     dir.join("agent-config.json")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn agent(server_url: &str, token: &str) -> AgentConfig {
+        AgentConfig {
+            server_url: server_url.to_string(),
+            token: token.to_string(),
+            ..AgentConfig::default()
+        }
+    }
+
+    #[test]
+    fn ws_url_maps_http_schemes_and_trims_trailing_slash() {
+        assert_eq!(
+            agent("https://api.example.com/", "token").ws_url().as_deref(),
+            Some("wss://api.example.com/api/print/agent/ws?token=token")
+        );
+        assert_eq!(
+            agent("http://localhost:3000", "token").ws_url().as_deref(),
+            Some("ws://localhost:3000/api/print/agent/ws?token=token")
+        );
+    }
+
+    #[test]
+    fn ws_url_requires_server_url_and_token() {
+        assert_eq!(agent("", "token").ws_url(), None);
+        assert_eq!(agent("https://api.example.com", "   ").ws_url(), None);
+    }
+
+    #[test]
+    fn config_round_trips_through_disk() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = config_path(dir.path());
+        let mut original = agent("https://api.example.com", "token");
+        original.agent_name = "一号机".to_string();
+        original.printers.push(PrinterProfileConfig {
+            name: "Zebra ZD421".to_string(),
+            kind: "THERMAL".to_string(),
+            connection: "RAW_TCP".to_string(),
+            address: Some("192.168.1.20:9100".to_string()),
+            format: "ZPL".to_string(),
+            calibration: Calibration::default(),
+        });
+        original.save(&path).expect("save");
+
+        let loaded = AgentConfig::load(&path);
+        assert_eq!(loaded.agent_name, "一号机");
+        assert_eq!(loaded.printers.len(), 1);
+        assert_eq!(loaded.printers[0].address.as_deref(), Some("192.168.1.20:9100"));
+        assert_eq!(loaded.printers[0].calibration.density, 8);
+    }
+
+    #[test]
+    fn missing_config_falls_back_to_defaults() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let loaded = AgentConfig::load(&config_path(dir.path()));
+        assert!(loaded.server_url.is_empty());
+        assert!(loaded.printers.is_empty());
+    }
+}
