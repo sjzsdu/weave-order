@@ -70,7 +70,9 @@ flowchart LR
 
 ## 4. 渲染策略
 
-- A4：内置 HTML 模板（预览/浏览器打印）；PDF 优先 `PRINT_CHROME_PATH` 的 headless Chromium 做 HTML→PDF，缺省用内置 A4 版式兜底（中文字体内置，分页表格）。
+- A4：内置 HTML 模板（预览/浏览器打印）；PDF 默认由 `pdf-lib` 内置 A4 版式生成，**不需要安装浏览器**（中文字体内置，分页表格）。
+- **自定义 HTML 模板的精确 PDF 需要 Chromium**：只有为「公司覆盖 / 单据类型覆盖」的 HTML 模板做像素级还原时，才在打印服务所在机器安装 Chromium/Chrome，并显式设置 `PRINT_CHROME_PATH`。未设置时自定义 HTML 只用于预览/浏览器打印，服务端 PDF 仍走内置版式（内容正确，但不是模板的像素级还原）。
+- 字体：内置 `DroidSansFallbackFull.ttf`（Apache-2.0，约 4MB）保证离线中文 PDF；可用 `PRINT_CJK_FONT_PATH` 指向外部 TTF/OTF 覆盖，生产可通过挂载字体目录把大字体移出镜像层。
 - 标签：ZPL / TSPL 纯文本模板；二维码、箱号均由指令生成，不依赖打印机内置条码能力。中文标签需要打印机装载 CJK 字体（ZPL 用 `^CI28` + 字体包；TSPL 用 `TSS24.BF2`）。
 
 ## 5. 验收映射
