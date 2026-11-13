@@ -1,0 +1,137 @@
+:root {
+  color-scheme: light;
+  --ink: #111827;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --paper: #fafaf9;
+  --indigo: #4f46e5;
+  --moss: #15803d;
+  --vermilion: #dc2626;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font:
+    14px/1.5 "PingFang SC",
+    "Microsoft YaHei",
+    system-ui,
+    sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+h1 {
+  margin: 0;
+  font-size: 18px;
+}
+h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.hint {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 24px 40px;
+}
+section {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+label {
+  display: block;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+input,
+textarea {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+}
+button {
+  min-height: 34px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+button.primary {
+  border-color: var(--indigo);
+  background: var(--indigo);
+  color: #fff;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.status {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.status.online {
+  background: #dcfce7;
+  color: var(--moss);
+}
+.status.offline {
+  background: #f3f4f6;
+  color: var(--muted);
+}
+.status.error {
+  background: #fee2e2;
+  color: var(--vermilion);
+}
+.printers {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.printers li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.printers small {
+  color: var(--muted);
+}
+.printers input {
+  width: 110px;
+}
+pre {
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
