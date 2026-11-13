@@ -43,7 +43,8 @@ site/
 上线前请替换：
 
 1. `index.html` 的 `<link rel="canonical">` 与 `og:image` 为**绝对地址**（如 `https://weaveorder.cn/assets/og-cover.png`），社交平台不解析相对路径。
-2. 页脚联系方式与邮箱（当前为 `hello@weaveorder.cn`）。
+2. 页脚联系方式与邮箱（当前为占位的 `hello@weaveorder.cn`，请换成真实邮箱）。
+3. 域名 `weaveorder.cn` 与品牌英文名只是占位，正式域名确认后同步替换 `index.html`、`og-cover.png`（`brand/tools/og.html` 重新生成）与品牌手册。
 
 ## 待接线的三件事
 

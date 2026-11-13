@@ -1273,6 +1273,7 @@ h3 {
 
 .level h3 {
   font-size: 17px;
+  color: var(--ink);
   margin: 10px 0 8px;
 }
 

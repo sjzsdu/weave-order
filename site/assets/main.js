@@ -56,6 +56,12 @@
     Array.prototype.forEach.call(revealItems, function (el) {
       revealObserver.observe(el);
     });
+    // 兜底：观察器异常或快速跳转时，1 秒后强制显示，内容不会永远停在透明状态
+    window.setTimeout(function () {
+      Array.prototype.forEach.call(revealItems, function (el) {
+        el.classList.add("is-in");
+      });
+    }, 1000);
   }
 
   /* --------------------------------------------------------- approval demo */
