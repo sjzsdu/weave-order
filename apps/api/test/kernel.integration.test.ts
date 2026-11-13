@@ -1,7 +1,7 @@
 import { Pool } from "pg";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb } from "@weave-order/db";
+import { createDb, sampleEmbeddings, samples, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { createKernel, errorChainMessage } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
@@ -15,10 +15,12 @@ const DATABASE_URL =
 
 const HUMAN: KernelContext = { actor: { type: "HUMAN", id: "integration-human" } };
 const AGENT: KernelContext = { actor: { type: "AGENT", id: "integration-agent" } };
+const SYSTEM: KernelContext = { actor: { type: "SYSTEM", id: "kernel-it-bootstrap" } };
 
 let probe: Pool | null = null;
 let available = false;
 let db: Db | null = null;
+const createdTenantIds: string[] = [];
 
 beforeAll(async () => {
   probe = new Pool({ connectionString: DATABASE_URL, connectionTimeoutMillis: 1500, max: 2 });
@@ -37,12 +39,34 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (db && createdTenantIds.length > 0) {
+    // 只清理本文件自建的租户数据，避免给共享库留垃圾
+    await db.delete(sampleEmbeddings).where(inArray(sampleEmbeddings.tenantId, createdTenantIds));
+    await db.delete(samples).where(inArray(samples.tenantId, createdTenantIds));
+    // audit_log 是 append-only（DELETE 被触发器拒绝），不清理；行数随测试增长是预期行为。
+    await db.delete(tenants).where(inArray(tenants.id, createdTenantIds));
+  }
   await probe?.end();
 });
 
 function kernelOf(): Kernel {
   if (!db) throw new Error("数据库不可用");
   return createKernel(db);
+}
+
+/**
+ * 每个用例独立租户：以图搜图 / 参数找样的结果集只由本用例自己决定，
+ * 不受并行测试文件往默认租户里写样品的影响（WAN-107）。
+ */
+async function isolatedKernel(id: string): Promise<Kernel> {
+  if (!db) throw new Error("数据库不可用");
+  const owner = createKernel(db);
+  const tenant = await owner.tenancy.createTenant(
+    { slug: `it-search-${id}`, name: `Kernel IT ${id}`, casdoorOrg: `it-search-${id}` },
+    SYSTEM,
+  );
+  createdTenantIds.push(tenant.id);
+  return createKernel(db, undefined, { tenantId: tenant.id });
 }
 
 const suffix = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -213,24 +237,67 @@ describe("确定性内核（集成）", () => {
     expect(bySpec.matches.every((match) => match.sample.composition?.includes("棉"))).toBe(true);
   }, 20_000);
 
-  it("找样 T-001：以图搜图返回契约内的确定性相似度", async (ctx) => {
+  it("找样 T-001：以图搜图在隔离数据集内返回确定性、降序且契约内的相似度", async (ctx) => {
     if (!available) ctx.skip();
-    const kernel = kernelOf();
+    const kernel = await isolatedKernel(suffix());
     const image = { mimeType: "image/jpeg", base64: "aGVsbG8td2VhdmU=" };
-    const first = await kernel.search.searchByImage(image, 5, 0);
-    const second = await kernel.search.searchByImage(image, 5, 0);
 
-    expect(first.embeddingModel).toBe("local-stub-v1");
-    expect(first.dimension).toBe(16);
-    expect(first.matches.length).toBeGreaterThan(0);
-    for (const match of first.matches) {
-      expect(match.score).toBeGreaterThanOrEqual(0);
-      expect(match.score).toBeLessThanOrEqual(1);
-    }
-    expect(second.matches.map((match) => match.score)).toEqual(
-      first.matches.map((match) => match.score),
+    // 自建样品：结果集完全由本用例决定，不再与并行测试共享默认租户（WAN-107）。
+    const ownSampleIds = new Set<string>();
+    const createBatch = async (batch: string, count: number) => {
+      for (let index = 0; index < count; index += 1) {
+        const sample = await kernel.samples.create(
+          {
+            code: `IT-IMG-${batch}-${index}`,
+            name: `以图搜图样品 ${batch}-${index}`,
+            composition: index % 2 === 0 ? "100% 棉" : "100% polyester",
+            weight: `${200 + index}g/m2`,
+            unit: "meter",
+          },
+          HUMAN,
+        );
+        ownSampleIds.add(sample.id);
+      }
+    };
+
+    // 断言只看契约不变量：不锁浮点精确值、不锁具体排名。
+    const assertContract = (
+      result: Awaited<ReturnType<typeof kernel.search.searchByImage>>,
+    ): string[] => {
+      expect(result.embeddingModel).toBe("local-stub-v1");
+      expect(result.dimension).toBe(16);
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.length).toBeLessThanOrEqual(5);
+      // 隔离租户里只可能有本用例创建的样品
+      for (const match of result.matches) {
+        expect(ownSampleIds.has(match.sample.id)).toBe(true);
+        expect(match.score).toBeGreaterThanOrEqual(0);
+        expect(match.score).toBeLessThanOrEqual(1);
+      }
+      const scores = result.matches.map((match) => match.score);
+      expect(scores).toEqual([...scores].sort((left, right) => right - left));
+      return result.matches.map((match) => `${match.sample.id}:${match.score}`);
+    };
+
+    await createBatch("a", 8);
+    const first = await kernel.search.searchByImage(image, 5, 0);
+    const firstSignature = assertContract(first);
+
+    // 同租户、同一张图：两次调用必须完全一致（确定性）。
+    const second = await kernel.search.searchByImage(image, 5, 0);
+    expect(second.matches.map((match) => `${match.sample.id}:${match.score}`)).toEqual(
+      firstSignature,
     );
-  }, 20_000);
+
+    // 样品数量翻倍后，同一组断言仍然成立。
+    await createBatch("b", 8);
+    const doubledFirst = await kernel.search.searchByImage(image, 5, 0);
+    assertContract(doubledFirst);
+    const doubledSecond = await kernel.search.searchByImage(image, 5, 0);
+    expect(doubledSecond.matches.map((match) => `${match.sample.id}:${match.score}`)).toEqual(
+      doubledFirst.matches.map((match) => `${match.sample.id}:${match.score}`),
+    );
+  }, 30_000);
 
   it("报价：bigint 金额可以承载超过 int4 的单笔大单", async (ctx) => {
     if (!available) ctx.skip();
