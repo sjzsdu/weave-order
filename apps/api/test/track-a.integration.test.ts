@@ -375,7 +375,12 @@ describe("Track A：报价全链路（建客户 → 草稿 → 改价 → 升级
       HUMAN_OWNER,
     );
     const sample = await kernel.samples.create(
-      { code: `TA-RS-${id}`, name: "驳回面料", unit: "meter" },
+      {
+        code: `TA-RS-${id}`,
+        name: "驳回面料",
+        unit: "meter",
+        costFloor: { amount: 900, currency: "CNY" },
+      },
       HUMAN_OWNER,
     );
     const reasons = await kernel.revisions.ensureDefaults(HUMAN_OWNER);

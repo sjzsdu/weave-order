@@ -51,7 +51,7 @@ type PendingFix = "WAN-93" | "WAN-105";
  * - WAN-105：改稿越权（非报价角色改他人草稿）
  */
 const SUSPENDED_UNTIL_FIXED: Record<PendingFix, boolean> = {
-  "WAN-93": true,
+  "WAN-93": false,
   "WAN-105": true,
 };
 

@@ -58,7 +58,12 @@ async function approvedQuote(kernel: Kernel): Promise<string> {
     HUMAN,
   );
   const sample = await kernel.samples.create(
-    { code: `E3H-S-${id}`, name: "亚麻混纺 180g", unit: "meter" },
+    {
+      code: `E3H-S-${id}`,
+      name: "亚麻混纺 180g",
+      unit: "meter",
+      costFloor: { amount: 1200, currency: "CNY" },
+    },
     HUMAN,
   );
   const draft = await kernel.quotes.generateDraft(
@@ -174,7 +179,12 @@ describe("报价链接 HTTP（e2e）", () => {
       HUMAN,
     );
     const sample = await kernel.samples.create(
-      { code: `E3H-DS-${id}`, name: "草稿布", unit: "meter" },
+      {
+        code: `E3H-DS-${id}`,
+        name: "草稿布",
+        unit: "meter",
+        costFloor: { amount: 1200, currency: "CNY" },
+      },
       HUMAN,
     );
     const draft = await kernel.quotes.generateDraft(
