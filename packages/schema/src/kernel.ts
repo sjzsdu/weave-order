@@ -157,7 +157,7 @@ export const AuditLogEntry = z
     actorType: z.enum(["AGENT", "HUMAN", "SYSTEM"]),
     actorId: z.string().min(1).max(128),
     /** 审批人当时的角色快照（智能体/系统为空），用于还原审批时点的权限。 */
-    actorRole: MemberRole.nullable(),
+    actorRole: MemberRole.nullable().optional(),
     action: AuditAction,
     entityType: z.string().min(1).max(64),
     entityId: EntityId,
