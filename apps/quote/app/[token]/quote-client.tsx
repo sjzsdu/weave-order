@@ -212,6 +212,7 @@ export function QuoteClient({
                 alt={t.wechatQr}
                 width={88}
                 height={88}
+                onError={(event) => { event.currentTarget.style.display = "none"; }}
               />
             )}
           </div>

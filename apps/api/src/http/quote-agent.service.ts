@@ -24,8 +24,8 @@ export class QuoteAgentService {
 
   constructor(
     @Inject(KERNEL) private readonly fallbackKernel: Kernel,
-    private readonly human: HumanActorService,
-    private readonly database: DatabaseProvider,
+    @Inject(HumanActorService) private readonly human: HumanActorService,
+    @Inject(DatabaseProvider) private readonly database: DatabaseProvider,
   ) {}
 
   async run(authorization: string | undefined, body: unknown) {

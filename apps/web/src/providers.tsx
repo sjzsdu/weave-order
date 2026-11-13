@@ -48,6 +48,16 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // 所有 hooks 必须在下面的 mounted 早退之前调用，否则首帧与后续帧的 hook 数量
+  // 不一致，React 会抛「Rendered more hooks than during the previous render」。
+  const client = useMemo<ApiClient>(() => {
+    if (demo) return createMockApiClient();
+    // token 只在服务端 BFF（app/api/[...path]/route.ts）注入，浏览器不持有。
+    return createApiClient({ baseUrl: "", getToken: () => null });
+  }, [demo]);
+
+  const queryClient = useMemo(() => createQueryClient(), []);
+
   /*
    * 桌面工作区是纯客户端应用：服务端不跑 react-query hooks。
    * 这样也避免 Next 服务端打包与 packages/core 各自解析一份 QueryClient context。
@@ -59,14 +69,6 @@ export function AppProviders({ children }: { children: ReactNode }) {
       </div>
     );
   }
-
-  const client = useMemo<ApiClient>(() => {
-    if (demo) return createMockApiClient();
-    // token 只在服务端 BFF（app/api/[...path]/route.ts）注入，浏览器不持有。
-    return createApiClient({ baseUrl: "", getToken: () => null });
-  }, [demo]);
-
-  const queryClient = useMemo(() => createQueryClient(), []);
 
   return (
     <ApiContext.Provider value={client}>
