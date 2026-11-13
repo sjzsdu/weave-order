@@ -129,14 +129,10 @@ describe("寄样跟进智能体（集成）", () => {
     const pausedValues = paused.values as FollowupStateType;
     expect(pausedValues.stage).toBe("WAITING_REPLY");
 
-    const audit = await kernel.audit.list(100);
+    // 按 entityId 过滤：默认租户被并行测试写入时不再依赖 100 条窗口。
+    const audit = await kernel.audit.list(100, first.shipment!.id);
     expect(
-      audit.some(
-        (row) =>
-          row.entityId === first.shipment?.id &&
-          row.action === "SAMPLE_SHIPMENT_DRAFTED" &&
-          row.actorType === "AGENT",
-      ),
+      audit.some((row) => row.action === "SAMPLE_SHIPMENT_DRAFTED" && row.actorType === "AGENT"),
     ).toBe(true);
 
     // 模拟重启：新图实例 + 同一个 PostgreSQL 检查点
@@ -151,14 +147,9 @@ describe("寄样跟进智能体（集成）", () => {
     expect(resumed.quote?.amountsComputedByKernel).toBe(true);
     expect(resumed.quote?.total.amount).toBe(4500);
 
-    const auditAfter = await kernel.audit.list(100);
+    const auditAfter = await kernel.audit.list(100, resumed.quote!.id);
     expect(
-      auditAfter.some(
-        (row) =>
-          row.entityId === resumed.quote?.id &&
-          row.action === "QUOTE_DRAFT_GENERATED" &&
-          row.actorType === "AGENT",
-      ),
+      auditAfter.some((row) => row.action === "QUOTE_DRAFT_GENERATED" && row.actorType === "AGENT"),
     ).toBe(true);
 
     await saver.deleteThread(input.threadId);

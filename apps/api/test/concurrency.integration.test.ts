@@ -163,11 +163,9 @@ describe("并发回款（集成）", () => {
     expect(persisted.paidAmount.amount).toBe(800);
     expect(persisted.status).toBe("PARTIAL");
 
-    const entries = (await kernel.audit.list(200))
-      .filter(
-        (entry) =>
-          entry.action === "RECEIVABLE_PAYMENT_RECORDED" && entry.entityId === receivableId,
-      )
+    // 按 entityId 过滤，避免并行测试把 200 条窗口挤爆（与 WAN-97 同一思路）。
+    const entries = (await kernel.audit.list(200, receivableId))
+      .filter((entry) => entry.action === "RECEIVABLE_PAYMENT_RECORDED")
       .sort((left, right) => left.seq - right.seq);
     expect(entries).toHaveLength(2);
     const chain = entries.map((entry) => ({
@@ -241,8 +239,8 @@ describe("并发发货确认（集成）", () => {
     const shipment = await kernel.shipments.getById(shipmentId);
     expect(shipment.status).toBe("CONFIRMED");
 
-    const audits = (await kernel.audit.list(200)).filter(
-      (entry) => entry.action === "SAMPLE_SHIPMENT_CONFIRMED" && entry.entityId === shipmentId,
+    const audits = (await kernel.audit.list(200, shipmentId)).filter(
+      (entry) => entry.action === "SAMPLE_SHIPMENT_CONFIRMED",
     );
     expect(audits).toHaveLength(1);
 
@@ -307,8 +305,8 @@ describe("并发发货确认（集成）", () => {
     const persisted = await kernel.orderShipments.getById(shipment.id);
     expect(persisted.status).toBe("SHIPPED");
 
-    const audits = (await kernel.audit.list(200)).filter(
-      (entry) => entry.action === "SHIPMENT_CONFIRMED" && entry.entityId === shipment.id,
+    const audits = (await kernel.audit.list(200, shipment.id)).filter(
+      (entry) => entry.action === "SHIPMENT_CONFIRMED",
     );
     expect(audits).toHaveLength(1);
     expect((audits[0]!.before as { status: string }).status).toBe("DRAFT");
