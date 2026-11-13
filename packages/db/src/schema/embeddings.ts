@@ -21,6 +21,7 @@ export const sampleEmbeddings = pgTable(
   "sample_embeddings",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     sampleId: uuid("sample_id")
       .notNull()
       .references(() => samples.id, { onDelete: "cascade" }),

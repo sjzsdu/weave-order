@@ -10,7 +10,6 @@ import {
   Timestamp,
   Unit,
 } from "./domain";
-
 /**
  * 确定性内核的输入契约。
  *
@@ -38,6 +37,7 @@ export const CreateSampleInput = z
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
     composition: z.string().max(255).nullable().optional(),
+    category: z.string().max(64).nullable().optional(),
     weight: z.string().max(64).nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
@@ -76,7 +76,13 @@ export const ConfirmSampleShipmentInput = z.object({ shipmentId: EntityId }).str
 export type ConfirmSampleShipmentInput = z.infer<typeof ConfirmSampleShipmentInput>;
 
 /** 人工确认报价草稿（DRAFT -> SENT）。 */
-export const ConfirmQuoteInput = z.object({ quoteId: EntityId }).strict();
+export const ConfirmQuoteInput = z
+  .object({
+    quoteId: EntityId,
+    /** 可选乐观锁：审批人看到的是哪一版就确认哪一版。 */
+    baseVersion: z.number().int().positive().optional(),
+  })
+  .strict();
 export type ConfirmQuoteInput = z.infer<typeof ConfirmQuoteInput>;
 
 /** 人类确认报价后的回执：状态只可能是 SENT。 */
@@ -86,6 +92,7 @@ export const QuoteConfirmation = z
     status: z.literal("SENT"),
     confirmedBy: z.string().min(1).max(128),
     confirmedAt: Timestamp,
+    version: z.number().int().positive().optional(),
   })
   .strict();
 export type QuoteConfirmation = z.infer<typeof QuoteConfirmation>;
@@ -100,12 +107,43 @@ export const AuditAction = z.enum([
   "SAMPLE_SHIPMENT_CONFIRMED",
   "SAMPLE_SHIPMENT_REJECTED",
   "QUOTE_DRAFT_GENERATED",
+  "QUOTE_DRAFT_REVISED",
+  "QUOTE_REVISION_PROPOSED",
+  "QUOTE_APPROVAL_ESCALATED",
   "QUOTE_CONFIRMED",
   "QUOTE_REJECTED",
-  /** 用户侧凭据（WAN-78）：账号建立、token 签发、token 撤销。 */
+  "TENANT_CREATED",
+  "MEMBERSHIP_CREATED",
+  "ORDER_CREATED",
+  "ORDER_CONFIRMED",
+  "SHIPMENT_CREATED",
+  "SHIPMENT_CONFIRMED",
+  "RECEIVABLE_CREATED",
+  "RECEIVABLE_PAYMENT_RECORDED",
+  "QUOTE_SHARE_CREATED",
+  "QUOTE_SHARE_REVOKED",
+  "REVISION_REQUESTED",
+  "REVISION_RESOLVED",
+  "DECISION_DELTA_RECORDED",
+  "PRICING_POLICY_CREATED",
+  "PRICING_POLICY_UPDATED",
+  "LLM_SETTINGS_UPDATED",
+  // 身份/凭据类动作（网关与打印代理会写入，保持审计动作集合封闭）
   "USER_CREATED",
   "API_TOKEN_CREATED",
   "API_TOKEN_REVOKED",
+  "PRINT_AGENT_REGISTERED",
+  "PRINT_AGENT_DISABLED",
+  "PRINT_TEMPLATE_PUBLISHED",
+  "PRINT_JOB_CREATED",
+  "PRINT_JOB_COMPLETED",
+  "PRINT_JOB_FAILED",
+  "PRINT_JOB_CANCELLED",
+  "PRINT_BOX_CREATED",
+  "PRINT_BOX_VOIDED",
+  "PRINT_LABEL_REISSUED",
+  "PRINT_DISCREPANCY_FLAGGED",
+  "PRINT_SCAN_RECORDED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -113,6 +151,7 @@ export type AuditAction = z.infer<typeof AuditAction>;
 export const AuditLogEntry = z
   .object({
     id: EntityId,
+    tenantId: EntityId,
     seq: z.number().int().positive(),
     actorType: z.enum(["AGENT", "HUMAN", "SYSTEM"]),
     actorId: z.string().min(1).max(128),

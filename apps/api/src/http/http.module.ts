@@ -1,15 +1,16 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import type { Provider } from "@nestjs/common";
-import { createApprovalService } from "../approval";
-import type { ApprovalService } from "../approval";
-import { AuthController, CliLoginPageController } from "../auth/auth.controller";
-import { AuthGuard } from "../auth/auth.guard";
-import { AuthService } from "../auth/auth.service";
-import { AuthErrorFilter } from "../auth/errors";
+import { GatewayModule } from "../gateway/gateway.module";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
+import { PublicShareService } from "../shares/public-share.service";
+import { PrintAgentAuthService } from "../print/agent-auth.service";
+import { PrintAgentHub } from "../print/agent-hub";
+import { AppDatabaseProvider, DatabaseProvider } from "../platform/database.provider";
+import { DatabaseModule } from "../platform/database.module";
 import { createTools } from "../tools";
+import { QuoteAgentService } from "./quote-agent.service";
 import type { Tools } from "../tools";
 import {
   ApprovalController,
@@ -17,14 +18,19 @@ import {
   CatalogController,
   HealthController,
   ImportController,
+  OrderController,
   PanoramaController,
+  PricingController,
   QuoteController,
+  RevisionController,
+  QuoteAgentController,
 } from "./controllers";
-import { DatabaseProvider } from "./database.provider";
-import { APPROVAL, KERNEL, TOOLS } from "./tokens";
+import { HumanActorService } from "./human-actor.service";
+import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
+import { PrintAgentController, PrintController } from "./print.controllers";
+import { HUMAN_ACTOR, KERNEL, PUBLIC_SHARE, QUOTE_AGENT, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
-  DatabaseProvider,
   {
     provide: KERNEL,
     useFactory: (database: DatabaseProvider): Kernel => createKernel(database.handle.db),
@@ -35,10 +41,24 @@ const providers: Provider[] = [
     useFactory: (kernel: Kernel): Tools => createTools(kernel),
     inject: [KERNEL],
   },
+  HumanActorService,
   {
-    provide: APPROVAL,
-    useFactory: (kernel: Kernel): ApprovalService => createApprovalService(kernel),
-    inject: [KERNEL],
+    provide: HUMAN_ACTOR,
+    useExisting: HumanActorService,
+  },
+  QuoteAgentService,
+  PrintAgentAuthService,
+  PrintAgentHub,
+  {
+    provide: QUOTE_AGENT,
+    useFactory: (service: QuoteAgentService): QuoteAgentService => service,
+    inject: [QuoteAgentService],
+  },
+  {
+    provide: PUBLIC_SHARE,
+    useFactory: (database: AppDatabaseProvider): PublicShareService =>
+      new PublicShareService(database.pool),
+    inject: [AppDatabaseProvider],
   },
   {
     provide: AuthService,
@@ -52,6 +72,7 @@ const providers: Provider[] = [
 ];
 
 @Module({
+  imports: [DatabaseModule, GatewayModule],
   controllers: [
     HealthController,
     AuthController,
@@ -62,6 +83,14 @@ const providers: Provider[] = [
     ApprovalController,
     PanoramaController,
     ImportController,
+    PricingController,
+    OrderController,
+    RevisionController,
+    QuoteAgentController,
+    PublicQuoteController,
+    QuoteSharesController,
+    PrintController,
+    PrintAgentController,
   ],
   providers,
 })

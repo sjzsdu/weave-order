@@ -11,17 +11,19 @@
 
 ## 技术栈
 
-| 层           | 选型                                                             |
-| ------------ | ---------------------------------------------------------------- |
-| 后端         | NestJS + TypeScript                                              |
-| 数据库       | PostgreSQL 16 + pgvector                                         |
-| ORM / 查询层 | Drizzle ORM（TypeScript 优先）                                   |
-| 缓存与队列   | Redis 7                                                          |
-| 向量检索     | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW |
-| 智能体编排   | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）  |
-| 前端         | React 18 + TypeScript + Vite（Web + H5 按路由区分）              |
-| 校验         | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）        |
-| 测试         | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）      |
+| 层            | 选型                                                                 |
+| ------------- | -------------------------------------------------------------------- |
+| 后端          | NestJS + TypeScript                                                  |
+| 数据库        | PostgreSQL 16 + pgvector                                             |
+| ORM / 查询层  | Drizzle ORM（TypeScript 优先）                                       |
+| 缓存与队列    | Redis 7                                                              |
+| 向量检索      | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW     |
+| 智能体编排    | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）      |
+| 前端·桌面     | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统  |
+| 前端·客户报价 | Next.js 15 独立应用 `apps/quote`（`/s/[token]`，SSR、无鉴权 Cookie） |
+| 移动端        | Taro（H5/PWA + 小程序 + RN App）                                     |
+| 校验          | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）            |
+| 测试          | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）          |
 
 ## 目录结构（Monorepo，pnpm workspace + Turborepo）
 
@@ -39,9 +41,12 @@ weave-order/
 │   │   │   └── import/      # Excel/CSV 文件解析适配器（只解析、不写库，第六步）
 │   │   ├── scripts/         # demo / demo-followup / import-data 冷启动
 │   │   └── test/            # 边界 / 单元 / 内核集成 / HTTP e2e / 导入集成
-│   └── web/                 # React 18 + Zustand + Radix + Tailwind + Vite（三个窗口）
+│   ├── web/                 # Next.js 15：三个业务窗口 + 组织设置 + /auth/callback（E1）
+│   └── quote/               # Next.js 15 客户报价页（/s/[token]，SSR、无鉴权 Cookie，E3）
 ├── packages/
 │   ├── schema/              # Zod 契约（前后端 / 工具 / 内核唯一来源，含 import.ts）
+│   ├── core/                # 前端业务逻辑：API client / TanStack Query hooks / 离线队列
+│   ├── ui/                  # 设计系统：tokens + 16 组件（草稿态统一视觉）
 │   └── db/                  # Drizzle Schema、连接、SQL 迁移
 ├── skills/weave-order/      # agent skill（SKILL.md）：codex 等加载后即可操作织序
 ├── data/seed/               # 冷启动样例数据（customers.csv / samples.csv / .xlsx）
@@ -64,19 +69,36 @@ docker compose up -d
 pnpm seed          # 迁移 + 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
 pnpm demo          # 可选：迁移 + 内核演示 + 寄样跟进智能体（另造演示数据）
 
-# 4. 打开三个窗口（API 3000 + Vite 5173）
+# 4. 打开桌面三窗口（API 3000 + Next 3001）
 pnpm dev
-# → http://localhost:5173
+# → http://localhost:3001/today
 
-# 5. 可选：构建 CLI，登录并把 skill 装到 codex
-pnpm --filter @weave-order/cli build
-node apps/cli/bin/weave.js login      # 浏览器确认后凭据落在 ~/.config/weave-order/
-node apps/cli/bin/weave.js skill install
+# 5. 客户报价页（Next.js，端口 5174；路由 /s/[token]）
+pnpm --filter @weave-order/quote dev
+# → http://localhost:5174/s/<token>（审批通过后自动生成，或在全景窗口重新生成）
+
+# 6. 平台总管理端（E4，控制面独立库 + 独立进程）
+pnpm platform:migrate   # 自动创建 weave_platform + control schema
+pnpm platform:seed      # 平台人员 / 套餐 / 价格表 v1 / 演示租户
+pnpm --filter @weave-order/platform-api dev   # :3002（只连 PLATFORM_DATABASE_URL）
+pnpm --filter @weave-order/admin dev          # :3003 控制台
+# → http://localhost:3003（本地可选 owner / owner2 / finance / ops / support / readonly）
 ```
 
-页面是**三个窗口**（Radix Tabs 切换）：任务派发（Intent Bar）、审批与异常分诊
-（Review Queue）、业务全景只读（Read-Only Panorama）。智能体只出 `DRAFT` / 建议；
-批准 / 拒绝是审批窗口里人类唯一的决策入口，前端才会调内核 confirm 生效（铁律 #2）。
+桌面端是**三个业务窗口 + 一个管理面**：工作台（⌘1）、审批（⌘2）、全景只读（⌘3）、
+组织设置（⌘,）。打印是全局抽屉，不是第四个窗口。智能体只出 `DRAFT` / 建议；
+批准 / 拒绝是审批窗口里人类唯一的决策入口，前端经 `/api/approvals/decide` 调内核 confirm 生效（铁律 #2）。
+
+首次本地预览可以不带后端：开发模式下访问 `http://localhost:3001/today?demo=1` 使用 mock transport
+（生产构建禁用 demo 入口）。真实联调时用 `GET /auth/dev` 写入 dev token（默认 `dev:demo:demo`），
+或配置 Casdoor 走 `/auth/login` → `/auth/callback`（Authorization Code + PKCE，客户端不持有 secret）。
+
+OIDC token 只存 **httpOnly Cookie**；浏览器只调同源 `/api/*`，由 Next BFF
+（`apps/web/app/api/[...path]/route.ts`）在服务端注入 `Authorization` 转发给 Nest。
+前端脚本不读 token、不落 localStorage，生产也不需要开放跨域。
+
+> E3 客户报价页是独立 Next.js 应用：SSR + 无鉴权 Cookie + 独立部署，
+> 客户面与租户面彻底隔离，也不与 `apps/web` 的登录 Cookie 串扰。详见 `apps/quote/README.md`。
 
 `demo` 逐项展示：
 
@@ -97,7 +119,7 @@ node apps/cli/bin/weave.js skill install
 
 ```bash
 pnpm build        # 构建
-pnpm dev          # api(3000) + web(5173)
+pnpm dev          # api(3000) + web(3001)
 pnpm lint         # 先构建契约包，再跑全仓 ESLint（含目录边界规则）
 pnpm typecheck    # 全仓类型检查
 pnpm test         # 单元 + 边界；有本地 PG 时内核/HTTP 集成测试自动启用
@@ -105,10 +127,27 @@ pnpm db:generate  # 改完 Drizzle Schema 后生成 SQL 迁移
 pnpm db:migrate   # 应用迁移
 pnpm demo         # 迁移 + 内核演示 + 寄样跟进智能体（含检查点续跑）
 pnpm demo:followup # 只跑寄样跟进智能体演示
+pnpm demo:quote    # 客户原话 → 候选样品 → 定价依据 → 报价 DRAFT（+ token 计量）
 pnpm seed         # 迁移 + 导入样例客户/样品（Excel/CSV，冷启动）
 pnpm --filter @weave-order/cli build   # 构建 weave CLI
 pnpm format       # Prettier
 ```
+
+### 内核与审批（Track A）
+
+报价全链路已在内核落地：建客户 → 建样品 → 报价草稿（DRAFT）→ 改价
+（版本 +1、重算、逐行 diff）→ 改幅/金额超阈值自动升级审批 → 人类批准 → confirm。
+
+- 定价继承：系统 → 公司 → 团队/客户/品类 → 个人；管控类（`locked`）只能收紧，
+  解析结果同时返回「生效值 + 来源」。
+- 审批阈值：默认 5 万 / 20 万 / 无上限；改幅超过 5% 或 1 万元自动升级主管。
+- 审批角色从登录态 membership 注入（生产缺令牌 401、缺角色 fail-closed），
+  不再硬编码 OWNER。
+- 改稿 / 驳回同事务写 `audit_log`、`revision_requests`、`draft_revisions`、
+  `decision_deltas`，AI 只能产出 Patch，改账本必须 HUMAN。
+
+接口与验收细节见 `docs/track-a-kernel.md`；常驻用例：
+`apps/api/test/track-a.integration.test.ts`、`apps/api/test/track-a.e2e.test.ts`。
 
 ### 智能体编排（第四步）
 
@@ -139,27 +178,31 @@ pnpm format       # Prettier
 
 ### 最小 HTTP 面
 
-| 方法   | 路径                                | 身份 / 状态                   | 说明                                    |
-| ------ | ----------------------------------- | ----------------------------- | --------------------------------------- |
-| GET    | `/api/health`                       | 只读                          | 服务 + 数据库可用性                     |
-| GET    | `/api/customers`                    | 只读                          | 客户列表                                |
-| GET    | `/api/samples`                      | 只读                          | 样品目录                                |
-| GET    | `/api/audit`                        | 只读                          | 审计流水                                |
-| POST   | `/api/tools/search-by-spec`         | agent                         | T-002 参数匹配                          |
-| POST   | `/api/tools/search-by-image`        | agent                         | T-001 以图搜图（base64）                |
-| POST   | `/api/tools/generate-quote-draft`   | agent → `DRAFT`               | T-004 生成报价草稿                      |
-| POST   | `/api/tools/create-sample-shipment` | agent → `DRAFT`               | T-005 创建寄样单草稿                    |
-| POST   | `/api/approvals/decide`             | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject     |
-| GET    | `/api/approvals`                    | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）    |
-| GET    | `/api/panorama`                     | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）  |
-| POST   | `/api/import`                       | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品 |
-| POST   | `/api/auth/device/start`            | 无                            | CLI 设备登录：申请一次性确认码          |
-| POST   | `/api/auth/device/poll`             | 无                            | CLI 轮询；批准后一次性换 token          |
-| POST   | `/api/auth/device/decide`           | 浏览器确认                    | 人类批准 / 拒绝 CLI 登录                |
-| GET    | `/api/auth/me`                      | Bearer token                  | 当前账号 + 凭据作用域                   |
-| GET    | `/api/auth/tokens`                  | Bearer token                  | 列出自己的凭据                          |
-| POST   | `/api/auth/tokens`                  | Bearer token（`write`）       | 签发新凭据（明文只返回一次）            |
-| DELETE | `/api/auth/tokens/:id`              | Bearer token                  | 撤销凭据（立即失效）                    |
+| 方法 | 路径                                  | 身份 / 状态                   | 说明                                            |
+| ---- | ------------------------------------- | ----------------------------- | ----------------------------------------------- |
+| GET  | `/api/health`                         | 只读                          | 服务 + 数据库可用性                             |
+| GET  | `/api/customers`                      | 只读                          | 客户列表                                        |
+| GET  | `/api/samples`                        | 只读                          | 样品目录                                        |
+| GET  | `/api/audit`                          | 只读                          | 审计流水                                        |
+| POST | `/api/tools/search-by-spec`           | agent                         | T-002 参数匹配                                  |
+| POST | `/api/tools/search-by-image`          | agent                         | T-001 以图搜图（base64 / imageUrl）             |
+| POST | `/api/tools/generate-quote-draft`     | agent → `DRAFT`               | T-004 生成报价草稿                              |
+| POST | `/api/agents/quote`                   | agent                         | 粘贴客户原话 → 候选 + 定价依据 + DRAFT + 缺失项 |
+| POST | `/api/tools/create-sample-shipment`   | agent → `DRAFT`               | T-005 创建寄样单草稿                            |
+| POST | `/api/approvals/decide`               | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject             |
+| GET  | `/api/approvals`                      | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）            |
+| GET  | `/api/approvals/:id?kind=quote`       | 只读                          | 审批卡详情：出处 / diff / 草稿态                |
+| GET  | `/api/panorama`                       | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）          |
+| POST | `/api/import`                         | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品         |
+| POST | `/api/quotes/:id/shares`              | HUMAN（仅 SENT 报价）         | 生成客户报价链接（明文 token 只返回一次）       |
+| GET  | `/api/quotes/:id/shares`              | 只读                          | 分享列表 + 访问/接受/提问聚合数据               |
+| POST | `/api/shares/:id/revoke`              | HUMAN                         | 撤回链接，立即 410                              |
+| GET  | `/api/public/quotes/:token`           | 公开（无登录）                | 客户视图；`?track=0` 用于打印不重复计数         |
+| POST | `/api/public/quotes/:token/accept`    | 公开（可选手机尾号）          | 记录成交意向（不改账本）                        |
+| POST | `/api/public/quotes/:token/questions` | 公开                          | 客户留言提问                                    |
+| POST | `/api/public/quotes/:token/pdf`       | 公开                          | 记录 PDF 下载事件                               |
+| POST | `/api/quote-shares`                   | HUMAN（仅 SENT 报价）         | 移动端契约：quoteId 在 body，返回裸对象         |
+| GET  | `/api/quote-shares?quoteId=`          | 只读                          | 移动端契约：链接访问时间线                      |
 
 > 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
 > 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由
@@ -191,10 +234,13 @@ Intent Bar 派发意图 → 工具产出 DRAFT 报价/寄样单 → GET /api/app
   → GET /api/panorama 与审计流水立刻可见
 ```
 
-技术栈：React 18 + Zustand（共享只读状态与审批队列实时刷新）+ Radix UI（Tabs / Dialog）
+技术栈：Next.js 15 App Router + React 19 + Tailwind + `packages/ui` 设计系统。
 
-- Tailwind CSS + Vite。状态、契约（输入 / 结果 / 只读视图）全部来自 `packages/schema`，
-  前端不重复定义任何业务结构。
+- 数据与状态走 `packages/core`（TanStack Query hooks + API client），页面不裸 fetch；
+  契约（输入 / 结果 / 只读视图）全部来自 `packages/schema`，前端不重复定义任何业务结构。
+- 审批卡详情来自 `GET /api/approvals/:id?kind=`：出处、diff、草稿态由后端只读聚合。
+- 设计系统 16 组件在 `packages/ui`：`DraftCard` / `ApprovalSheet` / `DiffRow` / `ProvenanceChip` /
+  `MoneyText` / `RiskBadge` / `MissingFieldBadge` 等；草稿态统一「浅底 + 虚线边 + 版本号」。
 
 包公记录项处理：
 
@@ -216,7 +262,7 @@ SEED_RESET=1 pnpm seed   # 数据已存在：同事务重置 seed 行后重导�
 # 或换成 Excel 工作簿（含 customers / samples 两个 sheet）：
 IMPORT_XLSX=data/seed/weave-order-seed.xlsx pnpm seed
 pnpm demo          # 可选：内核演示 + 寄样跟进智能体（另造演示数据）
-pnpm dev           # http://localhost:5173
+pnpm dev           # http://localhost:3001
 ```
 
 - 来源：`data/seed/customers.csv` + `samples.csv`（CSV），或 `weave-order-seed.xlsx`
@@ -311,6 +357,9 @@ SEED_RESET=1 pnpm seed
 - `src/tools/t003-get-customer-history.ts` — 客户历史。
 - `src/tools/t004-generate-quote-draft.ts` — 报价草稿，`amountsComputedByKernel: true`。
 - `src/tools/t005-create-sample-shipment.ts` — 寄样单草稿 + 内核建议跟进时间。
+- `src/tools/t006-suggest-line-price.ts` — 确定性建议单价 + 可点开的定价依据（成本底线 / 等级加价 / 取整）。
+- `src/quoting.ts` — 找样 / 报价 agent 的槽位、候选、缺失项、最终结果契约。
+- `src/llm.ts` — LLM 设置（全局 + 租户覆盖）、token 用量、月度汇总、预算状态。
 
 关键约束：
 
@@ -340,7 +389,7 @@ SEED_RESET=1 pnpm seed
 六步全部完成（P0 收尾）。第六步（Excel/CSV 导入 + 冷启动）已完成，累计包含前五步能力：
 
 - 确定性内核、工具接口层、LangGraph 编排、审计日志、目录边界 ESLint 规则（第一~四步）。
-- `apps/web` 三个窗口：Intent Bar / Review Queue / Read-Only Panorama（React 18 + Zustand + Radix + Tailwind）。
+- `apps/web` 桌面三窗口 + 组织设置（Next.js 15 + React 19 + `packages/ui` 设计系统）；审批卡带出处 / diff / 草稿态。
 - `apps/api/src/approval`：审批队列、批准 / 拒绝决策、业务全景聚合；只调用 kernel。
 - 批准 / 拒绝端到端：approval API → confirm / reject → 账本状态生效 → 全景 / 审计可见。
 - 包公记录项①：缺运单号改走明确业务错误码 `NO_TRACKING_NUMBER`（图入口校验）；记录项②仅在案未改。
@@ -350,3 +399,44 @@ SEED_RESET=1 pnpm seed
 
 未做（P1 及以后，本步严格未外溢）：跟单异常 / 对账智能体、H5 / 小程序、ERP 集成、
 pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
+
+## T0 地基（契约冻结 + 多租户 + 网关）
+
+在既有六步 MVP 之上完成并行开发前置：
+
+- **契约**：`packages/schema` 新增租户/成员、订单/发货/应收、改稿、报价分享与统一 HTTP 错误契约；
+  所有实体输出带 `tenantId`，输入 `strict()`（前端不得传 `tenantId`）。
+- **数据层**：全部业务表加 `tenant_id`，`ENABLE + FORCE ROW LEVEL SECURITY`，
+  应用角色 `weave_app`（`NOSUPERUSER` / `NOBYPASSRLS`）由迁移创建；策略与角色在
+  `packages/db/sql/rls.sql`，`pnpm db:migrate` 幂等应用。
+- **网关**：`apps/api/src/gateway` 做 Casdoor OIDC（RS256/JWKS/issuer/audience）校验，
+  `(sub, org)` → 本地 `memberships` → 租户会话（`SET app.tenant_id`）。
+  `GET /api/auth/me`、`GET /api/auth/customers`；本地 `AUTH_MODE=dev` 支持
+  `Authorization: Bearer dev:<sub>:<org>`，生产强制 `oidc`。
+- **前端骨架**：`apps/mobile`（Taro 五 Tab：今日/审批/相机/客户/更多）、
+  `packages/core`（API client / TanStack Query hooks / 离线队列）、
+  `packages/ui`（设计 tokens + 基础组件）。
+- **移动端 P0（Track D）**：Taro 一套代码输出 H5/PWA；手机「粘贴原话 → 改价 → 批准 → 分享链接」主链路、
+  离线队列（IndexedDB / Taro Storage，冲突人工确认）、图片压缩后直传对象存储、语音批注与 PWA 安装。
+  演示：`pnpm --filter @weave-order/mobile dev`（本地 mock，无需后端）；真后端见 `apps/mobile/README.md`。
+- **验收**：`apps/api/test/tenancy.integration.test.ts` 覆盖「建租户→建成员→建客户→建样品→出报价草稿
+  - 审计同事务」与跨租户 RLS 拦截；CI `.github/workflows/ci.yml` 常驻执行。
+- **本地基础设施**：`docker compose up -d` 增加 LiteLLM（`:4000`），配置在 `infra/litellm/config.yaml`。
+
+契约与各 Track 开工约定详见 `docs/t0-foundation.md`。
+
+## Track B · 找样 / 报价智能体 + LiteLLM（WAN-84）
+
+在 T0 契约之上新增：
+
+- **agent**：`apps/api/src/agent/quoting-graph.ts`，客户原话 → 槽位 → 候选样品（确定性命中理由）
+  → 内核定价 → `DRAFT`；缺客户 / 数量 / 样品 / 定价依据时返回 `NEEDS_INPUT` 并列出缺失项。
+- **工具**：T-006 `suggest_line_price`（只调内核，复用 Track A 的定价继承与管控夹取），与既有 T-001/T-002/T-003/T-004/T-005 一起通过 Zod 校验。
+- **LiteLLM**：`platform/llm.ts` 的 `LiteLlmProvider` 只请求 `LITELLM_BASE_URL/chat/completions`；
+  `key_ref` 解析每租户虚拟 Key，模型白名单 + 日/月 token 预算在调用前拦截；手机号/邮箱/银行账号出网前脱敏。
+- **计量**：`token_usage`（`request_id` 唯一，幂等）+ `usage_monthly`（按月份 × 模型 × 任务累加）；
+  prompt 只落 SHA-256，默认不落原文。
+- **设置**：`llm_settings` 一行 GLOBAL + 每租户覆盖；默认 `deepseek-chat`（日常）/ `deepseek-reasoner`（复杂）。
+- **验收**：`pnpm demo:quote` 与 `apps/api/test/{quote-agent,llm-litellm,quote.integration}.test.ts`。
+
+详见 `docs/track-b-agents.md`。

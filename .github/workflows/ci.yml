@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave_order
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U weave -d weave_order"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://weave:weave@localhost:5432/weave_order
+      # 应用角色由迁移创建（NOBYPASSRLS）；跨租户测试必须用它。
+      APP_DATABASE_URL: postgres://weave_app:weave_app@localhost:5432/weave_order
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      AUTH_MODE: dev
+      # 控制面独立库（platform:migrate 会自动 CREATE DATABASE）
+      PLATFORM_DATABASE_URL: postgres://weave:weave@localhost:5432/weave_platform
+      PLATFORM_AUTH_MODE: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (contracts → db → api → web → mobile)
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Migrate + RLS
+        run: pnpm db:migrate
+
+      - name: Migrate control plane
+        run: pnpm platform:migrate
+
+      - name: Test (含跨租户 RLS 常驻用例)
+        run: pnpm test
+
+      - name: Lint
+        run: pnpm lint

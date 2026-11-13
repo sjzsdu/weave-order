@@ -53,6 +53,7 @@ export class SearchService {
   constructor(
     private readonly db: Db,
     private readonly embedder: EmbeddingProvider,
+    private readonly tenantId: string,
   ) {}
 
   /** 给尚未建索引的样品补向量，返回本次补齐的数量。 */
@@ -60,9 +61,14 @@ export class SearchService {
     const indexedRows = await this.db
       .select({ sampleId: sampleEmbeddings.sampleId })
       .from(sampleEmbeddings)
-      .where(eq(sampleEmbeddings.model, this.embedder.name));
+      .where(
+        and(
+          eq(sampleEmbeddings.model, this.embedder.name),
+          eq(sampleEmbeddings.tenantId, this.tenantId),
+        ),
+      );
     const indexed = new Set(indexedRows.map((row) => row.sampleId));
-    const all = await this.db.select().from(samples);
+    const all = await this.db.select().from(samples).where(eq(samples.tenantId, this.tenantId));
     const missing = all.filter((sample) => !indexed.has(sample.id));
 
     for (const sample of missing) {
@@ -70,6 +76,7 @@ export class SearchService {
       await this.db
         .insert(sampleEmbeddings)
         .values({
+          tenantId: this.tenantId,
           sampleId: sample.id,
           model: this.embedder.name,
           dimension: this.embedder.dimension,
@@ -95,7 +102,12 @@ export class SearchService {
       .select({ embedding: sampleEmbeddings.embedding, sample: samples })
       .from(sampleEmbeddings)
       .innerJoin(samples, eq(sampleEmbeddings.sampleId, samples.id))
-      .where(eq(sampleEmbeddings.model, this.embedder.name));
+      .where(
+        and(
+          eq(sampleEmbeddings.model, this.embedder.name),
+          eq(sampleEmbeddings.tenantId, this.tenantId),
+        ),
+      );
 
     const scored = rows
       .map((row) => ({
@@ -134,7 +146,7 @@ export class SearchService {
     const rows = await this.db
       .select()
       .from(samples)
-      .where(where)
+      .where(and(where, eq(samples.tenantId, this.tenantId)))
       .orderBy(desc(samples.createdAt))
       .limit(parsed.limit);
 
@@ -164,7 +176,12 @@ export class SearchService {
 
   /** 只读目录，给前端页面用。 */
   async listSamples(limit = 50): Promise<ReturnType<typeof mapSample>[]> {
-    const rows = await this.db.select().from(samples).orderBy(desc(samples.createdAt)).limit(limit);
+    const rows = await this.db
+      .select()
+      .from(samples)
+      .where(eq(samples.tenantId, this.tenantId))
+      .orderBy(desc(samples.createdAt))
+      .limit(limit);
     return rows.map((row: SampleRow) => mapSample(row));
   }
 }

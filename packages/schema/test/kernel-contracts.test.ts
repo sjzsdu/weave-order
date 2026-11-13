@@ -49,6 +49,7 @@ describe("T-005 create_sample_shipment 输出契约", () => {
       data: {
         shipment: {
           id: UUID_A,
+          tenantId: UUID_A,
           customerId: UUID_B,
           status: "DRAFT",
           channel: "COURIER",
@@ -71,6 +72,7 @@ describe("审计日志读取契约", () => {
   it("接受合法审计记录", () => {
     const parsed = AuditLogEntry.safeParse({
       id: UUID_A,
+      tenantId: UUID_A,
       seq: 1,
       actorType: "AGENT",
       actorId: "agent-1",

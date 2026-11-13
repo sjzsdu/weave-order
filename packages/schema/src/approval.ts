@@ -5,11 +5,16 @@ import {
   Customer,
   EntityId,
   FabricSample,
+  Money,
+  Quantity,
   QuoteStatus,
   SampleShipmentStatus,
   Timestamp,
 } from "./domain";
 import { AuditLogEntry } from "./kernel";
+import { ApprovalLevel, ApprovalRequirement, EscalationReason } from "./pricing";
+import { RevisionDiff } from "./revisions";
+import { MemberRole } from "./tenancy";
 
 /**
  * 第五步：审批窗口与业务全景的契约。
@@ -44,6 +49,20 @@ export const ApprovalItem = z
     customerId: EntityId,
     createdAt: Timestamp,
     confirmedBy: z.string().max(128).nullable(),
+    /** 报价草稿版本（寄样单为 null）。 */
+    version: z.number().int().positive().nullable().optional(),
+    /** 这条单据需要谁来批；由内核按金额 + 改幅阈值算出。 */
+    requiredRole: MemberRole.nullable().optional(),
+    requiredLevel: ApprovalLevel.nullable().optional(),
+    /** 是否因改幅/金额超阈值被自动升级。 */
+    escalated: z.boolean().optional(),
+    escalationReasons: z.array(EscalationReason).optional(),
+    /** 相对原稿的改幅（万分之一），无改稿为 null。 */
+    changePctBps: z.number().int().nonnegative().nullable().optional(),
+    /** 原稿 vs 当前版本的逐行 diff，审批卡直接渲染。 */
+    diff: z.array(RevisionDiff).optional(),
+    /** 生效值与来源（阈值策略、成本底线、毛利规则）。 */
+    requirement: ApprovalRequirement.nullable().optional(),
   })
   .strict();
 export type ApprovalItem = z.infer<typeof ApprovalItem>;
@@ -60,6 +79,10 @@ export const ApprovalDecisionInput = z
     kind: ApprovalKind,
     decision: ApprovalDecision,
     note: z.string().max(500).optional(),
+    /** 驳回时的结构化原因（revision_reasons.id），用于决策增量。 */
+    reasonId: EntityId.optional(),
+    /** 审批人看到的是哪一版草稿；与账本不一致时内核拒绝（并发保护）。 */
+    baseVersion: z.number().int().positive().optional(),
   })
   .strict();
 export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionInput>;
@@ -109,3 +132,106 @@ export const PanoramaSnapshot = z
   })
   .strict();
 export type PanoramaSnapshot = z.infer<typeof PanoramaSnapshot>;
+
+/**
+ * 审批卡详情（只读）：审批窗口点开一条单据时的一次性聚合。
+ *
+ * 这是「出处 + 生效值来源 + diff」的 HTTP 契约。所有字段都由后端只读聚合，
+ * 前端不得自行推导金额、风险或 diff。缺失项不是错误，用中性提示，不用红色。
+ */
+
+/** 草稿态是产品最重要的视觉状态；后端给出权威状态，前端只负责统一渲染。 */
+export const ApprovalDraftState = z.enum(["DRAFT", "CONFIRMED", "REJECTED", "FAILED"]);
+export type ApprovalDraftState = z.infer<typeof ApprovalDraftState>;
+
+export const ApprovalDraftMeta = z
+  .object({
+    state: ApprovalDraftState,
+    /** 草稿版本号；修订一次 +1。 */
+    version: z.number().int().nonnegative(),
+    /** 人类是否改过这份草稿（决定卡片是否显示「你改过 N 处」）。 */
+    revisedByHuman: z.boolean(),
+    /** 修订次数，等于 diff 的批次数；0 表示智能体原稿。 */
+    revisionCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ApprovalDraftMeta = z.infer<typeof ApprovalDraftMeta>;
+
+/** 审批卡上的一行（报价行 / 寄样行），金额一律来自后端。 */
+export const ApprovalLine = z
+  .object({
+    id: z.string().min(1),
+    description: z.string().min(1).max(255),
+    quantity: Quantity,
+    unitPrice: Money,
+    lineTotal: Money,
+  })
+  .strict();
+export type ApprovalLine = z.infer<typeof ApprovalLine>;
+
+/** 出处类型：决定 chip 的图标与展开内容。 */
+export const ProvenanceKind = z.enum([
+  "HISTORY",
+  "COST",
+  "STOCK",
+  "POLICY",
+  "CUSTOMER",
+  "AGENT",
+  "AUDIT",
+]);
+export type ProvenanceKind = z.infer<typeof ProvenanceKind>;
+
+/**
+ * 一条出处：每个数字都可点开看来源。
+ * `value` 是卡片上直接展示的短值，`detail` 是展开后的解释。
+ */
+export const ApprovalProvenance = z
+  .object({
+    id: z.string().min(1),
+    kind: ProvenanceKind,
+    label: z.string().min(1).max(64),
+    value: z.string().min(1).max(255),
+    detail: z.string().max(2000).nullable(),
+    /** 可选的深链（历史报价/客户页）；前端只做站内跳转。 */
+    sourceRef: z.string().max(512).nullable(),
+  })
+  .strict();
+export type ApprovalProvenance = z.infer<typeof ApprovalProvenance>;
+
+/** 缺失项：待补不是错误，用黄色徽标配「补一下就能继续」。 */
+export const ApprovalMissingField = z
+  .object({
+    field: z.string().min(1).max(128),
+    label: z.string().min(1).max(128),
+    hint: z.string().max(255).nullable(),
+  })
+  .strict();
+export type ApprovalMissingField = z.infer<typeof ApprovalMissingField>;
+
+/** 风险等级与理由。理由必须是可由内核核验的事实，不给置信度百分比。 */
+export const ApprovalRisk = z
+  .object({
+    level: z.enum(["LOW", "MEDIUM", "HIGH"]),
+    reasons: z.array(z.string().min(1).max(255)),
+  })
+  .strict();
+export type ApprovalRisk = z.infer<typeof ApprovalRisk>;
+
+export const ApprovalDetail = z
+  .object({
+    item: ApprovalItem,
+    customer: Customer.nullable(),
+    draft: ApprovalDraftMeta,
+    lines: z.array(ApprovalLine),
+    subtotal: Money.nullable(),
+    total: Money.nullable(),
+    currency: Currency,
+    provenance: z.array(ApprovalProvenance),
+    diffs: z.array(RevisionDiff),
+    missingFields: z.array(ApprovalMissingField),
+    risk: ApprovalRisk,
+    /** 最近审计，证明「每一步都有记录」。 */
+    audit: z.array(AuditLogEntry),
+  })
+  .strict();
+export type ApprovalDetail = z.infer<typeof ApprovalDetail>;

@@ -26,8 +26,29 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1794486355892,
-      "tag": "0003_user-credentials",
+      "when": 1794488413942,
+      "tag": "0003_daffy_klaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794497326875,
+      "tag": "0004_track_a_kernel",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794524037764,
+      "tag": "0005_colorful_scarecrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794527078043,
+      "tag": "0006_crazy_mandarin",
       "breakpoints": true
     }
   ]

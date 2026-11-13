@@ -2,7 +2,7 @@ import { sampleEmbeddings, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { CreateSampleInput } from "@weave-order/schema";
 import type { FabricSample } from "@weave-order/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
@@ -15,9 +15,11 @@ type SampleRow = typeof samples.$inferSelect;
 export function mapSample(row: SampleRow): FabricSample {
   return {
     id: row.id,
+    tenantId: row.tenantId,
     code: row.code,
     name: row.name,
     composition: row.composition,
+    category: row.category,
     weight: row.weight,
     unit: row.unit,
     costFloor:
@@ -34,6 +36,7 @@ export class SampleService {
   constructor(
     private readonly db: Db,
     private readonly embedder: EmbeddingProvider,
+    private readonly tenantId: string,
   ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
@@ -44,6 +47,7 @@ export class SampleService {
         code: parsed.code,
         name: parsed.name,
         composition: parsed.composition ?? null,
+        category: parsed.category ?? null,
         weight: parsed.weight ?? null,
       }),
     );
@@ -72,6 +76,7 @@ export class SampleService {
     const rows = await tx
       .insert(samples)
       .values({
+        tenantId: this.tenantId,
         code: parsed.code,
         name: parsed.name,
         composition: parsed.composition ?? null,
@@ -89,28 +94,39 @@ export class SampleService {
       });
     }
     await tx.insert(sampleEmbeddings).values({
+      tenantId: this.tenantId,
       sampleId: row.id,
       model: this.embedder.name,
       dimension: this.embedder.dimension,
       embedding,
     });
-    await appendAudit(tx, ctx, {
-      action: "SAMPLE_CREATED",
-      entityType: "sample",
-      entityId: row.id,
-      before: null,
-      after: {
-        code: row.code,
-        name: row.name,
-        unit: row.unit,
-        costFloorAmount: row.costFloorAmount,
+    await appendAudit(
+      tx,
+      ctx,
+      {
+        action: "SAMPLE_CREATED",
+        entityType: "sample",
+        entityId: row.id,
+        before: null,
+        after: {
+          code: row.code,
+          name: row.name,
+          unit: row.unit,
+          category: row.category,
+          costFloorAmount: row.costFloorAmount,
+        },
       },
-    });
+      this.tenantId,
+    );
     return mapSample(row);
   }
 
   async getById(sampleId: string): Promise<FabricSample> {
-    const rows = await this.db.select().from(samples).where(eq(samples.id, sampleId)).limit(1);
+    const rows = await this.db
+      .select()
+      .from(samples)
+      .where(and(eq(samples.id, sampleId), eq(samples.tenantId, this.tenantId)))
+      .limit(1);
     const row = rows[0];
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `样品不存在：${sampleId}`, {
@@ -124,7 +140,10 @@ export class SampleService {
   /** 工具内部使用：按 ID 批量取样品。 */
   async getManyByIds(sampleIds: string[]): Promise<Map<string, FabricSample>> {
     if (sampleIds.length === 0) return new Map();
-    const rows = await this.db.select().from(samples).where(inArray(samples.id, sampleIds));
+    const rows = await this.db
+      .select()
+      .from(samples)
+      .where(and(inArray(samples.id, sampleIds), eq(samples.tenantId, this.tenantId)));
     return new Map(rows.map((row) => [row.id, mapSample(row)]));
   }
 }

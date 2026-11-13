@@ -12,6 +12,7 @@ export function makeMoney(amount = 1000, currency: "CNY" | "USD" | "EUR" | "HKD"
 export function makeCustomer(overrides: Partial<Customer> = {}): Customer {
   return {
     id: UUID_A,
+    tenantId: UUID_A,
     code: "C001",
     name: "杭州织造有限公司",
     tier: "VIP",
@@ -74,8 +75,10 @@ export function makeQuoteSummary(overrides: Partial<QuoteSummary> = {}): QuoteSu
 export function makeQuoteDraft(overrides: Partial<QuoteDraft> = {}): QuoteDraft {
   return {
     id: UUID_B,
+    tenantId: UUID_A,
     customerId: UUID_A,
     status: "DRAFT",
+    version: 1,
     currency: "CNY",
     items: [
       {

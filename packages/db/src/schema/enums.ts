@@ -32,3 +32,154 @@ export const quoteStatusEnum = pgEnum("quote_status", [
 ]);
 
 export const actorTypeEnum = pgEnum("actor_type", ["AGENT", "HUMAN", "SYSTEM"]);
+
+export const tenantStatusEnum = pgEnum("tenant_status", ["ACTIVE", "TRIAL", "SUSPENDED", "CLOSED"]);
+
+export const isolationModeEnum = pgEnum("isolation_mode", ["SHARED_RLS", "SCHEMA", "DATABASE"]);
+
+export const memberRoleEnum = pgEnum("member_role", [
+  "OWNER",
+  "MANAGER",
+  "SALES",
+  "MERCHANDISER",
+  "SAMPLE_ADMIN",
+  "FINANCE",
+  "VIEWER",
+]);
+
+export const dataScopeEnum = pgEnum("data_scope", ["ALL", "TEAM", "OWN"]);
+
+export const membershipStatusEnum = pgEnum("membership_status", ["ACTIVE", "INVITED", "DISABLED"]);
+
+export const orderStatusEnum = pgEnum("order_status", [
+  "DRAFT",
+  "CONFIRMED",
+  "IN_PRODUCTION",
+  "SHIPPED",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
+export const orderShipmentStatusEnum = pgEnum("order_shipment_status", [
+  "DRAFT",
+  "PACKED",
+  "SHIPPED",
+  "DELIVERED",
+  "CANCELLED",
+]);
+
+export const receivableStatusEnum = pgEnum("receivable_status", [
+  "PENDING",
+  "PARTIAL",
+  "PAID",
+  "OVERDUE",
+  "CANCELLED",
+]);
+
+export const revisionEntityTypeEnum = pgEnum("revision_entity_type", [
+  "quote",
+  "order",
+  "sample_shipment",
+]);
+
+export const revisionSourceEnum = pgEnum("revision_source", ["INLINE", "FORM", "CHAT"]);
+
+export const revisionRequestStatusEnum = pgEnum("revision_request_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "WITHDRAWN",
+]);
+
+export const quoteShareEventEnum = pgEnum("quote_share_event", [
+  "VIEWED",
+  "PDF_DOWNLOADED",
+  "ACCEPTED",
+  "QUESTION_ASKED",
+  "REVOKED",
+]);
+
+/** 定价策略作用域：系统 → 公司 → 团队/客户/品类 → 个人。 */
+export const pricingScopeTypeEnum = pgEnum("pricing_scope_type", [
+  "SYSTEM",
+  "COMPANY",
+  "TEAM",
+  "CUSTOMER",
+  "CATEGORY",
+  "PERSON",
+]);
+
+/** 决策增量的业务场景（与 packages/schema 的 ScenarioTag 一致）。 */
+export const scenarioTagEnum = pgEnum("scenario_tag", [
+  "PRICING",
+  "SAMPLE_FOLLOWUP",
+  "ORDER_FOLLOWUP",
+  "RECONCILIATION",
+]);
+
+/** LLM 配置作用域：全局参数 + 租户覆盖。 */
+export const llmScopeEnum = pgEnum("llm_scope", ["GLOBAL", "TENANT"]);
+
+/** LLM 任务标签：按任务路由与计量。 */
+export const llmTaskEnum = pgEnum("llm_task", [
+  "QUOTE_INTENT",
+  "QUOTE_DRAFT",
+  "FOLLOWUP_SUGGESTION",
+  "REPLY_CLASSIFICATION",
+]);
+
+/** 打印单据类型（文档与标签共用）。 */
+export const printDocumentKindEnum = pgEnum("print_document_kind", [
+  "PICKING_LIST",
+  "DELIVERY_NOTE",
+  "PACKING_LIST",
+  "BOX_LABEL",
+  "SAMPLE_LABEL",
+  "SHELF_LABEL",
+  "TEST_LABEL",
+]);
+
+/** 模板输出格式：A4 HTML/PDF 与热敏标签指令。 */
+export const printTemplateFormatEnum = pgEnum("print_template_format", ["HTML", "ZPL", "TSPL"]);
+
+/** 模板层级：系统 → 公司 → 单据类型。 */
+export const printTemplateScopeEnum = pgEnum("print_template_scope", [
+  "SYSTEM",
+  "COMPANY",
+  "DOCUMENT_TYPE",
+]);
+
+export const printJobStatusEnum = pgEnum("print_job_status", [
+  "QUEUED",
+  "SENT",
+  "PRINTING",
+  "DONE",
+  "FAILED",
+  "CANCELLED",
+]);
+
+export const printAgentStatusEnum = pgEnum("print_agent_status", ["ONLINE", "OFFLINE", "DISABLED"]);
+
+export const printerKindEnum = pgEnum("printer_kind", ["A4", "THERMAL", "BLUETOOTH"]);
+
+export const printerConnectionEnum = pgEnum("printer_connection", [
+  "SYSTEM_DRIVER",
+  "RAW_TCP",
+  "USB",
+  "BLUETOOTH",
+]);
+
+export const printerStatusEnum = pgEnum("printer_status", ["READY", "OFFLINE", "NEEDS_ATTENTION"]);
+
+export const boxStatusEnum = pgEnum("order_box_status", ["OPEN", "PACKED", "VOIDED"]);
+
+export const boxLabelStatusEnum = pgEnum("box_label_status", ["ACTIVE", "VOIDED"]);
+
+export const scanTypeEnum = pgEnum("scan_event_type", ["PICK", "VERIFY"]);
+
+export const scanResultEnum = pgEnum("scan_result", [
+  "OK",
+  "MISMATCH",
+  "UNKNOWN_CODE",
+  "WRONG_BOX",
+]);

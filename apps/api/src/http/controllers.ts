@@ -1,16 +1,45 @@
-import { Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
-import type { ApprovalService } from "../approval";
-import { RequireScope } from "../auth/auth.guard";
-import type { AuthRequest } from "../auth/auth.guard";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
+import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
+import type { PricingKey } from "@weave-order/schema";
+import { createApprovalService } from "../approval";
+import { isKernelError } from "../kernel";
+import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
 import type { Tools } from "../tools";
-import { agentContext, humanContext } from "./context";
-import { APPROVAL, KERNEL, TOOLS } from "./tokens";
+import { toToolError } from "../tools/errors";
+import { AGENT_CONTEXT } from "./context";
+import type { HumanActorService } from "./human-actor.service";
+import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), 1), max);
+}
+
+/** 内核错误 -> HTTP 状态；其余继续抛出，交给 Nest 统一处理。 */
+function rethrowHttp(error: unknown): never {
+  if (isKernelError(error)) {
+    if (error.code === "RESOURCE_NOT_FOUND" || error.code === "CUSTOMER_NOT_FOUND") {
+      throw new NotFoundException(error.message);
+    }
+    if (error.code === "PERMISSION_DENIED") throw new ForbiddenException(error.message);
+    throw new BadRequestException(error.message);
+  }
+  throw error;
 }
 
 @Controller("api")
@@ -81,28 +110,285 @@ export class CatalogController {
  */
 @Controller("api")
 export class QuoteController {
-  constructor(@Inject(TOOLS) private readonly tools: Tools) {}
+  constructor(
+    @Inject(TOOLS) private readonly tools: Tools,
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
   @Post("tools/generate-quote-draft")
   @RequireScope("write")
   async generateDraft(@Body() body: unknown, @Req() request: AuthRequest) {
     return this.tools.generateQuoteDraft.execute(body, agentContext(request));
   }
+
+  /** 人类改稿：版本 +1、重算、审计、改幅升级审批。 */
+  @Post("quotes/revise")
+  async revise(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        const data = await kernel.quotes.reviseDraft(body, ctx);
+        return ReviseQuoteDraftResult.parse({ ok: true, data });
+      } catch (error) {
+        if (isKernelError(error)) {
+          return ReviseQuoteDraftResult.parse({ ok: false, error: toToolError(error) });
+        }
+        throw error;
+      }
+    });
+  }
+
+  /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
+  @Get("quotes/:id/approval-view")
+  async approvalView(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(authorization, this.kernel, async (kernel) => ({
+        view: await kernel.quotes.getApprovalView(id),
+      }));
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Get("quotes/:id")
+  async draft(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(authorization, this.kernel, async (kernel) => ({
+        draft: await kernel.quotes.getDraft(id),
+      }));
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+}
+
+/** 定价继承：策略 CRUD + 生效值/来源解析。 */
+@Controller("api/pricing")
+export class PricingController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get("policies")
+  async list(
+    @Query("scopeType") scopeType?: string,
+    @Query("scopeId") scopeId?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel) => ({
+      policies: await kernel.pricing.list({
+        ...(scopeType ? { scopeType: scopeType as never } : {}),
+        ...(scopeId ? { scopeId } : {}),
+      }),
+    }));
+  }
+
+  @Post("policies")
+  async create(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return { policy: await kernel.pricing.create(body, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  @Patch("policies/:id")
+  async update(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return { policy: await kernel.pricing.update(id, body, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  /** 生效值 + 来源：审批卡点开任意数字都调这里。 */
+  @Get("resolve")
+  async resolve(
+    @Query("key") key: string,
+    @Query("customerId") customerId?: string,
+    @Query("teamId") teamId?: string,
+    @Query("categoryId") categoryId?: string,
+    @Query("personId") personId?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(authorization, this.kernel, async (kernel) => ({
+        resolved: await kernel.pricing.resolve(key as PricingKey, {
+          ...(customerId ? { customerId } : {}),
+          ...(teamId ? { teamId } : {}),
+          ...(categoryId ? { categoryId } : {}),
+          ...(personId ? { personId } : {}),
+        }),
+      }));
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+}
+
+/** 订单 / 应收：报价成交后的后端链路。 */
+@Controller("api")
+export class OrderController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get("orders")
+  async list(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => ({
+      orders: await kernel.orders.list(clampLimit(limit, 20, 100)),
+    }));
+  }
+
+  @Get("orders/:id")
+  async detail(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      try {
+        return { order: await kernel.orders.getById(id) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  @Post("orders")
+  async create(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return { order: await kernel.orders.create(body, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  @Post("orders/:id/confirm")
+  async confirm(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return { order: await kernel.orders.confirm(id, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  @Get("receivables")
+  async receivables(
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel) => ({
+      receivables: await kernel.receivables.list(clampLimit(limit, 20, 100)),
+    }));
+  }
+
+  @Post("receivables")
+  async createReceivable(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return { receivable: await kernel.receivables.create(body, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  @Post("receivables/:id/payments")
+  async recordPayment(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        const input = { ...(body as Record<string, unknown>), receivableId: id };
+        return { receivable: await kernel.receivables.recordPayment(input, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+}
+
+/** 决策增量与改稿原因：护城河数据只读查询 + 原因字典维护。 */
+@Controller("api")
+export class RevisionController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get("customers/:id/decision-deltas")
+  async decisionDeltas(
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(authorization, this.kernel, async (kernel) => ({
+        deltas: await kernel.customers.listDecisionDeltas(id, clampLimit(limit, 50, 200)),
+      }));
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Get("revision-reasons")
+  async reasons(@Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => ({
+      reasons: await kernel.revisions.list(),
+    }));
+  }
+
+  @Post("revision-reasons")
+  async createReason(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return { reason: await kernel.revisions.create(body, ctx) };
+      } catch (error) {
+        rethrowHttp(error);
+      }
+    });
+  }
+
+  @Post("revision-reasons/defaults")
+  async ensureDefaults(@Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      reasons: await kernel.revisions.ensureDefaults(ctx),
+    }));
+  }
 }
 
 /**
  * 数据导入（第六步）：Excel/CSV 冷启动的 HTTP 入口。
  * 入参是结构化 `ImportBatch`，每行由内核用 `packages/schema` 契约严格校验；
- * 控制器只固定传 HUMAN 上下文，不碰数据库、不写业务表、不绕过 kernel。
+ * 控制器不碰数据库、不写业务表、不绕过 kernel。
+ * 人类身份统一走 `HumanActorService`：生产态从 OIDC membership 注入真实角色与租户作用域，
+ * 不再使用硬编码 OWNER 的占位上下文。
  */
 @Controller("api")
 export class ImportController {
-  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
   @Post("import")
-  @RequireScope("write")
-  async importBatch(@Body() body: unknown, @Req() request: AuthRequest) {
-    return this.kernel.importing.execute(body, humanContext(request));
+  async importBatch(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, (kernel, ctx) =>
+      kernel.importing.execute(body, ctx),
+    );
   }
 }
 
@@ -131,29 +417,76 @@ export class AuditController {
  */
 @Controller("api/approvals")
 export class ApprovalController {
-  constructor(@Inject(APPROVAL) private readonly approval: ApprovalService) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
   @Get()
-  @RequireScope("read")
-  async list() {
-    return this.approval.listPending();
+  async list(@Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) =>
+      createApprovalService(kernel).listPending(),
+    );
+  }
+
+  /** 审批卡详情：出处 / diff / 草稿态，一次只读聚合。 */
+  @Get(":id")
+  async detail(
+    @Param("id") id: string,
+    @Query("kind") kind: string | undefined,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const parsed = ApprovalKind.safeParse(kind);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        error: { code: "INVALID_INPUT", message: "kind 必须是 quote 或 sample_shipment" },
+      });
+    }
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      const detail = await createApprovalService(kernel).detail(id, parsed.data);
+      if (!detail) {
+        throw new NotFoundException({
+          error: { code: "NOT_FOUND", message: "审批单据不存在或已不在可查看范围" },
+        });
+      }
+      return detail;
+    });
   }
 
   @Post("decide")
-  @RequireScope("approve")
-  async decide(@Body() body: unknown, @Req() request: AuthRequest) {
-    return this.approval.decide(body, humanContext(request));
+  async decide(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) =>
+      createApprovalService(kernel).decide(body, ctx),
+    );
   }
 }
 
 /** 业务全景（Read-Only Panorama）：一次只读聚合，前端纯展示，无任何写操作。 */
 @Controller("api")
 export class PanoramaController {
-  constructor(@Inject(APPROVAL) private readonly approval: ApprovalService) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
   @Get("panorama")
-  @RequireScope("read")
-  async panorama() {
-    return this.approval.panorama();
+  async panorama(@Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) =>
+      createApprovalService(kernel).panorama(),
+    );
+  }
+}
+
+/**
+ * 找样 / 报价 agent：粘贴客户原话，返回候选样品 + 定价依据 + DRAFT + 缺失项。
+ * 这里没有「确认」入口 —— 草稿确认永远走审批窗口。
+ */
+@Controller("api/agents")
+export class QuoteAgentController {
+  constructor(@Inject(QUOTE_AGENT) private readonly agent: QuoteAgentService) {}
+
+  @Post("quote")
+  async quote(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.agent.run(authorization, body);
   }
 }

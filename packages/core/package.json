@@ -1,0 +1,39 @@
+{
+  "name": "@weave-order/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "前端业务逻辑：API client、TanStack Query hooks、离线队列（web / mobile / admin 共用）",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@weave-order/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": ">=5",
+    "react": ">=18",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.90.2",
+    "@types/react": "^19.2.2",
+    "react": "^19.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "zod": "^3.25.76"
+  }
+}

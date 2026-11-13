@@ -1,4 +1,5 @@
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createDb } from "./client";
 import { resolveDatabaseUrl } from "./env";
@@ -14,6 +15,9 @@ async function main(): Promise<void> {
     await migrate(db, {
       migrationsFolder: path.join(__dirname, "..", "drizzle"),
     });
+    // 角色与 RLS 策略不是 Drizzle 能表达的部分：迁移后幂等套用。
+    const rlsSql = await readFile(path.join(__dirname, "..", "sql", "rls.sql"), "utf8");
+    await pool.query(rlsSql);
     console.log(`✔ 迁移已应用：${databaseUrl}`);
   } finally {
     await pool.end();

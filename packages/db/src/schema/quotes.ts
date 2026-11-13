@@ -1,15 +1,20 @@
 import {
   bigint,
+  boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import type { JsonValue } from "@weave-order/schema";
 import {
   currencyEnum,
+  memberRoleEnum,
   quoteStatusEnum,
   shipmentChannelEnum,
   shipmentStatusEnum,
@@ -27,6 +32,7 @@ export const sampleShipments = pgTable(
   "sample_shipments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
@@ -43,7 +49,7 @@ export const sampleShipments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("sample_shipments_customer_idx").on(table.customerId),
+    index("sample_shipments_tenant_customer_idx").on(table.tenantId, table.customerId),
     index("sample_shipments_status_idx").on(table.status),
   ],
 );
@@ -53,6 +59,7 @@ export const sampleShipmentItems = pgTable(
   "sample_shipment_items",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     shipmentId: uuid("shipment_id")
       .notNull()
       .references(() => sampleShipments.id, { onDelete: "cascade" }),
@@ -70,6 +77,7 @@ export const quotes = pgTable(
   "quotes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
@@ -77,6 +85,22 @@ export const quotes = pgTable(
     currency: currencyEnum("currency").notNull(),
     subtotalAmount: bigint("subtotal_amount", { mode: "number" }).notNull(),
     totalAmount: bigint("total_amount", { mode: "number" }).notNull(),
+    /** 草稿版本：每次 reviseDraft +1，用于乐观锁与「原稿 vs 修改」diff。 */
+    version: integer("version").notNull().default(1),
+    /** 智能体原稿快照（items + total），改稿后仍能展示原稿 diff。 */
+    baselineSnapshot: jsonb("baseline_snapshot").$type<JsonValue>(),
+    /** 当前版本相对原稿的逐行 diff（审批卡直接渲染）。 */
+    pendingDiff: jsonb("pending_diff").$type<JsonValue>().notNull().default([]),
+    /** 当前草稿需要谁审批；由内核按金额 + 改幅阈值算出。 */
+    requiredApprovalRole: memberRoleEnum("required_approval_role"),
+    approvalEscalated: boolean("approval_escalated").notNull().default(false),
+    escalationReasons: text("escalation_reasons")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** 相对原稿的改幅（万分之一；1% = 100）。 */
+    changePctBps: integer("change_pct_bps"),
+    lastRevisedAt: timestamp("last_revised_at", { withTimezone: true }),
     validityDays: integer("validity_days").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     remarks: text("remarks"),
@@ -86,8 +110,8 @@ export const quotes = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("quotes_customer_idx").on(table.customerId),
-    index("quotes_status_idx").on(table.status),
+    index("quotes_tenant_customer_idx").on(table.tenantId, table.customerId),
+    index("quotes_tenant_status_created_idx").on(table.tenantId, table.status, table.createdAt),
   ],
 );
 
@@ -96,6 +120,7 @@ export const quoteItems = pgTable(
   "quote_items",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
     quoteId: uuid("quote_id")
       .notNull()
       .references(() => quotes.id, { onDelete: "cascade" }),
@@ -108,6 +133,8 @@ export const quoteItems = pgTable(
     unit: unitEnum("unit").notNull(),
     unitPriceAmount: bigint("unit_price_amount", { mode: "number" }).notNull(),
     lineTotalAmount: bigint("line_total_amount", { mode: "number" }).notNull(),
+    /** 每个数字的出处：样品 / 智能体建议 / 人工修改 / 定价策略。 */
+    provenance: jsonb("provenance").$type<JsonValue>().notNull().default({}),
   },
   (table) => [index("quote_items_quote_idx").on(table.quoteId)],
 );

@@ -34,7 +34,12 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      "**/.next/**",
+      "**/next-env.d.ts",
+      "**/*.cjs",
       "**/.turbo/**",
+      "**/.next/**",
+      "**/next-env.d.ts",
       "**/coverage/**",
       // CLI 启动器是纯 JS 薄壳，不进 TS project service（逻辑在 src/）。
       "apps/cli/bin/**",
@@ -42,6 +47,8 @@ export default tseslint.config(
       "**/*.config.mjs",
       "**/*.config.cjs",
       "**/*.config.ts",
+      "apps/mobile/src/pwa/**",
+      "apps/print-agent/src/**",
       "packages/db/drizzle/**",
     ],
   },

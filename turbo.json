@@ -2,26 +2,45 @@
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": [
     "DATABASE_URL",
+    "APP_DATABASE_URL",
     "REDIS_URL",
     "NODE_ENV",
     "PORT",
+    "AUTH_MODE",
+    "CASDOOR_ISSUER",
+    "CASDOOR_AUDIENCE",
+    "CASDOOR_JWKS_URI",
+    "PUBLIC_APP_URL",
+    "MEDIA_ALLOWED_HOSTS",
+    "MEDIA_MAX_BYTES",
+    "LLM_PROVIDER",
+    "QUOTE_SHARE_SECRET",
+    "QUOTE_API_BASE_URL",
+    "NEXT_PUBLIC_QUOTE_API_BASE_URL",
+    "LITELLM_BASE_URL",
+    "LITELLM_MASTER_KEY",
+    "LITELLM_TIMEOUT_MS",
     "IMPORT_XLSX",
     "IMPORT_CUSTOMERS",
     "IMPORT_SAMPLES",
-    "PUBLIC_API_URL",
-    "AUTH_TOKEN_PEPPER",
-    "AUTH_REQUIRED",
-    "DEVICE_CODE_TTL_SECONDS",
-    "DEVICE_POLL_INTERVAL_SECONDS",
-    "WEAVE_SERVER",
-    "WEAVE_TOKEN",
-    "WEAVE_CONFIG_DIR",
-    "WEAVE_SKILL_PATH"
+    "PLATFORM_DATABASE_URL",
+    "PLATFORM_AUTH_MODE",
+    "PLATFORM_PUBLIC_URL",
+    "PLATFORM_API_URL",
+    "CASDOOR_PLATFORM_CLIENT_ID",
+    "CASDOOR_PLATFORM_CLIENT_SECRET",
+    "CASDOOR_PLATFORM_AUDIENCE",
+    "PLATFORM_REQUIRE_MFA",
+    "PLATFORM_INGEST_KEY",
+    "PLATFORM_CORS_ORIGIN",
+    "PLATFORM_APPROVAL_TTL_MINUTES",
+    "PLATFORM_BREAK_GLASS_MINUTES",
+    "DEV_PLATFORM_TOKEN"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
@@ -53,6 +72,11 @@
       "dependsOn": ["^build"]
     },
     "demo:followup": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "demo:quote": {
       "dependsOn": ["^build"],
       "cache": false,
       "outputs": []

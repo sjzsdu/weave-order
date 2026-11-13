@@ -7,6 +7,11 @@
   "engines": {
     "node": ">=20"
   },
+  "pnpm": {
+    "overrides": {
+      "styled-jsx>@types/react": "19.3.0"
+    }
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -21,7 +26,11 @@
     "seed": "turbo run migrate && turbo run seed",
     "lint:only": "eslint .",
     "demo:followup": "turbo run demo:followup",
-    "cli": "pnpm --filter @weave-order/cli dev"
+    "demo:quote": "turbo run demo:quote",
+    "platform:migrate": "pnpm --filter @weave-order/control-db migrate",
+    "platform:seed": "pnpm platform:migrate && pnpm --filter @weave-order/platform-api seed",
+    "dev:platform": "pnpm --filter @weave-order/platform-api dev",
+    "dev:admin": "pnpm --filter @weave-order/admin dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

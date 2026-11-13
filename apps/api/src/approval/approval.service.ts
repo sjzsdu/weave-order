@@ -1,4 +1,5 @@
 import {
+  ApprovalDetail,
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
@@ -6,13 +7,15 @@ import {
   PanoramaStats,
 } from "@weave-order/schema";
 import type {
+  ApprovalDetail as Detail,
   ApprovalDecisionResult as DecisionResult,
   ApprovalItem,
+  ApprovalKind,
   PanoramaSnapshot as Panorama,
   ToolError,
   ZodIssueSummary,
 } from "@weave-order/schema";
-import { isKernelError } from "../kernel";
+import { formatMoney, isKernelError } from "../kernel";
 import type { Kernel, KernelContext } from "../kernel";
 
 /**
@@ -84,19 +87,201 @@ export function createApprovalService(kernel: Kernel) {
       return ApprovalQueue.parse({ items });
     },
 
+    /**
+     * 审批卡详情：出处 / 生效值 / diff 一次聚合。
+     * 只读，不落账；金额与风险全部由后端给出，前端只展示。
+     */
+    async detail(id: string, kind: ApprovalKind): Promise<Detail | null> {
+      const [quotes, shipments] = await Promise.all([
+        kernel.quotes.list(100),
+        kernel.shipments.list(100),
+      ]);
+      const item = [...quotes, ...shipments].find(
+        (entry) => entry.id === id && entry.kind === kind,
+      );
+      if (!item) return null;
+
+      const [customer, audit] = await Promise.all([
+        kernel.customers.getById(item.customerId).catch(() => null),
+        kernel.audit.list(20),
+      ]);
+
+      if (kind === "quote") {
+        const view = await kernel.quotes.getApprovalView(id).catch(() => null);
+        if (!view) return null;
+
+        const provenance: Detail["provenance"] = view.items.flatMap((line) => {
+          const raw = jsonRecord(line.provenance);
+          const sample = jsonRecord(raw.sample);
+          const unitPrice = jsonRecord(raw.unitPrice);
+          const entries: Detail["provenance"] = [
+            {
+              id: `line-${line.lineIndex}-kernel`,
+              kind: "AGENT",
+              label: `第 ${line.lineIndex + 1} 行单价`,
+              value: formatMoney(line.unitPrice),
+              detail: "内核按整数分重算：单价 × 数量，智能体不得直接填写总额。",
+              sourceRef: null,
+            },
+          ];
+          if (typeof sample.code === "string") {
+            const costFloor = jsonRecord(sample.costFloor);
+            entries.push({
+              id: `line-${line.lineIndex}-sample`,
+              kind: "COST",
+              label: "样品 / 成本底线",
+              value:
+                typeof costFloor.amount === "number"
+                  ? `${String(sample.code)} · ${formatMoney({
+                      amount: costFloor.amount,
+                      currency: view.currency,
+                    })}`
+                  : String(sample.code),
+              detail: typeof sample.name === "string" ? sample.name : null,
+              sourceRef: null,
+            });
+          }
+          if (typeof unitPrice.source === "string") {
+            entries.push({
+              id: `line-${line.lineIndex}-pricing`,
+              kind: "POLICY",
+              label: "定价来源",
+              value: unitPrice.source,
+              detail:
+                typeof unitPrice.floorCents === "number"
+                  ? `成本/毛利底线 ${formatMoney({ amount: unitPrice.floorCents, currency: view.currency })}`
+                  : null,
+              sourceRef: null,
+            });
+          }
+          return entries;
+        });
+
+        for (const policy of view.requirement.policySources) {
+          provenance.push({
+            id: `policy-${policy.key}`,
+            kind: "POLICY",
+            label: `阈值 ${policy.key}`,
+            value: truncate(JSON.stringify(policy.value), 120),
+            detail: `来源：${sourceLabel(policy.source)}${policy.clamped ? "（下级放宽被管控夹取）" : ""}`,
+            sourceRef: null,
+          });
+        }
+
+        provenance.push({
+          id: "customer-tier",
+          kind: "CUSTOMER",
+          label: "客户背景",
+          value: customer ? `${customer.name} · ${customer.tier}` : "客户信息不可见",
+          detail: customer ? `客户编号 ${customer.code}` : null,
+          sourceRef: null,
+        });
+
+        // 风险等级只跟随后端 resolved policy / 升级结果，不在前端另设阈值。
+        const escalated = view.requirement.escalated;
+        return ApprovalDetail.parse({
+          item,
+          customer,
+          draft: {
+            state: item.pending ? "DRAFT" : "CONFIRMED",
+            version: view.version,
+            revisedByHuman: view.revisions.some((revision) => revision.actorType === "HUMAN"),
+            revisionCount: view.revisions.length,
+          },
+          lines: view.items.map((line) => ({
+            id: `${view.quoteId}-${line.lineIndex}`,
+            description: line.description,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            lineTotal: line.lineTotal,
+          })),
+          subtotal: view.subtotal,
+          total: view.total,
+          currency: view.currency,
+          provenance,
+          diffs: view.diff,
+          missingFields:
+            view.status === "DRAFT"
+              ? [
+                  {
+                    field: "remarks",
+                    label: "报价备注",
+                    hint: "补充交期或付款条件会更完整",
+                  },
+                ]
+              : [],
+          risk: {
+            level:
+              escalated && view.requirement.level === "OWNER"
+                ? "HIGH"
+                : escalated
+                  ? "MEDIUM"
+                  : "LOW",
+            reasons: view.requirement.reasons,
+          },
+          audit,
+        });
+      }
+
+      const shipment = await kernel.shipments.getById(id).catch(() => null);
+      if (!shipment) return null;
+      return ApprovalDetail.parse({
+        item,
+        customer,
+        draft: {
+          state: item.pending ? "DRAFT" : "CONFIRMED",
+          version: 1,
+          revisedByHuman: false,
+          revisionCount: 0,
+        },
+        lines: [],
+        subtotal: null,
+        total: null,
+        currency: item.currency ?? "CNY",
+        provenance: [
+          {
+            id: "shipment-channel",
+            kind: "AGENT",
+            label: "寄样方式",
+            value: shipment.channel,
+            detail: shipment.note ?? "智能体按客户历史偏好建议的寄样方式。",
+            sourceRef: null,
+          },
+        ],
+        diffs: [],
+        missingFields: shipment.trackingNumber
+          ? []
+          : [
+              {
+                field: "trackingNumber",
+                label: "运单号",
+                hint: "补一下就能继续跟踪",
+              },
+            ],
+        risk: { level: "LOW", reasons: [] },
+        audit,
+      });
+    },
+
     /** 批准 / 拒绝：唯一的人类决策入口，内部落到内核 confirm / reject。 */
     async decide(input: unknown, ctx: KernelContext): Promise<DecisionResult> {
       const parsed = ApprovalDecisionInput.safeParse(input);
       if (!parsed.success) return failure(parsed.error);
 
-      const { id, kind, decision, note } = parsed.data;
+      const { id, kind, decision, note, reasonId, baseVersion } = parsed.data;
       try {
         let status: ApprovalItem["status"];
         if (kind === "quote") {
           if (decision === "APPROVE") {
-            status = (await kernel.quotes.confirmDraft(id, ctx)).status;
+            status =
+              baseVersion === undefined
+                ? (await kernel.quotes.confirmDraft(id, ctx)).status
+                : (await kernel.quotes.confirmDraft(id, ctx, baseVersion)).status;
           } else {
-            status = (await kernel.quotes.rejectDraft(id, ctx, note)).status;
+            status =
+              reasonId === undefined
+                ? (await kernel.quotes.rejectDraft(id, ctx, note)).status
+                : (await kernel.quotes.rejectDraft(id, ctx, note, reasonId)).status;
           }
         } else if (decision === "APPROVE") {
           status = (await kernel.shipments.confirm(id, ctx)).status;
@@ -155,6 +340,22 @@ export function createApprovalService(kernel: Kernel) {
       });
     },
   };
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function sourceLabel(source: unknown): string {
+  const record = jsonRecord(source);
+  const scope = typeof record.scopeType === "string" ? record.scopeType : "UNKNOWN";
+  const policyId = typeof record.policyId === "string" ? record.policyId : null;
+  return policyId ? `${scope} · ${policyId}` : scope;
 }
 
 export type ApprovalService = ReturnType<typeof createApprovalService>;
