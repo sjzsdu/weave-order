@@ -7,7 +7,7 @@ import {
   PricingPolicyValue,
   ResolvedPricingValue,
   UpdatePricingPolicyInput,
-  isControlPricingKey,
+  controlDirection,
 } from "@weave-order/schema";
 import type {
   JsonValue,
@@ -154,13 +154,6 @@ const SYSTEM_SOURCE: PricingSource = {
   locked: false,
   kind: "SYSTEM_DEFAULT",
 };
-
-/** 管控类键的夹取方向：MIN 只允许抬高，MAX 只允许压低。 */
-function controlDirection(key: PricingKey): "MIN" | "MAX" | null {
-  if (key === "pricing.min_margin_pct" || key === "pricing.cost_floor_amount") return "MIN";
-  if (key.startsWith("approval.")) return "MAX";
-  return null;
-}
 
 /**
  * 定价策略内核服务：唯一写 pricing_policies 的入口。
@@ -352,19 +345,32 @@ export class PricingService {
     let source: PricingSource = baseRow ? sourceOf(baseRow) : SYSTEM_SOURCE;
     let clamped = false;
 
-    const direction = isControlPricingKey(key) ? controlDirection(key) : null;
+    const direction = controlDirection(key);
     if (direction) {
+      // 系统推荐值作为 SYSTEM 层硬边界参与夹取：哪怕没有任何租户策略命中，
+      // 下级（含公司）也不能把管控键放宽到系统推荐值之外。这样「没配置」不等于「不设防」。
+      const boundaries: Array<{
+        boundaryRaw: PricingPolicyValue;
+        source: PricingSource;
+        isBase: boolean;
+      }> = [{ boundaryRaw: SYSTEM_DEFAULTS[key], source: SYSTEM_SOURCE, isBase: !baseRow }];
       for (const row of applicable) {
         if (!row.locked) continue;
-        const boundaryRaw = PricingPolicyValue.parse(row.value);
-        const boundary = numericValue(boundaryRaw);
+        boundaries.push({
+          boundaryRaw: PricingPolicyValue.parse(row.value),
+          source: sourceOf(row),
+          isBase: baseRow === row,
+        });
+      }
+      for (const boundary of boundaries) {
+        const boundaryValue = numericValue(boundary.boundaryRaw);
         const current = numericValue(effective);
-        if (boundary === null || current === null) continue;
-        const tighten = direction === "MIN" ? boundary > current : boundary < current;
+        if (boundaryValue === null || current === null) continue;
+        const tighten = direction === "MIN" ? boundaryValue > current : boundaryValue < current;
         if (tighten) {
-          effective = revalued(effective, boundaryRaw, boundary);
-          source = sourceOf(row);
-          clamped = baseRow === row ? false : true;
+          effective = revalued(effective, boundary.boundaryRaw, boundaryValue);
+          source = boundary.source;
+          clamped = boundary.isBase ? false : true;
         }
       }
     }
@@ -382,7 +388,7 @@ export class PricingService {
         note: isSource ? null : row.locked ? "管控策略，仅作为边界夹取" : "被更具体的作用域覆盖",
       };
     });
-    if (!baseRow) {
+    if (source.kind === "SYSTEM_DEFAULT") {
       chain.unshift({
         policyId: null,
         scopeType: "SYSTEM",
@@ -391,7 +397,7 @@ export class PricingService {
         priority: 0,
         locked: false,
         applied: true,
-        note: "内核内置默认值",
+        note: baseRow ? "系统推荐值，作为管控边界夹取了下级的放宽" : "内核内置默认值",
       });
     }
 
