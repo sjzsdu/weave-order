@@ -17,8 +17,8 @@ pnpm --filter @weave-order/mobile dev
 TARO_APP_MOCK=0 TARO_APP_API_BASE=http://localhost:3000 pnpm --filter @weave-order/mobile dev:live
 
 # 产物（PWA 可安装）
-pnpm --filter @weave-order/mobile build          # 生产，连真后端
-TARO_APP_MOCK=1 pnpm --filter @weave-order/mobile build:demo
+pnpm --filter @weave-order/mobile build          # 生产，连真后端（末尾自动跑 mock 门禁）
+TARO_APP_MOCK=1 pnpm --filter @weave-order/mobile build:demo   # 演示产物，禁止交付
 ```
 
 环境变量（构建期固化，页面只读 `process.env.TARO_APP_*`）：
@@ -27,6 +27,25 @@ TARO_APP_MOCK=1 pnpm --filter @weave-order/mobile build:demo
 | ------------------- | ----------------------- | ------------------------------------------ |
 | `TARO_APP_MOCK`     | 空（关）                | `1` 时启用本地 mock 服务端，演示 P0 主链路 |
 | `TARO_APP_API_BASE` | `http://localhost:3000` | 真后端地址                                 |
+
+### mock 门禁（生产构建硬约束）
+
+mock 服务端是**无鉴权的演示数据**，误把演示产物交付等于泄露演示租户数据。因此：
+
+- `NODE_ENV=production` 时 `IS_MOCK` 编译期恒为 `false`（`src/lib/runtime.ts`），mock 模块用
+  `require` 包在字面量条件里，webpack 会把整个分支连同 `src/lib/mock/**` 一起摘掉；
+- `pnpm build` / `pnpm build:weapp` 末尾自动执行 `node scripts/check-prod-bundle.mjs`，
+  产物里出现 mock 种子特征串（`MOCK_TENANT_ID`、`weave.mock.state`、演示单据）就判红；
+- `pnpm verify:mock-gate` 自检门禁本身：先构建一份带 mock 的产物，断言检查脚本确实报错。
+
+手动验证生产产物：
+
+```bash
+pnpm --filter @weave-order/mobile build
+grep -rl "00000000-0000-4000-8000-000000000001" apps/mobile/dist/js || echo "无 mock 代码 ✓"
+```
+
+`build:demo` 强制 `NODE_ENV=development`，产物体积与 React 开发警告都说明它是演示包，不是发布包。
 
 ## P0 主链路（可演示）
 

@@ -17,6 +17,8 @@ export default defineConfig({
   plugins: [],
   defineConstants: {
     // 环境变量在构建期固化；页面里只读 process.env.TARO_APP_*。
+    // NODE_ENV 一并固化，mock 门禁（runtime.ts 的 IS_MOCK）才能在编译期折叠成常量。
+    "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
     "process.env.TARO_APP_MOCK": JSON.stringify(process.env.TARO_APP_MOCK ?? ""),
     "process.env.TARO_APP_API_BASE": JSON.stringify(
       process.env.TARO_APP_API_BASE ?? "http://localhost:3000",

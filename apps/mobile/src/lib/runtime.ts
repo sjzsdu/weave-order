@@ -3,8 +3,7 @@ import { createOfflineQueue } from "@weave-order/core";
 import type { FlushResult } from "@weave-order/core";
 import { createMobileApi } from "./mobile-api";
 import type { MobileApi } from "./mobile-api";
-import { createMockServer } from "./mock/server";
-import { createStringMockStorage } from "./mock/storage";
+import type { MockServer } from "./mock/server";
 import { createMediaStore, createQueueStorage, flushQueue } from "./offline";
 import type { QueuedMediaStore } from "./offline";
 import { createTaroFetch } from "./taro-fetch";
@@ -22,11 +21,18 @@ export const TARO_ENV = process.env.TARO_ENV;
 export const IS_H5 = TARO_ENV === "h5";
 export const IS_WEAPP = TARO_ENV === "weapp";
 export const IS_RN = TARO_ENV === "rn";
-export const IS_MOCK = process.env.TARO_APP_MOCK === "1";
+/**
+ * mock 是演示/开发专用，生产构建下必须编译期关闭。
+ *
+ * 两个条件都是构建期常量（见 `config/index.ts` 的 defineConstants），
+ * 所以 `TARO_APP_MOCK` 被误带到生产环境时也只是 `"1" === "1" && false`，
+ * webpack 会把这个分支连同 mock 模块一起从产物里摘掉；
+ * `scripts/check-prod-bundle.mjs` 在 `pnpm build` 末尾断言产物中不含 mock 代码。
+ */
+export const IS_MOCK = process.env.TARO_APP_MOCK === "1" && process.env.NODE_ENV !== "production";
 export const API_BASE_URL = process.env.TARO_APP_API_BASE ?? "http://localhost:3000";
 
 const TOKEN_KEY = "weave.session.token";
-const MOCK_STATE_KEY = "weave.mock.state";
 
 /**
  * 令牌只驻留内存，不落本地明文；页面刷新 / 冷启动重新走 OIDC 登录。
@@ -86,14 +92,26 @@ export const prefs = {
   },
 };
 
-const mockServer = IS_MOCK
-  ? createMockServer({
-      storage: createStringMockStorage(
-        () => readPreference(MOCK_STATE_KEY),
-        (value) => writePreference(MOCK_STATE_KEY, value),
-      ),
-    })
-  : null;
+/**
+ * 用 `require` 而不是顶层 `import`，并且把条件写成字面量：
+ * DefinePlugin 替换后 webpack 能静态判定 `if (false)`，整个分支连同
+ * mock 服务端/种子数据一起从产物里摘掉。用变量（如 `IS_MOCK`）则不行 ——
+ * webpack 在模块图阶段不会追踪变量的常量值，mock 仍会被打进 bundle。
+ */
+let mockServer: MockServer | null = null;
+if (process.env.TARO_APP_MOCK === "1" && process.env.NODE_ENV !== "production") {
+  const MOCK_STATE_KEY = "weave.mock.state";
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- 必须用 require 才能让 webpack 静态摘除 mock 分支
+  const { createMockServer } = require("./mock/server") as typeof import("./mock/server");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- 同上
+  const { createStringMockStorage } = require("./mock/storage") as typeof import("./mock/storage");
+  mockServer = createMockServer({
+    storage: createStringMockStorage(
+      () => readPreference(MOCK_STATE_KEY),
+      (value) => writePreference(MOCK_STATE_KEY, value),
+    ),
+  });
+}
 
 const domFetch: MinimalFetch = async (input, init) => {
   const response = await fetch(input, init);
