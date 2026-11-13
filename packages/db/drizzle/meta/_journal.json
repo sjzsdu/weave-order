@@ -57,6 +57,13 @@
       "when": 1794538810562,
       "tag": "0007_young_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794550067123,
+      "tag": "0008_jittery_human_robot",
+      "breakpoints": true
     }
   ]
 }

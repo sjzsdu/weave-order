@@ -41,7 +41,9 @@ function budget(): LlmBudgetStatus {
 
 function usageSink(): LlmUsageSink {
   return {
-    record: vi.fn().mockResolvedValue({ inserted: true }),
+    reserve: vi.fn().mockResolvedValue({ allowed: true, status: budget() }),
+    settle: vi.fn().mockResolvedValue(undefined),
+    fail: vi.fn().mockResolvedValue(undefined),
     budgetStatus: () => Promise.resolve(budget()),
   };
 }

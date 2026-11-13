@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { JsonValue } from "@weave-order/schema";
-import { llmScopeEnum, llmTaskEnum } from "./enums";
+import { llmScopeEnum, llmTaskEnum, tokenUsageStatusEnum } from "./enums";
 
 /**
  * LLM 配置：GLOBAL 一行（tenant_id 为空）+ 每租户可选覆盖。
@@ -57,6 +57,10 @@ export const llmSettings = pgTable(
 /**
  * 单次模型调用用量：`request_id` 唯一，重试/重放不会重复计量。
  * 不存 prompt 原文，只存 SHA-256，满足「默认不落原文」。
+ *
+ * 生命周期：调用前插入 RESERVED（`reserved_tokens` 为预算占用上限），
+ * 成功后按实际 usage 更新为 SETTLED 并释放预留；失败标记 FAILED 且保留预留额度——
+ * 上游失败也可能已计费，不能因为本地异常让预算统计归零。
  */
 export const tokenUsage = pgTable(
   "token_usage",
@@ -72,12 +76,16 @@ export const tokenUsage = pgTable(
     cachedTokens: bigint("cached_tokens", { mode: "number" }).notNull().default(0),
     costMicros: bigint("cost_micros", { mode: "number" }),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
+    /** 预算占用：RESERVED / FAILED 按它计入，SETTLED 归零后按实际 token 计入。 */
+    reservedTokens: bigint("reserved_tokens", { mode: "number" }).notNull().default(0),
+    status: tokenUsageStatusEnum("status").notNull().default("SETTLED"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("token_usage_request_id_idx").on(table.requestId),
     index("token_usage_tenant_created_idx").on(table.tenantId, table.createdAt),
     index("token_usage_tenant_task_idx").on(table.tenantId, table.task),
+    index("token_usage_tenant_status_idx").on(table.tenantId, table.status),
   ],
 );
 
