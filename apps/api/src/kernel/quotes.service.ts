@@ -979,7 +979,7 @@ export class QuoteService {
       customerId: row.customerId,
     });
     const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
-    assertCanApprove(ctx.actor.role, requirement);
+    assertCanApprove(ctx.actor.role, requirement, ctx.actor.approvalLimitAmount);
     if (baseVersion !== undefined && baseVersion !== row.version) {
       throw new KernelError(
         "KERNEL_REJECTED",
@@ -1063,7 +1063,7 @@ export class QuoteService {
       customerId: row.customerId,
     });
     const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
-    assertCanApprove(ctx.actor.role, requirement);
+    assertCanApprove(ctx.actor.role, requirement, ctx.actor.approvalLimitAmount);
     const rejectedAt = new Date();
     await this.db.transaction(async (tx) => {
       const rows = await tx

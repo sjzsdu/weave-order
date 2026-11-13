@@ -1,6 +1,6 @@
 import { bigserial, index, jsonb, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import type { JsonValue } from "@weave-order/schema";
-import { actorTypeEnum } from "./enums";
+import { actorTypeEnum, memberRoleEnum } from "./enums";
 
 /**
  * 审计日志：每一次账本写入都必须在这个表留下不可篡改的一条记录。
@@ -19,6 +19,8 @@ export const auditLog = pgTable(
     seq: bigserial("seq", { mode: "number" }).notNull().unique(),
     actorType: actorTypeEnum("actor_type").notNull(),
     actorId: varchar("actor_id", { length: 128 }).notNull(),
+    /** 审批人当时的角色快照（智能体/系统为空），用于还原「当时他有没有这个权限」。 */
+    actorRole: memberRoleEnum("actor_role"),
     action: varchar("action", { length: 64 }).notNull(),
     entityType: varchar("entity_type", { length: 64 }).notNull(),
     entityId: uuid("entity_id").notNull(),
