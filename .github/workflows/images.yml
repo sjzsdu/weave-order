@@ -1,28 +1,36 @@
 name: images
 
-# main 分支 ci 全绿之后才构建/推送镜像（发布线与质量门解耦，不改动 ci.yml）。
-# 也可手动触发重跑指定 tag。
+# 只有推送 tag 才自动构建/推送镜像：发版变成一次显式、可审计的动作。
+# main 上普通 push 不再触发，也不会再给合并请求刷出一堆镜像。
+#
+# 约定 tag 以 v 开头：
+#   git tag -a v0.1.0 -m "release v0.1.0" && git push origin v0.1.0
+# 若希望任意 tag 都触发，把下面 tags 的 "v*" 改成 "*"。
+# 手动触发用于补发/重跑，同样要求该提交的 ci 全绿。
+#
+# 发布前仍保留质量门：打 tag 不会自动跑 ci，所以本 workflow 会查该提交
+# 是否有成功的 ci 运行；没有就拒绝发布，避免把未验证的提交变成可部署镜像。
 on:
-  workflow_run:
-    workflows: ["ci"]
-    types: [completed]
-    branches: [main]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "镜像 tag（留空则取 commit sha 前 12 位）"
+        description: "镜像 tag（留空则用 ref 名；非 tag 时用 commit sha 前 12 位）"
+        required: false
+        default: ""
+      ref:
+        description: "要构建的 git ref（留空用触发时的 ref）"
         required: false
         default: ""
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-push:
-    # ci 结论为 success 才发；手动触发始终允许
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -30,42 +38,66 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       # 可选：仓库变量覆盖移动端 PWA 的公网 API 基址（构建期固化）
       WEAVE_PUBLIC_API_BASE: ${{ vars.WEAVE_PUBLIC_API_BASE }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
 
-      # 未配置凭据时安静跳过，绝不让「还没配 Secrets」把 main 的 CI 变红
+      # tag push 是明确的发版意图，缺凭据就大声失败，不静默跳过
       - name: 检查 Docker Hub 凭据
-        id: creds
         run: |
           if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::未配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN，跳过镜像发布（不阻断 CI）"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::error::未配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN，无法发布镜像"
+            exit 1
           fi
 
+      - name: 质量门：确认该提交的 ci 全绿
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          OK=$(gh run list --commit "$SHA" --limit 100 \
+                 --json workflowName,conclusion \
+                 --jq '[.[] | select(.workflowName=="ci" and .conclusion=="success")] | length')
+          if [ "${OK:-0}" -eq 0 ]; then
+            echo "::error::提交 ${SHA} 没有成功的 ci 运行记录，拒绝发布镜像；请先让 CI 全绿再打 tag"
+            exit 1
+          fi
+          echo "✔ 该提交有 ${OK} 次成功的 ci 运行"
+
+      - name: 解析镜像 tag
+        id: meta
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            IMAGE_TAG="$INPUT_TAG"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            IMAGE_TAG="$REF_NAME"
+          else
+            IMAGE_TAG="$(git rev-parse --short=12 HEAD)"
+          fi
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "镜像 tag: $IMAGE_TAG"
+
       - uses: docker/setup-buildx-action@v3
-        if: steps.creds.outputs.skip != 'true'
 
       - uses: docker/login-action@v3
-        if: steps.creds.outputs.skip != 'true'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: 构建并推送
-        if: steps.creds.outputs.skip != 'true'
         run: |
-          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
-          TAG="${{ github.event.inputs.tag }}"
-          TAG="${TAG:-${SHA:0:12}}"
-          PUSH=1 IMAGE_PREFIX="${DOCKERHUB_USERNAME}" TAG="${TAG}" \
+          PUSH=1 IMAGE_PREFIX="${DOCKERHUB_USERNAME}" TAG="${{ steps.meta.outputs.image_tag }}" \
             ./scripts/build_push_images.sh
           {
             echo "### 镜像已发布"
             echo ""
-            echo "\`${DOCKERHUB_USERNAME}/weave-order:${TAG}\`"
+            echo "\`${DOCKERHUB_USERNAME}/weave-order:${{ steps.meta.outputs.image_tag }}\`"
+            echo ""
+            echo "部署时把 \`WEAVE_TAG\` 设为 \`${{ steps.meta.outputs.image_tag }}\`，不要留在 \`latest\`。"
           } >> "$GITHUB_STEP_SUMMARY"
