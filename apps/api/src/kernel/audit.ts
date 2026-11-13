@@ -13,6 +13,8 @@ export interface KernelContext {
     id: string;
     /** 人类成员角色，用于审批金额阈值；缺省按 OWNER 处理（本地/测试兼容）。 */
     role?: MemberRole;
+    /** 成员级审批额度（整数分）；null/缺省表示未配置，回落到公司级阈值。 */
+    approvalLimitAmount?: number | null;
   };
   /** 同一次业务动作引发的多条审计记录用同一个 correlationId 串起来。 */
   correlationId?: string;
@@ -42,6 +44,7 @@ export async function appendAudit(
     tenantId,
     actorType: ctx.actor.type,
     actorId: ctx.actor.id,
+    actorRole: ctx.actor.role ?? null,
     action: entry.action,
     entityType: entry.entityType,
     entityId: entry.entityId,
@@ -70,6 +73,7 @@ export async function listAuditLog(
       seq: row.seq,
       actorType: row.actorType,
       actorId: row.actorId,
+      actorRole: row.actorRole ?? null,
       action: row.action,
       entityType: row.entityType,
       entityId: row.entityId,

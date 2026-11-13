@@ -236,13 +236,28 @@ export const ApprovalRequirement = z
   .strict();
 export type ApprovalRequirement = z.infer<typeof ApprovalRequirement>;
 
-/** 角色审批等级排序：OWNER > MANAGER > SALES。 */
-export function roleApprovalLevel(role: MemberRole): ApprovalLevel {
+/**
+ * 具备报价审批能力的角色白名单（对齐 product-design §3.3：
+ * 批准报价只有 owner / manager / sales）。
+ * 能力与「等级」是两回事：能力回答「这个角色能不能批」，等级回答「能批到哪一档」。
+ */
+export const APPROVAL_CAPABLE_ROLES = ["OWNER", "MANAGER", "SALES"] as const;
+export type ApprovalCapableRole = (typeof APPROVAL_CAPABLE_ROLES)[number];
+
+export function hasApprovalCapability(role: MemberRole): role is ApprovalCapableRole {
+  return (APPROVAL_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
+}
+
+/**
+ * 角色审批等级排序：OWNER > MANAGER > SALES。
+ * 不具备审批能力的角色返回 `null`，调用方据此 fail-closed，
+ * 而不是给它们落一个「看起来能批」的等级。
+ */
+export function roleApprovalLevel(role: MemberRole): ApprovalLevel | null {
   if (role === "OWNER") return "OWNER";
   if (role === "MANAGER") return "MANAGER";
-  if (role === "SALES" || role === "MERCHANDISER") return "SALES";
-  if (role === "FINANCE") return "MANAGER";
-  return "SALES";
+  if (role === "SALES") return "SALES";
+  return null;
 }
 
 export function approvalLevelRank(level: ApprovalLevel): number {

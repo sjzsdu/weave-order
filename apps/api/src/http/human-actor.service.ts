@@ -46,7 +46,12 @@ export class HumanActorService {
       const scope = await this.auth.openScope(membership);
       try {
         const ctx: KernelContext = {
-          actor: { type: "HUMAN", id: claims.sub, role: membership.role },
+          actor: {
+            type: "HUMAN",
+            id: claims.sub,
+            role: membership.role,
+            approvalLimitAmount: membership.approvalLimitAmount,
+          },
         };
         return await fn(scope.kernel, ctx);
       } finally {

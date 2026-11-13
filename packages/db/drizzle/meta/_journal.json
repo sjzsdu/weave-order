@@ -50,6 +50,13 @@
       "when": 1794527078043,
       "tag": "0006_crazy_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794538810562,
+      "tag": "0007_young_sprite",
+      "breakpoints": true
     }
   ]
 }
