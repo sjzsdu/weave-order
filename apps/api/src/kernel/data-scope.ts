@@ -93,3 +93,28 @@ export function isVisibleOwner(
   }
   return ownerId === window.ownerId;
 }
+
+/**
+ * 写入路径的归属判定。与 isVisibleOwner 同一套规则，
+ * 只是 TEAM 范围要一次成员查询（写入前已经拿到单据，不需要在同一条 SQL 里过滤）。
+ * `false` 时调用方应按「不存在」返回，避免用 403 枚举他人单据。
+ */
+export async function isOwnerInScope(
+  db: Db,
+  ctx: KernelContext | undefined,
+  tenantId: string,
+  ownerId: string | null,
+): Promise<boolean> {
+  const window = scopeWindowOf(ctx);
+  if (!window || window.dataScope === "ALL") return true;
+  if (!ownerId) return false;
+  if (window.dataScope === "TEAM" && window.teamId) {
+    if (ownerId === window.ownerId) return true;
+    const teamMembers = await db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(and(eq(memberships.tenantId, tenantId), eq(memberships.teamId, window.teamId)));
+    return teamMembers.some((member) => member.id === ownerId);
+  }
+  return ownerId === window.ownerId;
+}

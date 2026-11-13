@@ -34,11 +34,16 @@ import type {
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
-import { assertCanApprove, computeRequirement, resolveApprovalPolicies } from "./approval-policy";
+import {
+  assertCanApprove,
+  assertCanEditQuote,
+  computeRequirement,
+  resolveApprovalPolicies,
+} from "./approval-policy";
 import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
-import { ownerScopeFilter } from "./data-scope";
+import { isOwnerInScope, ownerScopeFilter } from "./data-scope";
 import { formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
 import { currencyOf, toIso } from "./mappers";
 import { priceFloorOf, requireSampleCostFloor } from "./price-rules";
@@ -545,12 +550,15 @@ export class QuoteService {
    * AI 只产出 Patch，不能调用这里直接改账本（G10）。
    */
   async reviseDraft(input: unknown, ctx: KernelContext): Promise<QuoteRevisionData> {
+    // 改稿是账本写入（版本 +1、审计、决策差额），先过能力门再解析输入：
+    // 非报价角色（merchandiser / sample_admin / finance / viewer）连参数都不该看到被校验。
     if (ctx.actor.type !== "HUMAN") {
       throw new KernelError(
         "PERMISSION_DENIED",
         "改稿必须由人类确认后执行；智能体只能产出 Patch（G10）",
       );
     }
+    assertCanEditQuote(ctx.actor.role);
     const parsed = ReviseQuoteDraftInput.parse(input);
 
     return this.db.transaction(async (tx) => {
@@ -562,6 +570,21 @@ export class QuoteService {
         .for("update");
       const row = quoteRows[0];
       if (!row) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${parsed.quoteId}`, {
+          resourceType: "quote",
+          resourceId: parsed.quoteId,
+        });
+      }
+      // 报价没有自己的归属人列：归属随客户（与 list / loadQuote 同口径）。
+      // 看得到不等于改得了 —— dataScope=OWN 的成员只能改自己名下客户的草稿；
+      // 越权一律当作「不存在」返回，不给 403 枚举同租户单据的机会。
+      const ownerRows = await tx
+        .select({ ownerId: customers.ownerId })
+        .from(customers)
+        .where(and(eq(customers.id, row.customerId), eq(customers.tenantId, this.tenantId)))
+        .limit(1);
+      const ownerId = ownerRows[0]?.ownerId ?? null;
+      if (!(await isOwnerInScope(tx, ctx, this.tenantId, ownerId))) {
         throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${parsed.quoteId}`, {
           resourceType: "quote",
           resourceId: parsed.quoteId,

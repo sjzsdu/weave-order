@@ -5,6 +5,7 @@ import {
   PricingKey,
   ResolvedPricingValue,
   approvalLevelRank,
+  hasQuoteEditCapability,
   roleApprovalLevel,
 } from "@weave-order/schema";
 import type { MemberRole, PricingContext } from "@weave-order/schema";
@@ -77,9 +78,13 @@ export function computeRequirement(input: RequirementInput): ApprovalRequirement
   const reasons = new Set<EscalationReason>(input.extraReasons ?? []);
 
   let changePctBps: number | null = null;
+  let changeAmountCents: number | undefined;
   const baseline = input.baselineCents;
   if (baseline !== null && baseline > 0) {
-    const delta = Math.abs(input.amountCents - baseline);
+    // 涨价/降价都按绝对改幅判阈值，但把带符号的差额一并带出去，
+    // 审批卡可以直接说「从 X 涨到 Y」，不用前端自己再算一遍。
+    changeAmountCents = input.amountCents - baseline;
+    const delta = Math.abs(changeAmountCents);
     changePctBps = Math.round((delta * 10_000) / baseline);
 
     const pctThreshold = limitOf(input.policies, "pricing.reprice_escalation_pct", 5, numeric);
@@ -108,6 +113,8 @@ export function computeRequirement(input: RequirementInput): ApprovalRequirement
     level,
     role: LEVEL_TO_ROLE[level],
     amountCents: input.amountCents,
+    baselineAmountCents: baseline ?? null,
+    ...(changeAmountCents !== undefined ? { changeAmountCents } : {}),
     changePctBps,
     escalated: level !== "SALES" || reasons.size > 0,
     reasons: [...reasons],
@@ -160,3 +167,21 @@ export function assertCanApprove(
 }
 
 export { roleApprovalLevel };
+
+/**
+ * 改稿能力门：只有产品矩阵里「生成报价草稿」的角色可以改账本。
+ *
+ * 与人审不同，这里不比较金额等级：改稿本身不限额，改到什么程度由
+ * computeRequirement 的改幅/改额阈值把审批层级顶上去，再由 assertCanApprove 拦人。
+ * 角色缺省时与 assertCanApprove 同一套 fail-closed 约定：
+ * 生产态直接拒，本地/测试保留 OWNER 回退。
+ */
+export function assertCanEditQuote(actorRole: MemberRole | undefined): void {
+  const role = actorRole ?? (isProductionLike(process.env) ? undefined : "OWNER");
+  if (!role) {
+    throw new KernelError("PERMISSION_DENIED", "缺少改稿人角色，拒绝改稿");
+  }
+  if (!hasQuoteEditCapability(role)) {
+    throw new KernelError("PERMISSION_DENIED", `角色 ${role} 不具备报价编辑能力，拒绝改稿`);
+  }
+}
