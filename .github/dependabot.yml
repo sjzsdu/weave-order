@@ -1,0 +1,41 @@
+version: 2
+# 供应链自动化：npm（pnpm workspace）、Rust（打印代理）、GitHub Actions。
+# 只负责「发现并开 PR」，是否合并仍由人看 CI 与业务影响决定；
+# 漏洞告警的即时报告走 CI 的 dependency-audit 作业（只告警不阻断）。
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    groups:
+      # 小版本/补丁合并成一个 PR，避免每周几十个 PR 淹没主链路。
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "cargo"
+    directory: "/apps/print-agent/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      prefix: "chore(ci)"
