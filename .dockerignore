@@ -1,0 +1,22 @@
+# 构建产物在镜像内重新生成，不把本机状态带进去
+.git
+.github
+.codebuddy
+.multica
+**/node_modules
+**/dist
+**/dist-gate
+**/.next
+**/test-results
+**/*.log
+
+# 本机环境变量/密钥绝不进镜像；.env.example 是模板，保留
+.env
+.env.*
+!.env.example
+
+# 本地体验脚本与日志不进镜像
+logs
+e2e-*.sh
+exp-*.sh
+start-*.sh
