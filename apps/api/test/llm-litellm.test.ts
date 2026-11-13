@@ -33,17 +33,21 @@ function budget(exceeded = false): LlmBudgetStatus {
 }
 
 function sink(exceeded = false) {
-  const record = vi.fn().mockResolvedValue({ inserted: true });
+  const settle = vi.fn().mockResolvedValue(undefined);
+  const fail = vi.fn().mockResolvedValue(undefined);
+  const reserve = vi.fn().mockResolvedValue({ allowed: !exceeded, status: budget(exceeded) });
   const usage: LlmUsageSink = {
-    record,
+    reserve,
+    settle,
+    fail,
     budgetStatus: () => Promise.resolve(budget(exceeded)),
   };
-  return { usage, record };
+  return { usage, reserve, settle, fail };
 }
 
 describe("LiteLLM provider", () => {
   it("只请求 LITELLM_BASE_URL，带租户 key / request_id，并幂等记账", async () => {
-    const { usage, record } = sink();
+    const { usage, reserve, settle, fail } = sink();
     const body = {
       id: "chatcmpl-1",
       model: "deepseek-chat",
@@ -98,17 +102,21 @@ describe("LiteLLM provider", () => {
     const sentBody = JSON.stringify(init.body);
     expect(sentBody).not.toContain("13800138000");
     expect(sentBody).toContain("[PHONE:");
-    expect(record).toHaveBeenCalledTimes(1);
-    const recorded = record.mock.calls[0]?.[0] as {
+    // 先预留再结算：调用前占预算，成功后按实际 usage 结算。
+    expect(reserve).toHaveBeenCalledTimes(1);
+    expect(fail).not.toHaveBeenCalled();
+    expect(settle).toHaveBeenCalledTimes(1);
+    const settled = settle.mock.calls[0]?.[0] as {
       promptTokens: number;
       completionTokens: number;
       cachedTokens: number;
-      promptHash: string;
     };
-    expect(recorded.promptTokens).toBe(120);
-    expect(recorded.completionTokens).toBe(30);
-    expect(recorded.cachedTokens).toBe(10);
-    expect(recorded.promptHash).toHaveLength(64);
+    expect(settled.promptTokens).toBe(120);
+    expect(settled.completionTokens).toBe(30);
+    expect(settled.cachedTokens).toBe(10);
+    const reserved = reserve.mock.calls[0]?.[0] as { promptHash: string; reservedTokens: number };
+    expect(reserved.promptHash).toHaveLength(64);
+    expect(reserved.reservedTokens).toBeGreaterThan(0);
     expect(provider.lastUsage?.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -135,6 +143,69 @@ describe("LiteLLM provider", () => {
     });
     await expect(deny.extractQuoteIntent({ text: "棉 500 米" })).rejects.toThrow(/白名单/);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("超时 / 5xx / 空回复三条失败路径都走 fail 计量，不让用量归零", async () => {
+    const cases: {
+      name: string;
+      fetchImpl: typeof fetch;
+      expected: { promptTokens?: number; completionTokens?: number } | undefined;
+    }[] = [
+      {
+        name: "超时",
+        fetchImpl: vi
+          .fn()
+          .mockRejectedValue(new DOMException("The operation timed out", "AbortError")),
+        expected: undefined,
+      },
+      {
+        name: "5xx",
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: false,
+          status: 503,
+          text: () => Promise.resolve("upstream unavailable"),
+        }),
+        expected: undefined,
+      },
+      {
+        name: "空回复",
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              choices: [{ message: { content: "" } }],
+              usage: { prompt_tokens: 40, completion_tokens: 0 },
+            }),
+        }),
+        expected: { promptTokens: 40, completionTokens: 0 },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const { usage, reserve, settle, fail } = sink();
+      const provider = new LiteLlmProvider({
+        settings,
+        usage,
+        apiKey: "sk",
+        timeoutMs: 1000,
+        fetchImpl: testCase.fetchImpl,
+      });
+
+      await expect(provider.extractQuoteIntent({ text: "棉 500 米" })).rejects.toThrow();
+      expect(reserve).toHaveBeenCalledTimes(1);
+      expect(settle).not.toHaveBeenCalled();
+      expect(fail).toHaveBeenCalledTimes(1);
+      const failed = fail.mock.calls[0]?.[0] as {
+        requestId: string;
+        promptTokens?: number;
+        completionTokens?: number;
+      };
+      expect(failed.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      if (testCase.expected) {
+        expect(failed.promptTokens).toBe(testCase.expected.promptTokens);
+        expect(failed.completionTokens).toBe(testCase.expected.completionTokens);
+      }
+    }
   });
 });
 

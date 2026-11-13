@@ -10,7 +10,6 @@ import type {
   LlmCallReceipt,
   LlmTask,
   QuoteIntentSlots,
-  RecordTokenUsageInput,
   ResolvedLlmSettings,
   SampleShipment,
   TrackingSnapshot,
@@ -18,9 +17,52 @@ import type {
 import { redactSensitiveText } from "./privacy";
 import { isProductionLike } from "./runtime-mode";
 
-/** 用量写入端口：由 kernel.usage 实现，platform 不直接碰数据库。 */
+/** 调用前的预算预留（原子检查 + 占额）；`allowed=false` 时不得发出外网请求。 */
+export interface LlmReservationInput {
+  requestId: string;
+  task: LlmTask;
+  model: string;
+  provider: string;
+  promptHash: string;
+  reservedTokens: number;
+  dailyBudget: number | null;
+  monthlyBudget: number | null;
+  at: string;
+}
+
+export interface LlmReservationResult {
+  allowed: boolean;
+  status: LlmBudgetStatus;
+}
+
+export interface LlmSettlementInput {
+  requestId: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  at: string;
+}
+
+export interface LlmFailureInput {
+  requestId: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  cachedTokens?: number;
+  at: string;
+}
+
+/**
+ * 用量写入端口：由 kernel.usage 实现，platform 不直接碰数据库。
+ *
+ * 「预留—结算」拆成三步，是因为预算判断与扣减必须原子：
+ * 先 `reserve` 占额（并发下由实现方加锁），成功后 `settle` 按实际用量结算，
+ * 超时 / 非 2xx / 空回复走 `fail` 留痕，不让上游费用在库里归零。
+ */
 export interface LlmUsageSink {
-  record(input: RecordTokenUsageInput): Promise<{ inserted: boolean }>;
+  reserve(input: LlmReservationInput): Promise<LlmReservationResult>;
+  settle(input: LlmSettlementInput): Promise<void>;
+  fail(input: LlmFailureInput): Promise<void>;
   budgetStatus(dailyBudget: number | null, monthlyBudget: number | null): Promise<LlmBudgetStatus>;
 }
 
@@ -394,16 +436,6 @@ export class LiteLlmProvider implements LlmProvider {
     if (!settings.modelAllowlist.includes(model)) {
       throw new Error(`模型 ${model} 不在租户白名单内`);
     }
-    const budget = await this.options.usage.budgetStatus(
-      settings.dailyTokenBudget,
-      settings.monthlyTokenBudget,
-    );
-    if (budget.dailyExceeded || budget.monthlyExceeded) {
-      throw new Error(
-        `LLM 预算已用尽（daily=${budget.dailyTokens}/${budget.dailyBudget ?? "∞"}，monthly=${budget.monthlyTokens}/${budget.monthlyBudget ?? "∞"}）`,
-      );
-    }
-
     const requestId = randomUUID();
     const redactedMessages = messages.map((message) => ({
       ...message,
@@ -413,9 +445,28 @@ export class LiteLlmProvider implements LlmProvider {
       .update(redactedMessages.map((message) => `${message.role}:${message.content}`).join("\n"))
       .digest("hex");
 
-    const response = await this.fetchImpl(
-      `${settings.baseUrl.replace(/\/$/, "")}/chat/completions`,
-      {
+    // 预留—结算：先原子占预算，再发请求。占不到额度的请求不出网（否则无法回收成本）。
+    const reservation = await this.options.usage.reserve({
+      requestId,
+      task,
+      model,
+      provider: this.name,
+      promptHash,
+      reservedTokens: estimateChatTokens(redactedMessages),
+      dailyBudget: settings.dailyTokenBudget,
+      monthlyBudget: settings.monthlyTokenBudget,
+      at: this.now().toISOString(),
+    });
+    if (!reservation.allowed) {
+      const budget = reservation.status;
+      throw new Error(
+        `LLM 预算已用尽（daily=${budget.dailyTokens}/${budget.dailyBudget ?? "∞"}，monthly=${budget.monthlyTokens}/${budget.monthlyBudget ?? "∞"}）`,
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -430,30 +481,43 @@ export class LiteLlmProvider implements LlmProvider {
           ...sanitizeChatParams(settings.params),
         }),
         signal: AbortSignal.timeout(this.options.timeoutMs),
-      },
-    );
+      });
+    } catch (error) {
+      // 超时 / 网络错误：上游可能已经计费，预留额度保留下来计入预算。
+      await this.markFailed(requestId);
+      throw error;
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
+      await this.markFailed(requestId);
       throw new Error(`LiteLLM 调用失败：HTTP ${response.status} ${body.slice(0, 300)}`);
     }
-    const payload = (await response.json()) as ChatResponse;
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error("LiteLLM 返回为空：缺少 choices[0].message.content");
+
+    let payload: ChatResponse;
+    try {
+      payload = (await response.json()) as ChatResponse;
+    } catch (error) {
+      await this.markFailed(requestId);
+      throw error;
+    }
 
     const promptTokens = payload.usage?.prompt_tokens ?? 0;
     const completionTokens = payload.usage?.completion_tokens ?? 0;
     const cachedTokens = payload.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-    const recorded = await this.options.usage.record({
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) {
+      // 200 但空回复：若带 usage，按已知 token 计入；否则仍保留预留额度。
+      await this.markFailed(requestId, { promptTokens, completionTokens, cachedTokens });
+      throw new Error("LiteLLM 返回为空：缺少 choices[0].message.content");
+    }
+
+    await this.options.usage.settle({
       requestId,
-      task,
       model: payload.model ?? model,
-      provider: this.name,
       promptTokens,
       completionTokens,
       cachedTokens,
-      costMicros: null,
-      promptHash,
       at: this.now().toISOString(),
     });
     this.usage = {
@@ -465,9 +529,38 @@ export class LiteLlmProvider implements LlmProvider {
       completionTokens,
       cachedTokens,
     };
-    void recorded;
     return content;
   }
+
+  /** 计量失败不能掩盖上游错误：写库异常只吞掉，原始错误继续抛。 */
+  private async markFailed(
+    requestId: string,
+    known: { promptTokens?: number; completionTokens?: number; cachedTokens?: number } = {},
+  ): Promise<void> {
+    try {
+      await this.options.usage.fail({
+        requestId,
+        ...known,
+        at: this.now().toISOString(),
+      });
+    } catch {
+      // 留痕失败时预算仍按预留额度保守计数（未结算的 RESERVED 行不会自动释放）。
+    }
+  }
+}
+
+/** 输出上限：协议未下发 max_tokens，按常见 JSON 回复上限保守预留。 */
+const COMPLETION_TOKEN_ALLOWANCE = 1024;
+
+/**
+ * 调用前的 token 上限估算（预算占额，不是计费值）。
+ * CJK 约 1 字符 1 token、英文约 4 字符 1 token；按 1 字符 1 token 取高不取低。
+ */
+export function estimateChatTokens(
+  messages: { role: "system" | "user"; content: string }[],
+): number {
+  const chars = messages.reduce((sum, message) => sum + message.content.length, 0);
+  return chars + COMPLETION_TOKEN_ALLOWANCE;
 }
 
 function asText(value: unknown, fallback: string): string {
