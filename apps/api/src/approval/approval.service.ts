@@ -15,7 +15,7 @@ import type {
   ToolError,
   ZodIssueSummary,
 } from "@weave-order/schema";
-import { formatMoney, isKernelError } from "../kernel";
+import { formatMoney, isKernelError, mayViewCost } from "../kernel";
 import type { Kernel, KernelContext } from "../kernel";
 
 /**
@@ -75,11 +75,11 @@ function failure(error: unknown): DecisionResult {
 
 export function createApprovalService(kernel: Kernel) {
   return {
-    /** 审批队列：从账本读出所有 DRAFT 单据（报价 + 寄样），纯只读聚合。 */
-    async listPending(): Promise<ApprovalQueue> {
+    /** 审批队列：从账本读出可见范围内的 DRAFT 单据（报价 + 寄样），纯只读聚合。 */
+    async listPending(ctx?: KernelContext): Promise<ApprovalQueue> {
       const [quotes, shipments] = await Promise.all([
-        kernel.quotes.list(100),
-        kernel.shipments.list(100),
+        kernel.quotes.list(100, ctx),
+        kernel.shipments.list(100, ctx),
       ]);
       const items = [...quotes, ...shipments]
         .filter((entry) => entry.pending)
@@ -91,10 +91,10 @@ export function createApprovalService(kernel: Kernel) {
      * 审批卡详情：出处 / 生效值 / diff 一次聚合。
      * 只读，不落账；金额与风险全部由后端给出，前端只展示。
      */
-    async detail(id: string, kind: ApprovalKind): Promise<Detail | null> {
+    async detail(id: string, kind: ApprovalKind, ctx?: KernelContext): Promise<Detail | null> {
       const [quotes, shipments] = await Promise.all([
-        kernel.quotes.list(100),
-        kernel.shipments.list(100),
+        kernel.quotes.list(100, ctx),
+        kernel.shipments.list(100, ctx),
       ]);
       const item = [...quotes, ...shipments].find(
         (entry) => entry.id === id && entry.kind === kind,
@@ -102,14 +102,16 @@ export function createApprovalService(kernel: Kernel) {
       if (!item) return null;
 
       const [customer, audit] = await Promise.all([
-        kernel.customers.getById(item.customerId).catch(() => null),
+        kernel.customers.getById(item.customerId, ctx).catch(() => null),
         kernel.audit.list(20),
       ]);
 
       if (kind === "quote") {
-        const view = await kernel.quotes.getApprovalView(id).catch(() => null);
+        const view = await kernel.quotes.getApprovalView(id, ctx).catch(() => null);
         if (!view) return null;
 
+        // 成本底线属于敏感字段：sales 等角色看不到具体数字，但单据本身照常可审。
+        const showCost = mayViewCost(ctx?.actor.role);
         const provenance: Detail["provenance"] = view.items.flatMap((line) => {
           const raw = jsonRecord(line.provenance);
           const sample = jsonRecord(raw.sample);
@@ -131,7 +133,7 @@ export function createApprovalService(kernel: Kernel) {
               kind: "COST",
               label: "样品 / 成本底线",
               value:
-                typeof costFloor.amount === "number"
+                showCost && typeof costFloor.amount === "number"
                   ? `${String(sample.code)} · ${formatMoney({
                       amount: costFloor.amount,
                       currency: view.currency,
@@ -148,7 +150,7 @@ export function createApprovalService(kernel: Kernel) {
               label: "定价来源",
               value: unitPrice.source,
               detail:
-                typeof unitPrice.floorCents === "number"
+                showCost && typeof unitPrice.floorCents === "number"
                   ? `成本/毛利底线 ${formatMoney({ amount: unitPrice.floorCents, currency: view.currency })}`
                   : null,
               sourceRef: null,
@@ -306,12 +308,12 @@ export function createApprovalService(kernel: Kernel) {
     },
 
     /** 业务全景（只读）：一次拉取，前端纯展示。 */
-    async panorama(): Promise<Panorama> {
+    async panorama(ctx?: KernelContext): Promise<Panorama> {
       const [customers, samples, quotes, shipments, audit] = await Promise.all([
-        kernel.customers.list(100),
-        kernel.search.listSamples(100),
-        kernel.quotes.list(100),
-        kernel.shipments.list(100),
+        kernel.customers.list(100, ctx),
+        kernel.search.listSamples(100, ctx),
+        kernel.quotes.list(100, ctx),
+        kernel.shipments.list(100, ctx),
         kernel.audit.list(20),
       ]);
       const items = [...quotes, ...shipments].sort((a, b) =>

@@ -1,4 +1,4 @@
-import { orders, receivables } from "@weave-order/db";
+import { customers, orders, receivables } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateReceivableInput, RecordPaymentInput } from "@weave-order/schema";
 import type { Receivable } from "@weave-order/schema";
@@ -6,6 +6,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
+import { ownerScopeFilter } from "./data-scope";
 import { toIso, toIsoOrNull } from "./mappers";
 
 type ReceivableRow = typeof receivables.$inferSelect;
@@ -191,13 +192,21 @@ export class ReceivableService {
     });
   }
 
-  async getById(receivableId: string): Promise<Receivable> {
+  async getById(receivableId: string, ctx?: KernelContext): Promise<Receivable> {
+    // 应收归属随客户：越权时按「不存在」返回。
     const rows = await this.db
-      .select()
+      .select({ receivable: receivables })
       .from(receivables)
-      .where(and(eq(receivables.id, receivableId), eq(receivables.tenantId, this.tenantId)))
+      .innerJoin(customers, eq(customers.id, receivables.customerId))
+      .where(
+        and(
+          eq(receivables.id, receivableId),
+          eq(receivables.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
-    const row = rows[0];
+    const row = rows[0]?.receivable;
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `应收不存在：${receivableId}`, {
         resourceType: "receivable",
@@ -207,13 +216,21 @@ export class ReceivableService {
     return mapReceivable(row);
   }
 
-  async list(limit = 50): Promise<Receivable[]> {
-    const rows = await this.db
-      .select()
-      .from(receivables)
-      .where(eq(receivables.tenantId, this.tenantId))
-      .orderBy(desc(receivables.createdAt))
-      .limit(limit);
+  async list(limit = 50, ctx?: KernelContext): Promise<Receivable[]> {
+    const rows = (
+      await this.db
+        .select({ receivable: receivables })
+        .from(receivables)
+        .innerJoin(customers, eq(customers.id, receivables.customerId))
+        .where(
+          and(
+            eq(receivables.tenantId, this.tenantId),
+            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+          ),
+        )
+        .orderBy(desc(receivables.createdAt))
+        .limit(limit)
+    ).map((entry) => entry.receivable);
     return rows.map(mapReceivable);
   }
 }

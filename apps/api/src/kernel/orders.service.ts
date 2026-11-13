@@ -1,4 +1,4 @@
-import { orderItems, orders, samples } from "@weave-order/db";
+import { customers, orderItems, orders, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateOrderInput } from "@weave-order/schema";
 import type {
@@ -13,6 +13,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
+import { ownerScopeFilter } from "./data-scope";
 import { milliToQuantity, multiplyCents, quantityToMilli } from "./money";
 import { toIso, toIsoOrNull } from "./mappers";
 import { priceFloorOf } from "./price-rules";
@@ -260,13 +261,21 @@ export class OrderService {
     });
   }
 
-  async getById(orderId: string): Promise<Order> {
+  async getById(orderId: string, ctx?: KernelContext): Promise<Order> {
+    // 订单归属随客户：越权时按「不存在」返回，避免枚举他人单据。
     const rows = await this.db
-      .select()
+      .select({ order: orders })
       .from(orders)
-      .where(and(eq(orders.id, orderId), eq(orders.tenantId, this.tenantId)))
+      .innerJoin(customers, eq(customers.id, orders.customerId))
+      .where(
+        and(
+          eq(orders.id, orderId),
+          eq(orders.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
-    const row = rows[0];
+    const row = rows[0]?.order;
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `订单不存在：${orderId}`, {
         resourceType: "order",
@@ -284,13 +293,21 @@ export class OrderService {
     );
   }
 
-  async list(limit = 50): Promise<Order[]> {
-    const rows = await this.db
-      .select()
-      .from(orders)
-      .where(eq(orders.tenantId, this.tenantId))
-      .orderBy(desc(orders.createdAt))
-      .limit(limit);
+  async list(limit = 50, ctx?: KernelContext): Promise<Order[]> {
+    const rows = (
+      await this.db
+        .select({ order: orders })
+        .from(orders)
+        .innerJoin(customers, eq(customers.id, orders.customerId))
+        .where(
+          and(
+            eq(orders.tenantId, this.tenantId),
+            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+          ),
+        )
+        .orderBy(desc(orders.createdAt))
+        .limit(limit)
+    ).map((entry) => entry.order);
     if (rows.length === 0) return [];
     const itemRows = await this.db
       .select()
