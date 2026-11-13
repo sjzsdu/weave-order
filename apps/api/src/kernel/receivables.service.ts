@@ -114,43 +114,65 @@ export class ReceivableService {
       throw new KernelError("PERMISSION_DENIED", "收款必须由人类确认，智能体无权记账");
     }
     const parsed = RecordPaymentInput.parse(input);
-    const current = await this.getById(parsed.receivableId);
-    if (current.status === "PAID" || current.status === "CANCELLED") {
-      throw new KernelError("KERNEL_REJECTED", `应收状态 ${current.status} 不能收款`, {
-        reason: "INVALID_STATE_TRANSITION",
-      });
-    }
-    if (parsed.amount.currency !== current.amount.currency) {
-      throw new KernelError("KERNEL_REJECTED", "收款币种与应收币种不一致", {
-        reason: "CURRENCY_MISMATCH",
-      });
-    }
-    const remaining = current.amount.amount - current.paidAmount.amount;
-    if (parsed.amount.amount > remaining) {
-      throw new KernelError(
-        "KERNEL_REJECTED",
-        `收款金额超过未收余额：${parsed.amount.amount} > ${remaining}（分）`,
-        { reason: "PAYMENT_EXCEEDS_REMAINING" },
-      );
-    }
-    const paidAmount = current.paidAmount.amount + parsed.amount.amount;
-    const status = paidAmount === current.amount.amount ? "PAID" : "PARTIAL";
-    const paidAt =
-      status === "PAID" ? (parsed.paidAt ? new Date(parsed.paidAt) : new Date()) : null;
 
     return this.db.transaction(async (tx) => {
+      // 账本动作必须在锁内读-算-写：并发收款若读在事务外，两笔都会基于同一个
+      // paidAmount 写回，后写的那笔会覆盖前一笔（丢账）。FOR UPDATE 让同一笔
+      // 应收的收款串行化，第二次读到的就是第一笔提交后的值。
+      const lockedRows = await tx
+        .select()
+        .from(receivables)
+        .where(
+          and(eq(receivables.id, parsed.receivableId), eq(receivables.tenantId, this.tenantId)),
+        )
+        .limit(1)
+        .for("update");
+      const current = lockedRows[0];
+      if (!current) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `应收不存在：${parsed.receivableId}`, {
+          resourceType: "receivable",
+          resourceId: parsed.receivableId,
+        });
+      }
+      if (current.status === "PAID" || current.status === "CANCELLED") {
+        throw new KernelError("KERNEL_REJECTED", `应收状态 ${current.status} 不能收款`, {
+          reason: "INVALID_STATE_TRANSITION",
+        });
+      }
+      if (parsed.amount.currency !== current.currency) {
+        throw new KernelError("KERNEL_REJECTED", "收款币种与应收币种不一致", {
+          reason: "CURRENCY_MISMATCH",
+        });
+      }
+      const remaining = current.amount - current.paidAmount;
+      if (parsed.amount.amount > remaining) {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `收款金额超过未收余额：${parsed.amount.amount} > ${remaining}（分）`,
+          { reason: "PAYMENT_EXCEEDS_REMAINING" },
+        );
+      }
+      const paidAmount = current.paidAmount + parsed.amount.amount;
+      const status = paidAmount === current.amount ? "PAID" : "PARTIAL";
+      const paidAt =
+        status === "PAID" ? (parsed.paidAt ? new Date(parsed.paidAt) : new Date()) : null;
+
+      // 乐观条件作为第二道闸：即使将来有人去掉 FOR UPDATE，命中 0 行也不会覆盖账本。
       const rows = await tx
         .update(receivables)
         .set({ paidAmount, status, paidAt, updatedAt: new Date() })
         .where(
-          and(eq(receivables.id, parsed.receivableId), eq(receivables.tenantId, this.tenantId)),
+          and(
+            eq(receivables.id, parsed.receivableId),
+            eq(receivables.tenantId, this.tenantId),
+            eq(receivables.paidAmount, current.paidAmount),
+          ),
         )
         .returning();
       const row = rows[0];
       if (!row) {
-        throw new KernelError("RESOURCE_NOT_FOUND", `应收不存在：${parsed.receivableId}`, {
-          resourceType: "receivable",
-          resourceId: parsed.receivableId,
+        throw new KernelError("KERNEL_REJECTED", "应收已发生变化，请重试本次收款", {
+          reason: "VERSION_CONFLICT",
         });
       }
       await appendAudit(
@@ -160,7 +182,7 @@ export class ReceivableService {
           action: "RECEIVABLE_PAYMENT_RECORDED",
           entityType: "receivable",
           entityId: row.id,
-          before: { paidAmount: current.paidAmount.amount, status: current.status },
+          before: { paidAmount: current.paidAmount, status: current.status },
           after: { paidAmount: row.paidAmount, status: row.status, amount: row.amount },
         },
         this.tenantId,

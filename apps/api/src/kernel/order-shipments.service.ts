@@ -249,18 +249,47 @@ export class OrderShipmentService {
     if (ctx.actor.type !== "HUMAN") {
       throw new KernelError("PERMISSION_DENIED", "确认发货必须由人类执行");
     }
-    const current = await this.getById(shipmentId);
-    if (current.status !== "DRAFT" && current.status !== "PACKED") {
-      throw new KernelError("KERNEL_REJECTED", `发货单状态不允许确认发货：${current.status}`);
-    }
     const shippedAt = new Date();
     return this.db.transaction(async (tx) => {
+      // 双击并发时两次调用都会看到 DRAFT；锁住发货单并带状态条件更新，
+      // 保证只有一次确认、一条 SHIPMENT_CONFIRMED 审计。
+      const lockedRows = await tx
+        .select()
+        .from(orderShipments)
+        .where(
+          and(eq(orderShipments.id, shipmentId), eq(orderShipments.tenantId, this.tenantId)),
+        )
+        .limit(1)
+        .for("update");
+      const current = lockedRows[0];
+      if (!current) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `发货单不存在：${shipmentId}`, {
+          resourceType: "order_shipment",
+          resourceId: shipmentId,
+        });
+      }
+      if (current.status !== "DRAFT" && current.status !== "PACKED") {
+        throw new KernelError("KERNEL_REJECTED", `发货单状态不允许确认发货：${current.status}`, {
+          reason: "INVALID_STATE_TRANSITION",
+        });
+      }
       const rows = await tx
         .update(orderShipments)
         .set({ status: "SHIPPED", shippedAt })
-        .where(and(eq(orderShipments.id, shipmentId), eq(orderShipments.tenantId, this.tenantId)))
+        .where(
+          and(
+            eq(orderShipments.id, shipmentId),
+            eq(orderShipments.tenantId, this.tenantId),
+            eq(orderShipments.status, current.status),
+          ),
+        )
         .returning();
-      const row = rows[0]!;
+      const row = rows[0];
+      if (!row) {
+        throw new KernelError("KERNEL_REJECTED", "发货单状态已变化，请刷新后重试", {
+          reason: "VERSION_CONFLICT",
+        });
+      }
       await tx
         .update(orders)
         .set({ status: "SHIPPED", progressPct: 100, updatedAt: shippedAt })
@@ -277,7 +306,19 @@ export class OrderShipmentService {
         },
         this.tenantId,
       );
-      return mapShipment(row, current.items);
+      const items = await tx
+        .select()
+        .from(orderShipmentItems)
+        .where(eq(orderShipmentItems.shipmentId, shipmentId))
+        .orderBy(asc(orderShipmentItems.id));
+      return mapShipment(
+        row,
+        items.map((item) => ({
+          id: item.id,
+          orderItemId: item.orderItemId,
+          quantity: { value: milliToQuantity(item.quantityMilli), unit: item.unit },
+        })),
+      );
     });
   }
 }

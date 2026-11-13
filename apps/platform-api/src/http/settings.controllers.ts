@@ -150,10 +150,14 @@ export class LlmSettingsController {
     return { settings: await this.settings.upsertLlm(actorOf(request), body) };
   }
 
+  /**
+   * 连通性测试会带真实密钥出网，且目标地址/密钥引用来自请求体：
+   * 权限从 `settings:read` 提升到 `llm:write`（platform_readonly 不再可调），并强制走服务层审计。
+   */
   @Post("test")
-  @RequirePermission("settings:read")
-  async test(@Body() body: { baseUrl?: string; keyRef?: string }) {
-    return this.settings.testLlm(body.baseUrl, body.keyRef);
+  @RequirePermission("llm:write")
+  async test(@Req() request: PlatformRequest, @Body() body: { baseUrl?: string; keyRef?: string }) {
+    return this.settings.testLlm(actorOf(request), body ?? {});
   }
 
   @Get("stats")
