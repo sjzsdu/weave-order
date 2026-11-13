@@ -50,7 +50,7 @@ jobs:
       PLATFORM_AUTH_MODE: dev
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
         with:
@@ -117,7 +117,7 @@ jobs:
       AUTH_MODE: dev
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # 守卫与两段式迁移都需要完整历史来解析基线。
           fetch-depth: 0
@@ -179,7 +179,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Tauri 2 在 Linux 上编译需要 webkit2gtk / gtk / 托盘库（cargo check 也要，build script 走 pkg-config）。
       - name: 安装 Tauri 2 系统依赖
@@ -218,7 +218,7 @@ jobs:
     continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
         with:
@@ -243,7 +243,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
         with:
