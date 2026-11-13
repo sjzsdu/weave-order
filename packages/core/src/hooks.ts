@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApprovalDecisionInput, ApprovalKind, Unit } from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
 
@@ -8,6 +8,7 @@ export const queryKeys = {
   customers: (limit: number) => ["customers", limit] as const,
   panorama: ["panorama"] as const,
   approvals: ["approvals"] as const,
+  approvalQueue: (limit: number) => ["approvals", "queue", limit] as const,
   approvalDetail: (id: string, kind: ApprovalKind) => ["approvals", id, kind] as const,
   audit: (limit: number) => ["audit", limit] as const,
   orders: (limit: number) => ["orders", limit] as const,
@@ -35,6 +36,27 @@ export function usePanorama(client: ApiClient) {
 
 export function useApprovals(client: ApiClient) {
   return useQuery({ queryKey: queryKeys.approvals, queryFn: () => client.approvals() });
+}
+
+/**
+ * 审批队列（游标分页）：返回所有已加载页的合并列表。
+ *
+ * 单独用一个 key（`["approvals","queue",limit]`），避免与 `useApprovals`
+ * 的单页缓存互相覆盖；`useDecideApproval` 失效 `["approvals"]` 时会连带
+ * 失效这里的所有页。
+ */
+export function useApprovalQueue(client: ApiClient, limit = 50) {
+  const queue = useInfiniteQuery({
+    queryKey: queryKeys.approvalQueue(limit),
+    queryFn: ({ pageParam }) => client.approvals({ cursor: pageParam, limit }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+  });
+
+  const items = queue.data?.pages.flatMap((page) => page.items) ?? [];
+  const totalLoaded = items.length;
+  return { ...queue, items, totalLoaded, hasMore: queue.hasNextPage };
 }
 
 export function useApprovalDetail(client: ApiClient, id: string | null, kind: ApprovalKind) {

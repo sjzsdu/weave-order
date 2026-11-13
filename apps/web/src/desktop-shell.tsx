@@ -83,6 +83,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   }, [router]);
 
   const pending = approvals.data?.items.length ?? 0;
+  const pendingMore = approvals.data?.hasMore === true;
+  const pendingLabel = pendingMore ? `${pending}+` : pending;
   const name = me.data?.name ?? me.data?.subject ?? "当前成员";
   const tenant = me.data?.tenant.name;
 
@@ -111,7 +113,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                   )}
                 >
                   {item.label}
-                  {item.key === "2" && pending > 0 && <Badge tone="danger">{pending}</Badge>}
+                  {item.key === "2" && pending > 0 && <Badge tone="danger">{pendingLabel}</Badge>}
                 </Link>
               );
             })}
@@ -161,7 +163,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
-        3 个业务窗口 + 1 个管理面 · 打印是全局抽屉 · 前端只读展示 + 发起审批，金额与阈值一律后端校验。
+        3 个业务窗口 + 1 个管理面 · 打印是全局抽屉 · 前端只读展示 +
+        发起审批，金额与阈值一律后端校验。
       </footer>
 
       <PrintDrawer open={printOpen} onClose={() => setPrintOpen(false)} />

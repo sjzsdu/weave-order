@@ -32,8 +32,11 @@ import type {
   Unit,
 } from "@weave-order/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { approvalListConditions } from "./approval-list";
+import type { ApprovalListQuery } from "./approval-list";
 import {
   assertCanApprove,
   assertCanEditQuote,
@@ -1274,20 +1277,28 @@ export class QuoteService {
   /**
    * 审批队列 / 全景的只读视图：把账本里的报价单映射成 ApprovalItem。
    * 数据范围按客户负责人过滤（报价本身没有归属人列）。
+   *
+   * 过滤（租户 + 数据范围 + DRAFT）全部在 SQL 里完成，`limit` / `after`
+   * 才生效：先过滤再分页，翻页时不会出现条数忽多忽少。
    */
-  async list(limit = 50, ctx?: KernelContext): Promise<ApprovalItem[]> {
+  async list(
+    limit = 50,
+    ctx?: KernelContext,
+    query: ApprovalListQuery = {},
+  ): Promise<ApprovalItem[]> {
+    const conditions: SQL[] = [eq(quotes.tenantId, this.tenantId)];
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) conditions.push(scope);
+    if (query.pendingOnly) conditions.push(eq(quotes.status, "DRAFT"));
+    conditions.push(...approvalListConditions(quotes.createdAt, quotes.id, query));
+
     const rows = (
       await this.db
         .select({ quote: quotes })
         .from(quotes)
         .innerJoin(customers, eq(customers.id, quotes.customerId))
-        .where(
-          and(
-            eq(quotes.tenantId, this.tenantId),
-            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
-          ),
-        )
-        .orderBy(desc(quotes.createdAt))
+        .where(and(...conditions))
+        .orderBy(desc(quotes.createdAt), desc(quotes.id))
         .limit(limit)
     ).map((entry) => entry.quote);
     if (rows.length === 0) return [];

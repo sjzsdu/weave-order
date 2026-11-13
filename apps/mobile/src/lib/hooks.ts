@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Taro from "@tarojs/taro";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@weave-order/core";
 import type { ApprovalQueue, Customer, PanoramaSnapshot } from "@weave-order/schema";
 import { api, offlineQueue, syncQueue } from "./runtime";
@@ -45,6 +45,19 @@ export function useApprovals() {
       : {}),
     staleTime: 15_000,
   });
+}
+
+/** 审批队列（游标分页）：审批页用「加载更多」逐步取，不再一次只看首页。 */
+export function useApprovalQueue(pageSize = 30) {
+  const queue = useInfiniteQuery({
+    queryKey: queryKeys.approvalQueue(pageSize),
+    queryFn: ({ pageParam }) => api.approvals({ cursor: pageParam, limit: pageSize }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+  });
+  const items = queue.data?.pages.flatMap((page) => page.items) ?? [];
+  return { ...queue, items, hasMore: queue.hasNextPage };
 }
 
 export function useCustomers(limit = 50) {

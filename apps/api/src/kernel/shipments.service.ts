@@ -3,8 +3,11 @@ import type { Db } from "@weave-order/db";
 import { ApprovalItem, CreateSampleShipmentInput } from "@weave-order/schema";
 import type { SampleShipment, SampleShipmentItem } from "@weave-order/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { approvalListConditions } from "./approval-list";
+import type { ApprovalListQuery } from "./approval-list";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
 import { ownerScopeFilter } from "./data-scope";
@@ -233,20 +236,29 @@ export class ShipmentService {
   /**
    * 审批队列 / 全景的只读视图：把账本里的寄样单映射成 ApprovalItem。
    * 寄样单归属随客户，按客户负责人过滤。
+   *
+   * 同 `quotes.list`：数据范围与 DRAFT 过滤先于 `limit` / `after`。
    */
-  async list(limit = 50, ctx?: KernelContext): Promise<ApprovalItem[]> {
+  async list(
+    limit = 50,
+    ctx?: KernelContext,
+    query: ApprovalListQuery = {},
+  ): Promise<ApprovalItem[]> {
+    const conditions: SQL[] = [eq(sampleShipments.tenantId, this.tenantId)];
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) conditions.push(scope);
+    if (query.pendingOnly) conditions.push(eq(sampleShipments.status, "DRAFT"));
+    conditions.push(
+      ...approvalListConditions(sampleShipments.createdAt, sampleShipments.id, query),
+    );
+
     const rows = (
       await this.db
         .select({ shipment: sampleShipments })
         .from(sampleShipments)
         .innerJoin(customers, eq(customers.id, sampleShipments.customerId))
-        .where(
-          and(
-            eq(sampleShipments.tenantId, this.tenantId),
-            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
-          ),
-        )
-        .orderBy(desc(sampleShipments.createdAt))
+        .where(and(...conditions))
+        .orderBy(desc(sampleShipments.createdAt), desc(sampleShipments.id))
         .limit(limit)
     ).map((entry) => entry.shipment);
     if (rows.length === 0) return [];
