@@ -21,9 +21,45 @@ import {
 import { PLATFORM_DATABASE } from "../db/database.provider";
 import type { PlatformDb } from "../db/database.provider";
 import type { PlatformActor } from "../auth/auth.service";
-import { conflict, notFound } from "../domain/errors";
+import { conflict, forbidden, invalid, notFound } from "../domain/errors";
 import { AuditService } from "./audit.service";
 import { currentMonthPeriod, toJson } from "./util";
+
+/**
+ * 密钥引用白名单：只接受 LiteLLM 约定的密钥变量名
+ * （`LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`，见 `.env.example` 与 docs/track-b-agents.md）。
+ *
+ * 其它任何名字（`DATABASE_URL`、`CASDOOR_*_SECRET`…）一律拒绝：
+ * 绝不执行 `process.env[用户输入]`，否则最低权限账号可以把控制面进程的全部密钥发到任意地址。
+ * 租户端 `apps/api/src/platform/llm.ts` 用同一规则（两包不共享源码，改一处须同步另一处）。
+ */
+export const LLM_KEY_REF_PATTERN = /^LITELLM_(MASTER|TENANT)_KEY(?:_[A-Za-z0-9]+)*$/;
+
+export function isAllowedLlmKeyRef(name: string): boolean {
+  return LLM_KEY_REF_PATTERN.test(name);
+}
+
+/** 只接受 http(s) 地址，返回 origin（协议://主机[:端口]），用于白名单比较。 */
+function originOf(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/** 逗号分隔的地址列表（环境变量）逐项取 origin。 */
+function originsOfList(value: string | undefined): string[] {
+  if (!value) return [];
+  const origins: string[] = [];
+  for (const part of value.split(",")) {
+    const origin = originOf(part.trim());
+    if (origin) origins.push(origin);
+  }
+  return origins;
+}
 
 @Injectable()
 export class SettingsService {
@@ -104,47 +140,121 @@ export class SettingsService {
     return mapLlm(row);
   }
 
-  /** 测试连接：只验证可达性，不发送业务数据、不记录 Key。 */
+  /**
+   * 测试连接：只验证可达性，不发送业务数据、不记录 Key。
+   *
+   * 安全约束（WAN-94）：
+   * - 目标地址只能来自服务端配置：`llm_settings` 已保存的行、`LITELLM_BASE_URL`
+   *   或运维显式放行的 `LLM_ALLOWED_BASE_URLS`，白名单外一律 403；
+   * - `keyRef` 必须命中受控枚举，禁止 `process.env[用户输入]`，否则 403（不发出任何出网请求）；
+   * - 每次尝试（含被拒绝的）都写审计：谁、目标地址、命中与否，不含密钥。
+   */
   async testLlm(
-    baseUrl?: string,
-    keyRef?: string,
+    actor: PlatformActor,
+    input: { baseUrl?: unknown; keyRef?: unknown } = {},
   ): Promise<{
     ok: boolean;
     status: number | null;
     latencyMs: number;
     message: string;
   }> {
-    const globalRows = await this.db
-      .select()
-      .from(llmSettings)
-      .where(and(eq(llmSettings.scope, "GLOBAL"), isNull(llmSettings.tenantId)))
-      .limit(1);
-    const url = (baseUrl ?? globalRows[0]?.baseUrl ?? process.env.LITELLM_BASE_URL ?? "").replace(
-      /\/$/,
+    if (input.baseUrl !== undefined && typeof input.baseUrl !== "string") {
+      throw invalid("baseUrl 必须是字符串");
+    }
+    if (input.keyRef !== undefined && typeof input.keyRef !== "string") {
+      throw invalid("keyRef 必须是字符串");
+    }
+    const baseUrl = input.baseUrl;
+    const keyRef = input.keyRef;
+
+    if (keyRef !== undefined && !isAllowedLlmKeyRef(keyRef)) {
+      await this.recordLlmTest(actor, baseUrl?.slice(0, 128) ?? null, {
+        ok: false,
+        status: null,
+        latencyMs: 0,
+        message: `keyRef 不在白名单内，未发起请求`,
+      });
+      throw forbidden(
+        `keyRef "${keyRef.slice(0, 128)}" 不在白名单内（只允许 LITELLM_MASTER_KEY / LITELLM_TENANT_KEY_*）`,
+      );
+    }
+
+    const rows = await this.db.select().from(llmSettings);
+    const globalRow = rows.find((row) => row.scope === "GLOBAL" && row.tenantId === null);
+    const allowedOrigins = new Set<string>();
+    for (const row of rows) {
+      const origin = row.baseUrl ? originOf(row.baseUrl) : null;
+      if (origin) allowedOrigins.add(origin);
+    }
+    for (const origin of [
+      ...originsOfList(process.env.LITELLM_BASE_URL),
+      ...originsOfList(process.env.LLM_ALLOWED_BASE_URLS),
+    ]) {
+      allowedOrigins.add(origin);
+    }
+
+    const requested = (baseUrl ?? globalRow?.baseUrl ?? process.env.LITELLM_BASE_URL ?? "").replace(
+      /\/+$/,
       "",
     );
-    if (!url) return { ok: false, status: null, latencyMs: 0, message: "未配置 LLM 网关地址" };
+
+    if (baseUrl) {
+      const origin = originOf(baseUrl);
+      if (!origin || !allowedOrigins.has(origin)) {
+        await this.recordLlmTest(actor, baseUrl.slice(0, 128), {
+          ok: false,
+          status: null,
+          latencyMs: 0,
+          message: "目标地址不在白名单内，未发起请求",
+        });
+        throw forbidden(
+          "测试目标地址不在白名单内（仅允许 llm_settings 已配置地址 / LITELLM_BASE_URL / LLM_ALLOWED_BASE_URLS）",
+        );
+      }
+    }
+
+    if (!requested)
+      return { ok: false, status: null, latencyMs: 0, message: "未配置 LLM 网关地址" };
     const key = keyRef ? process.env[keyRef] : process.env.LITELLM_MASTER_KEY;
     const started = Date.now();
     try {
-      const response = await fetch(`${url}/health/liveliness`, {
+      const response = await fetch(`${requested}/health/liveliness`, {
         headers: key ? { Authorization: `Bearer ${key}` } : undefined,
         signal: AbortSignal.timeout(4000),
       });
-      return {
+      const result = {
         ok: response.ok,
         status: response.status,
         latencyMs: Date.now() - started,
         message: response.ok ? "网关可达" : `网关返回 ${response.status}`,
       };
+      await this.recordLlmTest(actor, requested.slice(0, 128), result);
+      return result;
     } catch (cause) {
-      return {
+      const result = {
         ok: false,
         status: null,
         latencyMs: Date.now() - started,
         message: cause instanceof Error ? cause.message : "连接失败",
       };
+      await this.recordLlmTest(actor, requested.slice(0, 128), result);
+      return result;
     }
+  }
+
+  /** 连通性测试审计：记录谁、目标地址、命中与否；绝不记录密钥本身。 */
+  private async recordLlmTest(
+    actor: PlatformActor,
+    targetId: string | null,
+    outcome: { ok: boolean; status: number | null; latencyMs: number; message: string },
+  ): Promise<void> {
+    await this.audit.record(actor, {
+      action: "LLM_GATEWAY_TESTED",
+      targetType: "llm_gateway",
+      targetId,
+      after: outcome,
+      reason: "LLM 网关连通性测试",
+    });
   }
 
   async llmStats() {
