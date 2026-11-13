@@ -365,10 +365,9 @@ export class UsageService {
     monthlyBudget: number | null,
     now = new Date(),
   ): Promise<LlmBudgetStatus> {
-    const [dailyTokens, monthlyTokens] = await Promise.all([
-      this.dailyTokens(now),
-      this.monthlyTokens(now),
-    ]);
+    // 顺序执行：用量统计可能跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
+    const dailyTokens = await this.dailyTokens(now);
+    const monthlyTokens = await this.monthlyTokens(now);
     return LlmBudgetStatus.parse({
       period: now.toISOString().slice(0, 7),
       dailyTokens,

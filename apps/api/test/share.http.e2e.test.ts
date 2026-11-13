@@ -119,6 +119,12 @@ describe("报价链接 HTTP（e2e）", () => {
     expect(page.view.totalAmount).toBe(570000);
     expect(page.view.lines).toHaveLength(1);
 
+    // 同一访客在去重窗口内重复刷新：仍然 200，但事件表只落一行 VIEWED。
+    const repeatView = await fetch(`${baseUrl}/api/public/quotes/${data.token}`, {
+      headers: { "x-forwarded-for": "198.51.100.8", "user-agent": "e3-http-test" },
+    });
+    expect(repeatView.status).toBe(200);
+
     const wrongTail = await fetch(`${baseUrl}/api/public/quotes/${data.token}/accept`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -207,6 +213,30 @@ describe("报价链接 HTTP（e2e）", () => {
       body: JSON.stringify({}),
     });
     expect(response.status).toBeGreaterThanOrEqual(400);
+  }, 40_000);
+
+  it("同一 IP 连续超阈值请求返回 429 + RATE_LIMITED", async (ctx) => {
+    if (!available) ctx.skip();
+    // 独占 IP（随机 IPv6），避免共享 Redis 里其他用例 / 重复运行的计数干扰。
+    const ip = `2001:db8::${Math.random().toString(16).slice(2, 10)}`;
+    const token = `not-a-valid-token-${Math.random().toString(36).slice(2)}`;
+    const url = `${baseUrl}/api/public/quotes/${token}/accept`;
+    const request = () =>
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-forwarded-for": ip },
+        body: "{}",
+      });
+
+    // accept 的 IP 阈值是 10/分钟：前 10 次进入业务逻辑（非法 token → 404），第 11 次 429。
+    for (let index = 0; index < 10; index += 1) {
+      expect((await request()).status).toBe(404);
+    }
+    const blocked = await request();
+    expect(blocked.status).toBe(429);
+    const body = await json(blocked);
+    expect((body.error as { code: string }).code).toBe("RATE_LIMITED");
+    expect((body.error as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(0);
   }, 40_000);
 
   it("兼容移动端 T0 契约：POST /api/quote-shares 返回裸 CreatedQuoteShare，GET 返回访问时间线", async (ctx) => {

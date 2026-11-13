@@ -27,7 +27,7 @@ import type {
   QuoteLinkErrorCode,
   QuoteShare as QuoteShareRecord,
 } from "@weave-order/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
@@ -40,6 +40,13 @@ type EventRow = typeof quoteShareEvents.$inferSelect;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_QUOTE_STATUS = "SENT";
+/**
+ * 同一 (链接, IP) 的 VIEWED 去重窗口。
+ * 机器人刷页面时最多每窗口写一行，分享面板的「查看次数」语义变为「访问次数」，
+ * 但防增长是硬要求：事件表不能让公网请求无限放大。
+ */
+const VIEW_DEDUP_WINDOW_SECONDS = 10 * 60;
+const MAX_QUESTIONS_PER_SHARE = 20;
 
 /** 客户侧可读的链接错误。控制器据此映射 400/410，不暴露内部原因。 */
 export class QuoteLinkError extends Error {
@@ -97,6 +104,15 @@ function safeQrUrl(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * `max(timestamptz)` 经 raw `sql<>` 片段返回时是字符串（Drizzle 不会对自定义表达式套类型映射），
+ * 而普通 select 返回 Date。两种都归一成 ISO，避免统计接口因为返回通道不同而崩。
+ */
+function isoFromAggregate(value: Date | string | null): string | null {
+  if (value === null) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 /**
@@ -252,8 +268,11 @@ export class ShareService {
       .from(quoteShares)
       .where(and(eq(quoteShares.quoteId, quoteId), eq(quoteShares.tenantId, this.tenantId)))
       .orderBy(desc(quoteShares.createdAt));
-    const stats = await Promise.all(shareRows.map((row) => this.statsForShare(row)));
-    return QuoteShareStatsList.parse({ quoteId, shares: stats });
+    const stats = await this.statsForShares(shareRows);
+    return QuoteShareStatsList.parse({
+      quoteId,
+      shares: shareRows.map((row) => stats.get(row.id) as QuoteShareStats),
+    });
   }
 
   /**
@@ -283,13 +302,13 @@ export class ShareService {
         .where(eq(quoteShares.tenantId, this.tenantId))
         .orderBy(desc(quoteShares.createdAt));
     }
-    const stats = await Promise.all(rows.map((row) => this.statsForShare(row)));
+    const stats = await this.statsForShares(rows);
     return {
-      shares: rows.map((row, index) => ({
+      shares: rows.map((row) => ({
         share: this.mapShare(row),
         url: "",
-        viewCount: stats[index]?.viewCount ?? 0,
-        lastViewedAt: stats[index]?.lastViewedAt ?? null,
+        viewCount: stats.get(row.id)?.viewCount ?? 0,
+        lastViewedAt: stats.get(row.id)?.lastViewedAt ?? null,
       })),
     };
   }
@@ -361,7 +380,7 @@ export class ShareService {
     const page = await this.buildCustomerPage(share);
     // 打印页只需要读取同一份客户视图，不应重复计一次浏览。
     if (options.track !== false) {
-      await this.recordEvent(shareId, "VIEWED", null, visitor);
+      await this.recordViewEvent(shareId, visitor);
     }
     return page;
   }
@@ -577,6 +596,30 @@ export class ShareService {
     return row;
   }
 
+  /**
+   * VIEWED 去重：同一 `(shareId, ipHash)` 在窗口内只落一行。
+   *
+   * 用一条 `INSERT ... SELECT ... WHERE NOT EXISTS` 完成判定与写入，
+   * 避免「先查后插」在并发刷页时双双通过。没有 IP 的请求（如内网探针）
+   * 仍按 `ipHash IS NULL` 归为同一访客，同样受窗口约束。
+   */
+  private async recordViewEvent(shareId: string, visitor: ShareVisitor): Promise<void> {
+    const ipHash = visitor.ip ? hashAnonymous(visitor.ip, this.options.secret) : null;
+    const uaHash = visitor.userAgent ? hashAnonymous(visitor.userAgent, this.options.secret) : null;
+    await this.db.execute(sql`
+      INSERT INTO quote_share_events (tenant_id, share_id, event, ip_hash, ua_hash)
+      SELECT ${this.tenantId}::uuid, ${shareId}::uuid, 'VIEWED', ${ipHash}::varchar, ${uaHash}::varchar
+      WHERE NOT EXISTS (
+        SELECT 1 FROM quote_share_events e
+        WHERE e.tenant_id = ${this.tenantId}::uuid
+          AND e.share_id = ${shareId}::uuid
+          AND e.event = 'VIEWED'
+          AND e.ip_hash IS NOT DISTINCT FROM ${ipHash}::varchar
+          AND e.created_at > now() - make_interval(secs => ${VIEW_DEDUP_WINDOW_SECONDS})
+      )
+    `);
+  }
+
   private async latestEvent(shareId: string, event: EventRow["event"]): Promise<EventRow | null> {
     const rows = await this.db
       .select()
@@ -594,51 +637,144 @@ export class ShareService {
   }
 
   private async statsForShare(share: ShareRow): Promise<QuoteShareStats> {
-    const events = await this.db
-      .select()
+    const stats = await this.statsForShares([share]);
+    const result = stats.get(share.id);
+    if (!result) {
+      throw new KernelError("KERNEL_REJECTED", "分享统计聚合未返回记录", {
+        reason: "STATS_AGGREGATION_EMPTY",
+        resourceType: "quote_share",
+        resourceId: share.id,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * 分享面板统计：整批链接一次聚合，事件表只做 `count(*) filter (...)`。
+   *
+   * 改写前会把每条链接的全部事件读进内存再 filter，10 万条事件 = 10 万行 × 链接数；
+   * 现在无论事件多少，每个链接固定返回一行聚合结果，问题列表用窗口函数截断到 20 条。
+   */
+  private async statsForShares(shares: ShareRow[]): Promise<Map<string, QuoteShareStats>> {
+    const result = new Map<string, QuoteShareStats>();
+    if (shares.length === 0) return result;
+
+    const shareIds = shares.map((share) => share.id);
+    const aggregated = await this.db
+      .select({
+        shareId: quoteShareEvents.shareId,
+        viewCount: sql<number>`(count(*) filter (where ${quoteShareEvents.event} = 'VIEWED'))::int`,
+        pdfDownloadCount: sql<number>`(count(*) filter (
+          where ${quoteShareEvents.event} = 'PDF_DOWNLOADED'
+        ))::int`,
+        questionCount: sql<number>`(count(*) filter (
+          where ${quoteShareEvents.event} = 'QUESTION_ASKED'
+        ))::int`,
+        acceptedAt: sql<Date | string | null>`max(${quoteShareEvents.createdAt}) filter (
+          where ${quoteShareEvents.event} = 'ACCEPTED'
+        )`,
+        lastViewedAt: sql<Date | string | null>`max(${quoteShareEvents.createdAt}) filter (
+          where ${quoteShareEvents.event} = 'VIEWED'
+        )`,
+        lastActivityAt: sql<Date | string | null>`max(${quoteShareEvents.createdAt})`,
+      })
       .from(quoteShareEvents)
       .where(
-        and(eq(quoteShareEvents.shareId, share.id), eq(quoteShareEvents.tenantId, this.tenantId)),
+        and(
+          eq(quoteShareEvents.tenantId, this.tenantId),
+          inArray(quoteShareEvents.shareId, shareIds),
+        ),
       )
-      .orderBy(desc(quoteShareEvents.createdAt));
+      .groupBy(quoteShareEvents.shareId);
 
-    const views = events.filter((event) => event.event === "VIEWED");
-    const visitors = new Set(views.map((event) => event.ipHash).filter((hash) => hash !== null));
-    const accepted = events.find((event) => event.event === "ACCEPTED") ?? null;
-    const questions = events
-      .filter((event) => event.event === "QUESTION_ASKED")
-      .map((event) => {
-        const meta = jsonObject(event.meta);
-        const message = asString(meta?.message);
-        if (!message) return null;
-        return {
-          eventId: event.id,
-          message,
-          lineIndex: asNumber(meta?.lineIndex),
-          createdAt: toIso(event.createdAt),
-        };
+    // 独立访客单独查：`count(distinct ip_hash)` 会让整批行的排序键变成 ip_hash，
+    // 与其余计数混在一条语句里会把 10 万行全部外部排序；拆开后走
+    // `(tenant_id, share_id, event, ip_hash)` 索引，内存和耗时都可控。
+    const uniqueRows = await this.db
+      .select({
+        shareId: quoteShareEvents.shareId,
+        uniqueVisitors: sql<number>`(count(distinct ${quoteShareEvents.ipHash}))::int`,
       })
-      .filter((question): question is NonNullable<typeof question> => question !== null)
-      .slice(0, 20);
+      .from(quoteShareEvents)
+      .where(
+        and(
+          eq(quoteShareEvents.tenantId, this.tenantId),
+          inArray(quoteShareEvents.shareId, shareIds),
+          eq(quoteShareEvents.event, "VIEWED"),
+          isNotNull(quoteShareEvents.ipHash),
+        ),
+      )
+      .groupBy(quoteShareEvents.shareId);
 
-    return QuoteShareStats.parse({
-      shareId: share.id,
-      quoteId: share.quoteId,
-      version: share.version,
-      url: null,
-      createdAt: toIso(share.createdAt),
-      expiresAt: toIso(share.expiresAt),
-      revokedAt: share.revokedAt ? toIso(share.revokedAt) : null,
-      requirePhoneTail: share.requirePhoneTail,
-      allowPdf: share.allowPdf,
-      viewCount: views.length,
-      uniqueVisitors: visitors.size,
-      pdfDownloadCount: events.filter((event) => event.event === "PDF_DOWNLOADED").length,
-      questionCount: events.filter((event) => event.event === "QUESTION_ASKED").length,
-      acceptedAt: accepted ? toIso(accepted.createdAt) : null,
-      lastViewedAt: views[0] ? toIso(views[0].createdAt) : null,
-      lastActivityAt: events[0] ? toIso(events[0].createdAt) : null,
-      questions,
-    });
+    const ranked = this.db
+      .select({
+        id: quoteShareEvents.id,
+        shareId: quoteShareEvents.shareId,
+        meta: quoteShareEvents.meta,
+        createdAt: quoteShareEvents.createdAt,
+        rank: sql<number>`row_number() over (
+          partition by ${quoteShareEvents.shareId}
+          order by ${quoteShareEvents.createdAt} desc, ${quoteShareEvents.id} desc
+        )`.as("rank"),
+      })
+      .from(quoteShareEvents)
+      .where(
+        and(
+          eq(quoteShareEvents.tenantId, this.tenantId),
+          inArray(quoteShareEvents.shareId, shareIds),
+          eq(quoteShareEvents.event, "QUESTION_ASKED"),
+        ),
+      )
+      .as("ranked_questions");
+
+    const questionRows = await this.db
+      .select()
+      .from(ranked)
+      .where(sql`${ranked.rank} <= ${MAX_QUESTIONS_PER_SHARE}`)
+      .orderBy(desc(ranked.createdAt));
+
+    const questionsByShare = new Map<string, QuoteShareStats["questions"]>();
+    for (const row of questionRows) {
+      const meta = jsonObject(row.meta);
+      const message = asString(meta?.message);
+      if (!message) continue;
+      const list = questionsByShare.get(row.shareId) ?? [];
+      list.push({
+        eventId: row.id,
+        message,
+        lineIndex: asNumber(meta?.lineIndex),
+        createdAt: toIso(row.createdAt),
+      });
+      questionsByShare.set(row.shareId, list);
+    }
+
+    const aggregateByShare = new Map(aggregated.map((row) => [row.shareId, row]));
+    const uniqueByShare = new Map(uniqueRows.map((row) => [row.shareId, row.uniqueVisitors]));
+    for (const share of shares) {
+      const aggregate = aggregateByShare.get(share.id);
+      result.set(
+        share.id,
+        QuoteShareStats.parse({
+          shareId: share.id,
+          quoteId: share.quoteId,
+          version: share.version,
+          url: null,
+          createdAt: toIso(share.createdAt),
+          expiresAt: toIso(share.expiresAt),
+          revokedAt: share.revokedAt ? toIso(share.revokedAt) : null,
+          requirePhoneTail: share.requirePhoneTail,
+          allowPdf: share.allowPdf,
+          viewCount: aggregate?.viewCount ?? 0,
+          uniqueVisitors: uniqueByShare.get(share.id) ?? 0,
+          pdfDownloadCount: aggregate?.pdfDownloadCount ?? 0,
+          questionCount: aggregate?.questionCount ?? 0,
+          acceptedAt: isoFromAggregate(aggregate?.acceptedAt ?? null),
+          lastViewedAt: isoFromAggregate(aggregate?.lastViewedAt ?? null),
+          lastActivityAt: isoFromAggregate(aggregate?.lastActivityAt ?? null),
+          questions: questionsByShare.get(share.id) ?? [],
+        }),
+      );
+    }
+    return result;
   }
 }

@@ -18,9 +18,10 @@ import type { QuoteLinkErrorCode } from "@weave-order/schema";
 import { QuoteLinkError } from "../kernel";
 import type { Kernel } from "../kernel";
 import type { HumanActorService } from "./human-actor.service";
-import { HUMAN_ACTOR, KERNEL, PUBLIC_SHARE } from "./tokens";
+import { HUMAN_ACTOR, KERNEL, PUBLIC_RATE_LIMIT, PUBLIC_SHARE } from "./tokens";
 import type { PublicShareService } from "../shares/public-share.service";
 import type { ShareVisitor } from "../kernel/shares.service";
+import { PublicRateLimitService } from "../platform/rate-limit";
 
 const STATUS_BY_CODE: Record<QuoteLinkErrorCode, number> = {
   INVALID_LINK: HttpStatus.NOT_FOUND,
@@ -64,9 +65,12 @@ function linkFailure(error: unknown): never {
   throw error;
 }
 
+function clientIp(ip: string | undefined, forwarded: string | undefined): string | undefined {
+  return forwarded?.split(",")[0]?.trim() || ip;
+}
+
 function visitor(ip: string | undefined, forwarded: string | undefined, ua: string | undefined) {
-  const realIp = forwarded?.split(",")[0]?.trim() || ip;
-  return { ip: realIp, userAgent: ua } satisfies ShareVisitor;
+  return { ip: clientIp(ip, forwarded), userAgent: ua } satisfies ShareVisitor;
 }
 
 /**
@@ -77,7 +81,35 @@ function visitor(ip: string | undefined, forwarded: string | undefined, ua: stri
  */
 @Controller("api/public/quotes")
 export class PublicQuoteController {
-  constructor(@Inject(PUBLIC_SHARE) private readonly shares: PublicShareService) {}
+  constructor(
+    @Inject(PUBLIC_SHARE) private readonly shares: PublicShareService,
+    @Inject(PUBLIC_RATE_LIMIT) private readonly limits: PublicRateLimitService,
+  ) {}
+
+  /**
+   * IP + token 双维度限流；超限直接 429，不进入租户会话（不占用连接池）。
+   * 阈值见 `platform/rate-limit.ts` 的 `PUBLIC_QUOTE_RATE_LIMITS`。
+   */
+  private async enforce(
+    action: "view" | "accept" | "questions" | "pdf",
+    token: string,
+    ip: string | undefined,
+    forwarded: string | undefined,
+  ): Promise<void> {
+    const denial = await this.limits.check(action, clientIp(ip, forwarded), token);
+    if (!denial) return;
+    throw new HttpException(
+      {
+        ok: false,
+        error: {
+          code: "RATE_LIMITED",
+          message: "请求过于频繁，请稍后再试",
+          retryAfterSeconds: denial.retryAfterSeconds,
+        },
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
 
   @Get(":token")
   @Header("Cache-Control", "no-store")
@@ -89,6 +121,7 @@ export class PublicQuoteController {
     @Headers("x-forwarded-for") forwarded: string | undefined,
     @Headers("user-agent") ua: string | undefined,
   ) {
+    await this.enforce("view", token, ip, forwarded);
     try {
       const data = await this.shares.view(token, visitor(ip, forwarded, ua), {
         track: track !== "0",
@@ -108,6 +141,7 @@ export class PublicQuoteController {
     @Headers("x-forwarded-for") forwarded: string | undefined,
     @Headers("user-agent") ua: string | undefined,
   ) {
+    await this.enforce("accept", token, ip, forwarded);
     try {
       const data = await this.shares.accept(token, body ?? {}, visitor(ip, forwarded, ua));
       return { ok: true, data };
@@ -125,6 +159,7 @@ export class PublicQuoteController {
     @Headers("x-forwarded-for") forwarded: string | undefined,
     @Headers("user-agent") ua: string | undefined,
   ) {
+    await this.enforce("questions", token, ip, forwarded);
     try {
       const data = await this.shares.ask(token, body ?? {}, visitor(ip, forwarded, ua));
       return { ok: true, data };
@@ -142,6 +177,7 @@ export class PublicQuoteController {
     @Headers("x-forwarded-for") forwarded: string | undefined,
     @Headers("user-agent") ua: string | undefined,
   ) {
+    await this.enforce("pdf", token, ip, forwarded);
     try {
       await this.shares.recordPdf(token, visitor(ip, forwarded, ua));
       return;

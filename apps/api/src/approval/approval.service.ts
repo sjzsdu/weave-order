@@ -77,10 +77,9 @@ export function createApprovalService(kernel: Kernel) {
   return {
     /** 审批队列：从账本读出可见范围内的 DRAFT 单据（报价 + 寄样），纯只读聚合。 */
     async listPending(ctx?: KernelContext): Promise<ApprovalQueue> {
-      const [quotes, shipments] = await Promise.all([
-        kernel.quotes.list(100, ctx),
-        kernel.shipments.list(100, ctx),
-      ]);
+      // 顺序执行：审批窗口跑在一条独占的租户连接上，同一 client 并发 query 已被 pg 弃用。
+      const quotes = await kernel.quotes.list(100, ctx);
+      const shipments = await kernel.shipments.list(100, ctx);
       const items = [...quotes, ...shipments]
         .filter((entry) => entry.pending)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -92,19 +91,16 @@ export function createApprovalService(kernel: Kernel) {
      * 只读，不落账；金额与风险全部由后端给出，前端只展示。
      */
     async detail(id: string, kind: ApprovalKind, ctx?: KernelContext): Promise<Detail | null> {
-      const [quotes, shipments] = await Promise.all([
-        kernel.quotes.list(100, ctx),
-        kernel.shipments.list(100, ctx),
-      ]);
+      // 顺序执行，避免单连接租户会话上同一 client 并发 query。
+      const quotes = await kernel.quotes.list(100, ctx);
+      const shipments = await kernel.shipments.list(100, ctx);
       const item = [...quotes, ...shipments].find(
         (entry) => entry.id === id && entry.kind === kind,
       );
       if (!item) return null;
 
-      const [customer, audit] = await Promise.all([
-        kernel.customers.getById(item.customerId, ctx).catch(() => null),
-        kernel.audit.list(20),
-      ]);
+      const customer = await kernel.customers.getById(item.customerId, ctx).catch(() => null);
+      const audit = await kernel.audit.list(20);
 
       if (kind === "quote") {
         const view = await kernel.quotes.getApprovalView(id, ctx).catch(() => null);
@@ -309,13 +305,12 @@ export function createApprovalService(kernel: Kernel) {
 
     /** 业务全景（只读）：一次拉取，前端纯展示。 */
     async panorama(ctx?: KernelContext): Promise<Panorama> {
-      const [customers, samples, quotes, shipments, audit] = await Promise.all([
-        kernel.customers.list(100, ctx),
-        kernel.search.listSamples(100, ctx),
-        kernel.quotes.list(100, ctx),
-        kernel.shipments.list(100, ctx),
-        kernel.audit.list(20),
-      ]);
+      // 顺序执行，避免单连接租户会话上同一 client 并发 query。
+      const customers = await kernel.customers.list(100, ctx);
+      const samples = await kernel.search.listSamples(100, ctx);
+      const quotes = await kernel.quotes.list(100, ctx);
+      const shipments = await kernel.shipments.list(100, ctx);
+      const audit = await kernel.audit.list(20);
       const items = [...quotes, ...shipments].sort((a, b) =>
         b.createdAt.localeCompare(a.createdAt),
       );

@@ -413,7 +413,11 @@ export class PricingService {
     keys: readonly PricingKey[],
     context: PricingContext,
   ): Promise<Record<string, ResolvedPricingValue>> {
-    const entries = await Promise.all(keys.map((key) => this.resolve(key, context)));
+    // 顺序执行：调用方可能跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
+    const entries: ResolvedPricingValue[] = [];
+    for (const key of keys) {
+      entries.push(await this.resolve(key, context));
+    }
     return Object.fromEntries(entries.map((entry) => [entry.key, entry]));
   }
 
