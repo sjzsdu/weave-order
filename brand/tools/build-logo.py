@@ -100,7 +100,8 @@ def mark_mono_svg(color=INK, knockout=False):
     knockout=True 时字形为透明镂空（叠在任意底色上都可读），用于反白场景。
     """
     serif = Face(SERIF, index=2)
-    glyph = glyph_block(serif, "织", 32, 32.4, 40.0, "#000")
+    # 镂空版用纯黑建蒙版，实心版直接画米白字
+    glyph = glyph_block(serif, "织", 32, 32.4, 40.0, "#000" if knockout else PAPER)
     if knockout:
         return (
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">\n'

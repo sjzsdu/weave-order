@@ -81,7 +81,7 @@ Logo 不是抽象的科技图形，而是一枚**织标（woven label）**：衣
 | `logo-wordmark.svg` | 纯字标（无标记），用于窄条、页脚 |
 | `logo-wordmark-inverse.svg` | 纯字标反白 |
 | `favicon.svg` | 浏览器图标（单色版） |
-| `icons/icon-180/192/512.png` | iOS / PWA / 应用图标 |
+| `icons/` | 各端应用图标母版：16 到 1024、`apple-touch-180`、`maskable-192/512` |
 
 文字部分已转为轮廓路径，不依赖字体文件，可在任意环境无损打开。
 
@@ -169,13 +169,41 @@ brand/
 ├── favicon.svg                    浏览器图标
 ├── og-cover.png                   社交分享图 1200 × 630
 ├── preview.html / preview.png     品牌板（Logo、色板、字阶）
-├── icons/                         应用图标 32 / 180 / 192 / 512
+├── icons/                         各尺寸母版（16 到 1024 / apple-touch / maskable）
 └── tools/
     ├── build-logo.py              从字体重新生成全部 SVG
+    ├── build-app-icons.py         按端生成 favicon / PWA / Tauri 图标
     ├── og.html                    OG 图源文件
     └── preview.html               品牌板源文件
 ```
 
-重新生成：`python3 brand/tools/build-logo.py`（需要 `fontTools` 与系统 Noto Serif CJK SC / Noto Sans）。
+重新生成：
+
+```bash
+python3 brand/tools/build-logo.py       # 改 logo 后先跑这个（需 fontTools + 系统 Noto 字体）
+python3 brand/tools/build-app-icons.py  # 再跑这个，把图标同步到所有端（需 Chrome + Pillow）
+```
+
+---
+
+## 9. 各端图标
+
+Logo 只有一个来源，各端图标一律由 `build-app-icons.py` 生成，不要手工导出。
+
+| 端 | 文件 | 规格 | 说明 |
+| -- | ---- | ---- | ---- |
+| 桌面 Web（`apps/web`） | `app/icon.svg`、`app/apple-icon.png`、`app/favicon.ico` | SVG / 180 / ICO 16-256 | Next.js 文件约定，自动注入 `<link rel="icon">` |
+| 平台总管理端（`apps/admin`） | 同上 | 同上 | 与 Web 同源，深色顶栏下仍是同一枚标记 |
+| 客户报价页（`apps/quote`） | 同上 | 同上 | 客户面唯一品牌露出，`robots: noindex` 不影响图标 |
+| 移动端 H5/PWA（`apps/mobile`） | `src/pwa/icons/icon-192/512.png`、`icon-maskable-192/512.png`、`apple-touch-icon-180.png`、`src/pwa/favicon.svg` | 192 / 512 / 180 | manifest 分开声明 `any` 与 `maskable`，不再混用 |
+| 打印代理（`apps/print-agent`） | `src-tauri/icons/32x32.png`、`128x128.png`、`128x128@2x.png`、`icon.ico`、`icon.icns`、`icon.png` | 32 / 128 / 256 / ICO / ICNS / 512 | `tauri.conf.json` 的 `bundle.icon` 已指向这套文件 |
+| 官网（`site/`） | `assets/favicon.svg`、`assets/icons/icon-32/180/192/512.png` | 同上 | 静态站直接引用，无需构建 |
+
+**规则**
+
+- 小尺寸（16 到 32 px）用无针脚单色版，避免针脚糊成一团；48 px 以上才使用完整织标。
+- maskable 图标底色取墨色（与标记同色），字形收在 74% 的安全区内，圆形裁切不会切到笔画。
+- iOS 的 apple-touch-icon 必须不透明：底色墨色、标记占 86%。
+- 小程序图标不在代码里：微信公众平台的「小程序头像」需要手动上传 `brand/icons/icon-512.png`。
 
 官网源文件在 `site/`，预览与部署见 `site/README.md`。

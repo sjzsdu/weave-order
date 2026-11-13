@@ -28,7 +28,7 @@ export function initPwa(): void {
   ensure('meta[name="theme-color"]', () => {
     const meta = document.createElement("meta");
     meta.name = "theme-color";
-    meta.content = "#1f6f5c";
+    meta.content = "#F7F4EE";
     return meta;
   });
   ensure('meta[name="apple-mobile-web-app-capable"]', () => {
@@ -40,7 +40,7 @@ export function initPwa(): void {
   ensure('link[rel="apple-touch-icon"]', () => {
     const link = document.createElement("link");
     link.rel = "apple-touch-icon";
-    link.href = "/icons/icon-192.png";
+    link.href = "/icons/apple-touch-icon-180.png";
     return link;
   });
 
