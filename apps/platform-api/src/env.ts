@@ -33,8 +33,31 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Env {
     const issues = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
     throw new Error(`控制面环境变量非法：\n${issues.join("\n")}`);
   }
-  if (parsed.data.NODE_ENV === "production" && parsed.data.PLATFORM_AUTH_MODE === "dev") {
-    throw new Error("生产环境禁止 PLATFORM_AUTH_MODE=dev；必须使用 Casdoor OIDC（weave-platform）");
+  if (parsed.data.NODE_ENV === "production") {
+    if (parsed.data.PLATFORM_AUTH_MODE === "dev") {
+      throw new Error(
+        "生产环境禁止 PLATFORM_AUTH_MODE=dev；必须使用 Casdoor OIDC（weave-platform）",
+      );
+    }
+    assertProductionDatabaseUrl(env);
   }
   return parsed.data;
+}
+
+/**
+ * 生产门控：控制面库必须显式配置，且不能沿用本地默认值。
+ * 单租户平台数据虽不涉及 RLS，但误连 dev 默认库会直接污染真实账单与审计。
+ */
+export function assertProductionDatabaseUrl(env: NodeJS.ProcessEnv): void {
+  const url = env.PLATFORM_DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "生产环境必须显式配置 PLATFORM_DATABASE_URL（控制面独立库），不能使用本地默认值",
+    );
+  }
+  if (url === DEFAULT_PLATFORM_DATABASE_URL) {
+    throw new Error(
+      "生产环境禁止使用本地默认 PLATFORM_DATABASE_URL（weave:weave@localhost/weave_platform）",
+    );
+  }
 }

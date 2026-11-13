@@ -184,8 +184,15 @@ pnpm --filter @weave-order/admin dev          # :3003
 
 ## 10. 已知边界 / 后续
 
+**评审已收口（WAN-89 Review）**
+
+- `PLATFORM_DATABASE_URL` 已加生产门控：`NODE_ENV=production` 时必须显式配置，且拒绝本地默认值；`resolvePlatformDatabaseUrl` 同样 fail-fast，避免迁移脚本在生产回落 dev 库。单测：`apps/platform-api/test/env.test.ts`。
+- **Break-glass 代登录仍是后续项**：当前实现是「租户同意 + 双人复核 + ≤60 分钟授权簿记 + 审计」，`recordAccess` 不返回业务数据。§14.6 的完整链路（临时只读令牌 → 租户侧读取 → 每次查看审计 → 租户端顶部提示「平台支持正在协助」）需要租户 API 配合实现 impersonation，属于 P1 后续，不在 Track F 的 DoD 内。控制面不持有业务库连接是刻意设计，不能被绕过。
+
 - 席位降级按产品应为「下个账期生效」，当前 MVP 立即生效并在下一张账单体现差额；日折算算法待账务规则确认。
 - 价格表 grandfathering 通过订阅保存 `priceBookId` 实现，但账单当前按订阅生效月费计算，不会自动追溯改价（这是有意的）。
 - 控制面不执行租户业务库物理删除，只做账号注销 + 数据导出工单；物理删除属于运维 runbook（独立库/实例场景）。
 - Casdoor Organization 创建目前是展示与模板映射，真正调用 Casdoor Management API 的自动化待接入（需要 client credentials）。
 - `platform_audit` 的只追加由数据库触发器保证；生产还应给 `weave_platform` 配置最小权限角色与独立备份。
+- 生产部署必须设置 `PLATFORM_DATABASE_URL`（独立库）与 `PLATFORM_AUTH_MODE=oidc`；任一缺失或沿用 dev 默认值会直接启动失败。
+- Break-glass 代登录（impersonation）待与租户端 API 联合实现，见上方「评审已收口」。
