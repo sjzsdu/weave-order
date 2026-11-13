@@ -1,0 +1,27 @@
+{
+  "name": "@weave-order/admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "E4 平台总管理端（独立控制台，只连控制面数据）",
+  "scripts": {
+    "dev": "next dev -p 3003",
+    "build": "next build",
+    "start": "next start -p 3003",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint app src"
+  },
+  "dependencies": {
+    "@weave-order/schema": "workspace:*",
+    "next": "^15.5.29",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

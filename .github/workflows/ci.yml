@@ -45,6 +45,9 @@ jobs:
       REDIS_URL: redis://localhost:6379
       NODE_ENV: test
       AUTH_MODE: dev
+      # 控制面独立库（platform:migrate 会自动 CREATE DATABASE）
+      PLATFORM_DATABASE_URL: postgres://weave:weave@localhost:5432/weave_platform
+      PLATFORM_AUTH_MODE: dev
 
     steps:
       - uses: actions/checkout@v4
@@ -69,6 +72,9 @@ jobs:
 
       - name: Migrate + RLS
         run: pnpm db:migrate
+
+      - name: Migrate control plane
+        run: pnpm platform:migrate
 
       - name: Test (含跨租户 RLS 常驻用例)
         run: pnpm test

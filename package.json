@@ -26,7 +26,11 @@
     "seed": "turbo run migrate && turbo run seed",
     "lint:only": "eslint .",
     "demo:followup": "turbo run demo:followup",
-    "demo:quote": "turbo run demo:quote"
+    "demo:quote": "turbo run demo:quote",
+    "platform:migrate": "pnpm --filter @weave-order/control-db migrate",
+    "platform:seed": "pnpm platform:migrate && pnpm --filter @weave-order/platform-api seed",
+    "dev:platform": "pnpm --filter @weave-order/platform-api dev",
+    "dev:admin": "pnpm --filter @weave-order/admin dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
