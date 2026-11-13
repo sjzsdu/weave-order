@@ -64,6 +64,13 @@
       "when": 1794550067123,
       "tag": "0008_jittery_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794551120412,
+      "tag": "0009_chubby_venom",
+      "breakpoints": true
     }
   ]
 }

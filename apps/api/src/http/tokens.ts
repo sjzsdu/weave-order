@@ -5,3 +5,4 @@ export const HUMAN_ACTOR = Symbol("WEAVE_HUMAN_ACTOR");
 
 export const QUOTE_AGENT = Symbol("QUOTE_AGENT");
 export const PUBLIC_SHARE = Symbol("WEAVE_PUBLIC_SHARE");
+export const PUBLIC_RATE_LIMIT = Symbol("WEAVE_PUBLIC_RATE_LIMIT");

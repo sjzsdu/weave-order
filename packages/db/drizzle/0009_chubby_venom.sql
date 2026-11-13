@@ -1,0 +1,2 @@
+CREATE INDEX "quote_share_events_tenant_share_event_created_idx" ON "quote_share_events" USING btree ("tenant_id","share_id","event","created_at");--> statement-breakpoint
+CREATE INDEX "quote_share_events_tenant_share_event_ip_idx" ON "quote_share_events" USING btree ("tenant_id","share_id","event","ip_hash");

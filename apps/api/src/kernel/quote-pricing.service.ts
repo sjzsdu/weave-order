@@ -42,10 +42,13 @@ export class QuotePricingService {
     // 与 T-004 / 改稿共用同一口径：缺失或为 0 的成本底线一律拒绝，绝不「无下限放行」。
     const sampleCostFloor = requireSampleCostFloor(sample, parsed.currency);
 
-    const [marginResolved, floorResolved] = await Promise.all([
-      this.pricing.resolve("pricing.default_margin_pct", { customerId: customer.id }),
-      this.pricing.resolve("pricing.cost_floor_amount", { customerId: customer.id }),
-    ]);
+    // 顺序执行：报价路径跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
+    const marginResolved = await this.pricing.resolve("pricing.default_margin_pct", {
+      customerId: customer.id,
+    });
+    const floorResolved = await this.pricing.resolve("pricing.cost_floor_amount", {
+      customerId: customer.id,
+    });
     const marginPct = numericValue(marginResolved.value) ?? 20;
     const companyFloor = parsed.currency === "CNY" ? (numericValue(floorResolved.value) ?? 0) : 0;
 
