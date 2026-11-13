@@ -241,7 +241,12 @@ describe("确定性内核（集成）", () => {
       HUMAN,
     );
     const sample = await kernel.samples.create(
-      { code: `IT-BIG-S-${id}`, name: "大单面料", unit: "meter" },
+      {
+        code: `IT-BIG-S-${id}`,
+        name: "大单面料",
+        unit: "meter",
+        costFloor: { amount: 1200, currency: "CNY" },
+      },
       HUMAN,
     );
 

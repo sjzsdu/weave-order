@@ -81,7 +81,12 @@ describe("HTTP 面（e2e）", () => {
       HUMAN,
     );
     const sample = await kernel.samples.create(
-      { code: `E2E-S-${suffix}`, name: "HTTP 测试面料", unit: "meter" },
+      {
+        code: `E2E-S-${suffix}`,
+        name: "HTTP 测试面料",
+        unit: "meter",
+        costFloor: { amount: 1200, currency: "CNY" },
+      },
       HUMAN,
     );
 

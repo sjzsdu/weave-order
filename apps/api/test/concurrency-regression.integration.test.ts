@@ -30,7 +30,7 @@ const DATABASE_URL =
  */
 const SUSPENDED_UNTIL_FIXED: Record<"WAN-96", boolean> = {
   /* 报价状态机互斥（confirm 并发 / confirm+reject）—— 归 WAN-96（quotes.service.ts）。 */
-  "WAN-96": true,
+  "WAN-96": false,
 };
 
 const AGENT: KernelContext = { actor: { type: "AGENT", id: "concurrency-agent" } };
