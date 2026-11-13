@@ -261,6 +261,10 @@ export const ApprovalRequirement = z
     level: ApprovalLevel,
     role: MemberRole,
     amountCents: z.number().int().nonnegative(),
+    /** 改稿前的总额（分）；非改稿场景为 null。审批卡据此展示「从多少涨到多少」。 */
+    baselineAmountCents: z.number().int().nonnegative().nullable().optional(),
+    /** 本次总额变化（分）：正数涨价、负数降价；未改稿时缺省。 */
+    changeAmountCents: z.number().int().optional(),
     changePctBps: z.number().int().nonnegative().nullable(),
     escalated: z.boolean(),
     reasons: z.array(EscalationReason),
@@ -280,6 +284,22 @@ export type ApprovalCapableRole = (typeof APPROVAL_CAPABLE_ROLES)[number];
 
 export function hasApprovalCapability(role: MemberRole): role is ApprovalCapableRole {
   return (APPROVAL_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
+}
+
+/**
+ * 具备「生成/编辑报价」能力的角色白名单（对齐 product-design §3.3：
+ * 「生成报价草稿」只有 owner / manager / sales）。
+ *
+ * 取舍：当前与 APPROVAL_CAPABLE_ROLES 的集合完全相同，但仍然单独声明。
+ * 两行能力在产品矩阵里是两条独立规则（例如未来允许 merchandiser 预填草稿、
+ * 或把改价交给专门的核价岗），共用常量会在那天迫使一次语义含混的拆分。
+ * 判定逻辑复用同一套 fail-closed 约定：不在白名单 = 没有能力。
+ */
+export const QUOTE_EDIT_CAPABLE_ROLES = ["OWNER", "MANAGER", "SALES"] as const;
+export type QuoteEditCapableRole = (typeof QUOTE_EDIT_CAPABLE_ROLES)[number];
+
+export function hasQuoteEditCapability(role: MemberRole): role is QuoteEditCapableRole {
+  return (QUOTE_EDIT_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
 }
 
 /**

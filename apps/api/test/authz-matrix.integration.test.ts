@@ -52,7 +52,8 @@ type PendingFix = "WAN-93" | "WAN-105";
  */
 const SUSPENDED_UNTIL_FIXED: Record<PendingFix, boolean> = {
   "WAN-93": false,
-  "WAN-105": true,
+  // WAN-105 已合入：角色能力门 + 归属校验落地，4 条拒绝用例恢复常驻执行。
+  "WAN-105": false,
 };
 
 const ALL_ROLES: MemberRole[] = [
@@ -256,6 +257,36 @@ function token(scope: World, key: string): string {
   return `Bearer dev:${subject}:${scope.org}`;
 }
 
+/** 成员 id：业务表 owner_id 存的是 memberships.id（不是 Casdoor sub）。 */
+async function membershipId(scope: World, key: string): Promise<string> {
+  const subject = scope.subjects.get(key);
+  if (!subject) throw new Error(`未登记的成员身份：${key}`);
+  if (!handle) throw new Error("[越权回归] 数据库未就绪，无法查询成员 id");
+  const result = await handle.pool.query<{ id: string }>(
+    "SELECT id FROM memberships WHERE subject = $1 LIMIT 1",
+    [subject],
+  );
+  const id = result.rows[0]?.id;
+  if (!id) throw new Error(`成员身份不存在：${subject}`);
+  return id;
+}
+
+/** 造一个归属到指定成员的客户（dataScope=OWN 的可见性由客户负责人决定）。 */
+async function newOwnedCustomer(
+  scope: World,
+  ownerMembershipId: string,
+  tag: string,
+): Promise<string> {
+  const customer = await scope.kernel.customers.create(
+    { code: `AZ-OWN-${tag}`, name: "归属测试客户" },
+    {
+      actor: { type: "HUMAN", id: "authz-matrix-fixture" },
+      ownerId: ownerMembershipId,
+    },
+  );
+  return customer.id;
+}
+
 interface DecisionOutcome {
   httpStatus: number;
   ok: boolean;
@@ -316,6 +347,9 @@ interface ReviseOutcome {
   ok: boolean;
   code?: string;
   detail: string;
+  /** 成功后内核给出的审批要求（升级判定）。 */
+  requirement?: unknown;
+  escalated?: boolean;
 }
 
 /** 人类改稿入口 POST /api/quotes/revise。 */
@@ -324,6 +358,7 @@ async function revise(
   roleKey: string,
   quoteId: string,
   baseVersion: number,
+  unitPriceCents = 8888,
 ): Promise<ReviseOutcome> {
   const response = await fetch(`${scope.baseUrl}/api/quotes/revise`, {
     method: "POST",
@@ -336,7 +371,7 @@ async function revise(
       baseVersion,
       source: "INLINE",
       instruction: "把单价改到 8888 分",
-      lines: [{ lineIndex: 0, unitPrice: { amount: 8888, currency: "CNY" } }],
+      lines: [{ lineIndex: 0, unitPrice: { amount: unitPriceCents, currency: "CNY" } }],
     }),
   });
   const text = await response.text();
@@ -348,7 +383,15 @@ async function revise(
   }
   const parsed = ReviseQuoteDraftResult.safeParse(body);
   if (parsed.success) {
-    if (parsed.data.ok) return { httpStatus: response.status, ok: true, detail: "改稿成功" };
+    if (parsed.data.ok) {
+      return {
+        httpStatus: response.status,
+        ok: true,
+        detail: "改稿成功",
+        requirement: parsed.data.data.requirement,
+        escalated: parsed.data.data.escalated,
+      };
+    }
     return {
       httpStatus: response.status,
       ok: false,
@@ -361,9 +404,14 @@ async function revise(
 
 /** 造一张金额精确等于 amountCents 的草稿（1 米 × amountCents 分/米）。 */
 async function newDraft(scope: World, amountCents: number): Promise<string> {
+  return newDraftFor(scope, scope.customerId, amountCents);
+}
+
+/** 同上，但指定客户（用于归属测试：草稿归属随客户负责人）。 */
+async function newDraftFor(scope: World, customerId: string, amountCents: number): Promise<string> {
   const draft = await scope.kernel.quotes.generateDraft(
     {
-      customerId: scope.customerId,
+      customerId,
       currency: "CNY",
       items: [
         {
@@ -503,5 +551,94 @@ describe("改稿越权（非报价角色改他人草稿）", () => {
     const context = `角色 SALES 修改自己的报价草稿：回执 ${JSON.stringify(outcome)}`;
 
     expect(outcome.ok, `${context} —— 报价角色改自己的草稿必须可用，否则是把功能改死了`).toBe(true);
+  }, 30_000);
+});
+
+/**
+ * 归属校验（WAN-105）：报价的负责人随客户。dataScope=OWN 的成员只能改
+ * 自己名下客户的草稿，改他人草稿按「不存在」拒绝（不给 403 枚举的机会）。
+ */
+describe("改稿归属（dataScope=OWN）", () => {
+  it("OWN 的 SALES 改他人名下客户的草稿必须被拒", async () => {
+    const scope = requireWorld();
+    const ownerA = await membershipId(scope, "SALES");
+    const customerA = await newOwnedCustomer(scope, ownerA, `oth-${Date.now().toString(36)}`);
+    const quoteId = await newDraftFor(scope, customerA, 30_000);
+
+    // SALES_LIMITED 是 dataScope=OWN 的业务员，客户归 SALES（另一个成员）名下。
+    const outcome = await revise(scope, "SALES_LIMITED", quoteId, 1);
+    const context = `dataScope=OWN 的 SALES 改他人名下客户的草稿：回执 ${JSON.stringify(outcome)}`;
+
+    expect(outcome.ok, `${context} —— 越出自己数据范围的改稿必须被拒`).toBe(false);
+    expect(
+      outcome.code === "RESOURCE_NOT_FOUND" || outcome.code === "PERMISSION_DENIED",
+      `${context} —— 拒绝必须是归属/权限拒绝，而不是别的错误碰巧挡住`,
+    ).toBe(true);
+  }, 30_000);
+
+  it("OWN 的 SALES 改自己名下客户的草稿仍然成功（上面拒绝是归属专属的）", async () => {
+    const scope = requireWorld();
+    const ownerB = await membershipId(scope, "SALES_LIMITED");
+    const customerB = await newOwnedCustomer(scope, ownerB, `own-${Date.now().toString(36)}`);
+    const quoteId = await newDraftFor(scope, customerB, 30_000);
+
+    const outcome = await revise(scope, "SALES_LIMITED", quoteId, 1);
+    expect(
+      outcome.ok,
+      `dataScope=OWN 的 SALES 改自己名下客户的草稿：回执 ${JSON.stringify(outcome)} —— 不能把功能改死`,
+    ).toBe(true);
+  }, 30_000);
+});
+
+/**
+ * 涨价上限（WAN-105）：改幅没超百分比阈值，但「从多少涨到多少」的差额
+ * 超过 amount 阈值，必须照样升级主管，而不是只看百分比。
+ */
+describe("改稿涨价阈值（金额口径）", () => {
+  it("差额超阈值即升级，即使改幅百分比没超", async () => {
+    const scope = requireWorld();
+    const ownerB = await membershipId(scope, "SALES_LIMITED");
+
+    // 百分比阈值放到 1000%，让本次 566% 的改幅不触发 PCT 升级；
+    // 金额阈值收紧到 1000 元（100000 分）。
+    await scope.kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "pricing.reprice_escalation_pct",
+        value: 1_000,
+        priority: 10,
+      },
+      { actor: { type: "HUMAN", id: "authz-matrix-owner", role: "OWNER" } },
+    );
+    await scope.kernel.pricing.create(
+      {
+        scopeType: "COMPANY",
+        key: "pricing.reprice_escalation_amount",
+        value: 100_000,
+        priority: 10,
+      },
+      { actor: { type: "HUMAN", id: "authz-matrix-owner", role: "OWNER" } },
+    );
+
+    const customer = await newOwnedCustomer(scope, ownerB, `raise-${Date.now().toString(36)}`);
+    const quoteId = await newDraftFor(scope, customer, 30_000);
+
+    // 300 元 → 2000 元：差额 1700 元 > 1000 元阈值，改幅 566% < 1000%。
+    const outcome = await revise(scope, "SALES_LIMITED", quoteId, 1, 200_000);
+    expect(outcome.ok, `涨价改稿回执：${JSON.stringify(outcome)}`).toBe(true);
+    expect(outcome.escalated, "差额超阈值后必须标记为已升级").toBe(true);
+
+    const requirement = outcome.requirement as {
+      level: string;
+      reasons: string[];
+      baselineAmountCents?: number | null;
+      changeAmountCents?: number;
+      changePctBps?: number | null;
+    };
+    expect(requirement.level, "差额超阈值必须升级到主管审批").toBe("MANAGER");
+    expect(requirement.reasons).toContain("REPRICE_AMOUNT_EXCEEDED");
+    expect(requirement.reasons).not.toContain("REPRICE_PCT_EXCEEDED");
+    expect(requirement.baselineAmountCents, "审批卡要能说清「从多少」").toBe(30_000);
+    expect(requirement.changeAmountCents, "审批卡要能说清「涨了多少」").toBe(170_000);
   }, 30_000);
 });

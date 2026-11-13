@@ -6,7 +6,11 @@ import type {
   PricingKey,
   ResolvedPricingValue,
 } from "@weave-order/schema";
-import { assertCanApprove, computeRequirement } from "../src/kernel/approval-policy";
+import {
+  assertCanApprove,
+  assertCanEditQuote,
+  computeRequirement,
+} from "../src/kernel/approval-policy";
 import { KernelError } from "../src/kernel/errors";
 
 /**
@@ -229,5 +233,68 @@ describe("成员级审批额度参与判定", () => {
     });
     expect(denyCode("SALES", requirement, null)).toBeNull();
     expect(denyCode("SALES", requirement, undefined)).toBeNull();
+  });
+});
+
+describe("改稿能力白名单（WAN-105）", () => {
+  it.each<[MemberRole, boolean]>([
+    ["OWNER", true],
+    ["MANAGER", true],
+    ["SALES", true],
+    ["MERCHANDISER", false],
+    ["SAMPLE_ADMIN", false],
+    ["FINANCE", false],
+    ["VIEWER", false],
+  ])("角色 %s 可改稿=%s", (role, allowed) => {
+    if (allowed) {
+      expect(() => assertCanEditQuote(role)).not.toThrow();
+    } else {
+      expect(() => assertCanEditQuote(role)).toThrowError(/不具备报价编辑能力/);
+    }
+  });
+
+  it("生产态缺少改稿人角色时 fail-closed", () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      expect(() => assertCanEditQuote(undefined)).toThrowError(/缺少改稿人角色/);
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
+});
+
+describe("涨价阈值按「从多少涨到多少」的金额口径", () => {
+  it("差额超阈值即升级，即使百分比没超", () => {
+    const requirement = computeRequirement({
+      amountCents: 1_400_000,
+      baselineCents: 1_000_000,
+      policies: {
+        ...DEFAULT_POLICIES,
+        "pricing.reprice_escalation_pct": policy("pricing.reprice_escalation_pct", 1_000),
+        "pricing.reprice_escalation_amount": policy("pricing.reprice_escalation_amount", 100_000),
+      },
+    });
+    expect(requirement.changePctBps).toBe(4_000);
+    expect(requirement.reasons).toContain("REPRICE_AMOUNT_EXCEEDED");
+    expect(requirement.reasons).not.toContain("REPRICE_PCT_EXCEEDED");
+    expect(requirement.level).toBe("MANAGER");
+    expect(requirement.baselineAmountCents).toBe(1_000_000);
+    expect(requirement.changeAmountCents).toBe(400_000);
+  });
+
+  it("降价同样按差额升级，并带出负号差额", () => {
+    const requirement = computeRequirement({
+      amountCents: 800_000,
+      baselineCents: 1_000_000,
+      policies: {
+        ...DEFAULT_POLICIES,
+        "pricing.reprice_escalation_pct": policy("pricing.reprice_escalation_pct", 1_000),
+        "pricing.reprice_escalation_amount": policy("pricing.reprice_escalation_amount", 100_000),
+      },
+    });
+    expect(requirement.reasons).toContain("REPRICE_AMOUNT_EXCEEDED");
+    expect(requirement.changeAmountCents).toBe(-200_000);
+    expect(requirement.level).toBe("MANAGER");
   });
 });
