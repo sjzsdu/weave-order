@@ -2,6 +2,8 @@ import { z } from "zod";
 
 /** 仅本地/测试使用的占位密钥；生产出现即 fail-fast（与 database-guard 同一策略）。 */
 export const DEV_QUOTE_SHARE_SECRET = "dev-only-quote-share-secret-change-me-0001";
+/** 打印代理 token 的本地占位密钥；生产必须覆盖。 */
+export const DEV_PRINT_AGENT_SECRET = "dev-only-print-agent-secret-change-me-0001";
 
 /**
  * 运行时环境变量契约。
@@ -41,6 +43,12 @@ const EnvSchema = z.object({
   MEDIA_ALLOWED_HOSTS: z.string().default(""),
   /** 按 URL 取图的最大字节数（默认 2MB，上限 10MB）。 */
   MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(10_000_000).default(2_000_000),
+  /** 打印代理 token 的 HS256 密钥；生产必须覆盖为 ≥32 字节随机值。 */
+  PRINT_AGENT_SECRET: z.string().min(32).default(DEV_PRINT_AGENT_SECRET),
+  /** 服务端 A4 PDF 的中文字体（TTF/OTF；TTC 不受支持）。 */
+  PRINT_CJK_FONT_PATH: z.string().optional(),
+  /** 可选：headless Chromium 路径，用于 HTML→PDF 精确渲染；缺省走内置版式。 */
+  PRINT_CHROME_PATH: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -56,6 +64,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(
       "生产/OIDC 模式必须显式配置 QUOTE_SHARE_SECRET（≥32 字节随机值，例如 openssl rand -hex 32）；" +
         "否则报价链接与匿名 IP 哈希会使用公开的默认密钥。",
+    );
+  }
+  if (
+    (env.NODE_ENV === "production" || env.AUTH_MODE === "oidc") &&
+    env.PRINT_AGENT_SECRET === DEV_PRINT_AGENT_SECRET
+  ) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 PRINT_AGENT_SECRET（≥32 字节随机值），否则任何人都能伪造打印代理 token。",
     );
   }
   return env;

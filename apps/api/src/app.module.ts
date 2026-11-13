@@ -1,7 +1,8 @@
-import { Module } from "@nestjs/common";
+import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { GatewayModule } from "./gateway/gateway.module";
 import { HttpModule } from "./http/http.module";
 import { DatabaseModule } from "./platform/database.module";
+import { PrintAgentScopeMiddleware } from "./print/print-scope.middleware";
 
 /**
  * 组合根：连接池 → 内核 / 工具 / 审批 → HTTP。
@@ -10,5 +11,10 @@ import { DatabaseModule } from "./platform/database.module";
  */
 @Module({
   imports: [DatabaseModule, HttpModule, GatewayModule],
+  providers: [PrintAgentScopeMiddleware],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(PrintAgentScopeMiddleware).forRoutes("*");
+  }
+}

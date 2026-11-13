@@ -4,6 +4,8 @@ import { GatewayModule } from "../gateway/gateway.module";
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
 import { PublicShareService } from "../shares/public-share.service";
+import { PrintAgentAuthService } from "../print/agent-auth.service";
+import { PrintAgentHub } from "../print/agent-hub";
 import { AppDatabaseProvider, DatabaseProvider } from "../platform/database.provider";
 import { DatabaseModule } from "../platform/database.module";
 import { createTools } from "../tools";
@@ -24,6 +26,7 @@ import {
 } from "./controllers";
 import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
+import { PrintAgentController, PrintController } from "./print.controllers";
 import { HUMAN_ACTOR, KERNEL, PUBLIC_SHARE, QUOTE_AGENT, TOOLS } from "./tokens";
 
 const providers: Provider[] = [
@@ -43,6 +46,8 @@ const providers: Provider[] = [
     useExisting: HumanActorService,
   },
   QuoteAgentService,
+  PrintAgentAuthService,
+  PrintAgentHub,
   {
     provide: QUOTE_AGENT,
     useFactory: (service: QuoteAgentService): QuoteAgentService => service,
@@ -72,6 +77,8 @@ const providers: Provider[] = [
     QuoteAgentController,
     PublicQuoteController,
     QuoteSharesController,
+    PrintController,
+    PrintAgentController,
   ],
   providers,
 })
