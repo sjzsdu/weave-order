@@ -378,6 +378,8 @@ SEED_RESET=1 pnpm seed
 | LangGraph 检查点表                           | `checkpoints` / `checkpoint_blobs` / `checkpoint_writes`（saver setup 创建） |
 
 迁移在 `packages/db/drizzle/`，由 `drizzle-kit generate` 生成、`pnpm db:migrate` 应用。
+迁移纪律（已合并迁移/journal 只增不改）、存量库修复（`pnpm db:repair`）与 CI 升级演练见
+`packages/db/README.md` 与 `docs/development-guide.md` §5「数据库迁移纪律」。
 检查点表由 LangGraph `PostgresSaver.setup()` 幂等创建（与业务迁移分离）。
 
 ## 本轮范围

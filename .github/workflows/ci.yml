@@ -81,3 +81,89 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+  # 迁移升级演练（WAN-98）：在「上一个已发布修订」的库上，升级到 PR 头。
+  # 守卫两件事：
+  #   1. migrate:guard —— 已合并的迁移文件与 journal（tag/when/idx）不可改写，
+  #      改写 when 会让存量库重放老迁移并卡死（正是 WAN-98 的根因）；
+  #   2. 两段式迁移 —— 先按基线的 drizzle/sql 迁移出「旧库」，再恢复 PR 头迁移一次，
+  #      新增迁移必须能从旧库增量升级；最后 db:check 验收记录与 journal 一致。
+  migrate-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave_order
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U weave -d weave_order"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://weave:weave@localhost:5432/weave_order
+      NODE_ENV: test
+      AUTH_MODE: dev
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 守卫与两段式迁移都需要完整历史来解析基线。
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: 解析基线（PR 的 base / push 的 before）
+        id: base
+        run: |
+          ZERO=0000000000000000000000000000000000000000
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "$ZERO" ] \
+            && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            BASE="${{ github.event.before }}"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            BASE="$(git rev-parse HEAD~1)"
+          else
+            BASE="skip"
+          fi
+          echo "ref=$BASE" >> "$GITHUB_OUTPUT"
+          echo "基线：$BASE"
+
+      - name: 迁移纪律守卫（已合并迁移不可改写）
+        run: pnpm --filter @weave-order/db migrate:guard -- "${{ steps.base.outputs.ref }}"
+
+      - name: 迁移到上一个已发布修订
+        if: steps.base.outputs.ref != 'skip'
+        run: |
+          BASE="${{ steps.base.outputs.ref }}"
+          git checkout "$BASE" -- packages/db/drizzle packages/db/sql
+          # git checkout 不会删除基线之后新增的文件：按基线文件列表清理，只留基线状态。
+          comm -23 \
+            <(git ls-files packages/db/drizzle packages/db/sql | sort) \
+            <(git ls-tree -r --name-only "$BASE" -- packages/db/drizzle packages/db/sql | sort) \
+            | xargs -r rm -f
+          pnpm --filter @weave-order/db migrate
+
+      - name: 升级到 PR 头并验收（旧库 → HEAD）
+        run: |
+          git reset -q --hard HEAD
+          pnpm --filter @weave-order/db migrate
+          pnpm --filter @weave-order/db migrate:check
