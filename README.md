@@ -9,19 +9,19 @@
 
 ## 技术栈
 
-| 层           | 选型                                                             |
-| ------------ | ---------------------------------------------------------------- |
-| 后端         | NestJS + TypeScript                                              |
-| 数据库       | PostgreSQL 16 + pgvector                                         |
-| ORM / 查询层 | Drizzle ORM（TypeScript 优先）                                   |
-| 缓存与队列   | Redis 7                                                          |
-| 向量检索     | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW |
-| 智能体编排   | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）  |
-| 前端·桌面    | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统 |
+| 层            | 选型                                                                 |
+| ------------- | -------------------------------------------------------------------- |
+| 后端          | NestJS + TypeScript                                                  |
+| 数据库        | PostgreSQL 16 + pgvector                                             |
+| ORM / 查询层  | Drizzle ORM（TypeScript 优先）                                       |
+| 缓存与队列    | Redis 7                                                              |
+| 向量检索      | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW     |
+| 智能体编排    | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）      |
+| 前端·桌面     | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统  |
 | 前端·客户报价 | Next.js 15 独立应用 `apps/quote`（`/s/[token]`，SSR、无鉴权 Cookie） |
-| 移动端       | Taro（H5/PWA + 小程序 + RN App）                                 |
-| 校验         | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）        |
-| 测试         | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）      |
+| 移动端        | Taro（H5/PWA + 小程序 + RN App）                                     |
+| 校验          | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）            |
+| 测试          | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）          |
 
 ## 目录结构（Monorepo，pnpm workspace + Turborepo）
 
@@ -73,6 +73,13 @@ pnpm dev
 # 5. 客户报价页（Next.js，端口 5174；路由 /s/[token]）
 pnpm --filter @weave-order/quote dev
 # → http://localhost:5174/s/<token>（审批通过后自动生成，或在全景窗口重新生成）
+
+# 6. 平台总管理端（E4，控制面独立库 + 独立进程）
+pnpm platform:migrate   # 自动创建 weave_platform + control schema
+pnpm platform:seed      # 平台人员 / 套餐 / 价格表 v1 / 演示租户
+pnpm --filter @weave-order/platform-api dev   # :3002（只连 PLATFORM_DATABASE_URL）
+pnpm --filter @weave-order/admin dev          # :3003 控制台
+# → http://localhost:3003（本地可选 owner / owner2 / finance / ops / support / readonly）
 ```
 
 桌面端是**三个业务窗口 + 一个管理面**：工作台（⌘1）、审批（⌘2）、全景只读（⌘3）、
@@ -183,15 +190,15 @@ pnpm format       # Prettier
 | GET  | `/api/approvals/:id?kind=quote`       | 只读                          | 审批卡详情：出处 / diff / 草稿态                |
 | GET  | `/api/panorama`                       | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）          |
 | POST | `/api/import`                         | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品         |
-| POST | `/api/quotes/:id/shares`              | HUMAN（仅 SENT 报价）         | 生成客户报价链接（明文 token 只返回一次） |
-| GET  | `/api/quotes/:id/shares`              | 只读                          | 分享列表 + 访问/接受/提问聚合数据         |
-| POST | `/api/shares/:id/revoke`              | HUMAN                         | 撤回链接，立即 410                        |
-| GET  | `/api/public/quotes/:token`           | 公开（无登录）                | 客户视图；`?track=0` 用于打印不重复计数   |
-| POST | `/api/public/quotes/:token/accept`    | 公开（可选手机尾号）          | 记录成交意向（不改账本）                  |
-| POST | `/api/public/quotes/:token/questions` | 公开                          | 客户留言提问                              |
-| POST | `/api/public/quotes/:token/pdf`       | 公开                          | 记录 PDF 下载事件                         |
-| POST | `/api/quote-shares`                   | HUMAN（仅 SENT 报价）         | 移动端契约：quoteId 在 body，返回裸对象   |
-| GET  | `/api/quote-shares?quoteId=`          | 只读                          | 移动端契约：链接访问时间线                |
+| POST | `/api/quotes/:id/shares`              | HUMAN（仅 SENT 报价）         | 生成客户报价链接（明文 token 只返回一次）       |
+| GET  | `/api/quotes/:id/shares`              | 只读                          | 分享列表 + 访问/接受/提问聚合数据               |
+| POST | `/api/shares/:id/revoke`              | HUMAN                         | 撤回链接，立即 410                              |
+| GET  | `/api/public/quotes/:token`           | 公开（无登录）                | 客户视图；`?track=0` 用于打印不重复计数         |
+| POST | `/api/public/quotes/:token/accept`    | 公开（可选手机尾号）          | 记录成交意向（不改账本）                        |
+| POST | `/api/public/quotes/:token/questions` | 公开                          | 客户留言提问                                    |
+| POST | `/api/public/quotes/:token/pdf`       | 公开                          | 记录 PDF 下载事件                               |
+| POST | `/api/quote-shares`                   | HUMAN（仅 SENT 报价）         | 移动端契约：quoteId 在 body，返回裸对象         |
+| GET  | `/api/quote-shares?quoteId=`          | 只读                          | 移动端契约：链接访问时间线                      |
 
 > 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
 > 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由

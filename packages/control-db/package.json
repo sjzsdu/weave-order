@@ -1,0 +1,32 @@
+{
+  "name": "@weave-order/control-db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "平台控制面数据库：独立 schema/库（Drizzle schema + 迁移 + 连接），与租户业务库物理分离",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "drizzle",
+    "sql"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/migrate.ts",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@weave-order/schema": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.15.5",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
