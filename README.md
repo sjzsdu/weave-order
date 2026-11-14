@@ -142,7 +142,7 @@ PAT 绑定 membership，仍然走同一租户与 RLS；默认作用域 `read,wri
 ```bash
 pnpm build        # 构建
 pnpm dev          # api(3000) + web(3001)
-pnpm lint         # 先构建契约包，再跑全仓 ESLint（含目录边界规则）
+pnpm lint         # 先构建契约包，再按 workspace 分片跑类型感知 ESLint（含目录边界规则）
 pnpm typecheck    # 全仓类型检查
 pnpm test         # 单元 + 边界；有本地 PG 时内核/HTTP 集成测试自动启用
 pnpm db:generate  # 改完 Drizzle Schema 后生成 SQL 迁移

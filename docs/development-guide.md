@@ -198,3 +198,34 @@ weave-order/
 | P3   | `apps/desktop`、`apps/mobile` 的小程序/RN 输出                                                                                                                                            | —    |
 
 > 现在仓库已有 `apps/api`、`apps/web`、`packages/db`、`packages/schema`、`packages/shared`；按上表增量补齐 `apps/mobile`、`apps/admin`、`apps/print-agent`、`apps/desktop`、`packages/core`、`packages/ui` 即可。
+
+---
+
+## 7. 质量门禁与 CI 内存纪律（WAN-127）
+
+`verify` 作业里的 Lint 步骤是 `pnpm lint` → `scripts/lint.mjs`：**按 workspace 分片，一片一个进程**，规则一行没改（同一份 `eslint.config.mjs`），只是不再让一个 Node 进程扛全仓。
+
+### 为什么必须分片
+
+根配置用 typescript-eslint 的 `projectService` 做类型感知检查，单个 `eslint .` 进程会把它加载过的每个 workspace 的 TS Program 全部留在堆里，峰值随仓库线性增长。2026-11-14 实测（node 22.23.4，12 核 / 15.5 GB RAM）：
+
+| 跑法                            | 墙钟 | 峰值 RSS   | 结果                                      |
+| ------------------------------- | ---- | ---------- | ----------------------------------------- |
+| `eslint .`（全仓单进程）        | 40s  | **4.20 GB** | 撞 2 GB 堆上限时 exit 134（CI 同款红）     |
+| 同上，`main` 前一个绿色提交     | 39s  | 4.03 GB    | 只差 4%，说明一直在贴着墙走                |
+| 分片（7 片，最重的是 packages） | 49s  | **1.42 GB** | 通过，留 32% 余量                          |
+| 分片，CI 实跑（2 核 / 7.6 GB）  | 59s  | 1.44 GB    | verify 绿（run 43617587304）              |
+
+结论：不是「WAN-120 把内存吃爆了」，而是全仓单进程 lint **一直踩在 2 GB 的临界点上**，WAN-120（+9.5k 行、订单与应收两个大工作面）只是补了最后一脚。所以不要用 `NODE_OPTIONS=--max-old-space-size=...` 把墙往后挪——那只是把 OOM 推迟到下一次提交。
+
+### 分片规则
+
+- 分片表在 `scripts/lint.mjs` 的 `CHUNKS`，按端切（api / web / admin / mobile / quote+site / cli+platform-api+print-agent / packages），日志能直接看出哪个端最吃内存。
+- **新增 `apps/*` 或 `packages/*` 目录后必须登记分片**，否则 `pnpm lint` 直接报错退出——漏检比红更贵，宁可挡住提交。
+- 单分片峰值超 **1.6 GB** 会打印水位告警，就应该把它再拆小；不要靠调堆上限消警。
+- 每次 lint 日志首行打印 `node 版本 · 核数 · 总内存 · V8 堆上限`，峰值逐片打印，以后再遇内存问题不用猜。
+- 本地只跑某几片：`node scripts/lint.mjs api web`。
+
+### runner 规格
+
+CI 用 GitHub 托管 `ubuntu-latest`，实测 **2 vCPU / 7.6 GB RAM**（`os.cpus()` / `os.totalmem()`；容器里 `nproc` 可能报更多）。Node 22 按可用内存自动配置堆上限：runner 上实测 **2096 MB**，本机 15.5 GB 内存则是 4144 MB——这就是崩溃时 V8 停在 2038.9 MB 的原因。以上数字均以每次 lint 日志首行的实测值为准。
