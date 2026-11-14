@@ -317,7 +317,10 @@ export class ImportService {
     // ⑥ 单事务原子写入（向量不在这里算：提交后统一 reindex，模型慢/抖动不拖垮导入）
     const correlationId = randomUUID();
     const fullCtx: KernelContext = { ...ctx, correlationId };
+    // 事务提交后才会被赋值；失败分支保持空数组（下面走不到 reindex 也会是安全的）。
+    let importedSampleIdsForReindex: string[] = [];
     try {
+      const importedSampleIds: string[] = [];
       await this.db.transaction(async (tx) => {
         if (resetExisting) {
           await this.resetWithin(tx, existingCustomers, existingSamples, fullCtx);
@@ -326,10 +329,13 @@ export class ImportService {
           if (entry.kind === "customer") {
             await this.customerService.insertWithin(tx, entry.customer, fullCtx, entry.context);
           } else {
-            await this.sampleService.insertWithin(tx, entry.sample, fullCtx);
+            const sample = await this.sampleService.insertWithin(tx, entry.sample, fullCtx);
+            importedSampleIds.push(sample.id);
           }
         }
       });
+      // 与事务同一作用域：只有提交成功才拿得到这批 id。
+      importedSampleIdsForReindex = importedSampleIds;
     } catch (error) {
       const message = errorChainMessage(error);
       const failed: ImportRowReceipt[] = checked.map((entry) => ({
@@ -356,9 +362,9 @@ export class ImportService {
       });
     }
 
-    // ⑦ 提交后补索引：失败不回滚导入（数据已落库），但要留审计，便于重跑 reindex。
+    // ⑦ 提交后补索引：只补本次导入的新样行，不全租户重算；失败不回滚导入，但留审计。
     try {
-      const reindex = await this.sampleIndex.reindexTenant();
+      const reindex = await this.sampleIndex.reindexSamples(importedSampleIdsForReindex);
       if (reindex.failures.length > 0) {
         await appendAudit(
           this.db,

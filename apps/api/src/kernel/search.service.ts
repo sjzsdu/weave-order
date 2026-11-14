@@ -9,6 +9,7 @@ import type { KernelContext } from "./audit";
 import { mapSample, presentSample } from "./samples.service";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 import { SampleIndexService } from "./sample-index.service";
+import { escapeLikePattern } from "./like";
 import type { SampleImageService } from "./sample-images.service";
 
 type SampleRow = typeof samples.$inferSelect;
@@ -36,13 +37,8 @@ export function shouldUseSemanticSearch(
   return /\s/.test(trimmed) || /[a-zA-Z]/.test(trimmed);
 }
 
-/**
- * 把用户输入里的 LIKE 元字符转义成字面量。
- * `%` / `_` 是通配符，`\` 是转义符本身；三层顺序不能反，否则会双重转义。
- */
-export function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
-}
+// 兼容既有 import 路径（search-escape 测试与其它模块从这里取）。
+export { escapeLikePattern } from "./like";
 
 /**
  * 字面量 ILIKE：转义后的模式 + 显式 ESCAPE '\'。
@@ -98,11 +94,13 @@ export class SearchService {
   /**
    * 补齐样品索引，返回本次新写入的条数。
    *
-   * - 真实语义模型：走 `SampleIndexService.reindexTenant`，按 `contentHash` 跳过未变的行；
-   * - local-stub：维护旧的 `real[]` 表（只读兼容路径，S4 之后删除）。
+   * 读路径只做**廉价缺失探测**（反连接是否存在没有索引行的样品），不再每次搜索
+   * 全表 sha256。contentHash 漂移由写路径（create/update 同事务重算）与 CLI
+   * `reindex:samples` 负责，因此这里仅当确实有“漏网”样品时才触发一次批量重算。
    */
   async ensureIndexed(): Promise<number> {
     if (this.embedder.semantic) {
+      if (!(await this.index.hasMissingIndex())) return 0;
       const result = await this.index.reindexTenant();
       return result.indexed;
     }
@@ -245,6 +243,7 @@ export class SearchService {
         seen.add(match.sample.id);
         matches.push({
           sample: mapSample(match.sample),
+          // 仅防御契约（score 必须 0..1）；不是归一化：minScore 已挡住负相似度，数值就是原始 cosine。
           score: Math.max(0, Math.min(1, match.score)),
           matchedOn: ["semantic"],
         });

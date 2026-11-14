@@ -178,6 +178,37 @@ describe("S3 向量索引（集成）", () => {
     expect(rows).toHaveLength(0);
   }, 20_000);
 
+  it("读路径只补缺失行：已就绪时搜索不再重算", async (ctx) => {
+    if (!available) return ctx.skip();
+    const embedder = new CountingEmbeddingProvider();
+    const kernel = await isolatedKernel(embedder, "readpath");
+    const first = await kernel.samples.create(
+      { code: "S3-RP-1", name: "TC twill 240gsm", unit: "meter" },
+      HUMAN,
+    );
+    await kernel.samples.create(
+      { code: "S3-RP-2", name: "polyester chiffon printed", unit: "meter" },
+      HUMAN,
+    );
+    expect(embedder.calls).toHaveLength(2);
+
+    // 索引就绪：搜索只该为 query 调一次模型，不重算样品。
+    await kernel.search.searchBySpec({ query: "涤棉斜纹 240 克", limit: 5 });
+    expect(embedder.calls).toHaveLength(3);
+
+    // 人为删掉一条索引行：下一次搜索只补这一条，而不是全量重算。
+    await db!
+      .delete(sampleTextEmbeddings)
+      .where(inArray(sampleTextEmbeddings.sampleId, [first.id]));
+    await kernel.search.searchBySpec({ query: "涤棉斜纹 240 克", limit: 5 });
+    expect(embedder.calls).toHaveLength(5); // 补 1 条样品 + 1 次 query
+    const restored = await db!
+      .select({ id: sampleTextEmbeddings.id })
+      .from(sampleTextEmbeddings)
+      .where(inArray(sampleTextEmbeddings.sampleId, [first.id]));
+    expect(restored).toHaveLength(1);
+  }, 30_000);
+
   it("检索时模型失败 => 抛错（不会被当成「无结果」返回）", async (ctx) => {
     if (!available) return ctx.skip();
     const kernel = await isolatedKernel(new CountingEmbeddingProvider(), "searchfail");

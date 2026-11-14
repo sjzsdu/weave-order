@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { sampleEmbeddings, sampleTextEmbeddings, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { and, cosineDistance, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { EmbeddingProvider } from "../platform/embedding";
+import { escapeLikePattern } from "./like";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 
 type SampleRow = typeof samples.$inferSelect;
@@ -211,6 +212,39 @@ export class SampleIndexService {
   }
 
   /**
+   * 廉价缺失探测：反连接判断是否还有样品没有当前模型的索引行。
+   *
+   * 不做全量 sha256（那是 reindex 的活），读路径每次搜索只付这一条 EXISTS 的成本。
+   */
+  async hasMissingIndex(): Promise<boolean> {
+    const join = this.semantic
+      ? and(
+          eq(sampleTextEmbeddings.sampleId, samples.id),
+          eq(sampleTextEmbeddings.model, this.model),
+          eq(sampleTextEmbeddings.tenantId, this.tenantId),
+        )
+      : and(
+          eq(sampleEmbeddings.sampleId, samples.id),
+          eq(sampleEmbeddings.model, this.model),
+          eq(sampleEmbeddings.tenantId, this.tenantId),
+        );
+    const rows = this.semantic
+      ? await this.db
+          .select({ id: samples.id })
+          .from(samples)
+          .leftJoin(sampleTextEmbeddings, join)
+          .where(and(eq(samples.tenantId, this.tenantId), isNull(sampleTextEmbeddings.id)))
+          .limit(1)
+      : await this.db
+          .select({ id: samples.id })
+          .from(samples)
+          .leftJoin(sampleEmbeddings, join)
+          .where(and(eq(samples.tenantId, this.tenantId), isNull(sampleEmbeddings.id)))
+          .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
    * 全租户补齐 / 重算（后台任务与 CLI 用）。
    *
    * 每 10 条一批调用模型（provider 内部切片），单批失败只记入 `failures`，
@@ -218,6 +252,21 @@ export class SampleIndexService {
    */
   async reindexTenant(batchSize = 20): Promise<ReindexResult> {
     const all = await this.db.select().from(samples).where(eq(samples.tenantId, this.tenantId));
+    return this.reindexRows(all, batchSize);
+  }
+
+  /** 只重算指定样品（导入后补新增行，避免全租户扫描）。 */
+  async reindexSamples(sampleIds: string[]): Promise<ReindexResult> {
+    if (sampleIds.length === 0) return { total: 0, indexed: 0, skipped: 0, failures: [] };
+    const rows = await this.db
+      .select()
+      .from(samples)
+      .where(and(eq(samples.tenantId, this.tenantId), inArray(samples.id, sampleIds)));
+    return this.reindexRows(rows, 10);
+  }
+
+  /** 共用的批量重算实现：先按 contentHash 筛出待算行，再按批调用模型。 */
+  private async reindexRows(all: SampleRow[], batchSize: number): Promise<ReindexResult> {
     const indexedRows = this.semantic
       ? await this.db
           .select({
@@ -302,31 +351,6 @@ export class SampleIndexService {
     return { total: all.length, indexed: done, skipped, failures };
   }
 
-  /** 强制重算一批指定样品（导入后只补新增行，避免全租户扫描）。 */
-  async reindexSamples(sampleIds: string[]): Promise<ReindexResult> {
-    if (sampleIds.length === 0) return { total: 0, indexed: 0, skipped: 0, failures: [] };
-    const rows = await this.db
-      .select()
-      .from(samples)
-      .where(and(eq(samples.tenantId, this.tenantId), inArray(samples.id, sampleIds)));
-    const failures: ReindexFailure[] = [];
-    let indexed = 0;
-    let skipped = 0;
-    for (const row of rows) {
-      const result = await this.ensureIndexedSample(row.id).catch((error: unknown) => {
-        failures.push({
-          sampleId: row.id,
-          code: row.code,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return "failed" as const;
-      });
-      if (result === "indexed") indexed += 1;
-      if (result === "unchanged") skipped += 1;
-    }
-    return { total: rows.length, indexed, skipped, failures };
-  }
-
   /**
    * 向量检索：按 cosine 距离升序取 topN，`score` 是原始 cosine 相似度。
    * 低于 `minScore` 的行不返回（负相似度的「噪声」不会被伪装成正分）。
@@ -337,14 +361,17 @@ export class SampleIndexService {
     minScore: number,
     composition?: string,
   ): Promise<SemanticMatch[]> {
-    const distance = cosineDistance(sampleTextEmbeddings.embedding, vectorLiteral(vector));
+    // 显式 ::vector：不依赖驱动把 text 参数隐式转成 vector（prepared statement 类型化后会失效）。
+    const distance = sql`${sampleTextEmbeddings.embedding} <=> ${vectorLiteral(vector)}::vector`;
     const conditions = [
       eq(sampleTextEmbeddings.tenantId, this.tenantId),
       eq(sampleTextEmbeddings.model, this.model),
       sql`1 - (${distance}) >= ${minScore}`,
     ];
     if (composition) {
-      conditions.push(sql`${samples.composition} ILIKE ${`%${composition}%`}`);
+      // 与主分支同一套字面量转义：`%` / `_` 不能被当成通配符。
+      const pattern = `%${escapeLikePattern(composition)}%`;
+      conditions.push(sql`${samples.composition} ILIKE ${pattern} ESCAPE '\\'`);
     }
     const rows = await this.db
       .select({

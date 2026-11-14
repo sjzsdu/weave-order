@@ -11,6 +11,7 @@ import { mayViewCost, toIso } from "./mappers";
 import { SampleImageService } from "./sample-images.service";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { SampleIndexService } from "./sample-index.service";
+import { escapeLikePattern } from "./like";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -472,11 +473,6 @@ export class SampleService {
     }
     return row;
   }
-}
-
-/** 与 search.service 同一套 LIKE 元字符转义，避免 `%` 变成全表扫描。 */
-export function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 function clampLimit(raw: number | undefined, fallback: number, max: number): number {

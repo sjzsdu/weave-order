@@ -62,7 +62,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 - **单条创建/编辑**：同一请求内同步写入向量。改名 / 改成分 / 改品类 / 改克重才重算，
   改价格或图片不会调用模型（`contentHash` 未变直接跳过）。
-- **批量导入**：事务提交后统一重算；失败不回滚导入，但写 `SAMPLE_INDEX_FAILED` 审计。
+- **批量导入**：事务提交后只重算本次导入的样品（不全租户扫描）；失败不回滚导入，但写 `SAMPLE_INDEX_FAILED` 审计。
 - **后台 / CLI 重算**：
 
 ```bash
@@ -80,6 +80,9 @@ pnpm --filter @weave-order/api reindex:samples -- --tenant=<uuid>
 1. ILIKE 命中的结果排在前面（`score` = 命中字段占比，`matchedOn` 为字段名）；
 2. 向量结果补足未被 ILIKE 命中的样品（`matchedOn: ["semantic"]`，`score` = 原始 cosine 相似度）；
 3. 低于 `SEARCH_SEMANTIC_MIN_SCORE` 的结果直接丢弃，不做归一化或映射。
+
+读路径不做全量重算：每次语义搜索只跑一条反连接「是否存在缺失索引行」的廉价探测，
+只有确实发现漏网样品时才触发一次批量补齐。`contentHash` 漂移由写路径与 CLI 负责。
 
 ## 6. 实测结果（本机，2026-11-14）
 
