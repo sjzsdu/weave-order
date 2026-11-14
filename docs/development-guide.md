@@ -214,6 +214,7 @@ weave-order/
 | `eslint .`（全仓单进程）        | 40s  | **4.20 GB** | 撞 2 GB 堆上限时 exit 134（CI 同款红）     |
 | 同上，`main` 前一个绿色提交     | 39s  | 4.03 GB    | 只差 4%，说明一直在贴着墙走                |
 | 分片（7 片，最重的是 packages） | 49s  | **1.42 GB** | 通过，留 32% 余量                          |
+| 分片，CI 实跑（2 核 / 7.6 GB）  | 59s  | 1.44 GB    | verify 绿（run 43617587304）              |
 
 结论：不是「WAN-120 把内存吃爆了」，而是全仓单进程 lint **一直踩在 2 GB 的临界点上**，WAN-120（+9.5k 行、订单与应收两个大工作面）只是补了最后一脚。所以不要用 `NODE_OPTIONS=--max-old-space-size=...` 把墙往后挪——那只是把 OOM 推迟到下一次提交。
 
@@ -227,4 +228,4 @@ weave-order/
 
 ### runner 规格
 
-CI 用 GitHub 托管 `ubuntu-latest`（4 vCPU / 16 GB RAM，Node 22）。崩溃那次日志里 V8 停在 2038.9 MB，即 runner 上实际可用的默认堆上限约 2 GB；以每次 lint 日志首行的实测值为准。
+CI 用 GitHub 托管 `ubuntu-latest`，实测 **2 vCPU / 7.6 GB RAM**（`os.cpus()` / `os.totalmem()`；容器里 `nproc` 可能报更多）。Node 22 按可用内存自动配置堆上限：runner 上实测 **2096 MB**，本机 15.5 GB 内存则是 4144 MB——这就是崩溃时 V8 停在 2038.9 MB 的原因。以上数字均以每次 lint 日志首行的实测值为准。
