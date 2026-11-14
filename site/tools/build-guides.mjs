@@ -16,7 +16,7 @@
  * 站点地址取自 site/site.config.json，部署时由 tools/configure.mjs 改写。
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -24,6 +24,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const siteDir = join(here, "..");
 const outDir = join(siteDir, "guides");
 const SITE = JSON.parse(readFileSync(join(siteDir, "site.config.json"), "utf8")).site;
+
+/* 站内搜索与访问统计的脚本由各自任务加入 assets/：文件存在才引用，
+   避免在它们合入之前生成指向不存在文件的 <script>。 */
+const OPTIONAL_SCRIPTS = ["analytics.config.js", "analytics.js", "search.js"];
+const OPTIONAL_TAGS = OPTIONAL_SCRIPTS.filter((file) => existsSync(join(siteDir, "assets", file)))
+  .map((file) => `<script src="../assets/${file}" defer></script>`)
+  .join("\n");
 
 /* 顺序即侧栏与上下篇顺序。 */
 const GUIDES = [
@@ -247,7 +254,7 @@ ${faqLd(page)}
       </div>
       <div class="nav__actions">
         <a class="btn btn--ghost btn--sm" href="${NAV.login}">登录</a>
-        <a class="btn btn--primary btn--sm" href="${NAV.signup}" data-cta="guide-${page.slug}-nav">免费试用</a>
+        <a class="btn btn--primary btn--sm" href="${NAV.signup}" data-cta="nav" data-cta-label="指南 · ${esc(page.navLabel)}">免费试用</a>
         <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
         </button>
@@ -265,8 +272,8 @@ ${faqLd(page)}
           <h1>${page.h1}</h1>
           <p class="lede">${page.answer}</p>
           <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:24px">
-            <a class="btn btn--primary" href="${NAV.signup}" data-cta="guide-${page.slug}-hero">免费创建公司</a>
-            <a class="btn btn--ghost" href="${NAV.pricing}" data-cta="guide-${page.slug}-hero-pricing">看价格</a>
+            <a class="btn btn--primary" href="${NAV.signup}" data-cta="hero" data-cta-label="指南 · ${esc(page.navLabel)}">免费创建公司</a>
+            <a class="btn btn--ghost" href="${NAV.pricing}" data-cta="hero" data-cta-label="指南 · 看价格">看价格</a>
           </div>
         </div>
         <div class="page-hero__aside">
@@ -293,8 +300,8 @@ ${sidebar(page, pages)}
         <p style="margin:0 0 6px;font-family:var(--font-serif);font-size:18px;font-weight:700;color:var(--ink-900)">${page.ctaTitle}</p>
         <p style="margin:0 0 16px">${page.ctaText}</p>
         <div style="display:flex;flex-wrap:wrap;gap:10px">
-          <a class="btn btn--primary" href="${NAV.signup}" data-cta="guide-${page.slug}-end">免费创建公司</a>
-          <a class="btn btn--ghost" href="${NAV.pricing}" data-cta="guide-${page.slug}-end-pricing">看价格与套餐</a>
+          <a class="btn btn--primary" href="${NAV.signup}" data-cta="docs" data-cta-label="指南 · ${esc(page.navLabel)}">免费创建公司</a>
+          <a class="btn btn--ghost" href="${NAV.pricing}" data-cta="docs" data-cta-label="指南 · 看价格与套餐">看价格与套餐</a>
         </div>
       </div>
 
@@ -357,7 +364,7 @@ ${tocItems}
 </footer>
 
 <script src="../assets/main.js" defer></script>
-<script src="../assets/pages.js" defer></script>
+<script src="../assets/pages.js" defer></script>${OPTIONAL_TAGS ? "\n" + OPTIONAL_TAGS : ""}
 </body>
 </html>
 `;

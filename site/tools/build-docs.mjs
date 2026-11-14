@@ -12,7 +12,7 @@
  * 由手工维护，不在此脚本内。
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +21,13 @@ const outDir = join(here, "..", "docs");
 // 站点地址取自 site/site.config.json，部署时由 tools/configure.mjs 改写；
 // 生成器跟着读同一份配置，重新生成文档不会把域名重置回占位值。
 const SITE = JSON.parse(readFileSync(join(here, "..", "site.config.json"), "utf8")).site;
+
+/* 站内搜索与访问统计的脚本由各自任务加入 assets/：文件存在才引用，
+   避免重新生成文档时把它们从页面里抹掉，也避免引用不存在的文件。 */
+const OPTIONAL_SCRIPTS = ["analytics.config.js", "analytics.js", "search.js"];
+const OPTIONAL_TAGS = OPTIONAL_SCRIPTS.filter((file) => existsSync(join(here, "..", "assets", file)))
+  .map((file) => `<script src="../assets/${file}" defer></script>`)
+  .join("\n");
 
 const NAV = {
   home: "../index.html",
@@ -283,7 +290,7 @@ ${toc(sections)}
 </footer>
 
 <script src="../assets/main.js" defer></script>
-<script src="../assets/pages.js" defer></script>
+<script src="../assets/pages.js" defer></script>${OPTIONAL_TAGS ? "\n" + OPTIONAL_TAGS : ""}
 </body>
 </html>
 `;

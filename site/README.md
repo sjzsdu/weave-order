@@ -52,7 +52,8 @@ node site/tools/build-guides.mjs   # 覆盖生成 4 个指南页
 
 - 正文在 `tools/guides/*.mjs`，只写 `h1`、首段答案、`sections`、`faq`，可选的 `howTo` 会生成 `HowTo` 结构化数据。
 - 每页自动带 `BreadcrumbList` + `FAQPage`（+ 可选 `HowTo`）、独立 `title` / `description` / `canonical` / `og:url`，以及首屏与页尾两个 CTA。
-- CTA 链接带 `data-cta="guide-<slug>-{nav,hero,end}"`，统计任务上线后按这个属性绑 `cta_click`，不用再改页面。
+- CTA 链接按统计事件字典写：`data-cta` 只放位置枚举（`nav` / `hero` / `docs`），指南名放 `data-cta-label`（例如「指南 · 面料报价软件」），避免统计后台把每一页算成 `other`。
+- 搜索与统计脚本（`assets/search.js`、`assets/analytics.config.js`、`assets/analytics.js`）存在时生成器自动引用，不存在时不生成，合并顺序不影响产物。
 - 新增一篇：在 `tools/guides/` 加一个导出 default 的模块，登记到 `build-guides.mjs` 的 `GUIDES`，补 `sitemap.xml` 与 `llms.txt`，并在 `docs/index.html` 的「选型与实操指南」卡片加一条。
 - 每页正文建议 ≥ 800 字中文、至少 3 个可核对的具体机制或数字；没有真实客户数据就写方法，不编案例。
 
