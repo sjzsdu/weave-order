@@ -31,7 +31,8 @@ import type { Kernel } from "../kernel";
 import { toToolError } from "../tools/errors";
 import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
-import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, QUOTE_AGENT } from "./tokens";
+import type { MediaService } from "../media/media.service";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, MEDIA_SERVICE, QUOTE_AGENT } from "./tokens";
 import { ToolStatusInterceptor } from "./tool-status";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
