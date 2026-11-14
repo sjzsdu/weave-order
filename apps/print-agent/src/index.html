@@ -7,53 +7,128 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header>
-      <div>
-        <h1>织序打印代理</h1>
-        <p class="hint">常驻办公室/仓库 · WSS 出站长连接 · 不开放入站端口</p>
+    <header class="app-bar">
+      <div class="app-title">
+        <span class="mark" aria-hidden="true">织</span>
+        <div class="app-title-text">
+          <h1>织序打印代理</h1>
+          <p id="modeLine" class="mode-line">打开即用 · 本地模式</p>
+        </div>
       </div>
-      <span id="status" class="status offline">未连接</span>
+      <span id="status" class="status local" role="status">本地</span>
     </header>
 
+    <p id="previewBanner" class="banner" hidden>
+      界面预览模式：演示数据，不会真的打印（浏览器里直接打开 index.html 时出现）
+    </p>
+
+    <nav class="tabs" role="tablist" aria-label="功能分页">
+      <button class="tab active" data-tab="printers" role="tab" aria-selected="true" aria-controls="panel-printers">打印机</button>
+      <button class="tab" data-tab="cloud" role="tab" aria-selected="false" aria-controls="panel-cloud">云端</button>
+      <button class="tab" data-tab="local" role="tab" aria-selected="false" aria-controls="panel-local">本地数据</button>
+      <button class="tab" data-tab="log" role="tab" aria-selected="false" aria-controls="panel-log">日志</button>
+    </nav>
+
     <main>
-      <section>
-        <h2>1. 连接云端</h2>
-        <p class="hint">
-          token 只能打印、不能读业务数据；在织序「打印中心 → 设备 → 注册打印代理」生成。
-        </p>
-        <label
-          >云端地址（API 根）<input id="serverUrl" placeholder="https://api.weaveorder.cn"
-        /></label>
-        <label
-          >代理 token<textarea id="token" rows="3" placeholder="eyJhbGciOiJIUzI1NiIs…"></textarea>
-        </label>
-        <label>代理名称<input id="agentName" placeholder="仓库打印代理" /></label>
-        <button id="save" class="primary">保存并重连</button>
-      </section>
-
-      <section>
-        <div class="row">
-          <h2>2. 打印机</h2>
-          <button id="discover">重新发现</button>
+      <section id="panel-printers" class="panel active" role="tabpanel" aria-labelledby="打印机">
+        <div class="panel-head">
+          <h2>本机打印机</h2>
+          <span class="hint-inline">不依赖云端</span>
         </div>
-        <p class="hint">热敏打印机建议填网络地址（RAW TCP 9100）；A4 走系统驱动。</p>
+        <p class="hint">发现、检测、测试打印都在本机完成；连不连云端都能用。</p>
+
+        <div id="discovery" class="discovery" data-state="pending">
+          <div class="discovery-head">
+            <span id="discoveryBadge" class="badge">检测中…</span>
+            <span id="discoveryMeta" class="discovery-meta"></span>
+          </div>
+          <p id="discoveryMessage" class="discovery-message">正在读取本机打印队列…</p>
+          <p id="discoveryHint" class="discovery-hint" hidden></p>
+        </div>
+
+        <div class="actions">
+          <button id="discover" class="button">重新发现</button>
+          <button id="addPrinter" class="button ghost">手动添加</button>
+        </div>
+
         <ul id="printers" class="printers"></ul>
-        <button id="savePrinters">保存打印机 profile</button>
-      </section>
+        <p id="printersEmpty" class="empty" hidden>
+          还没有打印机。点「重新发现」读取系统打印队列，或「手动添加」直接填热敏打印机 IP:9100。
+        </p>
 
-      <section>
-        <div class="row">
-          <h2>3. 本地数据</h2>
-          <button id="clear">一键清空</button>
+        <p id="printersMessage" class="form-message" hidden></p>
+        <div class="sticky-actions">
+          <button id="savePrinters" class="button primary block">保存打印机配置</button>
         </div>
-        <p class="hint">任务载荷只在本地保留 ≤24h；日志只记录任务 ID/结果，不记录客户数据。</p>
-        <p>待打印：<strong id="pending">0</strong> · 失败：<strong id="failed">0</strong></p>
-        <button id="test">打印测试标签</button>
       </section>
 
-      <section>
-        <h2>日志（脱敏）</h2>
-        <pre id="log"></pre>
+      <section id="panel-cloud" class="panel" role="tabpanel">
+        <div class="panel-head">
+          <h2>云端连接</h2>
+          <span class="hint-inline">可选</span>
+        </div>
+        <p class="hint">
+          填了地址和 token 才会自动接收云端打印任务；留空即「仅本地使用」，不影响本机打印。
+        </p>
+        <label class="field">
+          <span>云端地址</span>
+          <input id="serverUrl" inputmode="url" placeholder="https://api.weaveorder.cn" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>代理 token</span>
+          <textarea id="token" rows="2" placeholder="在织序「打印中心 → 设备」生成" spellcheck="false"></textarea>
+        </label>
+        <label class="field">
+          <span>代理名称</span>
+          <input id="agentName" placeholder="仓库打印代理" />
+        </label>
+        <div class="actions">
+          <button id="save" class="button primary">保存并连接</button>
+          <button id="localOnly" class="button ghost">仅本地使用</button>
+        </div>
+        <p id="cloudMessage" class="form-message" hidden></p>
+        <p class="hint">
+          token 只能打印、不能读业务数据；断网时任务留在本地，联网后自动补传回执，不会重复出纸。
+        </p>
+      </section>
+
+      <section id="panel-local" class="panel" role="tabpanel">
+        <div class="panel-head">
+          <h2>本地数据</h2>
+          <span class="hint-inline">≤24h</span>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <strong id="pending">0</strong>
+            <span>待打印</span>
+          </div>
+          <div class="stat">
+            <strong id="failed">0</strong>
+            <span>失败</span>
+          </div>
+          <div class="stat">
+            <strong id="printed">0</strong>
+            <span>已回执</span>
+          </div>
+        </div>
+        <label class="field">
+          <span>测试目标</span>
+          <select id="testTarget"></select>
+        </label>
+        <div class="actions">
+          <button id="test" class="button">打印测试页</button>
+          <button id="clear" class="button danger">一键清空</button>
+        </div>
+        <p id="localMessage" class="form-message" hidden></p>
+        <p class="hint">任务载荷只在本机保留 ≤24h；日志只记录任务 ID 与结果，不记录客户数据。</p>
+      </section>
+
+      <section id="panel-log" class="panel" role="tabpanel">
+        <div class="panel-head">
+          <h2>运行日志</h2>
+          <button id="clearLog" class="button small ghost">清空</button>
+        </div>
+        <pre id="log" class="log">等待启动…</pre>
       </section>
     </main>
 

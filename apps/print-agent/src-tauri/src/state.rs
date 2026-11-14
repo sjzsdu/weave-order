@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use tauri::{AppHandle, Emitter, Manager};
@@ -19,6 +19,8 @@ pub struct AppState {
     pub config_notify: Arc<Notify>,
     /// 新任务：唤醒本地执行器。
     pub jobs_notify: Arc<Notify>,
+    /// 上一次状态（状态 + 文案），用于抑制离线重连时的重复日志。
+    last_status: Arc<Mutex<(String, String)>>,
 }
 
 impl AppState {
@@ -41,6 +43,7 @@ impl AppState {
                 .build()?,
             config_notify: Arc::new(Notify::new()),
             jobs_notify: Arc::new(Notify::new()),
+            last_status: Arc::new(Mutex::new((String::new(), String::new()))),
         })
     }
 
@@ -48,7 +51,18 @@ impl AppState {
         self.config.read().await.clone()
     }
 
+    /// 状态没变就不重复发事件 / 写日志：离线重连时每 5 秒一条会把日志刷满。
     pub fn emit_status(&self, status: &str, message: &str) {
+        {
+            let mut last = self
+                .last_status
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if last.0 == status && last.1 == message {
+                return;
+            }
+            *last = (status.to_string(), message.to_string());
+        }
         let _ = self.app.emit(
             "agent-status",
             serde_json::json!({ "status": status, "message": message }),
@@ -57,9 +71,8 @@ impl AppState {
     }
 
     pub fn emit_log(&self, message: &str) {
-        let _ = self.app.emit(
-            "agent-log",
-            serde_json::json!({ "message": message }),
-        );
+        let _ = self
+            .app
+            .emit("agent-log", serde_json::json!({ "message": message }));
     }
 }
