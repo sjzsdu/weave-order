@@ -138,4 +138,16 @@ describe("官网构建产物", () => {
     expect(robots).toMatch(/Sitemap: https?:\/\//);
     expect(robots).toMatch(/GPTBot/);
   });
+
+  it("每页都有站内搜索入口，构建产物带搜索索引", () => {
+    expect(existsSync(join(distDir, "search-index.json")), "缺少搜索索引").toBe(true);
+    for (const page of PAGES.filter((p) => p !== "404.html")) {
+      const html = readFileSync(join(distDir, page), "utf8");
+      expect(html, `${page} 缺搜索按钮`).toContain("data-search-open");
+      expect(html, `${page} 缺搜索对话框`).toContain('id="siteSearch"');
+      expect(html, `${page} 缺搜索输入框`).toContain('id="searchInput"');
+    }
+    // 帮助中心目录的输入框要能被脚本接管（筛选 + Enter 升级为全文搜索）
+    expect(readFileSync(join(distDir, "docs/index.html"), "utf8")).toContain('id="docSearch"');
+  });
 });
