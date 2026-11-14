@@ -24,3 +24,23 @@ body {
 ::selection {
   background: #e6eef5;
 }
+
+/* 打印：对账单是给客户看的纸面，只保留内容区；页面与打印共用同一份 DOM。 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+@page {
+  margin: 14mm;
+}

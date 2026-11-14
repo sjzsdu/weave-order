@@ -153,11 +153,36 @@ export const CreateReceivableInput = z
   .strict();
 export type CreateReceivableInput = z.infer<typeof CreateReceivableInput>;
 
+/**
+ * 单笔回款流水。
+ *
+ * `receivables.paidAmount` 只是累计值；「哪几笔回款」必须来自这张明细表，
+ * 否则对账单只能看到总和，客户一问「这笔钱是哪天打的」就答不上来。
+ */
+export const ReceivablePayment = z
+  .object({
+    id: EntityId,
+    tenantId: EntityId,
+    receivableId: EntityId,
+    amount: Money,
+    paidAt: Timestamp,
+    note: z.string().max(255).nullable(),
+    /** 凭证图 object_key；读模型再转短期 URL，不直接回给前端。 */
+    proofObjectKey: z.string().max(512).nullable(),
+    recordedBy: z.string().max(128).nullable(),
+    createdAt: Timestamp,
+  })
+  .strict();
+export type ReceivablePayment = z.infer<typeof ReceivablePayment>;
+
 export const RecordPaymentInput = z
   .object({
     receivableId: EntityId,
     amount: Money,
     paidAt: Timestamp.optional(),
+    note: z.string().max(255).nullish(),
+    /** 只接受 `/api/media/presign` 为该应收签出的 key（服务端校验前缀）。 */
+    proofObjectKey: z.string().max(512).nullish(),
   })
   .strict();
 export type RecordPaymentInput = z.infer<typeof RecordPaymentInput>;

@@ -39,6 +39,8 @@ const PresignInputSchema = z
     mimeType: z.enum(ALLOWED_IMAGE_MIME_TYPES),
     byteSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     sampleId: z.string().uuid().optional(),
+    /** 回款凭证：为某笔应收签一个只读用途的上传地址。 */
+    receivableId: z.string().uuid().optional(),
     /**
      * 契约兼容字段：真正落库的 variant 由 confirm 决定（presign 是无状态的）。
      * 不带 sampleId 的 key 落在 `uploads/` 下，confirm 会拒绝挂载——预留非样品图片用途。
@@ -89,9 +91,16 @@ export class MediaService {
         reason: "MEDIA_INPUT_INVALID",
       });
     }
-    const { mimeType, byteSize, sampleId } = parsed.data;
-    // 图片是样品的子资源：没有样品写权限的角色（sales / viewer）不能签上传。
-    if (ctx && !mayWriteSamples(ctx.actor.role)) {
+    const { mimeType, byteSize, sampleId, receivableId } = parsed.data;
+    if (sampleId && receivableId) {
+      throw new KernelError("KERNEL_REJECTED", "上传地址只能有一个用途", {
+        reason: "MEDIA_INPUT_INVALID",
+      });
+    }
+    // 样品图是样品的子资源：没有样品写权限的角色（sales / viewer）不能签上传。
+    // 回款凭证不适用这条：财务只见应收、不写样品，但必须能给回款传凭证；
+    // 凭证的归属由后面 receivables.getById(id, ctx) 的可见性校验保证。
+    if (sampleId && ctx && !mayWriteSamples(ctx.actor.role)) {
       throw new KernelError("PERMISSION_DENIED", "当前角色没有样品写权限，不能上传样品图");
     }
     if (byteSize > this.env.MEDIA_MAX_BYTES) {
@@ -105,7 +114,13 @@ export class MediaService {
       // 不属于当前租户的样品会在这里得到 RESOURCE_NOT_FOUND（404），不会签出 key。
       await kernel.samples.getById(sampleId);
     }
-    const objectKey = this.buildObjectKey(kernel.tenantId, sampleId, mimeType);
+    if (receivableId) {
+      // 看不见这笔应收的人不配给它传凭证；越权同样按不存在返回。
+      await kernel.receivables.getById(receivableId, ctx);
+    }
+    const objectKey = receivableId
+      ? `tenant/${kernel.tenantId}/receipts/${receivableId}/${randomUUID()}.${EXTENSION_BY_MIME[mimeType]}`
+      : this.buildObjectKey(kernel.tenantId, sampleId, mimeType);
     const expiresInSeconds = this.env.MEDIA_PRESIGN_TTL_SECONDS;
     const uploadUrl = await this.storage.presignPut({
       objectKey,

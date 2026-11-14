@@ -22,6 +22,9 @@ import {
   InviteMemberInput,
   InvitePreview,
   Order,
+  OrderFunnel,
+  OrderListResponse,
+  OrderWorkbench,
   OnboardingPreview,
   OnboardingResult,
   StartTenantInput,
@@ -42,6 +45,10 @@ import {
   QuoteShareStats,
   QuoteShareStatsList,
   RegisterPrintAgentInput,
+  Receivable,
+  ReceivableListResponse,
+  ReceivablePaymentView,
+  ReceivableStatement,
   ScanResult,
   SampleImage,
   Shipment,
@@ -127,6 +134,21 @@ const SamplePageResponse = z
   })
   .strict();
 const SampleResponse = z.object({ sample: FabricSample }).strict();
+const ConfirmImageResponse = z.object({ image: SampleImage }).strict();
+const RecordPaymentResponse = z
+  .object({ receivable: Receivable, payment: ReceivablePaymentView.nullable() })
+  .strict();
+/** 只拼有值的查询参数，避免把 `undefined` 聊给服务端。 */
+function listParams(values: Record<string, string | number | null | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 const PresignImageResponse = z
   .object({
     uploadUrl: z.string().url(),
@@ -136,8 +158,6 @@ const PresignImageResponse = z
     expiresAt: z.string(),
   })
   .strict();
-const ConfirmImageResponse = z.object({ image: SampleImage }).strict();
-const OrdersResponse = z.object({ orders: z.array(Order) }).strict();
 const PendingShippingResponse = z.object({ orders: z.array(OrderShippingSummary) }).strict();
 const EnqueuePrintJobResponse = z
   .object({
@@ -459,9 +479,103 @@ export function createApiClient(options: ApiClientOptions) {
       OkQuoteShareStats.parse(await post(`/api/shares/${encodeURIComponent(shareId)}/revoke`, {}))
         .data,
 
-    // ---- 打印中心（E5）----
-    orders: async (limit = 50) =>
-      OrdersResponse.parse(await request(`/api/orders?limit=${limit}`)).orders,
+    // ---- 订单 / 应收工作面 ----
+    /** 订单列表：筛选 + 游标分页，逾期与已发未发由服务端派生。 */
+    orders: async (
+      options: {
+        limit?: number;
+        cursor?: string | null;
+        statuses?: readonly string[];
+        customerId?: string;
+        dueFrom?: string;
+        dueBefore?: string;
+        overdueOnly?: boolean;
+      } = {},
+    ) => {
+      const params = listParams({
+        limit: options.limit,
+        cursor: options.cursor,
+        customerId: options.customerId,
+        dueFrom: options.dueFrom,
+        dueBefore: options.dueBefore,
+        overdueOnly: options.overdueOnly ? "true" : undefined,
+        status: options.statuses?.length ? options.statuses.join(",") : undefined,
+      });
+      return OrderListResponse.parse(await request(`/api/orders${params}`));
+    },
+
+    /** 漏斗：与列表共用筛选（除状态外），数字点进去条数一致。 */
+    orderFunnel: async (
+      options: {
+        customerId?: string;
+        dueFrom?: string;
+        dueBefore?: string;
+        overdueOnly?: boolean;
+      } = {},
+    ) =>
+      OrderFunnel.parse(
+        await request(
+          `/api/orders/funnel${listParams({
+            customerId: options.customerId,
+            dueFrom: options.dueFrom,
+            dueBefore: options.dueBefore,
+            overdueOnly: options.overdueOnly ? "true" : undefined,
+          })}`,
+        ),
+      ),
+
+    /** 订单详情工作面：行项目 / 关联报价 / 寄样记录 / 发货记录。 */
+    orderWorkbench: async (orderId: string) =>
+      OrderWorkbench.parse(await request(`/api/orders/${encodeURIComponent(orderId)}/workbench`)),
+
+    /** 应收列表：逾期 / 本月到期 / 已结清 + 各分组计数与未收余额。 */
+    receivables: async (
+      options: {
+        bucket?: "overdue" | "dueSoon" | "settled" | "all";
+        customerId?: string;
+        cursor?: string | null;
+        limit?: number;
+      } = {},
+    ) =>
+      ReceivableListResponse.parse(
+        await request(
+          `/api/receivables${listParams({
+            bucket: options.bucket,
+            customerId: options.customerId,
+            cursor: options.cursor,
+            limit: options.limit,
+          })}`,
+        ),
+      ),
+
+    /** 登记回款：金额整数分，日期与凭证可选，成功后返回最新余额。 */
+    recordPayment: async (
+      receivableId: string,
+      input: {
+        amount: { amount: number; currency: string };
+        paidAt?: string;
+        note?: string | null;
+        proofObjectKey?: string | null;
+      },
+    ) =>
+      RecordPaymentResponse.parse(
+        await post(`/api/receivables/${encodeURIComponent(receivableId)}/payments`, input),
+      ),
+
+    /** 客户对账单：一笔应收一行、一笔回款一行，打印与页面同一份汇总。 */
+    statement: async (customerId: string, range: { from?: string; to?: string } = {}) =>
+      ReceivableStatement.parse(
+        await request(
+          `/api/customers/${encodeURIComponent(customerId)}/statement${listParams(range)}`,
+        ),
+      ),
+
+    /** 回款凭证上传：先拿服务端签出的 PUT 地址，客户端直传对象存储。 */
+    presignReceipt: async (input: {
+      receivableId: string;
+      mimeType: "image/jpeg" | "image/png" | "image/webp";
+      byteSize: number;
+    }) => PresignImageResponse.parse(await post("/api/media/presign", input)),
 
     order: async (orderId: string) =>
       z.object({ order: Order }).parse(await request(`/api/orders/${orderId}`)).order,
