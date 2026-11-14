@@ -43,6 +43,9 @@ async function bootstrap(): Promise<void> {
       void worker.stop();
     });
   }
+  // 必须在启动 HTTP 服务后再打印就绪：S4 收敛时这行被误删，
+  // 进程只初始化 Nest 就退出，所有 HTTP 验收（含 S1 media e2e）都会假失败。
+  await app.listen(env.PORT);
   console.log(
     `✔ WeaveOrder API → http://localhost:${env.PORT}/api/health（auth=${env.AUTH_MODE}）`,
   );
