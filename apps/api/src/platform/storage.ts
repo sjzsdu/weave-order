@@ -33,7 +33,18 @@ export interface ObjectStorage {
   presignPut(input: PresignPutInput): Promise<string>;
   signGet(objectKey: string, expiresInSeconds?: number): Promise<string>;
   head(objectKey: string): Promise<ObjectHead | null>;
+  /**
+   * 读对象字节。只给服务端内部用（图像向量索引要把原图交给 embedding 模型），
+   * 绝不能把返回的字节直接回给客户端 —— 那会绕过 CDN 与鉴权。
+   * 对象不存在返回 null（与 `head` 一致），其余错误冒泡。
+   */
+  get(objectKey: string): Promise<ObjectBytes | null>;
   delete(objectKey: string): Promise<void>;
+}
+
+export interface ObjectBytes {
+  contentType: string;
+  bytes: Buffer;
 }
 
 export interface S3StorageOptions {
@@ -99,6 +110,21 @@ export class S3ObjectStorage implements ObjectStorage {
     } catch (error) {
       // 404 / NoSuchKey 都表示「对象不存在」，交给调用方按业务错误处理；
       // 其余错误（网络、鉴权）必须冒泡，不能伪装成「没传」。
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async get(objectKey: string): Promise<ObjectBytes | null> {
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: objectKey }),
+      );
+      const body = result.Body;
+      if (!body) return null;
+      const bytes = Buffer.from(await body.transformToByteArray());
+      return { contentType: result.ContentType ?? "application/octet-stream", bytes };
+    } catch (error) {
       if (isNotFound(error)) return null;
       throw error;
     }

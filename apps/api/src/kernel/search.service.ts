@@ -9,8 +9,11 @@ import type { KernelContext } from "./audit";
 import { mapSample, presentSample } from "./samples.service";
 import { sampleEmbeddingText } from "./sample-embedding-text";
 import { SampleIndexService } from "./sample-index.service";
+import type { ImageIndexService } from "./image-index.service";
 import { escapeLikePattern } from "./like";
 import type { SampleImageService } from "./sample-images.service";
+import type { ImageEmbeddingProvider } from "../platform/embedding";
+import type { ImageCaptioner } from "../platform/caption";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -19,6 +22,57 @@ type SampleRow = typeof samples.$inferSelect;
  * 低于阈值的行直接不返回：宁缺毋滥，不用「负相似度映射到 0」来凑数。
  */
 export const DEFAULT_SEMANTIC_MIN_SCORE = 0.5;
+
+/**
+ * 图-图检索的默认最低 cosine 相似度。
+ * 实测（qwen3-vl-embedding，2026-11-14）：同款异角度 0.89~0.96，
+ * 最易混的异款（浅蓝牛仔 vs 灰针织）0.61~0.69 —— 0.55 会把异款放进来，0.75 能挡住。
+ */
+export const DEFAULT_IMAGE_MIN_SIMILARITY = 0.75;
+
+/**
+ * 文-图检索的默认最低 cosine 相似度。
+ * 图-图与文-图不是同一分布（文-图正确配对实测 0.35~0.57），
+ * 套用图-图阈值会让 caption 兜底永远返回空。
+ */
+export const DEFAULT_IMAGE_TEXT_MIN_SIMILARITY = 0.35;
+
+/** 以图找样的依赖集合；缺省时该能力明确报错，不退化成文本向量硬凑。 */
+export interface ImageSearchDeps {
+  index: ImageIndexService;
+  embedder: ImageEmbeddingProvider;
+  /** caption 兜底；未开启 `CAPTION_FALLBACK` 时为 null。 */
+  captioner?: ImageCaptioner | null;
+  /** 图-图阈值（默认 0.75）。 */
+  minSimilarity?: number;
+  /** 文-图阈值（默认 0.35）。 */
+  textMinSimilarity?: number;
+}
+
+export interface ImageSearchMatch {
+  sample: FabricSample;
+  score: number;
+  /** 命中的具体那张图（前端高亮「你拍的这张最像这个角度的这张图」）。 */
+  matchedImageId: string | null;
+  matchedImageUrl: string | null;
+  /** 可核对的命中理由；不写「AI 觉得像」这类无依据文案。 */
+  reasons: string[];
+}
+
+export interface ImageSearchResult {
+  embeddingModel: string;
+  dimension: number;
+  /**
+   * `image`：真实图向量检索；`caption`：图向量不可用时的描述兜底。
+   * 两种情况前端文案必须不同，绝不静默混用。
+   */
+  mode: "image" | "caption";
+  /** 向量是否携带视觉语义（local-stub 为 false，前端要显示「演示模式」）。 */
+  semantic: boolean;
+  /** 本租户还有多少张图没索引完：前端提示「结果可能不全」，而不是显示「无结果」。 */
+  indexing: number;
+  matches: ImageSearchMatch[];
+}
 
 /**
  * 是否同时跑向量检索。
@@ -48,21 +102,6 @@ function ilikeLiteral(column: AnyColumn, pattern: string): SQL {
   return sql`${column} ILIKE ${pattern} ESCAPE '\\'`;
 }
 
-function cosine(a: number[], b: number[]): number {
-  const length = Math.min(a.length, b.length);
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < length; i += 1) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    dot += x * y;
-    normA += x * x;
-    normB += y * y;
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
 
 /**
  * 找样内核服务（只读）。
@@ -74,6 +113,7 @@ function cosine(a: number[], b: number[]): number {
  */
 export class SearchService {
   private readonly index: SampleIndexService;
+  private readonly image?: ImageSearchDeps;
 
   constructor(
     private readonly db: Db,
@@ -81,8 +121,10 @@ export class SearchService {
     private readonly tenantId: string,
     private readonly sampleImages?: SampleImageService,
     private readonly semanticMinScore = DEFAULT_SEMANTIC_MIN_SCORE,
+    image?: ImageSearchDeps,
   ) {
     this.index = new SampleIndexService(db, embedder, tenantId);
+    this.image = image;
   }
 
   /** 给候选样品补主图 URL，前端 `SampleTile` 才有真缩略图。 */
@@ -137,46 +179,102 @@ export class SearchService {
     return missing.length;
   }
 
+  /**
+   * 以图找样（T-001 的真实现）。
+   *
+   * 查询图 → 多模态 embedding → pgvector HNSW topN（**图像**向量）→ 按样品去重取最高分
+   * → 返回样品 + 命中的那张图 + 原始 cosine 分数 + 可核对理由。
+   *
+   * 图向量服务不可用且开启 `CAPTION_FALLBACK` 时，走「视觉模型描述 → 文本语义检索」，
+   * 响应标 `mode: "caption"`。两条链路分数不同空间，前端文案也必须不同。
+   */
   async searchByImage(
     image: { mimeType: string; base64: string },
     topK: number,
-    minSimilarity: number,
-  ): Promise<{
-    embeddingModel: string;
-    dimension: number;
-    matches: { sample: ReturnType<typeof mapSample>; score: number }[];
-  }> {
-    await this.ensureIndexed();
-    const queryVector = await this.embedder.embedImage(image);
-    const rows = await this.db
-      .select({ embedding: sampleEmbeddings.embedding, sample: samples })
-      .from(sampleEmbeddings)
-      .innerJoin(samples, eq(sampleEmbeddings.sampleId, samples.id))
-      .where(
-        and(
-          eq(sampleEmbeddings.model, this.embedder.name),
-          eq(sampleEmbeddings.tenantId, this.tenantId),
-        ),
+    minSimilarity?: number,
+  ): Promise<ImageSearchResult> {
+    if (!this.image) {
+      throw new Error(
+        "以图找样未配置图像 embedding provider；请注入 ImageSearchDeps，禁止用文本向量硬凑图像分数。",
       );
+    }
+    const { index, embedder, captioner } = this.image;
+    const threshold = minSimilarity ?? this.image.minSimilarity ?? DEFAULT_IMAGE_MIN_SIMILARITY;
+    const pending = await index.pendingCount();
+    try {
+      const queryVector = await embedder.embedImage(image);
+      // 多取一些候选：同一样品可能多张图命中，去重后还要凑够 topK。
+      const rows = await index.searchByVector(queryVector, Math.min(topK * 5, 200), threshold);
+      const best = new Map<string, (typeof rows)[number]>();
+      for (const row of rows) {
+        // rows 已按距离升序：每个样品保留第一条（分数最高的那张图）。
+        if (!best.has(row.sample.id)) best.set(row.sample.id, row);
+      }
+      const picked = [...best.values()].slice(0, topK);
+      const primaryUrls = await this.primaryUrls(picked.map((row) => mapSample(row.sample)));
+      const matches: ImageSearchMatch[] = [];
+      for (const row of picked) {
+        const mapped = mapSample(row.sample);
+        const matchedImageUrl = this.sampleImages
+          ? await this.sampleImages.urlFor(row.objectKey)
+          : null;
+        const reasons = [`图像相似 ${(row.score * 100).toFixed(0)}%`];
+        if (!embedder.semantic) {
+          reasons.unshift("演示模式：哈希向量，不代表视觉相似度");
+        }
+        matches.push({
+          sample: { ...mapped, primaryImageUrl: primaryUrls.get(mapped.id) ?? null },
+          score: Math.max(0, Math.min(1, row.score)),
+          matchedImageId: row.imageId,
+          matchedImageUrl,
+          reasons,
+        });
+      }
+      return {
+        embeddingModel: embedder.name,
+        dimension: embedder.dimension,
+        mode: "image",
+        semantic: embedder.semantic,
+        indexing: pending,
+        matches,
+      };
+    } catch (error) {
+      if (!captioner) throw error;
+      return await this.searchByCaption(image, topK, captioner, pending);
+    }
+  }
 
-    const scored = rows
-      .map((row) => ({
-        sample: mapSample(row.sample),
-        // cosine ∈ [-1,1] 映射到 [0,1]，与契约一致
-        score: Math.max(0, Math.min(1, (cosine(queryVector, row.embedding) + 1) / 2)),
-      }))
-      .filter((match) => match.score >= minSimilarity)
-      .sort((a, b) => b.score - a.score || a.sample.code.localeCompare(b.sample.code))
-      .slice(0, topK);
-
-    const images = await this.primaryUrls(scored.map((match) => match.sample));
+  /** caption 兜底：视觉模型写描述 → S3 的文本语义检索。分数来自文本 cosine，与图向量不同空间。 */
+  private async searchByCaption(
+    image: { mimeType: string; base64: string },
+    topK: number,
+    captioner: ImageCaptioner,
+    pending: number,
+  ): Promise<ImageSearchResult> {
+    const caption = await captioner.describe(image);
+    const queryVector = await this.embedder.embedText(caption);
+    const rows = await this.index.searchByVector(
+      queryVector,
+      topK,
+      this.image?.textMinSimilarity ?? DEFAULT_IMAGE_TEXT_MIN_SIMILARITY,
+    );
+    const primaryUrls = await this.primaryUrls(rows.map((row) => mapSample(row.sample)));
     return {
       embeddingModel: this.embedder.name,
       dimension: this.embedder.dimension,
-      matches: scored.map((match) => ({
-        ...match,
-        sample: { ...match.sample, primaryImageUrl: images.get(match.sample.id) ?? null },
-      })),
+      mode: "caption",
+      semantic: this.embedder.semantic,
+      indexing: pending,
+      matches: rows.map((row) => {
+        const mapped = mapSample(row.sample);
+        return {
+          sample: { ...mapped, primaryImageUrl: primaryUrls.get(mapped.id) ?? null },
+          score: Math.max(0, Math.min(1, row.score)),
+          matchedImageId: null,
+          matchedImageUrl: null,
+          reasons: [`按图片描述检索：${caption}`, `文本相似 ${(row.score * 100).toFixed(0)}%`],
+        };
+      }),
     };
   }
 

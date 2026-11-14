@@ -191,7 +191,17 @@ export class MediaService {
       },
       ctx,
     );
-    return { image: await this.present(row) };
+    // 挂图即索引：算图向量并写 `sample_image_embeddings`。
+    // 失败不阻塞上传（图已经存下了），但会把 `sample_images.index_status` 标成 failed，
+    // 图墙据此显示「索引失败」，不会假装「搜不到」。
+    try {
+      await kernel.imageIndex.indexImage(row.id);
+    } catch {
+      // 状态与原因已由 ImageIndexService 写库；这里只保证上传链路不被拖死。
+    }
+    // 回读一次：索引状态（pending/ready/failed）必须反映本次尝试的结果。
+    const fresh = (await kernel.sampleImages.findById(row.id)) ?? row;
+    return { image: await this.present(fresh) };
   }
 
   /** 把 DB 行转成读模型；桶非公开时退回签名 URL。 */
@@ -205,6 +215,8 @@ export class MediaService {
       isPrimary: row.isPrimary,
       width: row.width,
       height: row.height,
+      indexStatus: (row.indexStatus as SampleImage["indexStatus"]) ?? "pending",
+      indexError: row.indexError ?? null,
     };
   }
 

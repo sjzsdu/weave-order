@@ -1,7 +1,11 @@
 import { DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { createEmbeddingProviderFromEnv } from "../platform/embedding";
-import type { EmbeddingProvider } from "../platform/embedding";
+import {
+  createEmbeddingProviderFromEnv,
+  createImageEmbeddingProviderFromEnv,
+} from "../platform/embedding";
+import type { EmbeddingProvider, ImageEmbeddingProvider } from "../platform/embedding";
+import { createCaptionerFromEnv } from "../platform/caption";
 import { loadEnv } from "../platform/env";
 import { createPrintCenter } from "../print";
 import { createObjectStorageFromEnv } from "../platform/storage";
@@ -19,6 +23,7 @@ import { PricingService } from "./pricing.service";
 import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
 import { RevisionService } from "./revisions.service";
+import { ImageIndexService } from "./image-index.service";
 import { SampleImageService } from "./sample-images.service";
 import { SampleIndexService } from "./sample-index.service";
 import { SampleService } from "./samples.service";
@@ -40,6 +45,8 @@ export interface KernelOptions {
   publicAppUrl?: string;
   /** 对象存储；缺省按环境变量创建。测试可注入假实现，避免真实网络。 */
   storage?: ObjectStorage;
+  /** 图像 embedding provider；缺省按环境变量创建（默认 local-stub，无 key 可跑）。 */
+  imageEmbedder?: ImageEmbeddingProvider;
 }
 
 /**
@@ -57,15 +64,22 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   // 默认 provider 由环境变量决定；显式注入（测试/演示）优先。
   const activeEmbedder =
     embedder ?? createEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
+  // 图像向量与文本向量是两套模型：不同空间、不同表、不同阈值。
+  const activeImageEmbedder =
+    options.imageEmbedder ?? createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
   const customers = new CustomerService(db, tenantId);
-  const sampleImages = new SampleImageService(
-    db,
-    tenantId,
-    options.storage ?? createObjectStorageFromEnv(env),
-    env,
-  );
+  const storage = options.storage ?? createObjectStorageFromEnv(env);
+  const sampleImages = new SampleImageService(db, tenantId, storage, env);
   const sampleIndex = new SampleIndexService(db, activeEmbedder, tenantId);
-  const samples = new SampleService(db, activeEmbedder, tenantId, sampleImages, sampleIndex);
+  const imageIndex = new ImageIndexService(db, activeImageEmbedder, tenantId, storage);
+  const samples = new SampleService(
+    db,
+    activeEmbedder,
+    tenantId,
+    sampleImages,
+    sampleIndex,
+    imageIndex,
+  );
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
   const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
@@ -82,12 +96,24 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     tenantId,
   );
   const revisions = new RevisionService(db, tenantId);
+  const captioner = createCaptionerFromEnv(
+    env,
+    env.CAPTION_FALLBACK,
+    env.IMAGE_EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY,
+  );
   const search = new SearchService(
     db,
     activeEmbedder,
     tenantId,
     sampleImages,
     env.SEARCH_SEMANTIC_MIN_SCORE,
+    {
+      index: imageIndex,
+      embedder: activeImageEmbedder,
+      captioner,
+      minSimilarity: env.SEARCH_IMAGE_MIN_SIMILARITY,
+      textMinSimilarity: env.SEARCH_IMAGE_TEXT_MIN_SIMILARITY,
+    },
   );
   const importing = new ImportService(db, customers, samples, sampleIndex, tenantId);
   const tenancy = new TenancyService(db);
@@ -108,6 +134,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     samples,
     sampleIndex,
     sampleImages,
+    imageIndex,
     pricing,
     shipments,
     quotes,

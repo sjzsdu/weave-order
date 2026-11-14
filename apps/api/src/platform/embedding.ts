@@ -339,3 +339,266 @@ export function createEmbeddingProvider(
     `EMBEDDING_PROVIDER=${provider} 尚未接入；当前支持：local-stub、dashscope-text-v3。`,
   );
 }
+
+/* ============================ 多模态（图像）embedding ============================ */
+
+/**
+ * 图像 embedding provider。
+ *
+ * 与文本 provider 分开的原因不是洁癖：多模态模型的**图向量与文向量同空间**，
+ * 但它们的分数分布和文本模型（`text-embedding-v3`）完全不是一回事。
+ * 混用会让「图搜图」与「文搜样」互相污染阈值，所以两套 provider、两张表、两组阈值。
+ */
+export interface ImageEmbeddingProvider {
+  readonly name: string;
+  readonly dimension: number;
+  /** 是否携带视觉语义。本地 stub 为 false：检索层据此标记 `semantic:false`，不冒充真实分数。 */
+  readonly semantic: boolean;
+  /** 单次请求最多送几张图（通义多模态 10 张/请求）。 */
+  readonly maxImagesPerRequest: number;
+  embedImage(image: ImageEmbeddingInput): Promise<number[]>;
+  embedImages(images: ImageEmbeddingInput[]): Promise<number[][]>;
+}
+
+export interface ImageEmbeddingInput {
+  mimeType: string;
+  base64: string;
+}
+
+export const DEFAULT_IMAGE_EMBEDDING_MODEL = "qwen3-vl-embedding";
+export const DEFAULT_IMAGE_EMBEDDING_DIMENSION = 1024;
+export const DEFAULT_IMAGE_EMBEDDING_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
+export const DASHSCOPE_MULTIMODAL_MAX_IMAGES = 10;
+/** 通义多模态向量支持的维度档位（实测 512/1024/1536/2560 分离度差异 <0.03）。 */
+export const DASHSCOPE_MULTIMODAL_DIMENSIONS = [256, 512, 768, 1024, 1536, 2048, 2560] as const;
+
+/**
+ * 本地图像 stub：与文本 stub 同一套哈希，只用于无 key 的本地演示与测试。
+ * `semantic=false` —— 分数只反映字节形态，不代表「看起来像」。
+ */
+export class LocalStubImageEmbeddingProvider implements ImageEmbeddingProvider {
+  readonly name = "local-stub-image-v1";
+  readonly dimension = STUB_DIMENSION;
+  readonly semantic = false;
+  readonly maxImagesPerRequest = 8;
+
+  embedImage(image: ImageEmbeddingInput): Promise<number[]> {
+    const bytes = Buffer.from(image.base64, "base64");
+    if (bytes.length === 0) {
+      return Promise.reject(new Error(`图像内容为空或 base64 非法（mimeType=${image.mimeType}）`));
+    }
+    return Promise.resolve(hashVector(Buffer.concat([Buffer.from(image.mimeType, "utf8"), bytes])));
+  }
+
+  async embedImages(images: ImageEmbeddingInput[]): Promise<number[][]> {
+    return Promise.all(images.map((image) => this.embedImage(image)));
+  }
+}
+
+/**
+ * 通义多模态向量（`qwen3-vl-embedding`）。
+ *
+ * 为什么直连 DashScope 原生端点而不是 OpenAI 兼容端点：
+ * 多模态向量的**独立向量**（一张图一个向量）只在原生
+ * `/api/v1/services/embeddings/multimodal-embedding` 上提供，
+ * 兼容端点只能做对话，没有 image embedding 入口。
+ *
+ * 实测约束（2026-11-14，用真实 key）：
+ * - 单请求最多 10 张图 / 20 个 content；
+ * - 图片支持 base64 data URI；老模型 `multimodal-embedding-v1` 只允许 1 张，故不选；
+ * - 256px 图 64 token、512px 256 token，分离度基本持平，所以索引前先缩图。
+ */
+export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvider {
+  readonly name: string;
+  readonly dimension: number;
+  readonly semantic = true;
+  readonly maxImagesPerRequest: number;
+  private readonly model: string;
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly maxAttempts: number;
+  private readonly retryBaseMs: number;
+  private readonly timeoutMs: number;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: DashScopeEmbeddingOptions) {
+    if (!options.apiKey.trim()) {
+      throw new Error(
+        "IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl 需要 IMAGE_EMBEDDING_API_KEY（或 DASHSCOPE_API_KEY）；" +
+          "没有 key 时请用 local-stub，不要静默降级。",
+      );
+    }
+    this.model = options.model ?? DEFAULT_IMAGE_EMBEDDING_MODEL;
+    this.name = `dashscope-${this.model}`;
+    this.dimension = options.dimension ?? DEFAULT_IMAGE_EMBEDDING_DIMENSION;
+    if (this.dimension <= 0) throw new Error(`IMAGE_EMBEDDING_DIMENSION 非法：${this.dimension}`);
+    this.baseUrl = (options.baseUrl ?? DEFAULT_IMAGE_EMBEDDING_BASE_URL).replace(/\/+$/, "");
+    this.apiKey = options.apiKey;
+    this.maxImagesPerRequest = Math.max(
+      1,
+      Math.min(options.maxBatchSize ?? DASHSCOPE_MULTIMODAL_MAX_IMAGES, DASHSCOPE_MULTIMODAL_MAX_IMAGES),
+    );
+    this.maxAttempts = Math.max(options.maxAttempts ?? 3, 1);
+    this.retryBaseMs = Math.max(options.retryBaseMs ?? 250, 0);
+    this.timeoutMs = options.timeoutMs ?? 20_000;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async embedImage(image: ImageEmbeddingInput): Promise<number[]> {
+    const [vector] = await this.embedImages([image]);
+    if (!vector) throw new Error("embedImage 未返回向量");
+    return vector;
+  }
+
+  async embedImages(images: ImageEmbeddingInput[]): Promise<number[][]> {
+    if (images.length === 0) return [];
+    const vectors: number[][] = [];
+    for (let offset = 0; offset < images.length; offset += this.maxImagesPerRequest) {
+      vectors.push(
+        ...(await this.requestBatch(images.slice(offset, offset + this.maxImagesPerRequest))),
+      );
+    }
+    return vectors;
+  }
+
+  private async requestBatch(images: ImageEmbeddingInput[]): Promise<number[][]> {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      try {
+        return await this.requestOnce(images);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (error instanceof EmbeddingRequestError && !error.retryable) throw error;
+        if (attempt < this.maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, this.retryBaseMs * 2 ** (attempt - 1)));
+        }
+      }
+    }
+    throw new Error(
+      `图像 embedding 调用失败（model=${this.name}，已尝试 ${this.maxAttempts} 次）：` +
+        `${lastError?.message ?? "未知错误"}`,
+    );
+  }
+
+  private async requestOnce(images: ImageEmbeddingInput[]): Promise<number[][]> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `${this.baseUrl}/services/embeddings/multimodal-embedding/multimodal-embedding`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.model,
+            input: {
+              contents: images.map((image) => ({
+                image: `data:${image.mimeType};base64,${image.base64}`,
+              })),
+            },
+            parameters: { dimension: this.dimension },
+          }),
+          signal: controller.signal,
+        },
+      );
+    } catch (error) {
+      const aborted = error instanceof Error && error.name === "AbortError";
+      throw new EmbeddingRequestError(
+        aborted
+          ? `请求超时（${this.timeoutMs}ms）：${this.baseUrl}/services/embeddings/multimodal-embedding`
+          : `网络错误：${error instanceof Error ? error.message : String(error)}`,
+        true,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      // 400 常见于「维度不支持 / base64 非法 / 单批超限」——重试不会变好。
+      const retryable = response.status === 429 || response.status >= 500;
+      throw new EmbeddingRequestError(
+        `HTTP ${response.status} ${response.statusText}：${detail || "无响应体"}`,
+        retryable,
+      );
+    }
+
+    const payload = (await response.json().catch(() => null)) as {
+      output?: { embeddings?: { embedding?: unknown }[] };
+      usage?: unknown;
+      code?: unknown;
+      message?: unknown;
+    } | null;
+    const embeddings = payload?.output?.embeddings;
+    if (!Array.isArray(embeddings) || embeddings.length !== images.length) {
+      throw new EmbeddingRequestError(
+        `响应条数不符：期望 ${images.length} 条，实际 ${Array.isArray(embeddings) ? embeddings.length : "无 embeddings"}；` +
+          `上游 code=${typeof payload?.code === "string" ? payload.code : "无"} ` +
+          `message=${typeof payload?.message === "string" ? payload.message : "无"}`,
+        true,
+      );
+    }
+    return embeddings.map((item, position) => {
+      if (!isFiniteVector(item?.embedding, this.dimension)) {
+        const length = Array.isArray(item?.embedding) ? item.embedding.length : "非数组";
+        throw new EmbeddingRequestError(
+          `第 ${position} 条向量维度非法（期望 ${this.dimension}，实际 ${length}）；` +
+            "若换了模型，请同步改 IMAGE_EMBEDDING_DIMENSION 并新建同维度的 HNSW 索引",
+          false,
+        );
+      }
+      return item.embedding;
+    });
+  }
+}
+
+export interface ImageEmbeddingEnv {
+  IMAGE_EMBEDDING_PROVIDER: string;
+  IMAGE_EMBEDDING_MODEL: string;
+  IMAGE_EMBEDDING_DIMENSION: number;
+  IMAGE_EMBEDDING_BASE_URL: string;
+  IMAGE_EMBEDDING_API_KEY?: string;
+  IMAGE_EMBEDDING_TIMEOUT_MS: number;
+  IMAGE_EMBEDDING_MAX_ATTEMPTS: number;
+}
+
+/** 按环境变量创建图像 provider；未知 provider 显式报错，不退回 stub。 */
+export function createImageEmbeddingProviderFromEnv(
+  env: ImageEmbeddingEnv,
+  fallbackApiKey?: string,
+): ImageEmbeddingProvider {
+  return createImageEmbeddingProvider(env.IMAGE_EMBEDDING_PROVIDER, {
+    baseUrl: env.IMAGE_EMBEDDING_BASE_URL,
+    apiKey: env.IMAGE_EMBEDDING_API_KEY ?? fallbackApiKey,
+    model: env.IMAGE_EMBEDDING_MODEL,
+    dimension: env.IMAGE_EMBEDDING_DIMENSION,
+    timeoutMs: env.IMAGE_EMBEDDING_TIMEOUT_MS,
+    maxAttempts: env.IMAGE_EMBEDDING_MAX_ATTEMPTS,
+  });
+}
+
+export function createImageEmbeddingProvider(
+  provider = "local-stub",
+  options: EmbeddingProviderOptions = {},
+): ImageEmbeddingProvider {
+  if (provider === "local-stub") return new LocalStubImageEmbeddingProvider();
+  if (provider === "dashscope-qwen3-vl") {
+    return new DashScopeMultiModalEmbeddingProvider({
+      apiKey: options.apiKey ?? "",
+      baseUrl: options.baseUrl,
+      model: options.model,
+      dimension: options.dimension,
+      timeoutMs: options.timeoutMs,
+      maxBatchSize: options.maxBatchSize,
+      maxAttempts: options.maxAttempts,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+  throw new Error(
+    `IMAGE_EMBEDDING_PROVIDER=${provider} 尚未接入；当前支持：local-stub、dashscope-qwen3-vl。`,
+  );
+}

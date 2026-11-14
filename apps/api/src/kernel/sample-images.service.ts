@@ -279,6 +279,16 @@ export class SampleImageService {
     return grouped;
   }
 
+  /** 按图片 ID 读一行（confirm 后要回读索引状态，不能用插入时的旧值）。 */
+  async findById(imageId: string): Promise<SampleImageRow | null> {
+    const rows = await this.db
+      .select()
+      .from(sampleImages)
+      .where(and(eq(sampleImages.id, imageId), eq(sampleImages.tenantId, this.tenantId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async listForSample(sampleId: string): Promise<SampleImageRow[]> {
     return await this.db
       .select()
