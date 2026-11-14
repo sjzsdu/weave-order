@@ -1,8 +1,11 @@
 "use client";
 
 import { useAuthContext } from "@weave-order/core";
+import { useEffect, useState } from "react";
+import type { TeamInvite } from "@weave-order/schema";
 import { Badge, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
 import { formatMoney } from "@weave-order/ui";
 
@@ -20,6 +23,20 @@ const SCOPE_LABEL: Record<string, string> = {
   ALL: "全公司",
   TEAM: "本组",
   OWN: "本人",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  TRIAL: "试用中",
+  ACTIVE: "正常使用",
+  OVERDUE: "已逾期",
+  SUSPENDED: "已暂停",
+  CANCELLED: "已停用",
+};
+
+const ISOLATION_LABEL: Record<string, string> = {
+  SHARED_RLS: "共享库 · 按公司隔离",
+  SCHEMA: "独立 schema",
+  DATABASE: "独立数据库",
 };
 
 function Field({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
@@ -50,7 +67,17 @@ function SettingsPageContent() {
     return (
       <EmptyState
         title="组织信息读取失败"
-        description={me.error instanceof Error ? me.error.message : "请确认后端与登录状态"}
+        description={
+          me.error instanceof Error
+            ? me.error.message
+            : "刷新页面重试一次；仍然不行就联系公司管理员。"
+        }
+        actions={
+          <SupportMailto
+            className="text-sm text-indigo-600 underline underline-offset-2"
+            label="写信给我们"
+          />
+        }
       />
     );
   }
@@ -74,7 +101,7 @@ function SettingsPageContent() {
         <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">组织与设置</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink-900">{tenant.name}</h1>
         <p className="mt-1 text-sm text-ink-400">
-          管理面只此一份。业务数据与设置都在后端校验，前端只读展示。
+          这里能看到公司资料、你的角色和审批权限。资料由平台管理员维护，需要修改时找管理员即可。
         </p>
       </header>
 
@@ -87,17 +114,23 @@ function SettingsPageContent() {
             <Field
               label="租户标识"
               value={<code className="font-mono text-xs">{tenant.id}</code>}
-              hint="前端永不传 tenant_id；网关按登录身份注入"
+              hint="平台分配的公司编号，和我们的技术支持沟通时提供这一串即可"
             />
-            <Field label="计费币种" value={tenant.currency} hint="金额一律整数分，由内核计算" />
+            <Field
+              label="计费币种"
+              value={tenant.currency}
+              hint="报价、订单与账单都按这个币种计算"
+            />
             <Field
               label="状态"
               value={
                 <span className="flex items-center gap-2">
                   <Badge tone={tenant.status === "ACTIVE" ? "success" : "warning"}>
-                    {tenant.status}
+                    {STATUS_LABEL[tenant.status] ?? tenant.status}
                   </Badge>
-                  <span className="text-xs text-ink-400">{tenant.isolationMode}</span>
+                  <span className="text-xs text-ink-400">
+                    {ISOLATION_LABEL[tenant.isolationMode] ?? tenant.isolationMode}
+                  </span>
                 </span>
               }
             />
@@ -121,12 +154,16 @@ function SettingsPageContent() {
               label="审批上限"
               value={
                 limit === null
-                  ? "不限（按角色兜底）"
+                  ? "不限（按角色规则）"
                   : formatMoney({ amount: limit, currency: tenant.currency })
               }
-              hint="超过上限的金额会自动升级审批；阈值判断永远在后端"
+              hint="超过上限的金额会自动升级给上级审批"
             />
-            <Field label="登录方式" value="Casdoor OIDC" hint="本地只保留角色映射，不存密码" />
+            <Field
+              label="登录方式"
+              value="公司统一账号"
+              hint="不保存密码；忘记密码在统一登录页重置"
+            />
           </dl>
         </section>
       </div>
@@ -134,7 +171,7 @@ function SettingsPageContent() {
       <section className="rounded-lg border border-line bg-surface px-5 py-4">
         <h2 className="text-sm font-medium text-ink-900">角色与审批等级</h2>
         <p className="mt-1 text-xs text-ink-400">
-          L1 记录建议 → L2 人类确认（默认）→ L3 双人复核。金额类动作永不低于 L2。
+          金额类动作一律先出草稿、由人确认；超过上限或改幅超过阈值时，自动升级给上级审批，不需要你手动报备。
         </p>
         <div className="mt-3 overflow-hidden rounded-md border border-line">
           <table className="w-full text-sm">
@@ -170,33 +207,309 @@ function SettingsPageContent() {
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
           <h2 className="text-sm font-medium text-ink-900">登录与安全</h2>
           <dl>
-            <Field label="身份提供方" value="Casdoor（自托管）" />
+            <Field label="身份提供方" value="公司统一账号（单点登录）" />
             <Field
-              label="回调地址"
-              value={<code className="font-mono text-xs">/auth/callback</code>}
+              label="账号归属"
+              value="一个公司一个独立空间"
+              hint="不会看到其他公司的任何数据"
             />
-            <Field
-              label="会话"
-              value="OIDC Authorization Code + PKCE"
-              hint="一个租户一个 Casdoor Organization"
-            />
+            <Field label="会话" value="登录一次即可使用" hint="换电脑或清空浏览器后需要重新登录" />
           </dl>
         </section>
 
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
-          <h2 className="text-sm font-medium text-ink-900">桌面能力</h2>
+          <h2 className="text-sm font-medium text-ink-900">日常使用</h2>
           <dl>
             <Field label="窗口" value="工作台 ⌘1 · 审批 ⌘2 · 全景 ⌘3" />
-            <Field label="管理面" value="组织与设置 ⌘," />
-            <Field label="打印" value="全局抽屉（非第四个窗口），P1 接打印代理" />
-            <Field label="外设桥" value="Tauri 壳仅暴露 print / scan / readFile / 电子秤，P3" />
+            <Field label="设置" value="组织与设置 ⌘," />
+            <Field label="打印" value="任意页面调用打印面板，桌面版直连打印机" />
+            <Field label="外设" value="扫码枪、电子秤、标签机即插即用" />
           </dl>
         </section>
       </div>
 
+      <CreditsCard />
+
+      <TeamSection />
+
       <p className="text-xs text-ink-400">
-        组织资料与成员管理由平台控制面（Track F）维护；本页只读，避免前端绕过内核写业务配置。
+        公司资料与成员由平台管理员维护，本页只读。需要改公司名、抬头或增加账号数，
+        <SupportMailto
+          className="text-indigo-600 underline underline-offset-2"
+          label="写信给我们"
+        />{" "}
+        或联系你的对接人。
       </p>
     </div>
+  );
+}
+
+const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "MANAGER", label: "主管" },
+  { value: "SALES", label: "销售" },
+  { value: "MERCHANDISER", label: "跟单" },
+  { value: "SAMPLE_ADMIN", label: "样品管理" },
+  { value: "FINANCE", label: "财务" },
+  { value: "VIEWER", label: "只读" },
+];
+
+/**
+ * 邀请同事（老板/主管可用）。
+ *
+ * 生成一条 7 天有效的专属链接，复制到微信或邮件发给对方；对方登录后点接受即加入。
+ * 没有接短信/邮件服务，所以这里负责生成与复制，不做「已发送」的假象。
+ */
+function TeamSection() {
+  const api = useApi();
+  const [invites, setInvites] = useState<TeamInvite[]>([]);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("SALES");
+  const [channel, setChannel] = useState<"email" | "sms">("email");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  const [delivery, setDelivery] = useState<TeamInvite["delivery"]>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listTeam()
+      .then((rows) => {
+        if (!cancelled) setInvites(rows);
+      })
+      .catch(() => {
+        // 没有权限时静默：设置页其它部分仍然可读。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setLink(null);
+    try {
+      const created = await api.inviteMember({
+        email: email.trim(),
+        role: role as never,
+        channel,
+        ...(channel === "sms" && phone.trim() ? { phone: phone.trim() } : {}),
+      });
+      setLink(created.url);
+      setDelivery(created.delivery);
+      setEmail("");
+      const rows = await api.listTeam();
+      setInvites(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "邀请失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      setError("复制失败，请手动选中链接复制");
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-line bg-surface px-5 py-4">
+      <h2 className="text-sm font-medium text-ink-900">邀请同事</h2>
+      <p className="mt-1 text-xs text-ink-400">
+        填同事邮箱和角色，生成一条 7
+        天有效的专属链接，复制到微信或邮件发给他。他打开链接、登录后点「接受邀请」就加入你这间公司。
+      </p>
+
+      <form
+        onSubmit={(event) => void submit(event)}
+        className="mt-3 flex flex-wrap items-end gap-2"
+      >
+        <label className="grid gap-1 text-[11px] text-ink-400">
+          同事邮箱
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="colleague@company.com"
+            className="min-w-56 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+          />
+        </label>
+        <label className="grid gap-1 text-[11px] text-ink-400">
+          角色
+          <select
+            value={role}
+            onChange={(event) => setRole(event.target.value)}
+            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+          >
+            {ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-[11px] text-ink-400">
+          通知方式
+          <select
+            value={channel}
+            onChange={(event) => setChannel(event.target.value as "email" | "sms")}
+            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+          >
+            <option value="email">邮件</option>
+            <option value="sms">短信</option>
+          </select>
+        </label>
+        {channel === "sms" ? (
+          <label className="grid gap-1 text-[11px] text-ink-400">
+            手机号
+            <input
+              required
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="13800000000"
+              className="min-w-40 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+            />
+          </label>
+        ) : null}
+        <button
+          type="submit"
+          disabled={busy || !email.includes("@") || (channel === "sms" && phone.trim().length < 6)}
+          className="inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+        >
+          {busy ? "生成中…" : "生成邀请链接"}
+        </button>
+      </form>
+
+      {error ? <p className="mt-2 text-xs text-vermilion-600">{error}</p> : null}
+
+      {delivery ? (
+        <p className={`mt-2 text-xs ${delivery.ok ? "text-moss-600" : "text-ink-500"}`}>
+          {delivery.ok
+            ? `已通过${delivery.channel === "sms" ? "短信" : "邮件"}发送给 ${email || "对方"}。也可以复制下面的链接直接发微信。`
+            : `没有发出通知（${delivery.detail ?? "发送通道不可用"}）。请复制下面的链接，自己发给对方。`}
+        </p>
+      ) : null}
+
+      {link ? (
+        <div className="mt-3 grid gap-2">
+          <p className="text-xs text-ink-500">这条链接 7 天有效：</p>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={link}
+              onFocus={(event) => event.currentTarget.select()}
+              className="flex-1 rounded-md border border-line bg-paper px-3 py-2 font-mono text-xs text-ink-700"
+            />
+            <button
+              type="button"
+              onClick={() => void copy()}
+              className="rounded-md border border-line px-3 text-xs text-ink-700 hover:border-ink-400"
+            >
+              复制
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {invites.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-md border border-line">
+          <table className="w-full text-sm">
+            <thead className="bg-paper text-xs text-ink-400">
+              <tr>
+                <th className="px-3 py-2 text-left font-normal">同事</th>
+                <th className="px-3 py-2 text-left font-normal">角色</th>
+                <th className="px-3 py-2 text-left font-normal">状态</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-ink-700">
+              {invites.map((item) => (
+                <tr key={item.membershipId}>
+                  <td className="px-3 py-2 text-xs">{item.email}</td>
+                  <td className="px-3 py-2 text-xs">{item.role}</td>
+                  <td className="px-3 py-2 text-xs text-ink-400">
+                    {item.status === "INVITED" ? "待接受" : "已加入"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type CreditsState = {
+  period: string;
+  creditsIncluded: number | null;
+  creditsUsed: number;
+  percent: number;
+  state: "OK" | "WARN" | "PAUSED";
+};
+
+/**
+ * 本月 credits：套餐含的额度 + 已用 + 超额提醒。
+ * 到 80% 提示、到 100% 智能体暂停（人仍可查看、审批、导出），充值后恢复。
+ */
+function CreditsCard() {
+  const api = useApi();
+  const [data, setData] = useState<CreditsState | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .creditsUsage()
+      .then((usage) => {
+        if (!cancelled) setData(usage);
+      })
+      .catch(() => {
+        // 拿不到就隐藏，不影响设置页其它内容。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  if (!data) return null;
+
+  const percent = Math.max(0, Math.min(100, data.percent));
+  const tone =
+    data.state === "PAUSED"
+      ? "bg-vermilion-600"
+      : data.state === "WARN"
+        ? "bg-amber-500"
+        : "bg-indigo-600";
+
+  return (
+    <section className="rounded-lg border border-line bg-surface px-5 py-4">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-sm font-medium text-ink-900">本月 AI 额度（credits）</h2>
+        <span className="font-mono text-xs text-ink-400">{data.period}</span>
+      </div>
+      <p className="mt-2 text-2xl font-semibold text-ink-900">
+        {data.creditsUsed.toLocaleString()}
+        <span className="ml-1 text-sm font-normal text-ink-400">
+          / {data.creditsIncluded === null ? "不限" : data.creditsIncluded.toLocaleString()} credits
+        </span>
+      </p>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-paper">
+        <div className={`h-full ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-ink-500">
+        {data.state === "PAUSED"
+          ? "额度已用完：智能体暂停，你仍可以查看、审批和导出；充值或升级后立刻恢复。"
+          : data.state === "WARN"
+            ? "已用超过 80%：接下来智能体会变慢或暂停，建议提前充值或升级套餐。"
+            : "1 credit ≈ 1,000 tokens。额度每月 1 日重置，不结转。"}
+      </p>
+    </section>
   );
 }

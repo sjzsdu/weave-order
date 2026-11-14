@@ -9,6 +9,9 @@ import { PrintAgentAuthService } from "../print/agent-auth.service";
 import { PrintAgentHub } from "../print/agent-hub";
 import { AppDatabaseProvider, DatabaseProvider } from "../platform/database.provider";
 import { DatabaseModule } from "../platform/database.module";
+import { OnboardingController, TeamController } from "../onboarding/onboarding.controller";
+import { CreditsController } from "./usage.controller";
+import { OnboardingService } from "../onboarding/onboarding.service";
 import { PublicRateLimitService } from "../platform/rate-limit";
 import { createTools } from "../tools";
 import { QuoteAgentService } from "./quote-agent.service";
@@ -80,6 +83,7 @@ const providers: Provider[] = [
       new PublicShareService(database.pool),
     inject: [AppDatabaseProvider],
   },
+  OnboardingService,
 ];
 
 @Module({
@@ -101,6 +105,9 @@ const providers: Provider[] = [
     QuoteSharesController,
     PrintController,
     PrintAgentController,
+    OnboardingController,
+    TeamController,
+    CreditsController,
   ],
   providers,
 })

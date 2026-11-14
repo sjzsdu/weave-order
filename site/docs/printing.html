@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>打印与单证 · 织序帮助中心</title>
+<meta name="description" content="织序打印代理怎么装、支持哪些标签机与针式打印机、模板与字段、打印队列与重打、打不出来怎么排查。" />
+<meta name="theme-color" content="#F7F4EE" />
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="../assets/icons/icon-32.png" sizes="32x32" type="image/png" />
+<link rel="apple-touch-icon" href="../assets/icons/icon-180.png" />
+<link rel="canonical" href="https://weaveorder.cn/docs/printing.html" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="织序 WeaveOrder" />
+<meta property="og:title" content="打印与单证 · 织序帮助中心" />
+<meta property="og:description" content="织序打印代理怎么装、支持哪些标签机与针式打印机、模板与字段、打印队列与重打、打不出来怎么排查。" />
+<meta property="og:image" content="https://weaveorder.cn/assets/og-cover.png" />
+<meta property="og:locale" content="zh_CN" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="alternate" type="text/plain" href="../llms.txt" title="给 AI 助手的产品摘要" />
+<link rel="stylesheet" href="../assets/styles.css" />
+<link rel="stylesheet" href="../assets/pages.css" />
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<header class="site-header" id="siteHeader">
+  <div class="container">
+    <nav class="nav" aria-label="主导航">
+      <a class="nav__brand" href="../index.html" aria-label="织序 WeaveOrder 首页">
+        <img src="../assets/logo-mark.svg" alt="" width="34" height="34" />
+        <span>
+          <span class="nav__brand-name">织序</span>
+          <span class="nav__brand-sub">WEAVE ORDER</span>
+        </span>
+      </a>
+      <div class="nav__links" id="navLinks">
+        <a href="../index.html#capabilities">能做什么</a>
+        <a href="../pricing.html">价格</a>
+        <a href="index.html" aria-current="true">帮助文档</a>
+        <a href="../download.html">下载</a>
+        <a href="../index.html#faq">常见问题</a>
+      </div>
+      <div class="nav__actions">
+        <a class="btn btn--ghost btn--sm" href="../login.html">登录</a>
+        <a class="btn btn--primary btn--sm" href="../signup.html">免费试用</a>
+        <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="container docs-shell">
+    <aside class="docs-side">
+      <nav aria-label="帮助文档目录">
+        <div class="docs-side__group">
+          <h2>开始使用</h2>
+          <ul>
+            <li><a href="index.html">帮助中心</a></li>
+            <li><a href="quickstart.html">5 分钟上手</a></li>
+            <li><a href="signup.html">开通、试用与付费</a></li>
+          </ul>
+        </div>
+        <div class="docs-side__group">
+          <h2>日常操作</h2>
+          <ul>
+            <li><a href="import.html">导入客户与样品</a></li>
+            <li><a href="approvals.html">审批与权限</a></li>
+            <li><a href="quotes.html">报价与客户查看</a></li>
+            <li><a href="printing.html" aria-current="page">打印与单证</a></li>
+            <li><a href="agent.html">智能体与命令行</a></li>
+          </ul>
+        </div>
+        <div class="docs-side__group">
+          <h2>其他</h2>
+          <ul>
+            <li><a href="security.html">数据与安全</a></li>
+            <li><a href="faq.html">常见问题</a></li>
+          </ul>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="docs-main">
+      <div class="docs-crumbs"><a href="../index.html">首页</a><span>/</span><a href="index.html">帮助中心</a><span>/</span><span>打印与单证</span></div>
+      <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://weaveorder.cn/" },
+    { "@type": "ListItem", "position": 2, "name": "帮助中心", "item": "https://weaveorder.cn/docs/" },
+    { "@type": "ListItem", "position": 3, "name": "打印与单证", "item": "https://weaveorder.cn/docs/printing.html" }
+  ]
+}
+</script>
+      <h1 id="top">打印与单证</h1>
+      <p class="docs-lede">打印是纺织贸易里最容易出问题的一环：纸不一样、机器不一样、字段经常缺。这一页按「装、配、打、救」四步写。</p>
+
+      <h2 id="install">装打印代理</h2>
+<p>打印代理随桌面版一起安装，不需要单独下载。装好后打开「设置 → 打印」，代理会自动找局域网里的打印机。</p>
+        <ol>
+          <li>装桌面版（<a href="../download.html">下载页</a>，内测期间登记后发放）。</li>
+          <li>打开「设置 → 打印」，点「扫描打印机」，选中你的机型。</li>
+          <li>打一张测试页，确认走纸位置与浓度。</li>
+        </ol>
+        <p>代理只在你的电脑上接收打印任务，单据内容不上传到我们服务器再下发，避免网络抖动导致打一半。</p>
+
+      <h2 id="models">支持哪些机器</h2>
+<div class="table-wrap">
+          <table class="price-table">
+            <thead>
+              <tr><th scope="col">类型</th><th scope="col">协议 / 机型</th><th scope="col">用于</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>标签机</td><td>Zebra（ZPL）、TSC（TSPL）、佳博、立象</td><td>箱唛、吊牌、物料标签</td></tr>
+              <tr><td>针式打印机</td><td>爱普生 LQ 系列、映美、富士通</td><td>发货单、对账单（多联）</td></tr>
+              <tr><td>A4 激光 / 喷墨</td><td>系统驱动支持的任意机型</td><td>报价单、合同附件</td></tr>
+              <tr><td>小票机</td><td>ESC/POS</td><td>拣货单、交接单</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>你的机型不在表里也能试：先在系统里装好驱动，用 A4 或小票方式打；打出来位置不对，把型号和一张照片发给我们，我们加适配。</p>
+
+      <h2 id="templates">模板与字段</h2>
+<p>系统自带一套默认模板，覆盖箱唛、发货单、拣货单、报价单、对账单。字段取自单据本身，不会出现「模板里有但数据没有」的空格：缺字段会在打印前预检并列出。</p>
+        <ul>
+          <li><strong>公司抬头、银行信息、条款</strong>：在「组织与设置 → 打印抬头」里改一次，所有模板生效。</li>
+          <li><strong>一单一码</strong>：每张单有二维码，扫码可回到对应单据，也能用于扫码重打。</li>
+          <li><strong>自定义模板</strong>：定制版可改版式，普通版可以调字号与边距。</li>
+        </ul>
+
+      <h2 id="queue">打印队列与重打</h2>
+<p>所有打印都进队列，能看到「已发送 / 已打印 / 失败」。失败的任务可以一键重试，不会重复出纸（同一个单据、同一个版本、同一份数重复点击会被合并）。</p>
+        <p>客户说没收到纸质单？在单据详情点「重打」，选份数即可；每张纸的打印记录都会写进审计，谁在什么时候重打了什么，一查就知道。</p>
+
+      <h2 id="trouble">打不出来怎么排查</h2>
+<ul>
+          <li><strong>任务一直「已发送」</strong>：代理没连上打印机。检查 USB / 网络、机器是否休眠，然后在设置里重新扫描。</li>
+          <li><strong>打出来是乱码</strong>：协议选错。标签机型号是 TSPL 却选了 ZPL，改回来即可。</li>
+          <li><strong>位置偏移</strong>：在打印机设置里做一次测纸 / 校准，再在代理里调边距。</li>
+          <li><strong>缺字段</strong>：单据本身没填，先补数据再打。预检会告诉你缺哪一个。</li>
+          <li><strong>针式打印机多联不清楚</strong>：调浓度与击打力度，或换复写纸；这不是软件问题。</li>
+        </ul>
+        <p>还搞不定就把机型、连接方式（USB / 网口）、一张打废的纸拍给我们。</p>
+
+      <div class="docs-pager">
+        <a href="quotes.html"><small>上一篇</small><span>报价与客户查看</span></a>
+        <a href="agent.html"><small>下一篇</small><span>智能体与命令行</span></a>
+      </div>
+    </div>
+
+    <aside class="docs-toc">
+      <h2>本页目录</h2>
+      <ul>
+        <li><a href="#install">装打印代理</a></li>
+        <li><a href="#models">支持哪些机器</a></li>
+        <li><a href="#templates">模板与字段</a></li>
+        <li><a href="#queue">打印队列与重打</a></li>
+        <li><a href="#trouble">打不出来怎么排查</a></li>
+      </ul>
+    </aside>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer__grid">
+      <div>
+        <div class="footer__brand">
+          <img src="../assets/logo-mark.svg" alt="" width="36" height="36" />
+          <span>织序 WeaveOrder</span>
+        </div>
+        <p>纺织贸易的智能体原生操作系统。找样、报价、寄样、跟单、对账由智能体完成，人只负责审批结果。</p>
+        <span class="footer__badge"><i></i>服务运行正常</span>
+      </div>
+      <div>
+        <h4>产品</h4>
+        <ul>
+          <li><a href="../index.html#capabilities">能做什么</a></li>
+          <li><a href="../index.html#how">一句话跑一单</a></li>
+          <li><a href="../pricing.html">价格</a></li>
+          <li><a href="../download.html">下载</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>资源</h4>
+        <ul>
+          <li><a href="index.html">帮助文档</a></li>
+          <li><a href="quickstart.html">5 分钟上手</a></li>
+          <li><a href="faq.html">常见问题</a></li>
+          <li><a href="../llms.txt">给 AI 助手的摘要</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>公司</h4>
+        <ul>
+          <li><a href="../signup.html">联系与开通</a></li>
+          <li><a href="../login.html">登录入口</a></li>
+          <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
+          <li><a href="https://github.com/sjzsdu/weave-order">GitHub</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <span>© 2026 织序 WeaveOrder · 纺织贸易的智能体原生操作系统</span>
+      <span>你说生意，系统做单。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="../assets/main.js" defer></script>
+<script src="../assets/pages.js" defer></script>
+</body>
+</html>

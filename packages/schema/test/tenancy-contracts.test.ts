@@ -29,6 +29,11 @@ describe("T0 契约：租户 / 成员", () => {
     expect(() =>
       CreateTenantInput.parse({ slug: "acme", name: "Acme", casdoorOrg: "acme" }),
     ).not.toThrow();
+    // 开通租户不要求在 Casdoor 建 Organization：不填也能建，登录按 sub 解析成员。
+    expect(() => CreateTenantInput.parse({ slug: "acme", name: "Acme" })).not.toThrow();
+    expect(() =>
+      CreateTenantInput.parse({ slug: "acme", name: "Acme", casdoorOrg: null }),
+    ).not.toThrow();
     expect(() =>
       CreateTenantInput.parse({ slug: "ACME!", name: "Acme", casdoorOrg: "acme" }),
     ).toThrow();

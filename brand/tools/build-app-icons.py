@@ -138,11 +138,45 @@ def build_icns(master_by_size: dict[int, str], out: str) -> None:
         f.write(b"icns" + struct.pack(">I", len(chunks) + 8) + chunks)
 
 
+ADMIN_INDIGO = "#1F4E79"
+ADMIN_ACCENT = "#C0492F"
+
+
+def build_admin_icon(master_by_size: dict[int, str]) -> None:
+    """总管理端图标：靛蓝底 + 品牌标记 + 右下朱砂核对徽章。
+
+    与租户端（墨色底）一眼区分：管理员开错标签页时能看出来。
+    """
+    with open(os.path.join(BRAND, "logo-mark.svg"), encoding="utf-8") as f:
+        mark = f.read()
+    inner = mark.split(">", 1)[1].rsplit("</svg>", 1)[0]
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">'
+        f'<rect width="64" height="64" rx="14" fill="{ADMIN_INDIGO}"/>'
+        f'<g transform="translate(9 9) scale(0.72)">{inner}</g>'
+        f'<circle cx="51" cy="51" r="8" fill="{ADMIN_ACCENT}"/>'
+        '<path d="M47 51l2.9 2.9L55.6 47.4" fill="none" stroke="#F7F4EE" '
+        'stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+    )
+    admin_svg = os.path.join(BRAND, "admin-icon.svg")
+    with open(admin_svg, "w", encoding="utf-8") as f:
+        f.write(svg)
+
+    app_dir = os.path.join(ROOT, "apps", "admin", "app")
+    shutil.copyfile(admin_svg, os.path.join(app_dir, "icon.svg"))
+    render(page_for(1.0, ADMIN_INDIGO, "admin-icon.svg"), 180, os.path.join(app_dir, "apple-icon.png"))
+    tmp = os.path.join(ICONS, "admin-256.png")
+    render(page_for(1.0, ADMIN_INDIGO, "admin-icon.svg"), 256, tmp)
+    build_ico(tmp, os.path.join(app_dir, "favicon.ico"))
+    os.unlink(tmp)
+
+
 def copy_tree(master_by_size: dict[int, str]) -> None:
     svg = os.path.join(BRAND, "favicon.svg")
 
     # Next.js App Router：放在 app/ 下即自动生成 <link rel="icon"> 与 apple-touch-icon
-    for app in ("web", "admin", "quote"):
+    for app in ("web", "quote"):
         app_dir = os.path.join(ROOT, "apps", app, "app")
         shutil.copyfile(svg, os.path.join(app_dir, "icon.svg"))
         shutil.copyfile(
@@ -187,4 +221,5 @@ def copy_tree(master_by_size: dict[int, str]) -> None:
 if __name__ == "__main__":
     masters = build_masters()
     copy_tree(masters)
+    build_admin_icon(masters)
     print("icons written:", ", ".join(str(s) for s in SIZES))

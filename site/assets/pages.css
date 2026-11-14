@@ -1,0 +1,1001 @@
+/* ==========================================================================
+   织序 WeaveOrder · 站内页面样式（价格 / 下载 / 登录 / 开通 / 帮助中心）
+   依赖 styles.css 的变量与基础组件；这里只补布局，不重复定义品牌色。
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ 通用页头 */
+
+.page-hero {
+  padding-block: clamp(48px, 6vw, 84px) clamp(28px, 3.4vw, 44px);
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #fbf9f5 0%, var(--paper) 100%);
+}
+
+.page-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  gap: clamp(24px, 5vw, 72px);
+  align-items: end;
+}
+
+.page-hero h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  margin: 10px 0 16px;
+  text-wrap: balance;
+}
+
+.page-hero h1 em {
+  font-style: normal;
+  color: var(--indigo);
+}
+
+.page-hero .lede {
+  font-size: 15.5px;
+  color: var(--ink-500);
+  max-width: 40em;
+  margin: 0;
+}
+
+.page-hero__aside {
+  font-size: 13px;
+  color: var(--ink-400);
+  border-left: 2px solid var(--line-strong);
+  padding-left: 16px;
+}
+
+.page-hero__aside b {
+  display: block;
+  color: var(--ink-700);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.page-hero__aside p {
+  margin: 0 0 10px;
+}
+
+.page-hero__aside p:last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ 价格页 */
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.plan__foot {
+  margin-top: auto;
+  padding-top: 4px;
+  display: grid;
+  gap: 8px;
+}
+
+.plan__foot .btn {
+  width: 100%;
+  margin: 0;
+}
+
+.plan__fine {
+  font-size: 11.5px;
+  color: var(--ink-400);
+  text-align: center;
+  margin: 0;
+}
+
+.price-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  margin-top: 8px;
+}
+
+.price-table th,
+.price-table td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.price-table thead th {
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+  font-weight: 500;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.price-table td:first-child {
+  color: var(--ink-900);
+  font-weight: 500;
+  width: 34%;
+}
+
+.price-table td {
+  color: var(--ink-500);
+}
+
+.price-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 4px 6px;
+}
+
+/* ------------------------------------------------------------------ 下载页 */
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.dl-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 26px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.dl-card__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dl-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--indigo-100);
+  color: var(--indigo);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.dl-card__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dl-card h3 {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  margin: 0;
+}
+
+.dl-card p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-500);
+  line-height: 1.8;
+}
+
+.dl-card__meta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-400);
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+
+.dl-card .btn {
+  width: 100%;
+}
+
+.dl-card--muted {
+  background: transparent;
+  box-shadow: none;
+  border-style: dashed;
+}
+
+.dl-card.is-recommended {
+  border-color: var(--indigo);
+  box-shadow: 0 0 0 1px var(--indigo), var(--shadow-card);
+}
+
+.note-box {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--indigo);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 18px 20px;
+  font-size: 13.5px;
+  color: var(--ink-700);
+  line-height: 1.85;
+}
+
+.note-box b {
+  color: var(--ink-900);
+}
+
+.note-box--warn {
+  border-left-color: var(--amber);
+}
+
+/* ------------------------------------------------------------------ 登录页 */
+
+.auth-wrap {
+  min-height: calc(100vh - 320px);
+  display: grid;
+  place-items: center;
+  padding-block: clamp(40px, 6vw, 72px);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: clamp(26px, 4vw, 38px);
+  box-shadow: var(--shadow-float);
+}
+
+.auth-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.auth-card__brand img {
+  width: 32px;
+  height: 32px;
+}
+
+.auth-card__brand span {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.auth-card h1 {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  margin: 0 0 6px;
+}
+
+.auth-card__sub {
+  font-size: 13.5px;
+  color: var(--ink-400);
+  margin: 0 0 24px;
+}
+
+.auth-card .btn {
+  width: 100%;
+}
+
+.auth-card .field label {
+  color: var(--ink-500);
+}
+
+.auth-card .field input {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.auth-card .field input::placeholder {
+  color: var(--ink-400);
+}
+
+.auth-card .field input:focus {
+  border-color: var(--indigo);
+}
+
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  justify-content: space-between;
+  margin: 18px 0 0;
+  font-size: 13px;
+  color: var(--ink-400);
+}
+
+.auth-links a {
+  color: var(--indigo);
+}
+
+.auth-links a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-400);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-alt {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-alt a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  color: var(--ink-700);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.auth-alt a:hover {
+  border-color: var(--indigo);
+  background: var(--indigo-100);
+}
+
+.auth-alt small {
+  color: var(--ink-400);
+  font-size: 11.5px;
+}
+
+.auth-note {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-400);
+  line-height: 1.8;
+}
+
+/* ------------------------------------------------------------------ 开通页 */
+
+.journey {
+  display: grid;
+  /* 开通旅程正文可能是 3 步也可能是 4 步：按可用宽度自适应，避免最后一行孤零零一张卡。 */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  counter-reset: step;
+}
+
+.journey__step {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 26px 24px;
+  position: relative;
+}
+
+.journey__step::before {
+  counter-increment: step;
+  content: counter(step, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--indigo);
+  letter-spacing: 0.12em;
+}
+
+.journey__step h3 {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  margin: 10px 0 8px;
+}
+
+.journey__step p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-500);
+  line-height: 1.85;
+}
+
+.journey__step small {
+  display: block;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-400);
+}
+
+.signup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: start;
+}
+
+.signup-form {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: clamp(24px, 3vw, 34px);
+  box-shadow: var(--shadow-card);
+}
+
+.signup-form h2 {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  margin: 0 0 6px;
+}
+
+.signup-form > p {
+  font-size: 13px;
+  color: var(--ink-400);
+  margin: 0 0 22px;
+  line-height: 1.8;
+}
+
+.signup-form .field label {
+  color: var(--ink-500);
+}
+
+.signup-form .field input,
+.signup-form .field select,
+.signup-form .field textarea {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.signup-form .field input::placeholder,
+.signup-form .field textarea::placeholder {
+  color: var(--ink-400);
+}
+
+.signup-form .field input:focus,
+.signup-form .field select:focus,
+.signup-form .field textarea:focus {
+  border-color: var(--indigo);
+}
+
+.signup-form .form__ok {
+  color: var(--moss);
+}
+
+.signup-form .form__note {
+  color: var(--ink-400);
+}
+
+.side-block {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  margin-top: 22px;
+  font-size: 13px;
+  color: var(--ink-500);
+  line-height: 1.9;
+}
+
+.side-block h3 {
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.side-block dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.side-block dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.side-block dt {
+  color: var(--ink-400);
+}
+
+.side-block dd {
+  margin: 0;
+  color: var(--ink-700);
+  text-align: right;
+}
+
+/* --------------------------------------------------------------- 帮助中心 */
+
+.docs-shell {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr) 200px;
+  gap: clamp(24px, 3.4vw, 48px);
+  align-items: start;
+  padding-block: clamp(28px, 4vw, 44px) clamp(56px, 7vw, 96px);
+}
+
+.docs-side {
+  position: sticky;
+  top: 84px;
+  font-size: 13.5px;
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.docs-side__group {
+  margin-bottom: 22px;
+}
+
+.docs-side__group h2 {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.docs-side ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.docs-side a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-700);
+  line-height: 1.5;
+}
+
+.docs-side a:hover {
+  background: var(--paper-deep);
+}
+
+.docs-side a[aria-current="page"] {
+  background: var(--indigo-100);
+  color: var(--indigo-700);
+  font-weight: 600;
+}
+
+.docs-main {
+  min-width: 0;
+}
+
+.docs-crumbs {
+  font-size: 12px;
+  color: var(--ink-400);
+  margin-bottom: 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.docs-crumbs a:hover {
+  color: var(--indigo);
+}
+
+.docs-main h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(27px, 3.2vw, 36px);
+  line-height: 1.3;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+
+.docs-main .docs-lede {
+  font-size: 15.5px;
+  color: var(--ink-500);
+  line-height: 1.85;
+  margin: 0 0 30px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-main h2 {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  margin: 44px 0 12px;
+  scroll-margin-top: 90px;
+}
+
+.docs-main h3 {
+  font-size: 16px;
+  margin: 28px 0 8px;
+  scroll-margin-top: 90px;
+}
+
+.docs-main p {
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: var(--ink-500);
+  margin: 0 0 16px;
+  text-wrap: pretty;
+}
+
+.docs-main strong {
+  color: var(--ink-900);
+}
+
+.docs-main a {
+  color: var(--indigo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.docs-main ul,
+.docs-main ol {
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: var(--ink-500);
+  padding-left: 1.35em;
+  margin: 0 0 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.docs-main li::marker {
+  color: var(--ink-400);
+}
+
+.docs-main ol {
+  counter-reset: li;
+  list-style: none;
+  padding-left: 0;
+}
+
+.docs-main ol > li {
+  counter-increment: li;
+  /* 用内边距而不是 grid：li 里的文本节点会被拆成多个匿名 grid item，
+     列宽在窄屏会被压成「一字一行」。这里改成绝对定位的序号徽章。 */
+  position: relative;
+  padding-left: 34px;
+}
+
+.docs-main ol > li::before {
+  content: counter(li);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--indigo);
+  background: var(--indigo-100);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  position: absolute;
+  left: 0;
+  top: 5px;
+}
+
+.docs-main code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--paper-deep);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--ink-700);
+}
+
+.docs-main pre {
+  background: #14202b;
+  color: #e8e3d8;
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.75;
+  margin: 0 0 20px;
+}
+
+.docs-main pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.docs-figure {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  color: var(--ink-700);
+  line-height: 1.9;
+}
+
+.docs-figure b {
+  color: var(--ink-900);
+}
+
+.docs-callout {
+  border-left: 3px solid var(--indigo);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  color: var(--ink-700);
+  line-height: 1.85;
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-callout--warn {
+  border-left-color: var(--vermilion);
+}
+
+.docs-toc {
+  position: sticky;
+  top: 84px;
+  font-size: 12.5px;
+  border-left: 1px solid var(--line);
+  padding-left: 16px;
+}
+
+.docs-toc h2 {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.docs-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.docs-toc a {
+  color: var(--ink-400);
+  line-height: 1.5;
+  display: block;
+}
+
+.docs-toc a:hover,
+.docs-toc a.is-active {
+  color: var(--indigo);
+}
+
+.docs-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.docs-pager a {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: grid;
+  gap: 3px;
+  background: var(--surface);
+  text-decoration: none;
+}
+
+.docs-pager a:hover {
+  border-color: var(--indigo);
+}
+
+.docs-pager small {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-400);
+}
+
+.docs-pager span {
+  font-size: 14px;
+  color: var(--ink-900);
+}
+
+.docs-pager a:last-child {
+  text-align: right;
+  justify-items: end;
+}
+
+.docs-hub {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.docs-hub__card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.docs-hub__card:hover {
+  border-color: var(--indigo);
+  transform: translateY(-2px);
+}
+
+.docs-hub__card h3 {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  margin: 0;
+}
+
+.docs-hub__card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-500);
+  line-height: 1.8;
+}
+
+.docs-hub__card ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.docs-hub__card li a {
+  color: var(--ink-700);
+}
+
+.docs-hub__card li a:hover {
+  color: var(--indigo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.docs-hub__card li a::after {
+  content: " →";
+  color: var(--ink-400);
+}
+
+.docs-search {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 28px;
+}
+
+.docs-search input {
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.docs-search input:focus {
+  outline: 2px solid var(--indigo);
+  outline-offset: 1px;
+}
+
+/* --------------------------------------------------------------- 页脚补 */
+
+.footer__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-500);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  margin-top: 12px;
+}
+
+.footer__badge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--moss);
+}
+
+/* --------------------------------------------------------------- 响应式 */
+
+@media (max-width: 1080px) {
+  .docs-shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .docs-toc {
+    display: none;
+  }
+  .page-hero__inner {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .plans,
+  .download-grid,
+  .docs-hub,
+  .journey {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .signup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .docs-shell {
+    grid-template-columns: 1fr;
+    padding-top: 18px;
+  }
+  .docs-side {
+    position: static;
+    max-height: none;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    background: var(--surface);
+    /* 手机上目录有 11 项，全部展开会把正文推到很下面；限定高度内部滚动。 */
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .docs-side__group:last-child {
+    margin-bottom: 0;
+  }
+  .docs-pager {
+    grid-template-columns: 1fr;
+  }
+  .docs-pager a:last-child {
+    text-align: left;
+    justify-items: start;
+  }
+  .price-table td:first-child {
+    width: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .plans,
+  .download-grid,
+  .docs-hub,
+  .journey {
+    grid-template-columns: 1fr;
+  }
+  .auth-wrap {
+    padding-inline: 0;
+  }
+}

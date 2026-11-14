@@ -1,0 +1,27 @@
+{
+  "name": "@weave-order/notify",
+  "version": "0.0.0",
+  "private": true,
+  "description": "出站通知：邀请链接与试用到期提醒的邮件/短信发送适配（默认只记日志，可切 webhook 网关）",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src test"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

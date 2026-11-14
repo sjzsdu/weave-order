@@ -156,7 +156,7 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
     billingCycle: "MONTHLY",
     isolationMode: "SHARED_RLS",
     region: "cn-east",
-    trialDays: "14",
+    trialDays: "3",
     notes: "",
   });
   const set =
@@ -1575,3 +1575,93 @@ export function BreakGlassAccess({ id }: { id: string }) {
 }
 
 export type { BreakGlassRequest };
+
+/**
+ * 开通链接：平台开通公司后，把这条链接发给客户老板。
+ * 客户打开 → 用统一账号登录 → 公司空间当场建好，不需要我们进数据库。
+ */
+export function OnboardingLinkPanel({
+  tenantId,
+  ownerEmail,
+}: {
+  tenantId: string;
+  ownerEmail: string | null;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
+
+  const generate = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await mutate<{ url: string; expiresAt: string }>(
+          `/tenants/${tenantId}/onboarding-link`,
+          "POST",
+        );
+        setLink({ url: result.url, expiresAt: result.expiresAt });
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "生成开通链接失败");
+      }
+    });
+  };
+
+  const copy = async () => {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link.url);
+    } catch {
+      setError("复制失败，请手动选中链接复制");
+    }
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="between" style={{ alignItems: "flex-start", gap: 16 }}>
+        <div>
+          <div style={{ fontWeight: 600 }}>开通链接</div>
+          <p className="small muted" style={{ margin: "6px 0 0", maxWidth: "46em" }}>
+            发给客户老板，让他用统一账号登录。打开后公司空间当场建好，他自动成为老板；
+            {ownerEmail
+              ? `链接会核对登录邮箱必须是 ${ownerEmail}。`
+              : "该租户没填联系人邮箱，链接不校验邮箱，请确认收件人。"}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={pending}
+          onClick={generate}
+        >
+          {pending ? "生成中…" : link ? "重新生成" : "生成开通链接"}
+        </button>
+      </div>
+
+      {link ? (
+        <div style={{ marginTop: 12 }}>
+          <div className="field">
+            <label>链接（7 天内有效）</label>
+            <input readOnly value={link.url} onFocus={(event) => event.currentTarget.select()} />
+          </div>
+          <div className="btn-row">
+            <button type="button" className="btn btn-sm" onClick={() => void copy()}>
+              复制链接
+            </button>
+            <a className="btn btn-sm btn-ghost" href={link.url} target="_blank" rel="noreferrer">
+              自己先打开看看
+            </a>
+            <span className="tiny muted">
+              到期：{new Date(link.expiresAt).toLocaleString("zh-CN")}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {error ? (
+        <p className="tiny" style={{ color: "var(--danger)", marginTop: 8 }}>
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}

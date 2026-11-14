@@ -80,7 +80,14 @@ export const Membership = z
   .strict();
 export type Membership = z.infer<typeof Membership>;
 
-/** 创建租户（平台侧/首次开通；业务侧不可自助建租户）。 */
+/**
+ * 创建租户（平台侧/首次开通；业务侧不可自助建租户）。
+ *
+ * `casdoorOrg` 可选：登录时成员身份按 Casdoor `sub` 解析，`casdoorOrg` 只在两边都
+ * 有值时才用于一致性校验（见 `resolveMembership`）。因此开通一个租户**不必**
+ * 先在 Casdoor 里建 Organization——单人单租户的常规开通留空即可；只有需要按公司
+ * 做 SSO 策略、品牌或 MFA 时才建 Org 并填上。
+ */
 export const CreateTenantInput = z
   .object({
     slug: z
@@ -89,7 +96,7 @@ export const CreateTenantInput = z
       .max(64)
       .regex(/^[a-z0-9-]+$/),
     name: z.string().min(1).max(255),
-    casdoorOrg: z.string().min(1).max(128),
+    casdoorOrg: z.string().min(1).max(128).nullable().optional(),
     currency: Currency.default("CNY"),
   })
   .strict();

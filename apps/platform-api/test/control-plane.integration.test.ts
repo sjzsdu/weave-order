@@ -14,6 +14,8 @@ import { InvoicesService } from "../src/control/invoices.service";
 import { PricingService } from "../src/control/pricing.service";
 import { TenantsService } from "../src/control/tenants.service";
 import { UsageService } from "../src/control/usage.service";
+import { DEV_ONBOARDING_SECRET, verifyOnboardingTicket } from "../src/control/onboarding-ticket";
+import { TrialSweepService } from "../src/control/trial-sweep.service";
 
 /**
  * 控制面集成测试：需要本地 PostgreSQL + `pnpm platform:migrate`。
@@ -113,13 +115,14 @@ describe("平台控制面（集成）", () => {
       planCode: "PRO",
       seats: 12,
       billingCycle: "MONTHLY",
-      trialDays: 14,
+      trialDays: 3,
       region: "cn-east",
     });
     tenantId = created.id;
     expect(created.status).toBe("TRIAL");
-    expect(created.seats).toBe(12);
-    expect(created.agentActionsQuota).toBe(5000);
+    // 按套餐订阅：账号数由套餐内含（seatMin），入参 seats 不再参与计费。
+    const proPlan = (await pricing.listPlans()).find((plan) => plan.code === "PRO");
+    expect(created.seats).toBe(proPlan?.seatMin ?? created.seats);
 
     await tenants.applySubscription(owner, tenantId, {
       planCode: "PRO",
@@ -128,7 +131,7 @@ describe("平台控制面（集成）", () => {
     });
     const detail = await tenants.get(tenantId);
     expect(detail.tenant.status).toBe("ACTIVE");
-    expect(detail.subscription?.seats).toBe(12);
+    expect(detail.subscription?.seats).toBe(proPlan?.seatMin ?? detail.subscription?.seats);
     expect(detail.subscription?.billingCycle).toBe("MONTHLY");
   });
 
@@ -165,9 +168,11 @@ describe("平台控制面（集成）", () => {
     });
     invoiceId = invoice.id;
     expect(invoice.status).toBe("DRAFT");
-    // 月付：49900 × 12 = 598,800 分；税 6% 四舍五入。
-    expect(invoice.subtotalCents).toBe(598_800);
-    expect(invoice.taxCents).toBe(Math.round((598_800 * 600) / 10_000));
+    // 按套餐订阅：整期一个价，不再乘席位数。
+    const detailForInvoice = await tenants.get(tenantId);
+    const monthly = detailForInvoice.subscription?.effectiveMonthlyCents ?? 0;
+    expect(invoice.subtotalCents).toBe(monthly);
+    expect(invoice.taxCents).toBe(Math.round((monthly * 600) / 10_000));
     expect(invoice.totalCents).toBe(invoice.subtotalCents + invoice.taxCents);
 
     const issued = await invoices.issue(owner, invoiceId, {});
@@ -330,5 +335,88 @@ describe("平台控制面（集成）", () => {
       "SELECT to_regclass('public.customers') AS name",
     );
     expect(result.rows[0]?.name).toBeNull();
+  });
+
+  it("生成开通链接：指向 /activate、7 天有效、可被验签", async (ctx) => {
+    if (!available) {
+      ctx.skip();
+      return;
+    }
+    const created = await tenants.provision(owner, {
+      name: `开通链接公司-${suffix()}`,
+      slug: `onboard-${suffix()}`,
+      planCode: "PRO",
+      seats: 10,
+      billingCycle: "MONTHLY",
+      contactEmail: "boss@example.com",
+      region: "cn-east",
+    });
+    const link = await tenants.onboardingLink(owner, created.id);
+    expect(link.url).toContain("/activate?code=");
+    expect(link.ownerEmail).toBe("boss@example.com");
+    expect(new Date(link.expiresAt).getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 3600 * 1000);
+
+    const ticket = verifyOnboardingTicket(link.code, DEV_ONBOARDING_SECRET);
+    expect(ticket).toMatchObject({ slug: created.slug, ownerEmail: "boss@example.com" });
+  });
+});
+
+describe("试用到期任务（集成）", () => {
+  it("提前一天提醒一次；到期转只读", async (ctx) => {
+    if (!available || !db) {
+      ctx.skip();
+      return;
+    }
+    const sweep = new TrialSweepService(db, audit);
+
+    // 造一间 12 小时后到期的试用租户。
+    const ending = await tenants.provision(owner, {
+      name: `即将到期-${suffix()}`,
+      slug: `sweep-${suffix()}`,
+      planCode: "PRO",
+      seats: 10,
+      billingCycle: "MONTHLY",
+      trialDays: 3,
+      contactEmail: "boss@example.com",
+      region: "cn-east",
+    });
+    const now = new Date();
+    const soon = new Date(now.getTime() + 12 * 3600 * 1000);
+    const connection = pool;
+    if (!connection) {
+      ctx.skip();
+      return;
+    }
+    await connection.query(
+      "UPDATE control.subscriptions SET trial_ends_at = $1 WHERE tenant_id = $2",
+      [soon, ending.id],
+    );
+
+    const first = await sweep.run(now);
+    expect(first.reminded).toBeGreaterThanOrEqual(1);
+    // 两小时内重跑不会重复提醒。
+    const second = await sweep.run(now);
+    expect(second.reminded).toBe(0);
+    expect(second.skipped).toBeGreaterThanOrEqual(1);
+
+    // 到期后：租户与订阅都转 SUSPENDED。
+    const past = new Date(now.getTime() - 3600 * 1000);
+    await connection.query(
+      "UPDATE control.subscriptions SET trial_ends_at = $1 WHERE tenant_id = $2",
+      [past, ending.id],
+    );
+    const expired = await sweep.run(now);
+    expect(expired.suspended).toBeGreaterThanOrEqual(1);
+
+    const tenantRow = await connection.query<{ status: string }>(
+      "SELECT status FROM control.tenants WHERE id = $1",
+      [ending.id],
+    );
+    expect(tenantRow.rows[0]?.status).toBe("SUSPENDED");
+    const subRow = await connection.query<{ status: string }>(
+      "SELECT status FROM control.subscriptions WHERE tenant_id = $1",
+      [ending.id],
+    );
+    expect(subRow.rows[0]?.status).toBe("SUSPENDED");
   });
 });

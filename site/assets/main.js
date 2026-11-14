@@ -124,7 +124,7 @@
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">' +
           '<path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z" stroke-linejoin="round"/>' +
           '<path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-          "金额由内核重算，不是前端改数字。仍在你 5% 的改价权限内。";
+          "金额已重新计算，仍在你 5% 的改价权限内。";
       }
     });
   }

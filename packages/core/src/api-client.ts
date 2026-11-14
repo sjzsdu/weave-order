@@ -13,7 +13,14 @@ import {
   CreateShipmentInput,
   Customer,
   FabricSample,
+  InviteMemberInput,
+  InvitePreview,
   Order,
+  OnboardingPreview,
+  OnboardingResult,
+  StartTenantInput,
+  TeamInvite,
+  TeamInviteList,
   OrderShippingSummary,
   PanoramaSnapshot,
   PrintCenterSnapshot,
@@ -164,6 +171,49 @@ export function createApiClient(options: ApiClientOptions) {
     logout: async () => {
       await request("/api/auth/session", { method: "DELETE" });
     },
+
+    /** 开通链接预览：打开链接先确认「这是哪家公司、我是不是已经在了」。 */
+    previewOnboarding: async (code: string) =>
+      OnboardingPreview.parse(
+        await request(`/api/onboarding/preview?code=${encodeURIComponent(code)}`),
+      ),
+
+    /** 领取开通链接：建公司 + 成为老板；重复调用返回 alreadyActivated。 */
+    claimOnboarding: async (code: string) =>
+      OnboardingResult.parse(await post("/api/onboarding/claim", { code })),
+
+    /** 自助创建公司：登录后填公司名即可；已有公司时返回那间。 */
+    startTenant: async (input: z.input<typeof StartTenantInput>) =>
+      OnboardingResult.parse(await post("/api/onboarding/start", input)),
+
+    /** 邀请链接预览：是哪家公司、给什么角色。 */
+    previewInvite: async (code: string) =>
+      InvitePreview.parse(
+        await request(`/api/onboarding/invite/preview?code=${encodeURIComponent(code)}`),
+      ),
+
+    /** 接受邀请：绑定到公司，成为正式成员。 */
+    acceptInvite: async (code: string) =>
+      OnboardingResult.parse(await post("/api/onboarding/invite/accept", { code })),
+
+    /** 待接受与已加入的同事。 */
+    listTeam: async () => TeamInviteList.parse(await request("/api/team/invites")).invites,
+
+    /** 本月 credits 用量：1 credit = 1,000 tokens。 */
+    creditsUsage: async () =>
+      z
+        .object({
+          period: z.string(),
+          creditsIncluded: z.number().nullable(),
+          creditsUsed: z.number(),
+          percent: z.number(),
+          state: z.enum(["OK", "WARN", "PAUSED"]),
+        })
+        .parse(await request("/api/usage/credits")),
+
+    /** 邀请同事：返回专属链接（由调用方复制发给对方）。 */
+    inviteMember: async (input: z.input<typeof InviteMemberInput>) =>
+      TeamInvite.parse(await post("/api/team/invites", input)),
 
     listCustomers: async (limit = 20) =>
       CustomersResponse.parse(await request(`/api/customers?limit=${limit}`)).customers,

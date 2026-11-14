@@ -25,6 +25,7 @@ import { InvoicesService } from "../control/invoices.service";
 import { OverviewService } from "../control/overview.service";
 import { PricingService } from "../control/pricing.service";
 import { TenantsService } from "../control/tenants.service";
+import { TrialSweepService } from "../control/trial-sweep.service";
 import { UsageService } from "../control/usage.service";
 
 function actorOf(request: PlatformRequest): PlatformActor {
@@ -91,6 +92,16 @@ export class TenantsController {
   @RequirePermission("tenant:write")
   async provision(@Req() request: PlatformRequest, @Body() body: unknown) {
     return { tenant: await this.tenants.provision(actorOf(request), body) };
+  }
+
+  /**
+   * 开通链接：发给客户老板，打开后用统一账号登录即可建出公司空间。
+   * 只签名，不写业务库；链接 7 天有效，可重复生成（旧的不会失效，便于重发）。
+   */
+  @Post(":id/onboarding-link")
+  @RequirePermission("tenant:write")
+  async onboardingLink(@Req() request: PlatformRequest, @Param("id") id: string) {
+    return await this.tenants.onboardingLink(actorOf(request), id);
   }
 
   @Get(":id")
@@ -325,5 +336,21 @@ export class InvoiceSettingsController {
       return { approval, applied: false };
     }
     return { settings: await this.invoices.applySettings(actor, input), applied: true };
+  }
+}
+
+/**
+ * 维护任务：目前只有试用到期扫描。
+ * 生产用 `pnpm platform:trial-sweep` + cron 跑；这个接口给运维手动补跑或验证。
+ */
+@Controller("platform/api/maintenance")
+export class MaintenanceController {
+  constructor(@Inject(TrialSweepService) private readonly sweep: TrialSweepService) {}
+
+  @Post("trial-sweep")
+  @RequirePermission("tenant:write")
+  async trialSweep(@Req() request: PlatformRequest) {
+    void request;
+    return await this.sweep.run();
   }
 }

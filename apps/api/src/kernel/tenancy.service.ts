@@ -1,7 +1,7 @@
 import { memberships, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateMembershipInput, CreateTenantInput } from "@weave-order/schema";
-import type { Membership, Tenant, TenantChoice } from "@weave-order/schema";
+import type { DataScope, MemberRole, Membership, Tenant, TenantChoice } from "@weave-order/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
@@ -155,6 +155,33 @@ export class TenancyService {
   }
 
   /**
+   * 按 slug 找租户，找不到返回 null。
+   *
+   * 开通流程用它做幂等键：同一个开通链接被打开两次，第二次必须落到同一间公司。
+   */
+  async findTenantBySlug(slug: string): Promise<Tenant | null> {
+    const rows = await this.db.select().from(tenants).where(eq(tenants.slug, slug)).limit(1);
+    const row = rows[0];
+    return row ? mapTenant(row) : null;
+  }
+
+  /**
+   * 该 subject 在指定租户下的成员关系（任意状态），找不到返回 null。
+   *
+   * 多租户下不能再用「按 subject 查唯一身份」：同一个人可能同时属于几家公司，
+   * 开通与邀请都必须落到具体租户。
+   */
+  async findMembershipForTenant(subject: string, tenantId: string): Promise<Membership | null> {
+    const rows = await this.db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.subject, subject), eq(memberships.tenantId, tenantId)))
+      .limit(1);
+    const row = rows[0];
+    return row ? mapMembership(row) : null;
+  }
+
+  /**
    * 租户选择器的数据源：只返回该 subject 自己的成员关系（ACTIVE + DISABLED）。
    *
    * INVITED 不算成员，不出现；金额上限、teamId 等内部设置也不出现，
@@ -284,5 +311,117 @@ export class TenancyService {
   async listMemberships(tenantId: string): Promise<Membership[]> {
     const rows = await this.db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
     return rows.map(mapMembership);
+  }
+
+  /**
+   * 邀请同事：先落一条 `INVITED` 成员，`subject` 暂存邮箱。
+   *
+   * 为什么不直接按邮箱建 ACTIVE：登录身份是 Casdoor 的 `sub`，在对方接受之前
+   * 我们拿不到。邀请被接受时再把 `subject` 换成真实 sub（见 activateMembership），
+   * 这样「待接受/已加入」都能在同一张表里看清楚，也不需要额外的邀请表。
+   */
+  async inviteMember(
+    input: { tenantId: string; email: string; role: MemberRole; dataScope?: DataScope },
+    ctx: KernelContext,
+  ): Promise<Membership> {
+    const email = input.email.trim().toLowerCase();
+    try {
+      return await this.db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(memberships)
+          .values({
+            tenantId: input.tenantId,
+            subject: email,
+            role: input.role,
+            dataScope: input.dataScope ?? "OWN",
+            status: "INVITED",
+          })
+          .returning();
+        const row = rows[0];
+        if (!row) throw new KernelError("KERNEL_REJECTED", "邀请写入未返回记录");
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: "MEMBERSHIP_INVITED",
+            entityType: "membership",
+            entityId: row.id,
+            after: { email, role: row.role },
+          },
+          row.tenantId,
+        );
+        return mapMembership(row);
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `这个邮箱已经在公司里，或已有一条待接受的邀请：${email}`,
+          {
+            reason: "MEMBERSHIP_EXISTS",
+          },
+        );
+      }
+      throw error;
+    }
+  }
+
+  /** 按邮箱找一条待接受的邀请。 */
+  async findInvitedMembership(tenantId: string, email: string): Promise<Membership | null> {
+    const rows = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.subject, email.trim().toLowerCase()),
+          eq(memberships.status, "INVITED"),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    return row ? mapMembership(row) : null;
+  }
+
+  /** 接受邀请：把 INVITED 变成 ACTIVE，并把 subject 从邮箱换成真实登录身份。 */
+  async activateMembership(
+    membershipId: string,
+    subject: string,
+    casdoorOrg: string | null,
+    ctx: KernelContext,
+  ): Promise<Membership> {
+    return await this.db.transaction(async (tx) => {
+      const before = await tx
+        .select()
+        .from(memberships)
+        .where(eq(memberships.id, membershipId))
+        .limit(1);
+      const row = before[0];
+      if (!row) throw new KernelError("RESOURCE_NOT_FOUND", "邀请不存在或已被撤销");
+      if (row.status !== "INVITED")
+        throw new KernelError("KERNEL_REJECTED", "这条邀请已经被接受了");
+
+      const updated = await tx
+        .update(memberships)
+        .set({ subject, casdoorOrg, status: "ACTIVE", updatedAt: new Date() })
+        .where(and(eq(memberships.id, membershipId), eq(memberships.status, "INVITED")))
+        .returning();
+      const next = updated[0];
+      if (!next) throw new KernelError("KERNEL_REJECTED", "这条邀请已经被接受了");
+
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "MEMBERSHIP_ACTIVATED",
+          entityType: "membership",
+          entityId: next.id,
+          before: { subject: row.subject, status: row.status },
+          after: { subject: next.subject, status: next.status },
+        },
+        next.tenantId,
+      );
+      return mapMembership(next);
+    });
   }
 }

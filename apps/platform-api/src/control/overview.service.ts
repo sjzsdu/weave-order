@@ -73,7 +73,7 @@ export class OverviewService {
       if (!["ACTIVE", "OVERDUE"].includes(subscription.status)) continue;
       const plan = planByCode.get(subscription.planCode);
       if (plan?.tier === 3) continue; // Enterprise 合同价单独计，不混入标准 MRR
-      mrrCents += subscription.effectiveMonthlyCents * subscription.seats;
+      mrrCents += subscription.effectiveMonthlyCents;
     }
 
     const converted = tenantRows.filter((tenant) => tenant.convertedAt).length;

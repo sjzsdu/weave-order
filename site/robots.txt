@@ -1,0 +1,20 @@
+# 织序 WeaveOrder · robots.txt
+# 全部页面可被抓取；给 AI 助手准备的摘要见 /llms.txt。
+
+User-agent: *
+Allow: /
+
+# 抓取频率较低时更稳定，不强制。
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://weaveorder.cn/sitemap.xml

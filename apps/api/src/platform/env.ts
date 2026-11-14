@@ -7,6 +7,8 @@ export const DEV_QUOTE_SHARE_SECRET = "dev-only-quote-share-secret-change-me-000
 export const DEV_PRINT_AGENT_SECRET = "dev-only-print-agent-secret-change-me-0001";
 /** 个人访问凭据（PAT）哈希的本地占位密钥；生产必须覆盖。 */
 export const DEV_PERSONAL_TOKEN_PEPPER = "dev-only-personal-token-pepper-change-me-0001";
+/** 开通链接（onboarding ticket）的本地占位密钥；生产必须覆盖，且与平台侧一致。 */
+export const DEV_ONBOARDING_SECRET = "dev-only-onboarding-secret-change-me-0001";
 
 /** 仅本地/测试使用的 LiteLLM 占位 key；生产 + litellm provider 时拒绝启动。 */
 export const DEV_LITELLM_MASTER_KEY = "sk-local-dev";
@@ -52,6 +54,8 @@ const EnvSchema = z.object({
   PUBLIC_APP_URL: z.string().url().default("http://localhost:5174"),
   /** 客户报价链接的 HMAC 密钥；生产必须覆盖为 ≥32 字节随机值。 */
   QUOTE_SHARE_SECRET: z.string().min(32).default(DEV_QUOTE_SHARE_SECRET),
+  /** 平台控制面签发的开通链接密钥；必须与 apps/platform-api 的 ONBOARDING_SECRET 相同。 */
+  ONBOARDING_SECRET: z.string().min(32).default(DEV_ONBOARDING_SECRET),
   /** T-001 imageUrl 变体允许取图的对象存储 / CDN 域名（逗号分隔）。 */
   MEDIA_ALLOWED_HOSTS: z.string().default(""),
   /** 按 URL 取图的最大字节数（默认 2MB，上限 10MB）。 */
@@ -66,6 +70,14 @@ const EnvSchema = z.object({
   PERSONAL_TOKEN_PEPPER: z.string().min(16).default(DEV_PERSONAL_TOKEN_PEPPER),
   /** CLI 登录确认页所在的租户端 Web 地址（与 API 分开部署）。 */
   WEB_APP_URL: z.string().url().default("http://localhost:3001"),
+  /** 控制面地址：自助开通的公司要登记试用订阅。缺省时不登记（本地/单机模式）。 */
+  PLATFORM_API_URL: z.string().url().optional(),
+  /** 出站通知：log（默认，只记日志不发送）或 webhook（交给自建网关调邮件/短信服务商）。 */
+  NOTIFY_PROVIDER: z.enum(["log", "webhook"]).default("log"),
+  NOTIFY_WEBHOOK_URL: z.string().url().optional(),
+  NOTIFY_TOKEN: z.string().optional(),
+  /** 新公司默认每月 credits（1 credit = 1,000 tokens）；套餐升级时由平台调整。 */
+  DEFAULT_MONTHLY_CREDITS: z.coerce.number().int().positive().default(20000),
   /** CLI 设备登录确认码有效期与轮询间隔（秒）。 */
   DEVICE_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   DEVICE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
@@ -92,6 +104,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (isProductionLike(env) && env.PRINT_AGENT_SECRET === DEV_PRINT_AGENT_SECRET) {
     throw new Error(
       "生产/OIDC 模式必须显式配置 PRINT_AGENT_SECRET（≥32 字节随机值），否则任何人都能伪造打印代理 token。",
+    );
+  }
+  if (isProductionLike(env) && env.ONBOARDING_SECRET === DEV_ONBOARDING_SECRET) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 ONBOARDING_SECRET（≥32 字节随机值），否则任何人都能伪造开通链接、自建公司空间。",
     );
   }
   // 与 secret 同一处、同一风格：只有真的会调用 LiteLLM 时才要求 key，local-rule 不阻断启动。

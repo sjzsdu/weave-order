@@ -16,11 +16,11 @@ export default async function LoginPage({
       <div className="login-card">
         <div className="card">
           <p className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}>
-            WeaveOrder Control Plane
+            织序 · 内部管理
           </p>
-          <h1>平台总管理端</h1>
+          <h1>登录管理后台</h1>
           <p className="sub">
-            独立控制台。默认看不到租户业务数据；危险操作双人复核，所有平台动作独立审计。
+            这里只管理公司账号、套餐、账单与用量。客户的业务数据默认看不到；需要查看时，由客户同意并留痕。
           </p>
 
           {params.error ? <div className="alert alert-error">{params.error}</div> : null}
@@ -31,9 +31,13 @@ export default async function LoginPage({
               style={{ width: "100%" }}
               href={`/auth/login?next=${encodeURIComponent(next)}`}
             >
-              使用 Casdoor 登录（weave-platform · 强制 MFA）
+              使用管理员账号登录
             </a>
           </div>
+
+          <p className="small muted" style={{ marginTop: 12 }}>
+            管理员账号必须已开通两步验证。忘记密码请在统一登录页重置。
+          </p>
 
           {dev ? (
             <div style={{ marginTop: 18 }}>
@@ -63,8 +67,7 @@ export default async function LoginPage({
           ) : null}
 
           <p className="login-foot">
-            平台管理员必须是 <span className="mono">platform_users</span>{" "}
-            名册内成员。没有账号请联系平台 Owner。
+            只有管理员名册内的账号才能进入。需要开通或调整权限，联系平台负责人。
           </p>
         </div>
         <p className="login-foot" style={{ textAlign: "center" }}>

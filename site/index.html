@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>织序 WeaveOrder · 纺织贸易的智能体原生操作系统</title>
-<meta name="description" content="织序（WeaveOrder）是纺织贸易的智能体原生业务操作系统：找样、报价、寄样跟进、订单、对账、打印单证由智能体完成，人只在审批卡上做决定。你说生意，系统做单。" />
+<title>织序 WeaveOrder · 纺织贸易智能体操作系统｜报价、寄样、跟单、对账</title>
+<meta name="description" content="织序（WeaveOrder）是纺织贸易的智能体原生业务操作系统：找样、报价、寄样跟进、订单、对账、打印单证由智能体完成，人只在审批卡上做决定。3 天免费试用，当天发开通链接。你说生意，系统做单。" />
 <meta name="theme-color" content="#F7F4EE" />
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
 <link rel="icon" href="assets/icons/icon-32.png" sizes="32x32" type="image/png" />
@@ -15,9 +15,11 @@
 <meta property="og:site_name" content="织序 WeaveOrder" />
 <meta property="og:title" content="织序 WeaveOrder · 你说生意，系统做单" />
 <meta property="og:description" content="纺织贸易的智能体原生操作系统。报价、寄样、跟单、对账，智能体做完，你只点头。" />
-<meta property="og:image" content="assets/og-cover.png" />
+<meta property="og:image" content="https://weaveorder.cn/assets/og-cover.png" />
 <meta property="og:locale" content="zh_CN" />
 <meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://weaveorder.cn/assets/og-cover.png" />
+<meta property="og:url" content="https://weaveorder.cn/" />
 
 <!--
   字体：默认使用系统字体（PingFang SC / Songti SC / Microsoft YaHei / 宋体），
@@ -25,18 +27,88 @@
   可把 Inter 与 Noto Serif SC 子集化为 woff2 放到 assets/fonts/ 后在这里自托管引入，
   详见 site/README.md「字体」一节。
 -->
+<link rel="alternate" type="text/plain" href="llms.txt" title="给 AI 助手的产品摘要" />
 <link rel="stylesheet" href="assets/styles.css" />
+<link rel="stylesheet" href="assets/pages.css" />
 <script>document.documentElement.classList.add("js");</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "织序 WeaveOrder",
-  "applicationCategory": "BusinessApplication",
-  "operatingSystem": "Web, iOS, Android",
-  "description": "纺织贸易的智能体原生业务操作系统：智能体完成找样、报价、寄样跟进、订单跟踪与对账，人类只负责审批结果。",
-  "offers": { "@type": "Offer", "price": "299", "priceCurrency": "CNY" },
-  "publisher": { "@type": "Organization", "name": "织序 WeaveOrder" }
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://weaveorder.cn/#org",
+      "name": "织序 WeaveOrder",
+      "alternateName": "织序",
+      "url": "https://weaveorder.cn/",
+      "logo": "https://weaveorder.cn/assets/logo-mark.svg",
+      "email": "hello@weaveorder.cn",
+      "description": "纺织贸易的智能体原生业务操作系统。",
+      "sameAs": ["https://github.com/sjzsdu/weave-order"]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://weaveorder.cn/#website",
+      "url": "https://weaveorder.cn/",
+      "name": "织序 WeaveOrder",
+      "inLanguage": "zh-CN",
+      "publisher": { "@id": "https://weaveorder.cn/#org" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "织序 WeaveOrder",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web, Windows, macOS, iOS, Android",
+      "url": "https://weaveorder.cn/",
+      "installUrl": "https://weave.wnbgj.com",
+      "description": "纺织贸易的智能体原生业务操作系统：智能体完成找样、报价、寄样跟进、订单跟踪与对账，人类只负责审批结果。",
+      "offers": {
+        "@type": "Offer",
+        "price": "299",
+        "priceCurrency": "CNY",
+        "description": "基础版每月，含 5 个账号与 20,000 credits，3 天免费试用"
+      },
+      "publisher": { "@id": "https://weaveorder.cn/#org" }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "智能体会不会乱改价格、乱发消息？",
+      "acceptedAnswer": { "@type": "Answer", "text": "不会。智能体只能产出草稿，必须由人批准才生效。改幅超过 5% 或 1 万元自动升级主管，低于成本底线直接拦下；它没有直接写业务数据的权限。" }
+    },
+    {
+      "@type": "Question",
+      "name": "我们现在的 Excel 客户表和样品表能导进来吗？",
+      "acceptedAnswer": { "@type": "Answer", "text": "能。Excel 或 CSV 整批导入，逐行校验；任何一行不合格整批不落库，并指出哪一行哪一列有问题。" }
+    },
+    {
+      "@type": "Question",
+      "name": "业务员不愿意用怎么办？",
+      "acceptedAnswer": { "@type": "Answer", "text": "让他们少干活而不是多填表：微信原话直接转发进来派活，草稿在手机上批，客户数据默认只有本人可见。" }
+    },
+    {
+      "@type": "Question",
+      "name": "数据安全吗？能不能私有化？",
+      "acceptedAnswer": { "@type": "Answer", "text": "默认共享库加行级隔离，数据库策略强制隔离每个租户；合同可升级到独立 schema 或独立数据库。审计只追加不可改写，平台侧默认看不到租户业务数据。" }
+    },
+    {
+      "@type": "Question",
+      "name": "和布管家是什么关系？",
+      "acceptedAnswer": { "@type": "Answer", "text": "不是替代它记录的生意，是替代中间搬数据的人。布管家类软件把能力组织成菜单，织序把同样的能力组织成智能体可调用的工具加人能审批的草稿。" }
+    },
+    {
+      "@type": "Question",
+      "name": "多久能上线？",
+      "acceptedAnswer": { "@type": "Answer", "text": "第一天导入客户与样品，第一周挑一个业务员试点报价链路，第二周看数据，通常两到三周可以全团队切换。" }
+    }
+  ]
 }
 </script>
 </head>
@@ -54,16 +126,16 @@
         </span>
       </a>
       <div class="nav__links" id="navLinks">
+        <a href="#capabilities">能做什么</a>
         <a href="#why">为什么不同</a>
-        <a href="#capabilities">能力</a>
-        <a href="#how">怎么运作</a>
-        <a href="#kernel">内核与审计</a>
-        <a href="#pricing">价格</a>
+        <a href="pricing.html">价格</a>
+        <a href="docs/index.html">帮助文档</a>
+        <a href="download.html">下载</a>
         <a href="#faq">常见问题</a>
       </div>
       <div class="nav__actions">
-        <a class="btn btn--ghost btn--sm" href="#how">看它跑一单</a>
-        <a class="btn btn--primary btn--sm" href="#demo">预约演示</a>
+        <a class="btn btn--ghost btn--sm" href="login.html">登录</a>
+        <a class="btn btn--primary btn--sm" href="signup.html">免费试用</a>
         <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
         </button>
@@ -82,12 +154,13 @@
           <h1 class="hero__title">你说生意，<br /><em>系统做单</em>。</h1>
           <p class="hero__lede">报价、寄样、跟单、对账，智能体做完，你只点头。织序不是「带 AI 功能的纺织 ERP」，而是让<strong>智能体成为默认操作者</strong>的业务系统：它听懂一句话、自己找样、自己起草、自己跟进，人只在最后一张卡上做决定。</p>
           <div class="hero__actions">
-            <a class="btn btn--primary" href="#demo">
-              预约 20 分钟演示
+            <a class="btn btn--primary" href="signup.html">
+              免费试用 3 天
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
             <a class="btn btn--ghost" href="#how">看它怎么跑一单</a>
           </div>
+          <p class="muted" style="font-size:12.5px;margin:12px 0 0">不绑卡 · 1 分钟创建公司 · 已开通的直接 <a href="login.html" style="color:var(--indigo);text-decoration:underline;text-underline-offset:3px">登录工作台</a></p>
           <dl class="hero__meta">
             <div>
               <dt>10 分钟</dt>
@@ -128,13 +201,13 @@
               </div>
               <div class="approval__row">
                 <dt>金额</dt>
-                <dd><span class="money">¥76,160.00</span><span class="muted" style="font-size:11.5px">内核按整数「分」计算</span></dd>
+                <dd><span class="money">¥76,160.00</span><span class="muted" style="font-size:11.5px">含税 · 按明细逐行计算</span></dd>
               </div>
               <div class="approval__row">
                 <dt>你的改动</dt>
                 <dd>
                   <span class="diff"><del>¥23.50</del><span aria-hidden="true">→</span><ins>¥23.80</ins></span>
-                  <span class="chip chip--warn">改幅 +1.3% · 未超阈值</span>
+                  <span class="chip chip--warn">改幅 +1.3% · 在你的权限内</span>
                 </dd>
               </div>
               <div class="approval__row">
@@ -277,7 +350,7 @@
           </div>
           <h3>报价</h3>
           <p class="feature__who">小织 · 报价助手</p>
-          <p>客户原话进来，候选样品、定价依据、缺失项一起出去。金额由内核按整数「分」计算，改幅超过 5% 或 1 万元自动升级主管。</p>
+          <p>客户原话进来，候选样品、定价依据、缺失项一起出去。金额按「分」计算，不会出现小数误差；改幅超过 5% 或 1 万元自动升级主管。</p>
           <div class="feature__tags"><span>定价继承链</span><span>毛利底线</span><span>逐行 diff</span></div>
         </article>
 
@@ -415,7 +488,7 @@
           <div class="step__dot">4</div>
           <p class="step__tag">系统</p>
           <h3>落账与出单</h3>
-          <p>内核写账、同事务写审计，生成 PDF 与客户报价链接。每张单据都有版本与出处。</p>
+          <p>系统写账并同时留下操作记录，生成 PDF 与客户报价链接。每张单据都有版本与出处。</p>
         </div>
         <div class="step">
           <div class="step__dot">5</div>
@@ -432,10 +505,10 @@
     <div class="container">
       <div class="section-head" style="margin-bottom:clamp(32px,4vw,52px)">
         <div>
-          <p class="eyebrow eyebrow--light">内核与审计</p>
+          <p class="eyebrow eyebrow--light">规则与留痕</p>
           <h2>智能体能干活，<br />但改不了账。</h2>
         </div>
-        <p class="lede">这是一个架构问题，不是提示词问题。所有涉及账本和资金的动作都必须经过确定性内核，智能体拿到的只有工具接口，没有数据库。</p>
+        <p class="lede">这不是靠提示词保证的，也不是靠界面自觉。所有涉及金额的动作都走同一条固定路径，智能体只能提出建议，拿不到直接改账的权限。</p>
       </div>
 
       <div class="kernel">
@@ -443,54 +516,54 @@
           <li>
             <span class="laws__no">01</span>
             <div>
-              <h3>唯一写入口</h3>
-              <p>只有内核能写业务表。工具层、审批层、导入层都不许直连数据库，边界由 ESLint 规则和常驻测试锁死。</p>
+              <h3>只有一条路能改账</h3>
+              <p>智能体、页面、导入都绕不过去直接写库。这条边界由自动化测试常驻守着，改代码改不掉。</p>
             </div>
           </li>
           <li>
             <span class="laws__no">02</span>
             <div>
-              <h3>只出草稿</h3>
-              <p>智能体的所有产出停在 DRAFT。确认动作会校验「调用者必须是人类」，这条兜底写在核心里，不靠界面自觉。</p>
+              <h3>只会出草稿</h3>
+              <p>智能体的产出永远停在草稿。按下批准时，系统会检查「操作的是不是人」，这条规则写在服务端。</p>
             </div>
           </li>
           <li>
             <span class="laws__no">03</span>
             <div>
-              <h3>只追加的审计</h3>
-              <p>业务写入与审计写入同一个事务。审计表由数据库触发器禁止 UPDATE 与 DELETE，谁也改不了历史。</p>
+              <h3>记录只增不改</h3>
+              <p>每笔写入和它的操作记录同时完成。记录在数据库层面禁止修改与删除，谁都擦不掉历史。</p>
             </div>
           </li>
           <li>
             <span class="laws__no">04</span>
             <div>
-              <h3>金额是整数</h3>
-              <p>金额一律以「分」为单位存 bigint，行金额用 BigInt 计算再一次四舍五入，浮点数不参与钱。</p>
+              <h3>金额不会算错</h3>
+              <p>金额以「分」为单位计算，不走小数四舍五入，不会出现 76,159.99 这种事。</p>
             </div>
           </li>
         </ul>
 
         <div class="audit" aria-label="审计流水示例">
           <div class="audit__bar">
-            <span>audit_log · 只追加</span>
+            <span>操作记录 · 只增不改</span>
             <span class="audit__dots" aria-hidden="true"><i></i><i></i><i></i></span>
           </div>
           <div class="audit__body">
-            <div class="audit__row"><span>09:41:07</span><span class="audit__actor audit__actor--agent">AGENT</span><span>quote.draft.create · Q-1024 v3</span></div>
-            <div class="audit__row"><span>09:41:07</span><span class="audit__actor audit__actor--agent">AGENT</span><span>pricing.resolve · floor 1940 分 来源 公司级</span></div>
-            <div class="audit__row"><span>09:42:12</span><span class="audit__actor audit__actor--human">HUMAN</span><span>quote.decide · APPROVE · 李娜 sales</span></div>
-            <div class="audit__row"><span>09:42:12</span><span class="audit__actor audit__actor--human">HUMAN</span><span>quote.confirm · DRAFT → SENT · Q-1024</span></div>
-            <div class="audit__row"><span>09:42:13</span><span class="audit__actor">SYSTEM</span><span>share.create · token 已哈希留存</span></div>
+            <div class="audit__row"><span>09:41:07</span><span class="audit__actor audit__actor--agent">小织</span><span>生成报价草稿 Q-1024 v3</span></div>
+            <div class="audit__row"><span>09:41:07</span><span class="audit__actor audit__actor--agent">小织</span><span>核价 · 成本底线 ¥19.40（公司级）</span></div>
+            <div class="audit__row"><span>09:42:12</span><span class="audit__actor audit__actor--human">李娜</span><span>批准报价 Q-1024 · 销售</span></div>
+            <div class="audit__row"><span>09:42:12</span><span class="audit__actor audit__actor--human">李娜</span><span>报价发出 · 草稿 → 已发送 Q-1024</span></div>
+            <div class="audit__row"><span>09:42:13</span><span class="audit__actor">系统</span><span>生成客户链接 · 访问凭据已留存</span></div>
           </div>
           <div class="audit__foot">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke-linecap="round"/></svg>
-            触发器拒绝 UPDATE / DELETE · 每个动作带角色快照与数据范围
+            记录只增不改 · 每个动作都留下当时的角色与可见范围
           </div>
         </div>
       </div>
 
       <div style="margin-top:clamp(48px,6vw,80px)">
-        <p class="eyebrow eyebrow--light">自主等级</p>
+        <p class="eyebrow eyebrow--light">它自己能走到哪一步</p>
         <div class="levels">
           <div class="level">
             <div class="level__code">L0</div>
@@ -501,7 +574,7 @@
           <div class="level level--on">
             <div class="level__code">L1</div>
             <h3>出草稿</h3>
-            <p>产出 DRAFT 等人批准。这是今天的默认档位，也是金额类动作的上限。</p>
+            <p>产出草稿等人批准。这是今天的默认档位，也是金额类动作的上限。</p>
             <div class="level__meter" aria-hidden="true"><i></i><i></i><i style="background:rgba(247,244,238,.14)"></i><i style="background:rgba(247,244,238,.14)"></i></div>
           </div>
           <div class="level level--on">
@@ -517,7 +590,7 @@
             <div class="level__meter" aria-hidden="true"><i style="background:rgba(247,244,238,.14)"></i><i style="background:rgba(247,244,238,.14)"></i><i style="background:rgba(247,244,238,.14)"></i><i style="background:rgba(247,244,238,.14)"></i></div>
           </div>
         </div>
-        <p style="font-size:12.5px;color:rgba(247,244,238,.5);margin:18px 0 0;max-width:52em">默认 L1，升级靠证据：某个智能体在某客户、某品类上连续多次被原样采纳，才允许把该场景升到 L2。任何金额类动作永远不低于 L1。</p>
+        <p style="font-size:12.5px;color:rgba(247,244,238,.5);margin:18px 0 0;max-width:52em">默认停在第二档。要再放开，得靠证据：某个智能体在某客户、某品类上连续多次被原样采纳，才允许在那个场景里多走一步。任何涉及金额的动作永远要人点头。</p>
       </div>
     </div>
   </section>
@@ -564,7 +637,7 @@
             </li>
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 5h16v11H4z" stroke-linejoin="round"/><path d="M9 20h6M12 16v4" stroke-linecap="round"/><path d="M8 10h8" stroke-linecap="round"/></svg>
-              <span><b>客户侧：不登录也能看</b><small>独立报价页，SSR 打开即看，能问、能接受。客户视图不放广告、不弹窗。</small></span>
+              <span><b>客户侧：不登录也能看</b><small>独立报价页，点开就能看，能问、能接受。客户视图不放广告、不弹窗。</small></span>
             </li>
             <li>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7z" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -582,30 +655,30 @@
       <div class="section-head">
         <div>
           <p class="eyebrow">价格</p>
-          <h2>卖完成的活，<br />不卖 token。</h2>
+          <h2>卖完成的活，<br />不卖模型调用。</h2>
         </div>
-        <p class="lede">席位年费加内置 agent 额度，按动作包补充。老板与只读审批席位不计费，不按打印张数收费，也不做 token 实时计费。</p>
+        <p class="lede">套餐按月收固定费用，含账号数与 credits；用超了只暂停智能体并提醒你，不自动扣费，也不因为模型贵了临时加价。</p>
       </div>
 
       <div class="pricing reveal">
         <article class="plan">
           <h3>基础</h3>
           <p class="plan__desc">先把报价和寄样跑顺，适合 3 到 8 人团队起步。</p>
-          <div class="plan__price">¥299<small>/ 席位 / 月</small></div>
+          <div class="plan__price">¥299<small>/ 月</small></div>
           <ul class="plan__list">
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>找样与报价两个智能体</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>审批流、三种窗口、审计流水</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>Excel / CSV 冷启动导入</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>手机端同权</li>
           </ul>
-          <a class="btn btn--ghost" href="#demo">开始试用</a>
+          <a class="btn btn--ghost" href="signup.html?plan=basic">开始 3 天试用</a>
         </article>
 
         <article class="plan plan--featured">
           <span class="plan__badge">推荐</span>
           <h3>专业</h3>
           <p class="plan__desc">六个智能体全部上线，覆盖从找样到回款的完整链路。</p>
-          <div class="plan__price">¥499<small>/ 席位 / 月</small></div>
+          <div class="plan__price">¥899<small>/ 月</small></div>
           <ul class="plan__list">
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>六个智能体 + 客户上下文</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>客户报价链接与访问分析</li>
@@ -613,7 +686,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>对账、回款核销、逾期分级</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>自然语言取数</li>
           </ul>
-          <a class="btn btn--primary" href="#demo">预约演示</a>
+          <a class="btn btn--primary" href="signup.html?plan=pro">开始 3 天试用</a>
         </article>
 
         <article class="plan">
@@ -626,10 +699,10 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>模型与数据区域可选</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>专属陪跑与培训</li>
           </ul>
-          <a class="btn btn--ghost" href="#demo">联系我们</a>
+          <a class="btn btn--ghost" href="signup.html?plan=enterprise">联系我们</a>
         </article>
       </div>
-      <p class="pricing__note">老板与只读审批席位不计费 · 年付送 2 个月 · 试点期按「帮你把这周 20 张报价做完」结算</p>
+      <p class="pricing__note">含固定账号数 · 年付送 2 个月 · credits 每月重置 · 试点期按「帮你把这周 20 张报价做完」结算</p>
     </div>
   </section>
 
@@ -647,7 +720,7 @@
       <div class="faq reveal">
         <details open>
           <summary>智能体会不会乱改价格、乱发消息？</summary>
-          <p>不会。智能体只能产出草稿，确认动作会校验调用者必须是人类。所有金额由内核按整数「分」计算，改幅超过 5% 或 1 万元自动升级主管审批，低于成本底线直接拒绝。它连写业务表的权限都没有。</p>
+          <p>不会。智能体只能产出草稿，按下批准时系统会检查操作的是不是人。金额按「分」计算，改幅超过 5% 或 1 万元自动升级主管审批，低于成本底线直接拦下。它没有直接改账的权限。</p>
         </details>
         <details>
           <summary>我们现在的 Excel 客户表和样品表能导进来吗？</summary>
@@ -734,7 +807,7 @@
             提交预约
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <p class="form__ok" id="formOk" role="status">已收到，我们会尽快与你联系。若邮件客户端没有弹出，也可以直接写信到 hello@weaveorder.cn。</p>
+          <p class="form__ok" id="formOk" role="status">已收到，我们会尽快与你联系。若邮件客户端没有弹出，也可以直接写信到 <a href="mailto:hello@weaveorder.cn" style="color:inherit;text-decoration:underline;text-underline-offset:3px">hello@weaveorder.cn</a>。</p>
           <p class="form__note">提交后会打开你的邮件客户端，不会静默采集任何信息。</p>
         </form>
       </div>
@@ -751,31 +824,34 @@
           <span>织序 WeaveOrder</span>
         </div>
         <p>纺织贸易的智能体原生操作系统。找样、报价、寄样、跟单、对账由智能体完成，人只负责审批结果。</p>
+        <span class="footer__badge"><i></i>服务运行正常</span>
       </div>
       <div>
         <h4>产品</h4>
         <ul>
-          <li><a href="#capabilities">能力地图</a></li>
+          <li><a href="#capabilities">能做什么</a></li>
           <li><a href="#how">一句话跑一单</a></li>
-          <li><a href="#kernel">内核与审计</a></li>
-          <li><a href="#pricing">价格</a></li>
+          <li><a href="pricing.html">价格</a></li>
+          <li><a href="download.html">下载</a></li>
         </ul>
       </div>
       <div>
         <h4>资源</h4>
         <ul>
-          <li><a href="#faq">常见问题</a></li>
-          <li><a href="#demo">预约演示</a></li>
-          <li><a href="https://github.com/sjzsdu/weave-order">GitHub</a></li>
-          <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
+          <li><a href="docs/index.html">帮助文档</a></li>
+          <li><a href="docs/quickstart.html">5 分钟上手</a></li>
+          <li><a href="docs/faq.html">常见问题</a></li>
+          <li><a href="llms.txt">给 AI 助手的摘要</a></li>
         </ul>
       </div>
       <div>
-        <h4>公司</h4>
+        <h4>公司与支持</h4>
         <ul>
-          <li><a href="#demo">联系我们</a></li>
-          <li><a href="#privacy">隐私与数据安全</a></li>
-          <li><a href="#terms">服务条款</a></li>
+          <li><a href="signup.html">联系与开通</a></li>
+          <li><a href="login.html">登录入口</a></li>
+          <li><a href="docs/security.html">隐私与数据安全</a></li>
+          <li><a href="legal.html">服务条款</a></li>
+          <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
         </ul>
       </div>
     </div>
@@ -787,5 +863,6 @@
 </footer>
 
 <script src="assets/main.js" defer></script>
+<script src="assets/pages.js" defer></script>
 </body>
 </html>

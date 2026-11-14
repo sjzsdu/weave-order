@@ -18,7 +18,7 @@ describe("控制面契约", () => {
     });
     expect(parsed.billingCycle).toBe("MONTHLY");
     expect(parsed.isolationMode).toBe("SHARED_RLS");
-    expect(parsed.trialDays).toBe(14);
+    expect(parsed.trialDays).toBe(3);
   });
 
   it("拒绝非法 slug 与非整数席位", () => {

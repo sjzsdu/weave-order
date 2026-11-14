@@ -52,6 +52,8 @@ export function actionOverageCents(
 }
 
 export interface InvoiceDraftInput {
+  /** 按套餐订阅（按公司）计费时的整期价格；给了就不按席位乘。 */
+  flatPriceCents?: number;
   seats: number;
   seatUnitCents: number;
   billingCycle: BillingCycle;
@@ -68,12 +70,16 @@ export interface InvoiceDraft {
 /** 账单行：席位费 + 动作超额 + 手工调整（调整可为负，但小计不得为负）。 */
 export function buildInvoiceLines(input: InvoiceDraftInput): InvoiceDraft {
   const lineItems: InvoiceLineItem[] = [];
-  const seatAmount = input.seatUnitCents * input.seats;
-  const cycleLabel = input.billingCycle === "ANNUAL" ? "年付席位费" : "月付席位费";
+  const flat = input.flatPriceCents;
+  const seatAmount = flat ?? input.seatUnitCents * input.seats;
+  const cycleLabel = input.billingCycle === "ANNUAL" ? "年付套餐费" : "月付套餐费";
   lineItems.push({
-    description: `${cycleLabel}（${input.seats} 席位）`,
-    quantity: input.seats,
-    unitPriceCents: input.seatUnitCents,
+    description:
+      flat !== undefined
+        ? `${cycleLabel}（含 ${input.seats} 个账号）`
+        : `${cycleLabel}（${input.seats} 席位）`,
+    quantity: flat !== undefined ? 1 : input.seats,
+    unitPriceCents: flat !== undefined ? seatAmount : input.seatUnitCents,
     amountCents: seatAmount,
   });
 

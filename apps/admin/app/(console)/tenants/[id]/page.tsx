@@ -11,7 +11,7 @@ import {
   statusClass,
 } from "@/src/format";
 import { PlatformApiError, platformFetch } from "@/src/server-api";
-import { SubscriptionForm, TenantStatusActions } from "@/src/actions";
+import { OnboardingLinkPanel, SubscriptionForm, TenantStatusActions } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,10 +59,12 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
         </div>
       </div>
 
+      <OnboardingLinkPanel tenantId={id} ownerEmail={detail.contactEmail ?? null} />
+
       <div className="grid cols-4">
         <div className="stat">
           <div className="label">月费（含席位）</div>
-          <div className="value">{money(tenant.effectiveMonthlyCents * tenant.seats)}</div>
+          <div className="value">{money(tenant.effectiveMonthlyCents)}</div>
           <div className="hint">
             {tenant.planCode ?? "无套餐"} × {tenant.seats} 席 ·{" "}
             {tenant.billingCycle === "ANNUAL" ? "年付" : "月付"}

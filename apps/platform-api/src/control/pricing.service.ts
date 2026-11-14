@@ -156,7 +156,7 @@ export class PricingService {
           row.subscription.billingCycle === "ANNUAL"
             ? Math.round(next.annualPriceCents / 12) * row.subscription.seats
             : next.monthlyPriceCents * row.subscription.seats;
-        const currentMonthly = row.subscription.effectiveMonthlyCents * row.subscription.seats;
+        const currentMonthly = row.subscription.effectiveMonthlyCents;
         return {
           tenantId: row.tenant.id,
           tenantName: row.tenant.name,
@@ -307,12 +307,10 @@ export class PricingService {
       seats: input.seats,
       billingCycle: input.billingCycle,
       monthlyPriceCents: monthly,
-      monthlyTotalCents: monthly * input.seats,
+      monthlyTotalCents: monthly,
       annualTotalCents: cyclePrice.annualPriceCents * input.seats,
       effectiveMonthlyCents:
-        input.billingCycle === "ANNUAL"
-          ? Math.round(cyclePrice.annualPriceCents / 12) * input.seats
-          : monthly * input.seats,
+        input.billingCycle === "ANNUAL" ? Math.round(cyclePrice.annualPriceCents / 12) : monthly,
     };
   }
 

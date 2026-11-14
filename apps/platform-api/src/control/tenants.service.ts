@@ -32,7 +32,9 @@ import type { PlatformDb } from "../db/database.provider";
 import type { PlatformActor } from "../auth/auth.service";
 import { conflict, invalid, notFound } from "../domain/errors";
 import { effectiveMonthlyCents } from "../domain/billing";
+import { loadEnv } from "../env";
 import { AuditService } from "./audit.service";
+import { ONBOARDING_TICKET_TTL_SECONDS, signOnboardingTicket } from "./onboarding-ticket";
 import { addDays, addMonths, currentMonthPeriod, toIso } from "./util";
 
 export interface TenantListFilter {
@@ -162,7 +164,12 @@ export class TenantsService {
   async provision(actor: PlatformActor, raw: unknown): Promise<TenantSummary> {
     const input = ProvisionTenantInput.parse(raw);
     const planRow = await this.planOrThrow(input.planCode);
-    this.assertSeats(planRow, input.seats);
+    // 按套餐订阅：账号数由套餐内含（seatMin），不再接受「加座加钱」。
+    // 入参 seats 只保留兼容，不参与计费，也不允许超过套餐上限。
+    const includedSeats = planRow.seatMin;
+    if (planRow.seatMax !== null && input.seats > planRow.seatMax) {
+      this.assertSeats(planRow, input.seats);
+    }
 
     const book = await this.activePriceBook();
     const price = await this.priceFor(book.id, input.planCode);
@@ -198,7 +205,7 @@ export class TenantsService {
           tenantId: tenant.id,
           planCode: input.planCode,
           priceBookId: book.id,
-          seats: input.seats,
+          seats: includedSeats,
           billingCycle: input.billingCycle,
           status: input.trialDays > 0 ? "TRIAL" : "ACTIVE",
           periodStart: now,
@@ -219,7 +226,7 @@ export class TenantsService {
           name: created.name,
           slug: created.slug,
           planCode: input.planCode,
-          seats: input.seats,
+          seats: includedSeats,
           trialDays: input.trialDays,
         },
         reason: "平台开通公司",
@@ -235,6 +242,58 @@ export class TenantsService {
   }
 
   /**
+   * 自助开通登记：租户端建好公司后调这里补一条控制面记录（租户 + 3 天试用）。
+   *
+   * 幂等：同一个 slug 已存在就直接返回，不重复建订阅。
+   * 失败也不会让业务侧回滚——用户已经能用了，运营按 slug 补录即可。
+   */
+  async registerTrialTenant(input: {
+    slug: string;
+    name: string;
+    ownerEmail?: string | null;
+  }): Promise<{ tenantId: string; slug: string; created: boolean }> {
+    const existing = await this.db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.slug, input.slug))
+      .limit(1);
+    if (existing[0]) {
+      return { tenantId: existing[0].id, slug: input.slug, created: false };
+    }
+
+    const planRows = await this.db
+      .select()
+      .from(plans)
+      .where(eq(plans.status, "ACTIVE"))
+      .orderBy(plans.tier)
+      .limit(1);
+    const plan = planRows[0];
+    if (!plan) {
+      throw invalid("控制面还没有可用套餐，无法登记试用租户");
+    }
+
+    const actor: PlatformActor = {
+      id: "self-serve",
+      sub: "self-serve",
+      name: "自助开通",
+      email: "noreply@weaveorder.cn",
+      role: "platform_owner",
+      permissions: [],
+    };
+    const created = await this.provision(actor, {
+      name: input.name,
+      slug: input.slug,
+      planCode: plan.code,
+      seats: Math.max(1, plan.seatMin),
+      billingCycle: "MONTHLY",
+      trialDays: 3,
+      contactEmail: input.ownerEmail ?? undefined,
+      notes: "自助开通（租户端创建，控制面补登记）",
+    });
+    return { tenantId: created.id, slug: input.slug, created: true };
+  }
+
+  /**
    * 改套餐 / 席位 / 账期。升级即时生效，降级同样立即（MVP 简化，账期折算在
    * 下一张账单体现）；强制定价由调用方先走双人复核，再带 override 调用。
    */
@@ -247,7 +306,11 @@ export class TenantsService {
     const parsed = ChangeSubscriptionInput.parse(input);
     const tenant = await this.tenantOrThrow(tenantId);
     const planRow = await this.planOrThrow(parsed.planCode);
-    this.assertSeats(planRow, parsed.seats);
+    // 按套餐订阅：账号数随套餐，不再单独售卖席位。
+    const includedSeats = planRow.seatMin;
+    if (planRow.seatMax !== null && parsed.seats > planRow.seatMax) {
+      this.assertSeats(planRow, parsed.seats);
+    }
     const book = await this.activePriceBook();
     const price = await this.priceFor(book.id, parsed.planCode);
 
@@ -277,7 +340,7 @@ export class TenantsService {
       const values = {
         planCode: parsed.planCode,
         priceBookId: book.id,
-        seats: parsed.seats,
+        seats: includedSeats,
         billingCycle: parsed.billingCycle,
         status: nextStatus,
         effectiveMonthlyCents: monthly,
@@ -322,7 +385,7 @@ export class TenantsService {
         : null,
       after: {
         planCode: parsed.planCode,
-        seats: parsed.seats,
+        seats: includedSeats,
         cycle: parsed.billingCycle,
         effectiveMonthlyCents: monthly,
         forced: options.overrideMonthlyPriceCents !== undefined,
@@ -420,6 +483,49 @@ export class TenantsService {
     const tenant = rows[0];
     if (!tenant) throw notFound("租户不存在");
     return tenant;
+  }
+
+  /**
+   * 生成开通链接：客户老板打开后，用统一账号登录即可把公司空间建出来。
+   *
+   * 只做签名，不写业务库——控制面碰不到业务数据。链接里的信息只有
+   * slug / 公司名 / 联系人邮箱 / 过期时间，见 `packages/schema/src/onboarding.ts`。
+   */
+  async onboardingLink(
+    actor: PlatformActor,
+    tenantId: string,
+  ): Promise<{
+    url: string;
+    code: string;
+    expiresAt: string;
+    slug: string;
+    name: string;
+    ownerEmail: string | null;
+  }> {
+    const tenant = await this.tenantOrThrow(tenantId);
+    const env = loadEnv();
+    const ownerEmail = tenant.contactEmail ?? null;
+    const code = signOnboardingTicket(
+      {
+        v: 1,
+        slug: tenant.slug,
+        name: tenant.name,
+        ownerEmail,
+      },
+      env.ONBOARDING_SECRET,
+    );
+    const expiresAt = new Date(Date.now() + ONBOARDING_TICKET_TTL_SECONDS * 1000).toISOString();
+    const url = `${env.WEB_APP_URL.replace(/\/$/, "")}/activate?code=${encodeURIComponent(code)}`;
+
+    await this.audit.record(actor, {
+      action: "ONBOARDING_LINK_ISSUED",
+      targetType: "tenant",
+      targetId: tenant.id,
+      after: { slug: tenant.slug, ownerEmail, expiresAt },
+      reason: "生成客户开通链接",
+    });
+
+    return { url, code, expiresAt, slug: tenant.slug, name: tenant.name, ownerEmail };
   }
 
   private async subscriptionOf(tenantId: string): Promise<SubscriptionRow | null> {

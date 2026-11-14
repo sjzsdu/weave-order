@@ -28,7 +28,10 @@ const VIOLATIONS: ReadonlyArray<readonly [RegExp, string]> = [
     /\b(?:src|srcset|href|poster|background|action|formaction)\s*=\s*(?:"|')?\s*(?:https?\s*:|ftp\s*:|\/\/)/i,
     "不允许引用远程资源（src/href 只能指向本模板内容或 data:）",
   ],
-  [/url\(\s*(?:"|')?\s*(?:https?\s*:|ftp\s*:|\/\/|data\s*:\s*text\/html)/i, "CSS url() 不允许远程地址"],
+  [
+    /url\(\s*(?:"|')?\s*(?:https?\s*:|ftp\s*:|\/\/|data\s*:\s*text\/html)/i,
+    "CSS url() 不允许远程地址",
+  ],
   [/@import\b/i, "不允许 CSS @import"],
   [/expression\s*\(/i, "不允许 CSS expression()"],
 ];

@@ -47,50 +47,59 @@ const USERS = [
   },
 ] as const;
 
+/**
+ * 套餐：按公司订阅，不按人头。
+ *
+ * - `seatMin` = 套餐内含账号数（不额外计费）；`seatMax` 也设成同一个数，
+ *   账号不够就升级套餐，不做「加一个座位收一份钱」。
+ * - `agentActionsQuota` 在这里表示 **每月 credits**（历史字段名沿用，避免迁移）：
+ *   1 credit = 1,000 tokens（输入+输出）。真正的 token 预算落在这个租户的 LLM 设置里。
+ * - 年付 = 10 个月价（相当于送 2 个月）。
+ */
 const PLANS = [
   {
     code: "TRIAL",
     name: "试用 Trial",
     tier: 0,
-    seatMin: 1,
+    seatMin: 3,
     seatMax: 3,
-    agentActionsQuota: 100,
-    storageGb: 20,
+    agentActionsQuota: 2000,
+    storageGb: 5,
   },
   {
     code: "STARTER",
     name: "基础 Starter",
     tier: 1,
-    seatMin: 3,
-    seatMax: 10,
-    agentActionsQuota: 1000,
-    storageGb: 100,
+    seatMin: 5,
+    seatMax: 5,
+    agentActionsQuota: 20000,
+    storageGb: 50,
   },
   {
     code: "PRO",
     name: "专业 Pro",
     tier: 2,
-    seatMin: 10,
-    seatMax: 50,
-    agentActionsQuota: 5000,
-    storageGb: 400,
+    seatMin: 20,
+    seatMax: 20,
+    agentActionsQuota: 100000,
+    storageGb: 200,
   },
   {
     code: "ENTERPRISE",
-    name: "旗舰 Enterprise",
+    name: "企业 Enterprise",
     tier: 3,
     seatMin: 50,
     seatMax: 100000,
-    agentActionsQuota: 50000,
-    storageGb: 2000,
+    agentActionsQuota: 500000,
+    storageGb: 1000,
   },
 ] as const;
 
 const PRICES = [
   { planCode: "TRIAL", monthlyPriceCents: 0, annualPriceCents: 0 },
   { planCode: "STARTER", monthlyPriceCents: 29900, annualPriceCents: 299000 },
-  { planCode: "PRO", monthlyPriceCents: 49900, annualPriceCents: 499000 },
-  { planCode: "ENTERPRISE", monthlyPriceCents: 0, annualPriceCents: 0 },
+  { planCode: "PRO", monthlyPriceCents: 89900, annualPriceCents: 899000 },
+  { planCode: "ENTERPRISE", monthlyPriceCents: 299900, annualPriceCents: 2999000 },
 ];
 
 async function main(): Promise<void> {
