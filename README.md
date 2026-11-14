@@ -70,6 +70,10 @@ pnpm install
 # 2. 起本地 PG + Redis（端口 5433 / 6380，避免与本机已有服务冲突）
 docker compose up -d
 
+# 2b. 可选：图片链路需要 S3 兼容对象存储。Docker Hub 不可达时用官方二进制脚本
+#     （端口/凭据/bucket 与 compose 的 minio 一致，API 无需额外配置）
+scripts/dev-storage-up.sh
+
 # 3. 应用迁移 + 冷启动导入样例数据（Excel/CSV），或直接跑内核演示
 pnpm seed          # 迁移 + 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
 pnpm demo          # 可选：迁移 + 内核演示 + 寄样跟进智能体（另造演示数据）
