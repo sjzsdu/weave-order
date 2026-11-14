@@ -43,10 +43,17 @@ export const SampleImage = z.object({
   id: EntityId,
   url: z.string().url(),
   /**
-   * 图墙用的缩略图地址。配了 CDN（`MEDIA_BASE_URL`）时带 `?w=320` 让 CDN 出缩略图，
-   * 未配 CDN 时退回原图签名 URL —— 前端仍然按缩略尺寸渲染，不放大原图。
+   * 图墙用的缩略图地址：服务端派生的 `_320.webp` 对象（本地 MinIO 与生产一致）。
+   * 派生未完成 / 失败时回退原图地址，**必须**同时看 `thumbStatus`：
+   * `failed` 表示这次回退不是「小图」，客户端要显式标注而不是假装有缩略图。
    */
   thumbUrl: z.string().url().nullable().default(null),
+  /** 详情抽屉用的 `_640.webp` 地址；未就绪时为 null（前端回退 `url`）。 */
+  detailUrl: z.string().url().nullable().default(null),
+  /** 缩略图派生状态：pending（生成中）| ready（可缓存）| failed（回退原图，附原因）。 */
+  thumbStatus: z.enum(["pending", "ready", "failed"]).default("pending"),
+  /** 缩略图派生失败原因（截断）；ready 时为空。 */
+  thumbError: z.string().nullable().default(null),
   variant: SampleImageVariant,
   isPrimary: z.boolean(),
   width: z.number().int().positive().nullable(),

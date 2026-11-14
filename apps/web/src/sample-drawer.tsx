@@ -134,10 +134,16 @@ export function SampleDrawer({
               {current ? (
                 <>
                   <img
-                    src={current.url}
+                    src={current.detailUrl ?? current.url}
                     alt={`${sample.name} 第 ${index + 1} 张`}
                     className="aspect-square w-full rounded-lg border border-line bg-paper object-contain"
                   />
+                  {current.thumbStatus === "failed" && (
+                    <p className="text-xs text-rose-700">
+                      缩略图派生失败，列表与详情均显示原图
+                      {current.thumbError ? `（${current.thumbError}）` : ""}
+                    </p>
+                  )}
                   {images.length > 1 && (
                     <div className="flex gap-2 overflow-x-auto pb-1">
                       {images.map((image, position) => (

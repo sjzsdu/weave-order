@@ -18,7 +18,9 @@
     "backfill:owner": "tsx scripts/backfill-owner.ts",
     "reindex:samples": "tsx scripts/reindex-samples.ts",
     "reindex:images": "tsx scripts/reindex-images.ts",
-    "verify:image-search": "tsx scripts/verify-image-search.ts"
+    "verify:image-search": "tsx scripts/verify-image-search.ts",
+    "maintain:media": "tsx scripts/maintain-media.ts",
+    "verify:thumbnails": "tsx scripts/verify-thumbnails.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",

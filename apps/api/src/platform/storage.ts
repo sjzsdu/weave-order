@@ -2,6 +2,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -29,10 +30,22 @@ export interface ObjectHead {
   contentLength: number | null;
 }
 
+/** 桶里已有对象（孤儿回收用；只列举不读内容）。 */
+export interface StorageObject {
+  key: string;
+  size: number;
+  lastModified: Date | null;
+}
+
 export interface ObjectStorage {
   presignPut(input: PresignPutInput): Promise<string>;
   signGet(objectKey: string, expiresInSeconds?: number): Promise<string>;
   head(objectKey: string): Promise<ObjectHead | null>;
+  /**
+   * 服务端写对象（派生的缩略图 / 重编码后的原图）。
+   * 只给服务端内部用：key 仍由服务端按租户规则生成，客户端没有写权限。
+   */
+  put(objectKey: string, bytes: Buffer, contentType: string): Promise<void>;
   /**
    * 读对象字节。只给服务端内部用（图像向量索引要把原图交给 embedding 模型），
    * 绝不能把返回的字节直接回给客户端 —— 那会绕过 CDN 与鉴权。
@@ -40,6 +53,11 @@ export interface ObjectStorage {
    */
   get(objectKey: string): Promise<ObjectBytes | null>;
   delete(objectKey: string): Promise<void>;
+  /**
+   * 按前缀列举对象（孤儿回收）。可选：测试用的内存实现可以不实现，
+   * 调用方必须显式处理「存储不支持列举」，不能静默当桶是空的。
+   */
+  list?(prefix: string): Promise<StorageObject[]>;
 }
 
 export interface ObjectBytes {
@@ -115,6 +133,17 @@ export class S3ObjectStorage implements ObjectStorage {
     }
   }
 
+  async put(objectKey: string, bytes: Buffer, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+        Body: bytes,
+        ContentType: contentType,
+      }),
+    );
+  }
+
   async get(objectKey: string): Promise<ObjectBytes | null> {
     try {
       const result = await this.client.send(
@@ -131,9 +160,33 @@ export class S3ObjectStorage implements ObjectStorage {
   }
 
   async delete(objectKey: string): Promise<void> {
-    // TODO(P1, WAN-116): 孤儿对象回收后台任务——先只保证删除样品时 DB 行级联清掉，
-    // 桶里的对象暂时保留，等 P1 的回收任务按 object_key 反查后统一删除。
+    // 删样品只级联清 DB 行；桶里的对象由 `maintain:media` 的孤儿回收按引用反查后删除
+    // （保护期内不删，避免误删「刚 PUT、还没 confirm」的对象）。
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
+  }
+
+  async list(prefix: string): Promise<StorageObject[]> {
+    const objects: StorageObject[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const entry of page.Contents ?? []) {
+        if (!entry.Key) continue;
+        objects.push({
+          key: entry.Key,
+          size: entry.Size ?? 0,
+          lastModified: entry.LastModified ?? null,
+        });
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return objects;
   }
 }
 

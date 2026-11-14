@@ -139,6 +139,9 @@ PAT 绑定 membership，仍然走同一租户与 RLS；默认作用域 `read,wri
 真实图搜图用 `IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl` + key，历史图片用
 `pnpm --filter @weave-order/api reindex:images --ensure-index` 回填，细节见
 [`docs/image-search.md`](docs/image-search.md)。
+图墙缩略图由服务端派生并落盘（`_320.webp` / `_640.webp`），存量用
+`pnpm --filter @weave-order/api maintain:media` 补派生 / 压原图 / 清孤儿，细节见
+[`docs/media-thumbnails.md`](docs/media-thumbnails.md)。
 
 ### 常用命令
 
