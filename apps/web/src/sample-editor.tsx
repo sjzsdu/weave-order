@@ -32,6 +32,11 @@ function suggestCode(): string {
     .toUpperCase()}`;
 }
 
+/** 只释放本地 objectURL；已有图片的远程 URL 不能 revoke。 */
+function revokePreview(image: DraftImage): void {
+  if (image.previewUrl.startsWith("blob:")) URL.revokeObjectURL(image.previewUrl);
+}
+
 /**
  * 新建 / 编辑样品。图片在浏览器里先压到长边 ≤1600 / ≤1MB，再直传对象存储；
  * 样品行与图片行的写入都走内核（`POST/PATCH /api/samples`），前端不拼 objectKey。
@@ -108,7 +113,10 @@ export function SampleEditor({
           byteSize: compressed.byteSize,
         });
       }
-      setImages((current) => [...current, ...next].slice(0, 20));
+      const merged = [...images, ...next];
+      // 超过 20 张的新图直接丢弃，同时释放它们的预览 URL，避免累积。
+      merged.slice(20).forEach(revokePreview);
+      setImages(merged.slice(0, 20));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "图片处理失败");
     } finally {
@@ -133,11 +141,18 @@ export function SampleEditor({
   };
 
   const remove = (index: number) => {
+    const removed = images[index];
+    if (removed) revokePreview(removed);
     setImages((current) => current.filter((_, position) => position !== index));
     setPrimaryIndex((current) => {
       if (index === current) return 0;
       return index < current ? current - 1 : current;
     });
+  };
+
+  const handleClose = () => {
+    images.forEach(revokePreview);
+    onClose();
   };
 
   const save = async () => {
@@ -205,7 +220,7 @@ export function SampleEditor({
         await api.updateSample(base.id, { imageIds: orderedIds, primaryImageId });
       }
       onSaved();
-      onClose();
+      handleClose();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "保存失败";
       setError(
@@ -229,7 +244,7 @@ export function SampleEditor({
             </h2>
             <p className="text-xs text-ink-400">图片上传前会自动压到长边 1600px / 1MB 以内</p>
           </div>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={handleClose} disabled={busy}>
             关闭
           </Button>
         </header>
@@ -386,7 +401,7 @@ export function SampleEditor({
             {images.length > 0 && <span>第 {primaryIndex + 1} 张为主图</span>}
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={onClose} disabled={busy}>
+            <Button variant="ghost" onClick={handleClose} disabled={busy}>
               取消
             </Button>
             <Button onClick={() => void save()} disabled={busy}>

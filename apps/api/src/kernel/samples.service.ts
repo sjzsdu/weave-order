@@ -6,7 +6,7 @@ import { and, asc, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
-import { KernelError, isUniqueViolation } from "./errors";
+import { KernelError, isUniqueViolation, uniqueViolationConstraint } from "./errors";
 import { mayViewCost, toIso } from "./mappers";
 import { SampleImageService } from "./sample-images.service";
 import type { EmbeddingProvider } from "../platform/embedding";
@@ -29,6 +29,16 @@ function assertCanWriteSamples(ctx: KernelContext): void {
       "PERMISSION_DENIED",
       "当前角色没有样品写权限（需要样品管理员 / 经理 / 老板）",
     );
+  }
+}
+
+/**
+ * 防「读不到却写回」：如果角色看不到成本底线，编辑器手里只有 null，
+ * 任何带 costFloor 的写请求都显式拒绝，而不是把原值静默清空。
+ */
+function assertCostFloorWritable(costFloor: unknown, ctx: KernelContext): void {
+  if (costFloor !== undefined && !mayViewCost(ctx.actor.role)) {
+    throw new KernelError("PERMISSION_DENIED", "当前角色不能修改不可见的成本底线");
   }
 }
 
@@ -117,6 +127,7 @@ export class SampleService {
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
     assertCanWriteSamples(ctx);
     const parsed = CreateSampleInput.parse(input);
+    assertCostFloorWritable(parsed.costFloor, ctx);
     const imageKeys = parsed.imageKeys ?? [];
     if (parsed.primaryImageKey != null && imageKeys.length === 0) {
       throw new KernelError("KERNEL_REJECTED", "主图必须包含在 imageKeys 里", {
@@ -195,7 +206,7 @@ export class SampleService {
       });
       return mapSample(row);
     } catch (error) {
-      if (isUniqueViolation(error)) throw sampleCodeExists();
+      if (isUniqueViolation(error) && isSampleCodeConflict(error)) throw sampleCodeExists();
       throw error;
     }
   }
@@ -265,6 +276,7 @@ export class SampleService {
   async update(sampleId: string, input: unknown, ctx: KernelContext): Promise<FabricSample> {
     assertCanWriteSamples(ctx);
     const parsed = UpdateSampleInput.parse(input);
+    assertCostFloorWritable(parsed.costFloor, ctx);
     const before = await this.findRow(sampleId);
     const resolvedImages = await resolveUpdateImages(this.images, sampleId, parsed);
     const primaryKey =
@@ -321,7 +333,7 @@ export class SampleService {
       });
       return mapSample(row);
     } catch (error) {
-      if (isUniqueViolation(error)) throw sampleCodeExists();
+      if (isUniqueViolation(error) && isSampleCodeConflict(error)) throw sampleCodeExists();
       throw error;
     }
   }
@@ -330,6 +342,8 @@ export class SampleService {
   async archive(sampleId: string, ctx: KernelContext): Promise<FabricSample> {
     assertCanWriteSamples(ctx);
     const before = await this.findRow(sampleId);
+    // 已归档再归档是幂等操作：不重复写审计，也不刷新 updatedAt。
+    if (before.status === "ARCHIVED") return presentSample(before, ctx.actor.role);
     const row = await this.db.transaction(async (tx) => {
       const rows = await tx
         .update(samples)
@@ -410,10 +424,14 @@ export class SampleService {
       : [];
     const remaining = Number(remainingRows[0]?.value ?? 0);
 
+    // 品类选项跟随状态筛选：否则只存在于归档样品里的品类会出现在「在售」筛选器，
+    // 选中后列表为空，看起来像 bug。
+    const categoryConditions = [eq(samples.tenantId, this.tenantId)];
+    if (status !== "ALL") categoryConditions.push(eq(samples.status, status));
     const categoryRows = await this.db
       .selectDistinct({ category: samples.category })
       .from(samples)
-      .where(and(eq(samples.tenantId, this.tenantId), sql`${samples.category} IS NOT NULL`))
+      .where(and(...categoryConditions, sql`${samples.category} IS NOT NULL`))
       .orderBy(asc(samples.category));
     const categories = categoryRows
       .map((entry) => entry.category)
@@ -470,6 +488,11 @@ function sampleCodeExists(): KernelError {
   return new KernelError("KERNEL_REJECTED", "该编码已存在", {
     reason: "SAMPLE_CODE_EXISTS",
   });
+}
+
+/** 只把「样品编码唯一索引」翻译成 409；其他唯一约束必须原样冒泡。 */
+function isSampleCodeConflict(error: unknown): boolean {
+  return (uniqueViolationConstraint(error) ?? "").includes("samples_tenant_code_idx");
 }
 
 async function resolveUpdateImages(

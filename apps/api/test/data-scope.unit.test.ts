@@ -66,14 +66,15 @@ describe("isVisibleOwner", () => {
 });
 
 describe("mayViewCost：成本底线按角色裁剪", () => {
-  it("sales / merchandiser / sample_admin / viewer 不可见", () => {
-    for (const role of ["SALES", "MERCHANDISER", "SAMPLE_ADMIN", "VIEWER"] as const) {
+  it("sales / merchandiser / viewer 不可见", () => {
+    for (const role of ["SALES", "MERCHANDISER", "VIEWER"] as const) {
       expect(mayViewCost(role)).toBe(false);
     }
   });
 
-  it("owner / manager / finance 可见；无角色（内核路径）可见", () => {
-    for (const role of ["OWNER", "MANAGER", "FINANCE"] as const) {
+  it("owner / manager / finance / sample_admin 可见；无角色（内核路径）可见", () => {
+    // sample_admin 是样品写角色：可写不可读会让编辑器把 null 回写、清空成本底线。
+    for (const role of ["OWNER", "MANAGER", "FINANCE", "SAMPLE_ADMIN"] as const) {
       expect(mayViewCost(role)).toBe(true);
     }
     expect(mayViewCost(undefined)).toBe(true);

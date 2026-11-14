@@ -20,6 +20,12 @@ const APP_URL =
 
 const SYSTEM: KernelContext = { actor: { type: "SYSTEM", id: "samples-it-bootstrap" } };
 const OWNER: KernelContext = { actor: { type: "HUMAN", id: "samples-it-owner", role: "OWNER" } };
+const MANAGER: KernelContext = {
+  actor: { type: "HUMAN", id: "samples-it-manager", role: "MANAGER" },
+};
+const SAMPLE_ADMIN: KernelContext = {
+  actor: { type: "HUMAN", id: "samples-it-sample-admin", role: "SAMPLE_ADMIN" },
+};
 const SALES: KernelContext = { actor: { type: "HUMAN", id: "samples-it-sales", role: "SALES" } };
 const VIEWER: KernelContext = {
   actor: { type: "HUMAN", id: "samples-it-viewer", role: "VIEWER" },
@@ -192,8 +198,42 @@ describe("样品 CRUD 与图墙", () => {
       });
       const page = await kernel.samples.listPage({}, SALES);
       expect(page.samples[0]?.costFloor).toBeNull();
+      // SAMPLE_ADMIN 同时是写角色：必须能看到成本底线，否则编辑器会把 null 回写。
+      const adminPage = await kernel.samples.listPage({}, SAMPLE_ADMIN);
+      expect(adminPage.samples[0]?.costFloor).toEqual({ amount: 999, currency: "CNY" });
       const ownerPage = await kernel.samples.listPage({}, OWNER);
       expect(ownerPage.samples[0]?.costFloor).toEqual({ amount: 999, currency: "CNY" });
+    } finally {
+      await session.release();
+    }
+  });
+
+  it("每个可写角色编辑样品后成本底线都保持不变（权限矩阵交叉项）", async (ctx) => {
+    if (!available) ctx.skip();
+    const tenantId = await bootstrapTenant("cost-matrix");
+    const { session, kernel } = await tenantKernel(tenantId);
+    try {
+      for (const [label, ctxRole] of [
+        ["OWNER", OWNER],
+        ["MANAGER", MANAGER],
+        ["SAMPLE_ADMIN", SAMPLE_ADMIN],
+      ] as const) {
+        const sample = await kernel.samples.create(
+          {
+            code: `COST-${label}-${suffix()}`,
+            name: "成本矩阵",
+            unit: "meter",
+            costFloor: { amount: 1420, currency: "CNY" },
+          },
+          OWNER,
+        );
+        await kernel.samples.update(sample.id, { name: `成本矩阵 ${label} 改名` }, ctxRole);
+        const after = await kernel.samples.getById(sample.id, ctxRole.actor.role);
+        expect(after.costFloor, `${label} 编辑后成本底线不能丢`).toEqual({
+          amount: 1420,
+          currency: "CNY",
+        });
+      }
     } finally {
       await session.release();
     }
@@ -339,8 +379,40 @@ describe("样品 CRUD 与图墙", () => {
       expect(archived.samples.some((entry) => entry.id === sample.id)).toBe(true);
       const audit = await kernel.audit.list(5, sample.id);
       expect(audit[0]?.action).toBe("SAMPLE_ARCHIVED");
+
+      // 重复归档是幂等的：不重复写审计。
+      const again = await kernel.samples.archive(sample.id, OWNER);
+      expect(again.status).toBe("ARCHIVED");
+      const audits = await kernel.audit.list(20, sample.id);
+      expect(audits.filter((entry) => entry.action === "SAMPLE_ARCHIVED")).toHaveLength(1);
     } finally {
       await session.release();
     }
   });
+
+  it("品类筛选选项跟随状态：归档专属品类不出现在在售筛选器", async (ctx) => {
+    if (!available) ctx.skip();
+    const tenantId = await bootstrapTenant("categories");
+    const { session, kernel } = await tenantKernel(tenantId);
+    try {
+      await kernel.samples.create(
+        { code: `CAT-A-${suffix()}`, name: "在售品类", unit: "meter", category: "针织" },
+        OWNER,
+      );
+      const archived = await kernel.samples.create(
+        { code: `CAT-B-${suffix()}`, name: "归档品类", unit: "meter", category: "归档专属" },
+        OWNER,
+      );
+      await kernel.samples.archive(archived.id, OWNER);
+
+      const active = await kernel.samples.listPage({ status: "ACTIVE" }, OWNER);
+      expect(active.categories).toContain("针织");
+      expect(active.categories).not.toContain("归档专属");
+
+      const archivedPage = await kernel.samples.listPage({ status: "ARCHIVED" }, OWNER);
+      expect(archivedPage.categories).toContain("归档专属");
+    } finally {
+      await session.release();
+    }
+  }, 30_000);
 });
