@@ -82,6 +82,16 @@ const jsonLdText = jsonLd ? renderJsonLd(jsonLd) : null;
       document.documentElement.classList.add("js");
     </script>
     {jsonLdText && <script type="application/ld+json" is:inline set:html={jsonLdText} />}
+    {/*
+      访问统计配置：值由 docker/entrypoint.sh 在容器启动时按 WEAVE_ANALYTICS_*
+      替换这四个占位符（构建期与本地预览保持原样 = provider 不认识 = 完全静默）。
+      放在 analytics.js 之前：脚本按 window.WEAVE_ANALYTICS 决定要不要发请求。
+    */}
+    <script
+      is:inline
+      set:html={`window.WEAVE_ANALYTICS={"provider":"__WEAVE_ANALYTICS_PROVIDER__","domain":"__WEAVE_ANALYTICS_DOMAIN__","host":"__WEAVE_ANALYTICS_HOST__","key":"__WEAVE_ANALYTICS_KEY__"};`}
+    />
+    <script is:inline src="/assets/analytics.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">

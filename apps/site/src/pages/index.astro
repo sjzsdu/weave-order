@@ -36,7 +36,7 @@ const ogDescription =
             的业务系统：它听懂一句话、自己找样、自己起草、自己跟进，人只在最后一张卡上做决定。
           </p>
           <div class="hero__actions">
-            <a class="btn btn--primary" href="signup.html">
+            <a class="btn btn--primary" href="signup.html" data-cta="hero">
               免费试用 3 天
               <svg
                 viewBox="0 0 24 24"
@@ -48,7 +48,7 @@ const ogDescription =
                 <path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </a>
-            <a class="btn btn--ghost" href="#how">
+            <a class="btn btn--ghost" href="#how" data-cta="hero">
               看它怎么跑一单
             </a>
           </div>
@@ -56,6 +56,7 @@ const ogDescription =
             不绑卡 · 1 分钟创建公司 · 已开通的直接{" "}
             <a
               href="login.html"
+              data-login="site-hero"
               style="color:var(--indigo);text-decoration:underline;text-underline-offset:3px"
             >
               登录工作台
@@ -1068,7 +1069,12 @@ const ogDescription =
               手机端同权
             </li>
           </ul>
-          <a class="btn btn--ghost" href="signup.html?plan=basic">
+          <a
+            class="btn btn--ghost"
+            href="signup.html?plan=basic"
+            data-cta="pricing-card"
+            data-cta-label="基础套餐"
+          >
             开始 3 天试用
           </a>
         </article>
@@ -1142,7 +1148,12 @@ const ogDescription =
               自然语言取数
             </li>
           </ul>
-          <a class="btn btn--primary" href="signup.html?plan=pro">
+          <a
+            class="btn btn--primary"
+            href="signup.html?plan=pro"
+            data-cta="pricing-card"
+            data-cta-label="专业套餐"
+          >
             开始 3 天试用
           </a>
         </article>
@@ -1203,7 +1214,12 @@ const ogDescription =
               专属陪跑与培训
             </li>
           </ul>
-          <a class="btn btn--ghost" href="signup.html?plan=enterprise">
+          <a
+            class="btn btn--ghost"
+            href="signup.html?plan=enterprise"
+            data-cta="pricing-card"
+            data-cta-label="定制套餐"
+          >
             联系我们
           </a>
         </article>
