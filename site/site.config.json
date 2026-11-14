@@ -1,8 +1,0 @@
-{
-  "$comment": "官网的部署期配置。改这里之后跑 node site/tools/configure.mjs，会同步改写全站 canonical / OG / sitemap / llms.txt / 站内链接。",
-  "site": "https://weaveorder.cn",
-  "app": "https://weave.wnbgj.com",
-  "admin": "https://weave-admin.wnbgj.com",
-  "sso": "https://sso.wnbgj.com",
-  "email": "hello@weaveorder.cn"
-}

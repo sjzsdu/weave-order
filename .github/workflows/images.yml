@@ -90,7 +90,10 @@ jobs:
           {
             echo "### 镜像已发布"
             echo ""
-            echo "\`${DOCKERHUB_USERNAME}/weave-order:${{ steps.meta.outputs.image_tag }}\`"
+            echo "- \`${DOCKERHUB_USERNAME}/weave-order:${{ steps.meta.outputs.image_tag }}\`"
+            echo "  （单镜像多进程：API / Web / Admin / Quote / Mobile / 官网静态站）"
             echo ""
             echo "部署时把 \`WEAVE_TAG\` 设为 \`${{ steps.meta.outputs.image_tag }}\`，不要留在 \`latest\`。"
+            echo "官网是同一个镜像里的一个服务（靠 compose 的 command 选进程），"
+            echo "不存在「主镜像推了、官网镜像没推」的中间状态。"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,8 @@
+{
+  "$comment": "官网的部署期默认值。容器启动时由 scripts/prepare-config.mjs 按环境变量覆盖，渲染进 dist/ 里的页面。",
+  "site": "https://weaveorder.cn",
+  "app": "https://weave.wnbgj.com",
+  "admin": "https://weave-admin.wnbgj.com",
+  "sso": "https://sso.wnbgj.com",
+  "email": "hello@weaveorder.cn"
+}

@@ -2,8 +2,18 @@
 # 构建并（可选）推送 weave-order 生产镜像到 Docker Hub。
 #
 # 用法：
-#   PUSH=0 ./scripts/build_push_images.sh                 # 只本地构建验证，不推送
+#   PUSH=0 ./scripts/build_push_images.sh                      # 只本地构建验证，不推送
 #   IMAGE_PREFIX=sjzsdu TAG=v0.1.0 ./scripts/build_push_images.sh
+#
+# 只发布一个镜像：weave-order。
+#   里面装着整套应用：API / Web / Admin / Quote / Mobile / 官网（静态站）。
+#   deploy 的 compose 用同一个镜像跑多个服务，靠 command 选择进程。
+#
+# 踩过的坑（v0.1.3 发布时踩的）：那时官网是单独的镜像 weave-order-site，
+# 脚本只 build/push 了主镜像，deploy 的 compose 里官网服务引用的 weave-order-site
+# 从来没被构建过 —— 工作流全绿但拉镜像 404，官网起不来。
+# 官网并进主镜像后，这类「只发布了一半」在结构上就不可能再发生：
+# 官网的产物本来就在主镜像里，不存在「忘了构建另一个镜像」这回事。
 #
 # 约定（deploy 仓库 AGENTS.md）：镜像一律推自己的 Docker Hub 账号 sjzsdu/*，
 # 不在 Docker Hub 与 GHCR 之间切换。
@@ -25,19 +35,29 @@ IMAGE="${IMAGE_PREFIX}/${IMAGE_NAME}:${TAG}"
 LATEST="${IMAGE_PREFIX}/${IMAGE_NAME}:latest"
 
 echo "镜像:                 ${IMAGE}"
+echo "镜像:                 ${LATEST}"
 echo "移动端 API 基址(构建期): ${WEAVE_PUBLIC_API_BASE}"
 
 docker build \
   --build-arg "TARO_APP_API_BASE=${WEAVE_PUBLIC_API_BASE}" \
   -t "${IMAGE}" -t "${LATEST}" .
 
-echo "✅ 构建完成: ${IMAGE}"
+for img in "${IMAGE}" "${LATEST}"; do
+  if ! docker image inspect "$img" >/dev/null 2>&1; then
+    echo "❌ 本地没有镜像 ${img}，拒绝推送" >&2
+    exit 1
+  fi
+done
+
+echo "✅ 构建完成: ${IMAGE} ${LATEST}"
 
 if [ "${PUSH}" != "1" ]; then
   echo "PUSH!=1，跳过推送（本地构建验证模式）。"
   exit 0
 fi
 
-docker push "${IMAGE}"
-docker push "${LATEST}"
-echo "✅ 已推送: ${IMAGE} 与 ${LATEST}"
+for img in "${IMAGE}" "${LATEST}"; do
+  docker push "$img"
+done
+
+echo "✅ 已推送: ${IMAGE} ${LATEST}"

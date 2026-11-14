@@ -1,0 +1,153 @@
+---
+/**
+ * 帮助中心外壳：左侧目录 + 正文 + 右侧本页目录 + 上一篇/下一篇。
+ *
+ * 以前这些由自研生成器（site/tools/build-docs.mjs）拼字符串吐 HTML，
+ * 改一次目录要改生成器、重新生成 8 个文件。现在目录是一份数据，
+ * 8 篇文章是 MDX 内容集合，页面按数据渲染。
+ */
+import BaseLayout from "./BaseLayout.astro";
+import nav from "../data/docs-nav.json";
+import order from "../data/docs-order.json";
+
+interface Props {
+  /** 浏览器标题（含栏目名）。 */
+  title: string;
+  /** 页面描述。 */
+  description: string;
+  /** 站内路径。 */
+  canonical: string;
+  /** 正文大标题（默认为 title）。 */
+  heading?: string;
+  /** 一句话导语。 */
+  lede?: string;
+  /** 当前页在 docs 里的文件名，如 "signup.html"。 */
+  slug?: string;
+  /** 本页目录。 */
+  sections?: { id?: string; heading: string }[];
+  jsonLd?: unknown;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogType?: "website" | "article";
+  robots?: string;
+}
+
+const {
+  title,
+  description,
+  canonical,
+  heading,
+  lede,
+  slug,
+  sections = [],
+  jsonLd,
+  ogTitle,
+  ogDescription,
+  ogType = "article",
+  robots,
+} = Astro.props;
+
+const navGroups = nav as { title: string; items: { href: string; label: string }[] }[];
+const orderList = order as string[];
+
+/** 文件名 → 显示名（取自侧栏数据，目录与文章标题只维护一处）。 */
+const labelByFile = new Map<string, string>();
+for (const group of navGroups) {
+  for (const item of group.items) {
+    const file = item.href === "/docs/" ? "index.html" : item.href.replace("/docs/", "");
+    labelByFile.set(file, item.label);
+  }
+}
+
+const currentHref = canonical;
+
+// 上一篇 / 下一篇：按阅读顺序（docs-order.json）找邻居。
+// 首篇的上一篇、末篇的下一篇都回到帮助中心首页 —— 与旧站生成器的行为一致。
+const position = slug ? orderList.indexOf(slug) : -1;
+const prevFile = position > 0 ? orderList[position - 1] : position === 0 ? "index.html" : null;
+const nextFile =
+  position >= 0 && position < orderList.length - 1
+    ? orderList[position + 1]
+    : position >= 0
+      ? "index.html"
+      : null;
+const prevHref = prevFile ? `/docs/${prevFile}` : null;
+const nextHref = nextFile ? `/docs/${nextFile}` : null;
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  canonical={canonical}
+  jsonLd={jsonLd}
+  navCurrent="docs"
+  ogTitle={ogTitle}
+  ogDescription={ogDescription}
+  ogType={ogType}
+  robots={robots}
+>
+  <div class="container docs-shell">
+    <aside class="docs-side">
+      <nav aria-label="帮助文档目录">
+        {navGroups.map((group) => (
+          <div class="docs-side__group">
+            <h2>{group.title}</h2>
+            <ul>
+              {group.items.map((item) => (
+                <li>
+                  <a href={item.href} aria-current={item.href === currentHref ? "page" : undefined}>
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <div class="docs-main">
+      <div class="docs-crumbs">
+        <a href="../index.html">首页</a>
+        <span>/</span>
+        <a href="index.html">帮助中心</a>
+        {slug && <span>/</span>}
+        {slug && <span>{heading ?? title}</span>}
+      </div>
+      <h1 id="top">{heading ?? title}</h1>
+      {lede && <p class="docs-lede">{lede}</p>}
+
+      <slot />
+
+      {(prevHref || nextHref) && (
+        <div class="docs-pager">
+          {prevHref && (
+            <a href={prevHref}>
+              <small>上一篇</small>
+              <span>{labelByFile.get(prevFile ?? "") ?? prevFile}</span>
+            </a>
+          )}
+          {nextHref && (
+            <a href={nextHref}>
+              <small>下一篇</small>
+              <span>{labelByFile.get(nextFile ?? "") ?? nextFile}</span>
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+
+    {sections.length > 0 && (
+      <aside class="docs-toc">
+        <h2>本页目录</h2>
+        <ul>
+          {sections.map((section) => (
+            <li>
+              <a href={`#${section.id ?? ""}`}>{section.heading}</a>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    )}
+  </div>
+</BaseLayout>

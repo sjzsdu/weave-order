@@ -1,0 +1,102 @@
+---
+/**
+ * 全站外壳：head 的 SEO 元信息、JSON-LD、页头、页脚、脚本入口。
+ *
+ * 以前 17 个页面各抄一份完整的 HTML 骨架，改一处要改十七处；
+ * 现在骨架只有这一份，页面只提供自己的内容与元信息。
+ */
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { abs, renderJsonLd } from "../lib/site";
+
+interface Props {
+  /** 页面标题（含站点名）。 */
+  title: string;
+  /** 页面描述。 */
+  description: string;
+  /** 站内路径，如 "/pricing.html"。404 页不传（它 noindex，也就没有 canonical）。 */
+  canonical?: string;
+  ogType?: "website" | "article";
+  ogTitle?: string;
+  ogDescription?: string;
+  /** robots 指令，如 "noindex,follow"。 */
+  robots?: string;
+  /** JSON-LD：对象或数组，地址里的 __SITE__ 会替换成站点地址。 */
+  jsonLd?: unknown;
+  /** 首页：导航与页脚的锚点指向本页内。 */
+  homeAnchors?: boolean;
+  /** 当前导航栏目。 */
+  navCurrent?: "docs" | null;
+  /** 不带页头页脚（404 页）。 */
+  bare?: boolean;
+}
+
+const {
+  title,
+  description,
+  canonical,
+  ogType = "website",
+  ogTitle = title,
+  ogDescription = description,
+  robots,
+  jsonLd,
+  homeAnchors = false,
+  navCurrent = null,
+  bare = false,
+} = Astro.props;
+
+const canonicalUrl = canonical ? abs(canonical) : null;
+const ogImage = abs("/assets/og-cover.png");
+const jsonLdText = jsonLd ? renderJsonLd(jsonLd) : null;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#F7F4EE" />
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/assets/icons/icon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/assets/icons/icon-180.png" />
+    {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
+    {robots && <meta name="robots" content={robots} />}
+    {canonicalUrl && (
+      <>
+        <meta property="og:type" content={ogType} />
+        <meta property="og:site_name" content="织序 WeaveOrder" />
+        <meta property="og:title" content={ogTitle} />
+        <meta property="og:description" content={ogDescription} />
+        <meta property="og:image" content={ogImage} />
+        <meta property="og:locale" content="zh_CN" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content={ogImage} />
+        <meta property="og:url" content={canonicalUrl} />
+      </>
+    )}
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="给 AI 助手的产品摘要" />
+    <script is:inline>
+      document.documentElement.classList.add("js");
+    </script>
+    {jsonLdText && <script type="application/ld+json" is:inline set:html={jsonLdText} />}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">
+      跳到主要内容
+    </a>
+    {!bare && <Header current={navCurrent} homeAnchors={homeAnchors} />}
+    <main id="main">
+      <slot />
+    </main>
+    {!bare && <Footer homeAnchors={homeAnchors} />}
+    <script>
+      import "../scripts/main.ts";
+    </script>
+    <script>
+      import "../scripts/pages.ts";
+    </script>
+  </body>
+</html>

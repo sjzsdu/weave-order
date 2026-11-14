@@ -6,6 +6,8 @@ target/
 apps/print-agent/src-tauri/gen/
 .turbo/
 coverage/
+# Astro 生成的类型与内容集合缓存（apps/site）
+.astro/
 .env
 .env.*
 !.env.example

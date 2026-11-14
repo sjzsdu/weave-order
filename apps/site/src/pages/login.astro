@@ -1,0 +1,150 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import jsonLd from "../data/jsonld/login.ts";
+
+const title = "登录 · 织序 WeaveOrder 工作台";
+const description =
+  "登录织序工作台。用公司统一身份直接登录，不需要单独记密码；忘记密码、账号未开通、登录后没有权限，这里都有对应办法。";
+const ogDescription = "用公司统一身份直接登录，不需要单独记密码。";
+const robots = "index,follow";
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  canonical="/login.html"
+  jsonLd={jsonLd}
+  ogDescription={ogDescription}
+  robots={robots}
+>
+  <div class="container auth-wrap">
+    <div class="auth-card">
+      <div class="auth-card__brand">
+        <img src="assets/logo-mark.svg" alt="" width="32" height="32" />
+        <span>织序 WeaveOrder</span>
+      </div>
+      <h1>登录工作台</h1>
+      <p class="auth-card__sub">用公司的统一账号登录，不用再记一个密码。</p>
+
+      <a class="btn btn--primary" href="https://weave.wnbgj.com/login?next=%2Ftoday" rel="noopener">
+        进入工作台
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          aria-hidden="true"
+        >
+          <path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </a>
+
+      <div class="auth-links">
+        <a href="https://sso.wnbgj.com" rel="noopener">
+          忘记密码
+        </a>
+        <a href="signup.html">第一次用？登录后创建公司</a>
+      </div>
+
+      <div class="auth-divider">其他入口</div>
+
+      <div class="auth-alt">
+        <a href="https://weave-admin.wnbgj.com/login" rel="noopener">
+          <span>平台管理控制台</span>
+          <small>仅平台运营与财务</small>
+        </a>
+        <a href="download.html">
+          <span>下载桌面版与打印代理</span>
+          <small>Windows / macOS</small>
+        </a>
+        <a href="docs/index.html">
+          <span>帮助文档</span>
+          <small>上手、导入、审批、打印</small>
+        </a>
+      </div>
+
+      <p class="auth-note">
+        客户查看报价不需要登录：报价链接打开即可看。登录只用于内部同事。
+        <br />
+        登录由公司统一身份系统处理，织序不保存你的密码。
+      </p>
+    </div>
+  </div>
+
+  <section class="section" style="border-top:1px solid var(--line);background:var(--paper-deep)">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">登录遇到问题</p>
+          <h2>四种情况，四种办法。</h2>
+        </div>
+        <p class="lede">
+          大多数登录问题不是密码错，而是账号还没被分配到公司空间。下面的顺序能省你几通电话。
+        </p>
+      </div>
+
+      <div class="docs-hub">
+        <article class="docs-hub__card">
+          <h3>忘记密码</h3>
+          <p>
+            密码由公司统一身份系统管理，织序看不到也改不了。在统一登录页点「忘记密码」，按提示重置，1
+            分钟内生效。
+          </p>
+          <ul>
+            <li>
+              <a href="https://sso.wnbgj.com" rel="noopener">
+                打开统一登录页
+              </a>
+            </li>
+            <li>
+              <a href="docs/faq.html#login">登录问题合集</a>
+            </li>
+          </ul>
+        </article>
+        <article class="docs-hub__card">
+          <h3>提示账号不存在 / 未开通</h3>
+          <p>
+            说明你的账号还没被加入公司空间。把公司名和你自己的邮箱发给老板或对接人，让他们把你加进来；也可以自己登记试用，开一间新公司。
+          </p>
+          <ul>
+            <li>
+              <a href="signup.html">登记开通</a>
+            </li>
+            <li>
+              <a href="docs/quickstart.html#invite">邀请同事的步骤</a>
+            </li>
+          </ul>
+        </article>
+        <article class="docs-hub__card">
+          <h3>登录成功但看不到数据</h3>
+          <p>
+            你进的是公司空间，但角色或数据范围还没配：销售默认只看到自己的客户，财务默认只读。找管理员调整角色即可，不需要重新登录。
+          </p>
+          <ul>
+            <li>
+              <a href="docs/approvals.html#roles">角色与可见范围</a>
+            </li>
+            <li>
+              <a href="docs/faq.html#permission">为什么看不到同事的客户</a>
+            </li>
+          </ul>
+        </article>
+        <article class="docs-hub__card">
+          <h3>页面一直转圈 / 打不开</h3>
+          <p>
+            先刷新一次；仍不行时换浏览器（Chrome / Edge / Safari
+            近两年版本），或检查公司网络是否拦了登录跳转。桌面版可在设置里查看服务状态。
+          </p>
+          <ul>
+            <li>
+              <a href="docs/quickstart.html#trouble">自助排查</a>
+            </li>
+            <li>
+              <a href="mailto:hello@weaveorder.cn">写信给我们</a>
+            </li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

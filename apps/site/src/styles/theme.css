@@ -1,0 +1,41 @@
+/* 由 scripts/sync-tokens.mjs 生成，请勿手改。
+ * 源头是 packages/ui/src/tokens.ts —— 改品牌色与字体请改那里。 */
+@theme {
+  --color-ink-900: #14202b;
+  --color-ink-700: #2b3b4a;
+  --color-ink-500: #4e5f6e;
+  --color-ink-400: #7a8896;
+  --color-paper: #f7f4ee;
+  --color-paper-deep: #efe9df;
+  --color-surface: #ffffff;
+  --color-indigo-600: #1f4e79;
+  --color-indigo-700: #173e60;
+  --color-indigo-100: #e6eef5;
+  --color-vermilion-600: #c0492f;
+  --color-vermilion-100: #fbedea;
+  --color-moss-600: #3f6b4f;
+  --color-moss-100: #eaf1ec;
+  --color-amber-600: #b7791f;
+  --color-amber-100: #fbf3e4;
+  --color-line: #e3ded4;
+  --color-line-strong: #d3ccc0;
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 20px;
+  --spacing-xl: 32px;
+  --shadow-card: 0 1px 2px rgba(20, 32, 43, 0.06), 0 1px 3px rgba(20, 32, 43, 0.04);
+}

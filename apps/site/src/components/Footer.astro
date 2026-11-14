@@ -1,0 +1,92 @@
+---
+/**
+ * 页脚。所有页面共用一份，改一处只改这里。
+ */
+interface Props {
+  /** 首页：锚点指向本页内。 */
+  homeAnchors?: boolean;
+}
+
+const { homeAnchors = false } = Astro.props;
+const anchor = (hash: string) => (homeAnchors ? hash : `/index.html${hash}`);
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer__grid">
+      <div>
+        <div class="footer__brand">
+          <img src="/assets/logo-mark.svg" alt="" width="36" height="36" />
+          <span>织序 WeaveOrder</span>
+        </div>
+        <p>
+          纺织贸易的智能体原生操作系统。找样、报价、寄样、跟单、对账由智能体完成，人只负责审批结果。
+        </p>
+        <span class="footer__badge">
+          <i></i>服务运行正常
+        </span>
+      </div>
+      <div>
+        <h4>产品</h4>
+        <ul>
+          <li>
+            <a href={anchor("#capabilities")}>能做什么</a>
+          </li>
+          <li>
+            <a href={anchor("#how")}>一句话跑一单</a>
+          </li>
+          <li>
+            <a href="/pricing.html">价格</a>
+          </li>
+          <li>
+            <a href="/download.html">下载</a>
+          </li>
+        </ul>
+      </div>
+      <div>
+        <h4>资源</h4>
+        <ul>
+          <li>
+            <a href="/docs/index.html">帮助文档</a>
+          </li>
+          <li>
+            <a href="/docs/quickstart.html">5 分钟上手</a>
+          </li>
+          <li>
+            <a href="/docs/faq.html">常见问题</a>
+          </li>
+          <li>
+            <a href="/llms.txt">给 AI 助手的摘要</a>
+          </li>
+        </ul>
+      </div>
+      <div>
+        <h4>公司与支持</h4>
+        <ul>
+          <li>
+            <a href="/signup.html">联系与开通</a>
+          </li>
+          <li>
+            <a href="/login.html">登录入口</a>
+          </li>
+          <li>
+            <a href="/docs/security.html">隐私与数据安全</a>
+          </li>
+          <li>
+            <a href="/legal.html">服务条款</a>
+          </li>
+          <li>
+            <a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a>
+          </li>
+          <li>
+            <a href="https://github.com/sjzsdu/weave-order">GitHub</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <span>© 2026 织序 WeaveOrder · 纺织贸易的智能体原生操作系统</span>
+      <span>你说生意，系统做单。</span>
+    </div>
+  </div>
+</footer>

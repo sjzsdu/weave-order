@@ -1,6 +1,12 @@
 pnpm-lock.yaml
 packages/db/drizzle/
 **/dist/
+**/dist-gate/
 **/node_modules/
 .turbo/
 coverage/
+# Astro 生成的类型与内容集合缓存（apps/site）
+**/.astro/
+# 品牌 token 主题：由 apps/site/scripts/sync-tokens.mjs 生成，
+# 长字体栈的换行由生成器决定，不交给 prettier 改写（每次 build 都会被覆盖）
+apps/site/src/styles/theme.css

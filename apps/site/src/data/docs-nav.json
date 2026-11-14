@@ -1,0 +1,27 @@
+[
+  {
+    "title": "开始使用",
+    "items": [
+      { "href": "/docs/", "label": "帮助中心" },
+      { "href": "/docs/quickstart.html", "label": "5 分钟上手" },
+      { "href": "/docs/signup.html", "label": "开通、试用与付费" }
+    ]
+  },
+  {
+    "title": "日常操作",
+    "items": [
+      { "href": "/docs/import.html", "label": "导入客户与样品" },
+      { "href": "/docs/approvals.html", "label": "审批与权限" },
+      { "href": "/docs/quotes.html", "label": "报价与客户查看" },
+      { "href": "/docs/printing.html", "label": "打印与单证" },
+      { "href": "/docs/agent.html", "label": "智能体与命令行" }
+    ]
+  },
+  {
+    "title": "其他",
+    "items": [
+      { "href": "/docs/security.html", "label": "数据与安全" },
+      { "href": "/docs/faq.html", "label": "常见问题" }
+    ]
+  }
+]

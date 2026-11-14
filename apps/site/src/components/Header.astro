@@ -1,0 +1,79 @@
+---
+/**
+ * 页头导航。
+ *
+ * 以前 17 个页面各抄一份 header，改一处要改十七处。现在只有这一份，
+ * 链接按当前页面拼：首页用页内锚点（#capabilities），其余页面用绝对路径。
+ */
+interface Props {
+  /** 当前所在栏目，用于 aria-current。 */
+  current?: "docs" | null;
+  /** 首页：导航里的锚点指向本页内。 */
+  homeAnchors?: boolean;
+}
+
+const { current = null, homeAnchors = false } = Astro.props;
+
+const anchor = (hash: string) => (homeAnchors ? hash : `/index.html${hash}`);
+
+const links = [
+  { label: "能做什么", href: anchor("#capabilities") },
+  ...(homeAnchors ? [{ label: "为什么不同", href: "#why" }] : []),
+  { label: "价格", href: "/pricing.html" },
+  { label: "帮助文档", href: "/docs/index.html", key: "docs" },
+  { label: "下载", href: "/download.html" },
+  { label: "常见问题", href: anchor("#faq") },
+];
+---
+
+<header class="site-header" id="siteHeader">
+  <div class="container">
+    <nav class="nav" aria-label="主导航">
+      <a
+        class="nav__brand"
+        href={homeAnchors ? "#top" : "/index.html"}
+        aria-label="织序 WeaveOrder 首页"
+      >
+        <img src="/assets/logo-mark.svg" alt="" width="34" height="34" />
+        <span>
+          <span class="nav__brand-name">织序</span>
+          <span class="nav__brand-sub">WEAVE ORDER</span>
+        </span>
+      </a>
+      <div class="nav__links" id="navLinks">
+        {links.map((link) => (
+          <a href={link.href} aria-current={current && link.key === current ? "true" : undefined}>
+            {link.label}
+          </a>
+        ))}
+      </div>
+      <div class="nav__actions">
+        <a class="btn btn--ghost btn--sm" href="/login.html">
+          登录
+        </a>
+        <a class="btn btn--primary btn--sm" href="/signup.html">
+          免费试用
+        </a>
+        <button
+          class="nav__toggle"
+          id="navToggle"
+          aria-label="打开菜单"
+          aria-expanded="false"
+          aria-controls="navLinks"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"></path>
+          </svg>
+        </button>
+      </div>
+    </nav>
+  </div>
+</header>

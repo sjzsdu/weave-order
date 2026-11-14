@@ -1,0 +1,56 @@
+---
+/**
+ * 帮助中心文章页：URL 由内容集合的 id 决定（/docs/signup.html 等），
+ * 外壳（侧栏、目录、上一篇 / 下一篇）来自 DocsLayout，正文是 MDX。
+ */
+import { getCollection, render } from "astro:content";
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+import signupJsonLd from "../../data/jsonld/docs-signup.ts";
+import importJsonLd from "../../data/jsonld/docs-import.ts";
+import approvalsJsonLd from "../../data/jsonld/docs-approvals.ts";
+import quotesJsonLd from "../../data/jsonld/docs-quotes.ts";
+import printingJsonLd from "../../data/jsonld/docs-printing.ts";
+import agentJsonLd from "../../data/jsonld/docs-agent.ts";
+import securityJsonLd from "../../data/jsonld/docs-security.ts";
+import faqJsonLd from "../../data/jsonld/docs-faq.ts";
+
+const jsonLdBySlug: Record<string, unknown> = {
+  "signup.html": signupJsonLd,
+  "import.html": importJsonLd,
+  "approvals.html": approvalsJsonLd,
+  "quotes.html": quotesJsonLd,
+  "printing.html": printingJsonLd,
+  "agent.html": agentJsonLd,
+  "security.html": securityJsonLd,
+  "faq.html": faqJsonLd,
+};
+
+export async function getStaticPaths() {
+  const entries = await getCollection("docs");
+  return entries.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const data = entry.data;
+---
+
+<DocsLayout
+  title={`${data.title} · 织序帮助中心`}
+  description={data.description}
+  canonical={`/docs/${data.file}`}
+  heading={data.title}
+  lede={data.lede}
+  slug={data.file}
+  sections={data.sections}
+  jsonLd={jsonLdBySlug[data.file]}
+  ogTitle={`${data.title} · 织序帮助中心`}
+  ogDescription={data.description}
+  ogType="article"
+>
+  <Content />
+</DocsLayout>

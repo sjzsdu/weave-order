@@ -9,11 +9,14 @@ module.exports = {
         ink: {
           900: "#14202B",
           700: "#2B3B4A",
+          500: "#4E5F6E",
           400: "#7A8896",
         },
         paper: "#F7F4EE",
+        "paper-deep": "#EFE9DF",
         surface: "#FFFFFF",
         line: "#E3DED4",
+        "line-strong": "#D3CCC0",
         indigo: {
           600: "#1F4E79",
           700: "#173E60",
@@ -34,6 +37,15 @@ module.exports = {
       },
       fontFamily: {
         sans: ['"Inter"', '"PingFang SC"', '"Microsoft YaHei"', "system-ui", "sans-serif"],
+        serif: [
+          '"Noto Serif SC"',
+          '"Noto Serif CJK SC"',
+          '"Source Han Serif SC"',
+          '"Songti SC"',
+          '"SimSun"',
+          "Georgia",
+          "serif",
+        ],
         mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
       },
       fontSize: {

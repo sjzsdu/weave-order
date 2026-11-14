@@ -197,7 +197,7 @@ Logo 只有一个来源，各端图标一律由 `build-app-icons.py` 生成，�
 | 客户报价页（`apps/quote`） | 同上 | 同上 | 客户面唯一品牌露出，`robots: noindex` 不影响图标 |
 | 移动端 H5/PWA（`apps/mobile`） | `src/pwa/icons/icon-192/512.png`、`icon-maskable-192/512.png`、`apple-touch-icon-180.png`、`src/pwa/favicon.svg` | 192 / 512 / 180 | manifest 分开声明 `any` 与 `maskable`，不再混用 |
 | 打印代理（`apps/print-agent`） | `src-tauri/icons/32x32.png`、`128x128.png`、`128x128@2x.png`、`icon.ico`、`icon.icns`、`icon.png` | 32 / 128 / 256 / ICO / ICNS / 512 | `tauri.conf.json` 的 `bundle.icon` 已指向这套文件 |
-| 官网（`site/`） | `assets/favicon.svg`、`assets/icons/icon-32/180/192/512.png` | 同上 | 静态站直接引用，无需构建 |
+| 官网（`apps/site`） | `public/assets/favicon.svg`、`public/assets/icons/icon-32/180/192/512.png` | 同上 | 构建时从 `public/` 原样拷贝到产物根，无需额外构建 |
 
 **规则**
 
@@ -206,4 +206,4 @@ Logo 只有一个来源，各端图标一律由 `build-app-icons.py` 生成，�
 - iOS 的 apple-touch-icon 必须不透明：底色墨色、标记占 86%。
 - 小程序图标不在代码里：微信公众平台的「小程序头像」需要手动上传 `brand/icons/icon-512.png`。
 
-官网源文件在 `site/`，预览与部署见 `site/README.md`。
+官网源文件在 `apps/site/`，预览与部署见 `apps/site/README.md`。

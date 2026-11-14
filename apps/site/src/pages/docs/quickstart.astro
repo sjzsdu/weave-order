@@ -1,0 +1,177 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import jsonLd from "../../data/jsonld/docs-quickstart.ts";
+
+const title = "5 分钟上手 · 织序帮助中心";
+const description =
+  "从登录到跑完第一张报价：导入客户与样品、把客户原话派给智能体、审一张草稿、邀请同事。每一步都有具体位置和时间。";
+const ogDescription = "从登录到跑完第一张报价。";
+const ogType = "article";
+const sections = [
+  {
+    id: "login",
+    heading: "登录工作台",
+  },
+  {
+    id: "import",
+    heading: "导入客户与样品",
+  },
+  {
+    id: "first-job",
+    heading: "派第一件活",
+  },
+  {
+    id: "approve",
+    heading: "审一张草稿",
+  },
+  {
+    id: "invite",
+    heading: "邀请同事",
+  },
+  {
+    id: "trouble",
+    heading: "卡住了怎么办",
+  },
+];
+const heading = "5 分钟上手";
+const lede =
+  "假设你刚拿到登录方式，公司里还没有任何数据。跟着下面四步走，你会得到第一张带定价依据的报价草稿，并亲手批掉它。";
+const slug = "quickstart.html";
+---
+
+<DocsLayout
+  title={title}
+  description={description}
+  canonical="/docs/quickstart.html"
+  jsonLd={jsonLd}
+  ogDescription={ogDescription}
+  ogType={ogType}
+  sections={sections}
+  heading={heading}
+  lede={lede}
+  slug={slug}
+>
+  <h2 id="login">第 1 步：登录工作台</h2>
+  <p>
+    打开{" "}
+    <a href="https://weave.wnbgj.com" rel="noopener">
+      weave.wnbgj.com
+    </a>
+    ，用公司给你的账号登录。第一次用会先看到「创建公司」：填个公司名，几秒建好，你就是老板账号；被同事邀请的话，直接打开他发你的邀请链接。登录后落在
+    <strong>工作台</strong>：上面一行是「今天智能体替你做了什么」，下面一行是「几件等你决定」。
+  </p>
+  <p>三个主要窗口，记住三个快捷键就够了：</p>
+  <ul>
+    <li>
+      <strong>工作台</strong>（<code>⌘1</code> / <code>Ctrl+1</code>）：今天发生了什么、谁在等你。
+    </li>
+    <li>
+      <strong>审批</strong>（<code>⌘2</code>）：所有草稿排成一列，一条一条批。
+    </li>
+    <li>
+      <strong>全景</strong>（<code>⌘3</code>）：客户、样品、订单、回款的全貌，数字都能点开看来源。
+    </li>
+  </ul>
+  <p>
+    任何页面按 <code>⌘K</code>（Windows 是 <code>Ctrl+K</code>
+    ）可以呼出命令栏，输入一句话直接派活，也可以输入「青禾的报价」跳转。
+  </p>
+
+  <h2 id="import">第 2 步：导入客户与样品</h2>
+  <p>
+    从「组织与设置 → 导入」进入，把现有的 Excel 或 CSV
+    直接拖进去。系统会先给你一张预览表：识别到哪些列、有多少行、哪些行有问题。
+  </p>
+  <div class="docs-callout">
+    <b>整批要么全进，要么全不进。</b>{" "}
+    只要有一行不合格，这一批就完全不落库。你改掉那一行再传，不会出现「一半进去了一半没有」的烂摊子。
+  </div>
+  <p>最少需要这些列：</p>
+  <ul>
+    <li>
+      <strong>客户</strong>：客户名称；选填联系人、手机、地址、信用额度。
+    </li>
+    <li>
+      <strong>样品</strong>：样品编号、名称、规格（成分 / 克重 /
+      门幅）、成本价；选填库存、缸号、图片。
+    </li>
+  </ul>
+  <p>
+    列名不一样也没关系，预览页可以手动对应。完整规则见<a href="import.html">导入客户与样品</a>。
+  </p>
+
+  <h2 id="first-job">第 3 步：派第一件活</h2>
+  <p>
+    回到工作台，按 <code>⌘K</code>，把客户刚发来的那句话原样贴进去，例如：
+  </p>
+  <pre><code>青禾纺织要 32S 精梳棉氨纶汗布，克重 180，3.2 吨，
+问上次那个价能不能再让 1%，这周要答复。</code></pre>
+  <p>
+    回车之后，智能体会自己拆成三件事：找样（匹配到你刚导入的样品）、核价（读成本底线与这个客户的历史价）、起草报价。你会看到一张执行记录一条条亮起来，通常十几秒到一分钟。
+  </p>
+  <p>
+    不用写得很规范。带上客户名、品名、数量、客户的原话就够了；缺的字段它会标出来问你，而不是留空。
+  </p>
+
+  <h2 id="approve">第 4 步：审一张草稿</h2>
+  <p>草稿会出现在审批窗口。一张卡从上到下是固定的四块：</p>
+  <ol>
+    <li>
+      <strong>客户与品名</strong>：谁、要什么、客户原话是什么。
+    </li>
+    <li>
+      <strong>金额与改动</strong>：数量、单价、总价，以及相对上一次报价改了多少。
+    </li>
+    <li>
+      <strong>定价依据</strong>
+      ：用了哪个样品、哪条历史报价、成本底线多少、毛利多少。每个标签都能点开看明细。
+    </li>
+    <li>
+      <strong>决定</strong>：批准并发送、改一处、驳回。
+    </li>
+  </ol>
+  <p>
+    点「改一处」直接改数字或写一句话，金额会重新算；改幅超过 5% 或 1
+    万元会自动升级给主管，你不用记这个规则，界面会告诉你「已升级」。点「批准并发送」后，报价生效、生成客户链接、写一条审计记录。
+  </p>
+  <div class="docs-callout">
+    <b>批准是唯一能让草稿生效的动作。</b>{" "}
+    智能体没有权限把草稿变成正式报价，也没有权限改账。这是产品规则，不是设置项。
+  </div>
+
+  <h2 id="invite">邀请同事</h2>
+  <p>
+    老板或主管在「组织与设置 →
+    邀请同事」填同事邮箱、选角色，点「生成邀请链接」，复制到微信或邮件发给他（7
+    天有效）。同事打开链接、登录后点「接受邀请」就加入这间公司，不需要再注册。
+  </p>
+  <p>链接核对邮箱：被邀请的是谁，就只有那个邮箱的账号能接受；转发给别人用不了。</p>
+  <p>
+    角色决定他能看到什么、能批多少钱：销售看自己的客户，主管看本组，财务只读业务但能确认回款，老板看全公司。详细对照见
+    <a href="approvals.html#roles">角色与可见范围</a>。
+  </p>
+
+  <h2 id="trouble">卡住了怎么办</h2>
+  <ul>
+    <li>
+      <strong>导入报错说「第 37 行第 4 列不是数字」</strong>
+      ：把那一列里混进去的「元」「/米」之类的字符删掉，或用预览页把该列指定为文本。
+    </li>
+    <li>
+      <strong>派活之后一直没有草稿</strong>
+      ：先看工作台的执行记录停在哪一步。停在「找样」通常是没导入对应样品；停在「核价」通常是缺成本价。
+    </li>
+    <li>
+      <strong>批准按钮是灰的</strong>：说明你的角色没有这个金额的审批权限，卡片上会写「已升级给
+      XXX」，等主管批即可。
+    </li>
+    <li>
+      <strong>手机上看不到某个窗口</strong>
+      ：手机是现场工作台，只保留工作台、审批和客户视图；批量导入、权限配置在电脑上做。
+    </li>
+  </ul>
+  <p>
+    还不行就写信到 <a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a>
+    ，附上截图和你的操作步骤。
+  </p>
+</DocsLayout>

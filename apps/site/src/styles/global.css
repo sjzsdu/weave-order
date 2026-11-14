@@ -1,0 +1,23 @@
+/*
+ * 官网样式入口。
+ *
+ * Tailwind v4 的三部分：主题（@theme）、工具类（utilities）、组件层（@layer components）。
+ *
+ * 故意不引 preflight：官网自带一套完整的样式重置（迁移进来的 legacy.css 顶部），
+ * 而 Tailwind 的 preflight 会把 ul/ol 的默认项目符号去掉 —— 帮助中心的正文列表靠它。
+ * 再叠一套重置等于把已经调好的排版打乱。
+ *
+ * 品牌色与字体来自 @theme（源头 packages/ui/src/tokens.ts，与产品应用同一套设计系统）；
+ * 官网自己的排版常量（容器宽、圆角、投影）在 legacy.css 顶部的 :root 里。
+ *
+ * 字体说明：默认使用系统字体（PingFang SC / Songti SC / Microsoft YaHei / 宋体），
+ * 不向境外字体 CDN 发请求，国内首屏更稳。若品牌需要统一字形，
+ * 可把 Inter 与 Noto Serif SC 子集化为 woff2 放到 public/assets/fonts/ 后自托管引入。
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@import "./theme.css";
+@import "./legacy.css";

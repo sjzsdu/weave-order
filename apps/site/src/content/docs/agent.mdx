@@ -1,0 +1,106 @@
+---
+title: "智能体与命令行"
+description: "让 codex 等智能体直接操作织序：命令行安装与登录、常用命令示例、skill 加载、权限边界与凭据管理。"
+lede: "这一页给愿意用命令行的人。用不用都不影响正常使用网页版，它的价值是让别的智能体（codex、Claude Code 等）通过一个受控入口帮你查数和起草。"
+file: "agent.html"
+order: 7
+sections:
+  - id: "what"
+    heading: "这条通道是给谁用的"
+  - id: "install"
+    heading: "安装与登录"
+  - id: "examples"
+    heading: "常用命令"
+  - id: "skill"
+    heading: "让 codex 这类智能体学会用它"
+  - id: "limits"
+    heading: "能做与不能做"
+  - id: "tokens"
+    heading: "凭据与安全"
+---
+
+<h2 id="what">这条通道是给谁用的</h2>
+
+给两类人：一是习惯终端、想批量查数的老板和主管；二是想让外部智能体帮忙操作织序的开发者。命令行的权限和你登录的账号完全一致，不会因为走命令行就多看到数据。
+
+<div class="docs-callout">
+<strong>命令行不是后门。</strong>
+它调用的是同一套业务接口，同样受角色、数据范围和审批规则约束；它能起草，但不能批准。
+</div>
+
+<h2 id="install">安装与登录</h2>
+
+需要 Node 20 及以上。内测期间 npm 包尚未公开发布，从仓库构建：
+
+```
+git clone git@github.com:sjzsdu/weave-order.git
+cd weave-order
+pnpm install
+pnpm --filter @weave-order/cli build
+node apps/cli/bin/weave.js --help
+```
+
+登录用设备码，不需要在命令行里敲密码：
+
+```
+weave login
+# 打开给出的链接，在浏览器里确认，命令行自动完成登录
+```
+
+登录凭据存在本机，按设备区分。可以随时用 `weave token list` 查看、`weave token revoke` 撤销。
+
+<h2 id="examples">常用命令</h2>
+
+```
+# 看今天等你决定的事
+weave approvals list
+
+# 查一个客户的历史报价
+weave quotes list --customer 青禾纺织
+
+# 把客户原话变成报价草稿（仍需人在界面上批准）
+weave quote draft --customer 青禾纺织 \
+  --text "32S 精梳棉氨纶汗布 180g，3.2 吨，问上次价能否再让 1%"
+
+# 拉某个订单的进度
+weave orders show --id ORD-1024
+
+# 导出对账单
+weave statements export --month 2026-10 --format xlsx
+```
+
+命令的确切参数以 `weave <命令> --help` 为准；版本升级时我们会保持命令名稳定，只增不改。
+
+<h2 id="skill">让 codex 这类智能体学会用它</h2>
+
+仓库里有 `skills/weave-order/SKILL.md`，它告诉外部智能体：有哪些工具、参数是什么、什么不能做。把这一份放进你的智能体技能目录，它就能自己调用：
+
+```
+weave skill install            # 装到默认技能目录
+weave skill path               # 看装到了哪里
+```
+
+装好之后，你可以对 codex 说「查一下青禾这个月的报价，按毛利排个序」，它会调用织序的命令取数，而不是编数字。
+
+<h2 id="limits">能做与不能做</h2>
+
+<div class="table-wrap">
+<table class="price-table">
+<thead><tr><th scope="col">能做</th><th scope="col">不能做</th></tr></thead>
+<tbody>
+<tr><td>查客户、样品、报价、订单、对账</td><td>批准或驳回任何草稿</td></tr>
+<tr><td>起草报价、寄样单、对账单</td><td>改账、删单、改历史金额</td></tr>
+<tr><td>拉审批列表、看审计</td><td>改角色与权限</td></tr>
+<tr><td>导出报表</td><td>导出别人数据范围内的客户</td></tr>
+</tbody>
+</table>
+</div>
+
+这些边界写在服务端，不靠命令行自觉：即使改命令行代码，也拿不到多余权限。
+
+<h2 id="tokens">凭据与安全</h2>
+
+- 凭据按设备签发，换电脑要重新登录，旧设备可以单独撤销。
+- 撤销后 1 分钟内生效，已发出的请求会在下一次调用被拒。
+- 不要把凭据写进代码仓库或共享给同事；需要给同事接入，让他自己登录一次。
+- 在「组织与设置 → 登录设备」能看到所有已登录设备，一键下线。

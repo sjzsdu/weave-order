@@ -34,6 +34,8 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      // Taro 的 gate 构建产物（已 gitignore），里面是打包后的 JS，不是源码
+      "**/dist-gate/**",
       "**/.next/**",
       "**/next-env.d.ts",
       "**/*.cjs",
@@ -50,9 +52,9 @@ export default tseslint.config(
       // 纯 Node ESM 运维脚本不参与类型检查（不在任何 tsconfig 的 project 里），
       // 由 prettier 统一风格；CI 用例见 scripts/ 与 apps/mobile/scripts/。
       "**/scripts/**/*.mjs",
-      // 官网是零构建静态站（原生 JS，不在任何 tsconfig project 里），
-      // 不参与类型检查与 lint；改动由 site/README.md 的预览步骤自查。
-      "site/**",
+      // 官网（apps/site）是有 tsconfig 的 Astro 工程，正常参与类型检查与 lint；
+      // 只有它的 .astro 模板与 .mjs 脚本不在 TS project 里（.mjs 已在上条覆盖）。
+      "apps/site/**/*.astro",
       "apps/mobile/src/pwa/**",
       "apps/print-agent/src/**",
       "packages/db/drizzle/**",
