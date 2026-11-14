@@ -29,6 +29,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   sample_images,
   sample_embeddings,
   sample_text_embeddings,
+  sample_image_embeddings,
   sample_shipments,
   sample_shipment_items,
   quotes,

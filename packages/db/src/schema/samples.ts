@@ -63,6 +63,14 @@ export const sampleImages = pgTable(
     width: integer("width"),
     height: integer("height"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * 图像向量索引状态。图墙据此显示「检索中 / 索引失败」，
+     * 而不是把「还没算向量」表现成「搜不到」。
+     * 取值：pending | ready | failed（迁移里带 check 约束）。
+     */
+    indexStatus: varchar("index_status", { length: 16 }).notNull().default("pending"),
+    /** 最近一次索引失败的原因（截断到 255），成功时清空。 */
+    indexError: varchar("index_error", { length: 255 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -75,5 +83,7 @@ export const sampleImages = pgTable(
       table.sampleId,
       table.sortOrder,
     ),
+    // 索引任务按状态扫「待办」：失败的行要能被后台重试捞到。
+    index("sample_images_tenant_index_status_idx").on(table.tenantId, table.indexStatus),
   ],
 );
