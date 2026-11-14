@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import type { OnboardingPreview, OnboardingResult } from "@weave-order/schema";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
+import { track } from "@/analytics";
+import { TrackedLink } from "@/tracked-link";
 
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
 
@@ -31,7 +33,11 @@ export function ActivateClient({ code }: { code: string }) {
     api
       .previewOnboarding(code)
       .then((data) => {
-        if (!cancelled) setPreview(data);
+        if (!cancelled) {
+          setPreview(data);
+          // 漏斗第一步：开通链接真的被打开了（不是打开就关掉）。
+          track("activate_link_opened");
+        }
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "链接无效");
@@ -50,6 +56,7 @@ export function ActivateClient({ code }: { code: string }) {
     try {
       const done = await api.claimOnboarding(code);
       setResult(done);
+      track("activate_completed");
       window.setTimeout(() => window.location.assign("/today"), 900);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "开通失败，请重试");
@@ -107,9 +114,14 @@ export function ActivateClient({ code }: { code: string }) {
             ，把这条消息截图发过来。
           </p>
         </div>
-        <a href="/login" className="mt-6 text-xs text-ink-400 underline underline-offset-4">
+        <TrackedLink
+          href="/login"
+          event="login_click"
+          eventProps={{ from: "activate-page" }}
+          className="mt-6 text-xs text-ink-400 underline underline-offset-4"
+        >
           换个账号登录
-        </a>
+        </TrackedLink>
       </main>
     );
   }
@@ -167,9 +179,14 @@ export function ActivateClient({ code }: { code: string }) {
       <p className="mt-4 text-xs leading-relaxed text-ink-400">
         开通用的是你当前登录的账号；公司数据只属于这间公司，其他公司看不到。登录邮箱与登记邮箱不一致时会被拦下。
       </p>
-      <a href="/login" className="mt-4 text-xs text-ink-400 underline underline-offset-4">
+      <TrackedLink
+        href="/login"
+        event="login_click"
+        eventProps={{ from: "activate-page" }}
+        className="mt-4 text-xs text-ink-400 underline underline-offset-4"
+      >
         不是你的账号？换一个登录
-      </a>
+      </TrackedLink>
     </main>
   );
 }

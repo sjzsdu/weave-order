@@ -7,6 +7,7 @@ import { Badge, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
+import { track } from "@/analytics";
 import { formatMoney } from "@weave-order/ui";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -299,6 +300,8 @@ function TeamSection() {
         ...(channel === "sms" && phone.trim() ? { phone: phone.trim() } : {}),
       });
       setLink(created.url);
+      // 只记角色，不记同事的邮箱和手机号。
+      track("invite_created", { role });
       setDelivery(created.delivery);
       setEmail("");
       const rows = await api.listTeam();
