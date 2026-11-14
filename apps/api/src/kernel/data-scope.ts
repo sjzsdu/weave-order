@@ -13,8 +13,13 @@ import type { KernelContext } from "./audit";
  * 归属人统一是 `memberships.id`（业务表 `owner_id` 存的是成员 id，不是 Casdoor sub），
  * 因此网关注入的 `ctx.ownerId` 必须取自 membership.id。
  *
- * 只有 HUMAN 请求带范围；系统任务与智能体上下文不带 `dataScope`，
- * 内部读路径（报价计算、工具层）保持不受限，避免把权限判断塞进计价逻辑。
+ * 范围取决于「谁在驱动这次调用」，而不取决于调用方是不是人类：
+ * - HUMAN 路由由 membership 注入（`humanScopeOf`）；
+ * - 智能体（`/api/tools/*`、`/api/agents/quote`）带的是**驱动者**的范围——
+ *   它只是执行体，不能替调用者放大可见客户。写路径因此必须把 `ctx` 传进
+ *   `customers.getById` / 单据 `getById`，漏传一次就是一个租户内越权；
+ * - 只有确实没有人在驱动时（系统任务、本地匿名演示）才不带 `dataScope` = 不受限。
+ * 计价解析不吃数据范围：权限判断收在入口的归属校验上，不塞进计价逻辑。
  */
 export interface ScopeWindow {
   dataScope: DataScope;

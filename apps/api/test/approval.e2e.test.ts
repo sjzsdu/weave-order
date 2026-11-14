@@ -59,14 +59,17 @@ afterAll(async () => {
   await app?.close();
 });
 
-async function postJson(path: string, body: unknown): Promise<{ ok: boolean; json: unknown }> {
+async function postJson(
+  path: string,
+  body: unknown,
+): Promise<{ ok: boolean; status: number; json: unknown }> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const json: unknown = await response.json();
-  return { ok: response.ok, json };
+  return { ok: response.ok, status: response.status, json };
 }
 
 async function getJson(path: string): Promise<unknown> {
@@ -232,7 +235,7 @@ describe("审批窗口端到端（HTTP 真起服务 + 真连 PG）", () => {
     ).toBe(true);
   }, 30_000);
 
-  it("非法决策入参返回 ok:false 的 INVALID_INPUT（不是 500）", async (ctx) => {
+  it("非法决策入参返回 400 + ok:false 的 INVALID_INPUT（不是 500）", async (ctx) => {
     if (!available) {
       ctx.skip();
       return;
@@ -242,7 +245,7 @@ describe("审批窗口端到端（HTTP 真起服务 + 真连 PG）", () => {
       kind: "quote",
       decision: "MAYBE",
     });
-    expect(res.ok).toBe(true);
+    expect(res.status).toBe(400);
     const parsed = ApprovalDecisionResult.parse(res.json);
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("INVALID_INPUT");

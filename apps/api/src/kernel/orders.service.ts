@@ -69,7 +69,8 @@ export class OrderService {
 
   async create(input: unknown, ctx: KernelContext): Promise<Order> {
     const parsed = CreateOrderInput.parse(input);
-    await this.customers.getById(parsed.customerId);
+    // 入口判归属：越权客户按「不存在」返回，与 generateDraft / createDraft 同一口径。
+    await this.customers.getById(parsed.customerId, ctx);
 
     const sampleIds = parsed.items.map((item) => item.sampleId);
     const sampleRows = await this.db
@@ -220,7 +221,9 @@ export class OrderService {
     if (ctx.actor.type !== "HUMAN") {
       throw new KernelError("PERMISSION_DENIED", "订单确认必须由人类执行，智能体无权确认");
     }
-    const current = await this.getById(orderId);
+    // 先按驱动者的数据范围读一次：越权当成不存在，
+    // 否则看不见这张单的人也能确认它，响应体还会把整单内容回吐给他。
+    const current = await this.getById(orderId, ctx);
     if (current.status !== "DRAFT") {
       throw new KernelError("KERNEL_REJECTED", `订单不是草稿状态：${current.status}`, {
         reason: "INVALID_STATE_TRANSITION",

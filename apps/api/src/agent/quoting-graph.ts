@@ -10,6 +10,7 @@ import type {
 import type { LlmProvider } from "../platform/llm";
 import type { Tools } from "../tools";
 import { QUOTING_AGENT_CONTEXT } from "./context";
+import type { AgentRunContext } from "./context";
 import { QuoteAgentState, advanceQuoting } from "./quoting-state";
 import type { QuoteAgentStateType, QuoteAgentUpdate } from "./quoting-state";
 
@@ -19,6 +20,11 @@ export interface QuoteAgentGraphDeps {
   tools: Tools;
   llm: LlmProvider;
   checkpointer: BaseCheckpointSaver;
+  /**
+   * 这次运行的身份。HTTP 路径必须带驱动者的数据范围——智能体只是执行体，
+   * 不能替调用者放大可见客户。默认值是纯 agent 身份（无范围），只用于 demo / 测试。
+   */
+  ctx?: AgentRunContext;
 }
 
 function messageOf(error: unknown): string {
@@ -116,7 +122,7 @@ function buildSearchTerms(slots: QuoteIntentSlots, rawText: string): string[] {
  * 节点只调 tools；金额由内核计算；缺什么就明确列出来，不猜、不编。
  */
 export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
-  const { tools, llm, checkpointer } = deps;
+  const { tools, llm, checkpointer, ctx = QUOTING_AGENT_CONTEXT } = deps;
 
   const parseIntent = async (state: State): Promise<QuoteAgentUpdate> => {
     let input;
@@ -160,7 +166,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
     try {
       const result = await tools.getCustomerHistory.execute(
         { customerId: state.customerId, limit: 5 },
-        QUOTING_AGENT_CONTEXT,
+        ctx,
       );
       if (!result.ok) {
         if (result.error.code === "CUSTOMER_NOT_FOUND") {
@@ -192,10 +198,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
 
     for (const term of terms) {
       try {
-        const result = await tools.searchFabricBySpec.execute(
-          { query: term, limit: 20 },
-          QUOTING_AGENT_CONTEXT,
-        );
+        const result = await tools.searchFabricBySpec.execute({ query: term, limit: 20 }, ctx);
         if (!result.ok) {
           return fail(state, "findCandidates", result.error.code, result.error.message);
         }
@@ -225,7 +228,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
           state.imageUrl
             ? { imageUrl: state.imageUrl, topK: state.topK, minSimilarity: 0.3 }
             : { image: state.image, topK: state.topK, minSimilarity: 0.3 },
-          QUOTING_AGENT_CONTEXT,
+          ctx,
         );
         if (!result.ok) {
           return fail(state, "findCandidates", result.error.code, result.error.message);
@@ -304,7 +307,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
           quantity,
           currency: state.currency,
         },
-        QUOTING_AGENT_CONTEXT,
+        ctx,
       );
       if (!result.ok) {
         if (result.error.code === "KERNEL_REJECTED") {
@@ -349,7 +352,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
             },
           ],
         },
-        QUOTING_AGENT_CONTEXT,
+        ctx,
       );
       if (!result.ok) {
         return fail(state, "generateDraft", result.error.code, result.error.message);

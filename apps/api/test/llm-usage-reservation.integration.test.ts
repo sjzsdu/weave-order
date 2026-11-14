@@ -24,6 +24,14 @@ const ACTUAL_PROMPT_TOKENS = 120;
 const ACTUAL_COMPLETION_TOKENS = 30;
 const CONCURRENT_REQUESTS = 8;
 
+/**
+ * 预算按 UTC 日界 / 月界取窗口，夹具时钟与查询时钟必须是同一个瞬间：
+ * 写死历史日期会在跨天后（预留行落在旧日、`budgetStatus` 读当日窗口）必然读不到用量，
+ * 跨月后 `monthlyByTask` 同理。统一取运行时的一次 `new Date()`，两者永远同窗。
+ */
+const FIXED_AT = new Date();
+const fixedClock = () => FIXED_AT;
+
 let handle: ReturnType<typeof createDb> | null = null;
 let db: Db | null = null;
 
@@ -129,7 +137,7 @@ function trackedUsage(
     },
     settle: (input) => service.settle(input),
     fail: (input) => service.fail(input),
-    budgetStatus: (daily, monthly) => service.budgetStatus(daily, monthly),
+    budgetStatus: (daily, monthly) => service.budgetStatus(daily, monthly, FIXED_AT),
   };
 }
 
@@ -150,6 +158,7 @@ describe("LLM 预算预留—结算", () => {
       apiKey: "sk",
       timeoutMs: 1000,
       fetchImpl: successfulFetch(),
+      now: fixedClock,
     });
     await calibration.extractQuoteIntent({ text: "棉 500 米" });
     expect(reservedPerCall).toBeGreaterThan(ACTUAL_PROMPT_TOKENS + ACTUAL_COMPLETION_TOKENS);
@@ -219,6 +228,7 @@ describe("LLM 预算预留—结算", () => {
       apiKey: "sk",
       timeoutMs: 1000,
       fetchImpl,
+      now: fixedClock,
     });
 
     const results = await Promise.all(
@@ -252,7 +262,11 @@ describe("LLM 预算预留—结算", () => {
     expect(actualTokens).toBeLessThanOrEqual(budget);
 
     // 预算快照同样把已结算的实际用量算进去。
-    const status = await new UsageService(requireDb(), tenantId).budgetStatus(budget, null);
+    const status = await new UsageService(requireDb(), tenantId).budgetStatus(
+      budget,
+      null,
+      FIXED_AT,
+    );
     expect(status.dailyTokens).toBe(actualTokens);
     expect(status.dailyExceeded).toBe(false);
   });
@@ -290,10 +304,6 @@ describe("LLM 预算预留—结算", () => {
       },
     ];
 
-    // 用量行按 provider 的 now（2026-11-13）落库；预算快照也必须用同一个「当前时刻」，
-    // 否则真实时钟跨天后 dailyTokens 的窗口不再覆盖这些行，用例会随日期变成红灯。
-    const fixedNow = new Date("2026-11-13T00:00:00.000Z");
-
     for (const testCase of cases) {
       const tenantId = randomUUID();
       const service = new UsageService(requireDb(), tenantId);
@@ -303,12 +313,12 @@ describe("LLM 预算预留—结算", () => {
           reserve: (input) => service.reserve(input),
           settle: (input) => service.settle(input),
           fail: (input) => service.fail(input),
-          budgetStatus: (daily, monthly) => service.budgetStatus(daily, monthly),
+          budgetStatus: (daily, monthly) => service.budgetStatus(daily, monthly, FIXED_AT),
         },
         apiKey: "sk",
         timeoutMs: 1000,
         fetchImpl: testCase.fetchImpl,
-        now: () => fixedNow,
+        now: fixedClock,
       });
 
       await expect(provider.extractQuoteIntent({ text: "棉 500 米" })).rejects.toThrow();
@@ -321,7 +331,7 @@ describe("LLM 预算预留—结算", () => {
       expect(row.reservedTokens).toBeGreaterThan(0);
       expect(row.promptTokens).toBe(testCase.promptTokens);
 
-      const status = await service.budgetStatus(null, null, fixedNow);
+      const status = await service.budgetStatus(null, null, FIXED_AT);
       expect(status.dailyTokens).toBe(row.reservedTokens);
     }
   });
@@ -339,7 +349,7 @@ describe("LLM 预算预留—结算", () => {
       reservedTokens: 500,
       dailyBudget: null,
       monthlyBudget: null,
-      at: "2026-11-13T00:00:00.000Z",
+      at: FIXED_AT,
     });
     expect(reservation.allowed).toBe(true);
 
@@ -349,7 +359,7 @@ describe("LLM 预算预留—结算", () => {
       promptTokens: 100,
       completionTokens: 20,
       cachedTokens: 0,
-      at: "2026-11-13T00:00:01.000Z",
+      at: FIXED_AT,
     };
     await service.settle(settleInput);
     await service.settle(settleInput);
@@ -363,7 +373,7 @@ describe("LLM 预算预留—结算", () => {
     expect(rows[0]?.reservedTokens).toBe(0);
     expect(rows[0]?.promptTokens).toBe(100);
 
-    const monthly = await service.monthlyByTask(new Date("2026-11-13T00:00:00.000Z"));
+    const monthly = await service.monthlyByTask(FIXED_AT);
     expect(monthly).toHaveLength(1);
     expect(monthly[0]).toMatchObject({
       task: "QUOTE_INTENT",

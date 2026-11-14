@@ -180,8 +180,13 @@ export class CustomerService {
   }
 
   /** T-003 get_customer_history 的内核实现。订单表尚未建立，recentOrders 为空。 */
-  async getHistory(customerId: string, limit: number): Promise<T003GetCustomerHistoryData> {
-    const customer = await this.getById(customerId);
+  async getHistory(
+    customerId: string,
+    limit: number,
+    ctx?: KernelContext,
+  ): Promise<T003GetCustomerHistoryData> {
+    // `ctx` 带数据范围时，越权客户的档案与历史一并按「不存在」返回。
+    const customer = await this.getById(customerId, ctx);
 
     const contextRows = await this.db
       .select()

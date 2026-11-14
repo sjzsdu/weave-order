@@ -13,12 +13,10 @@ import { OnboardingController, TeamController } from "../onboarding/onboarding.c
 import { CreditsController } from "./usage.controller";
 import { OnboardingService } from "../onboarding/onboarding.service";
 import { PublicRateLimitService } from "../platform/rate-limit";
-import { createTools } from "../tools";
 import { MediaService } from "../media/media.service";
 import { createObjectStorageFromEnv } from "../platform/storage";
 import { loadEnv } from "../platform/env";
 import { QuoteAgentService } from "./quote-agent.service";
-import type { Tools } from "../tools";
 import {
   ApprovalController,
   AuditController,
@@ -45,19 +43,17 @@ import {
   PUBLIC_RATE_LIMIT,
   PUBLIC_SHARE,
   QUOTE_AGENT,
-  TOOLS,
 } from "./tokens";
 
 const providers: Provider[] = [
   {
+    // 回落内核：仅供本地/演示的无凭据路径与 /api/health 探针使用。
+    // 真实租户的每一条请求（HUMAN 与 AGENT 两条面）都由各自的 actor service
+    // 通过 `openScope` 打开绑定 tenantId 的会话内核，见 human-actor.service.ts
+    // 与 agent-actor.service.ts（铁律 G4）。
     provide: KERNEL,
     useFactory: (database: DatabaseProvider): Kernel => createKernel(database.handle.db),
     inject: [DatabaseProvider],
-  },
-  {
-    provide: TOOLS,
-    useFactory: (kernel: Kernel): Tools => createTools(kernel),
-    inject: [KERNEL],
   },
   HumanActorService,
   {

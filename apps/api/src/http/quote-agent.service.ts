@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { QuoteRequestInput } from "@weave-order/schema";
-import { createQuoteAgentGraph, toQuoteAgentResult } from "../agent";
-import type { Kernel } from "../kernel";
+import { createQuoteAgentGraph, QUOTING_AGENT_CONTEXT, toQuoteAgentResult } from "../agent";
+import { scopeWindowOf } from "../kernel";
+import type { Kernel, KernelContext } from "../kernel";
 import { createPostgresCheckpointer } from "../platform/checkpoint";
 import { DatabaseProvider } from "../platform/database.provider";
 import { loadEnv } from "../platform/env";
@@ -29,10 +30,10 @@ export class QuoteAgentService {
   ) {}
 
   async run(authorization: string | undefined, body: unknown) {
-    return this.human.run(authorization, this.fallbackKernel, async (kernel) => {
+    return this.human.run(authorization, this.fallbackKernel, async (kernel, humanCtx) => {
       const input = QuoteRequestInput.parse(body);
       const threadId = input.threadId ?? randomUUID();
-      const graph = await this.buildGraph(kernel);
+      const graph = await this.buildGraph(kernel, humanCtx);
       const state = await graph.invoke(
         {
           threadId,
@@ -49,7 +50,7 @@ export class QuoteAgentService {
     });
   }
 
-  private async buildGraph(kernel: Kernel) {
+  private async buildGraph(kernel: Kernel, driver: KernelContext) {
     const env = loadEnv();
     const settings = await kernel.llmSettings.resolve();
     const provider =
@@ -60,6 +61,9 @@ export class QuoteAgentService {
       tools: createTools(kernel),
       llm,
       checkpointer: this.checkpointer,
+      // 草稿仍以 AGENT 身份落审计，但数据范围跟驱动者走：
+      // 不带范围的话，OWN 成员可以借本路由生成/读取他人名下客户。
+      ctx: { ...QUOTING_AGENT_CONTEXT, ...(scopeWindowOf(driver) ?? {}) },
     });
   }
 }

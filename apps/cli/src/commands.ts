@@ -382,15 +382,16 @@ export async function decideCommand(
       400,
     );
   }
-  const result = await clientFor(ctx).post<unknown>("/api/approvals/decide", {
+  const result = await clientFor(ctx).post<ToolResultView>("/api/approvals/decide", {
     id,
     kind,
     decision,
     note: flagString(args, "note"),
   });
-  if (ctx.json) return (printJson(result), EXIT.OK);
   printJson(result);
-  return EXIT.OK;
+  // 决策失败（版本冲突 / 状态已变 / 缺作用域被拒）与 `weave tool` 同规则退 1，
+  // 否则 agent 按 SKILL.md 的退出码表会把 `ok:false` 当成功。
+  return result.ok ? EXIT.OK : EXIT.ERROR;
 }
 
 const TOOL_PATHS: Record<string, string> = {

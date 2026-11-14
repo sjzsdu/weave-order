@@ -233,14 +233,14 @@ describe("HTTP 面（e2e）", () => {
     expect(result.importedCustomers).toBe(0);
   });
 
-  it("参数匹配工具走 HTTP，非法输入返回 INVALID_INPUT 而不是 500", async (ctx) => {
+  it("参数匹配工具走 HTTP，非法输入返回 400 + INVALID_INPUT 而不是 500", async (ctx) => {
     if (!available) ctx.skip();
     const response = await fetch(`${baseUrl}/api/tools/search-by-spec`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: "" }),
     });
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(400);
     const body = (await response.json()) as { ok: boolean; error?: { code: string } };
     expect(body.ok).toBe(false);
     expect(body.error?.code).toBe("INVALID_INPUT");

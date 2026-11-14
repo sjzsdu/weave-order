@@ -12,13 +12,17 @@ export function createGetCustomerHistoryTool(kernel: Kernel) {
     id: "T-003",
     name: "get_customer_history",
     inputSchema: T003GetCustomerHistoryInput,
-    async execute(input: unknown, _ctx: KernelContext): Promise<Result> {
+    async execute(input: unknown, ctx: KernelContext): Promise<Result> {
       const parsed = T003GetCustomerHistoryInput.safeParse(input);
       if (!parsed.success) {
         return { ok: false, error: invalidInput(parsed.error) };
       }
       try {
-        const data = await kernel.customers.getHistory(parsed.data.customerId, parsed.data.limit);
+        const data = await kernel.customers.getHistory(
+          parsed.data.customerId,
+          parsed.data.limit,
+          ctx,
+        );
         return T003GetCustomerHistoryResult.parse({ ok: true, data });
       } catch (error) {
         return T003GetCustomerHistoryResult.parse({

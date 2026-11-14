@@ -103,7 +103,9 @@ pnpm db:migrate
 - 数量：`{ value: number, unit }`；落库为 `quantity_milli`（千分之一单位）。
 - 标识：UUID；时间：ISO 8601 UTC。
 - 所有输入 `strict()`：未知字段（包括试图夹带 `tenantId`）直接拒绝。
-- 工具失败统一 `ToolResult<T> = { ok:true,data } | { ok:false,error:ToolError }`。
+- 工具失败统一 `ToolResult<T> = { ok:true,data } | { ok:false,error:ToolError }`；
+  HTTP 面上这条 body 不变，状态码由 `statusForToolFailure` 按 `code` / `reason` 映射
+  （400 / 403 / 404 / 409 / 422 / 502），端侧 transport 把这类 4xx body 还原成返回值。
 - 审计动作是封闭集合（`AuditAction`），新增动作必须同时改契约。
 - 分享只存 `token_hash`；客户视图 `CustomerQuoteView` 刻意不含成本/毛利/内部备注。
 - 改稿必须携带 `before/after/patch/provenance`，AI 产出永远是 `DRAFT`/`PENDING`。

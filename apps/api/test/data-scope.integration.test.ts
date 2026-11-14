@@ -221,7 +221,7 @@ describe("数据范围 OWN / TEAM / ALL", () => {
     expect((await scoped.quotes.list(100, asC)).map((item) => item.id).sort()).toEqual(
       [quoteA.id, quoteC.id].sort(),
     );
-    await expect(scoped.quotes.getDraft(quoteC.id, asA)).rejects.toMatchObject({
+    await expect(scoped.quotes.get(quoteC.id, asA)).rejects.toMatchObject({
       code: "RESOURCE_NOT_FOUND",
     });
 

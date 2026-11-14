@@ -83,7 +83,15 @@ CLI                                API                         浏览器（已�
 | 改稿、导入、收款、分享管理等人类写操作                      | PAT 需要 `write`                                 |
 
 OIDC 会话没有作用域概念，继续由 membership 角色 / RLS 约束。
-不带 Authorization 的请求维持既有本地/演示行为；生产态由网关 fail-closed。
+不带 Authorization 的请求维持既有本地/演示行为；生产态直接 401，绝不静默按演示租户写账本。
+带凭据时，`/api/tools/*` 与人类写操作一样走铁律 G4：认证成功后用 `openScope` 开一条
+绑定该成员租户的会话内核，工具的读写与审计 `tenant_id` 由这条会话决定。
+
+智能体不放大权限：AGENT 上下文携带的是**驱动者**的 `dataScope` / `ownerId`
+（`POST /api/agents/quote` 同理）。OWN 成员驱动 `generate_quote_draft`、
+`get_customer_history`、`create_sample_shipment` 时只看得到自己名下的客户，
+越权客户一律按 `CUSTOMER_NOT_FOUND`（404）返回，与人类读路径同一套「当成不存在」的语义。
+定价计算本身不受数据范围限制——收口在入口的归属判定，不在计价内部塞权限判断。
 
 错误体保持网关契约：
 
@@ -92,6 +100,33 @@ OIDC 会话没有作用域概念，继续由 membership 角色 / RLS 约束。
 ```
 
 `AuthErrorCode` 是封闭集合（`packages/schema/src/auth.ts`），CLI 与 agent 据此分流。
+
+### 4.1 工具面的 HTTP 状态码
+
+`/api/tools/*` 与 `/api/approvals/decide` 的业务失败仍返回 `{ ok: false, error }` 形状，
+但状态码不再是恒定的 201，由 `statusForToolFailure`（`packages/schema/src/common.ts`）
+按 `code` / `reason` 映射，服务端拦截器、端侧 mock 与离线队列共用同一份：
+
+| 状态码 | code / reason                                                 |
+| ------ | ------------------------------------------------------------- |
+| 400    | `INVALID_INPUT`（含请求体契约校验失败；不再冒 500）           |
+| 403    | `PERMISSION_DENIED`                                           |
+| 404    | `CUSTOMER_NOT_FOUND`、`RESOURCE_NOT_FOUND`                    |
+| 409    | `KERNEL_REJECTED` + 冲突类 `reason`（`VERSION_CONFLICT` 等）  |
+| 422    | `KERNEL_REJECTED` + 其它 `reason`、`AMOUNT_NOT_AUTHORITATIVE` |
+| 502    | `UPSTREAM_UNAVAILABLE`                                        |
+
+因为这批 4xx 表示「业务被拒」而不是「传输失败」，`packages/core` 的 API client、
+移动端 transport 与 CLI 会把带 `{ ok: false, error }` 的 4xx 响应体原样当作返回值，
+调用方继续用 `result.ok` 分支，无需改成 catch。
+
+收口只认 `{ ok: false, error }` 这一种信封。另有两个路由用自己的失败形状，
+失败时状态码仍是 201，调用方必须读 body 判分支，不能只看状态码：
+
+| 端点                     | 失败信封                          |
+| ------------------------ | --------------------------------- |
+| `POST /api/agents/quote` | `status: "FAILED"` + `failure`    |
+| `POST /api/import`       | `committed: false` + `batchError` |
 
 ## 5. CLI 安装与使用
 

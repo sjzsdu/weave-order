@@ -38,6 +38,20 @@ interface ErrorBody {
   message?: string;
 }
 
+/** 工具 / 审批面的失败体：`{ ok: false, error: { code, message } }`（不引 zod，保持零依赖）。 */
+function isToolFailure(
+  payload: unknown,
+  status: number,
+): payload is { ok: false; error: { code: string; message: string } } {
+  if (status >= 500) return false;
+  const candidate = payload as { ok?: unknown; error?: { code?: unknown; message?: unknown } };
+  return (
+    candidate?.ok === false &&
+    typeof candidate.error?.code === "string" &&
+    typeof candidate.error?.message === "string"
+  );
+}
+
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 export async function request<T>(
@@ -78,6 +92,9 @@ export async function request<T>(
   }
 
   if (!response.ok) {
+    // 与前端 transport 同规则：4xx + `{ok:false,error}` 是业务失败而非传输异常，
+    // 原样交回响应体，`weave tool` 的 `result.ok` 分支才能继续拿到 issues / reason。
+    if (isToolFailure(payload, response.status)) return payload as T;
     const errorBody = (payload ?? {}) as ErrorBody;
     const code = errorBody.error?.code ?? `HTTP_${response.status}`;
     const message =

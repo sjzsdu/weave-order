@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  UseInterceptors,
 } from "@nestjs/common";
 import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
@@ -19,12 +20,12 @@ import { isKernelError } from "../kernel";
 import { narrowPricingContext } from "../kernel/pricing-scope";
 import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
-import type { Tools } from "../tools";
 import { toToolError } from "../tools/errors";
 import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
 import type { MediaService } from "../media/media.service";
-import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, MEDIA_SERVICE, QUOTE_AGENT, TOOLS } from "./tokens";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, MEDIA_SERVICE, QUOTE_AGENT } from "./tokens";
+import { ToolStatusInterceptor } from "./tool-status";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
@@ -58,10 +59,10 @@ export class HealthController {
 
 /** 只读目录 + 找样工具。页面上的样品列表来自这里。 */
 @Controller("api")
+@UseInterceptors(ToolStatusInterceptor)
 export class CatalogController {
   constructor(
     @Inject(KERNEL) private readonly kernel: Kernel,
-    @Inject(TOOLS) private readonly tools: Tools,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
     @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
     @Inject(MEDIA_SERVICE) private readonly media: MediaService,
@@ -120,12 +121,16 @@ export class CatalogController {
 
   @Post("tools/search-by-spec")
   async searchBySpec(@Body() body: unknown, @Headers("authorization") authorization?: string) {
-    return this.tools.searchFabricBySpec.execute(body, await this.agent.context(authorization));
+    return this.agent.run(authorization, this.kernel, (tools, ctx) =>
+      tools.searchFabricBySpec.execute(body, ctx),
+    );
   }
 
   @Post("tools/search-by-image")
   async searchByImage(@Body() body: unknown, @Headers("authorization") authorization?: string) {
-    return this.tools.searchFabricByImage.execute(body, await this.agent.context(authorization));
+    return this.agent.run(authorization, this.kernel, (tools, ctx) =>
+      tools.searchFabricByImage.execute(body, ctx),
+    );
   }
 
   /** 意图派发（Intent Bar）：建寄样单只能得到 DRAFT，确认走审批窗口。 */
@@ -134,7 +139,9 @@ export class CatalogController {
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.tools.createSampleShipment.execute(body, await this.agent.context(authorization));
+    return this.agent.run(authorization, this.kernel, (tools, ctx) =>
+      tools.createSampleShipment.execute(body, ctx),
+    );
   }
 
   /** 客户 360：读客户档案 + 最近报价 / 订单 / 样品，供 CLI / agent 在报价前取上下文。 */
@@ -143,9 +150,11 @@ export class CatalogController {
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.tools.getCustomerHistory.execute(
-      body,
-      await this.agent.context(authorization, "read"),
+    return this.agent.run(
+      authorization,
+      this.kernel,
+      (tools, ctx) => tools.getCustomerHistory.execute(body, ctx),
+      { scope: "read" },
     );
   }
 }
@@ -156,9 +165,9 @@ export class CatalogController {
  * 第二个 HUMAN 上下文写路由，让「decide 是唯一入口」字面成立。
  */
 @Controller("api")
+@UseInterceptors(ToolStatusInterceptor)
 export class QuoteController {
   constructor(
-    @Inject(TOOLS) private readonly tools: Tools,
     @Inject(KERNEL) private readonly kernel: Kernel,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
     @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
@@ -166,7 +175,9 @@ export class QuoteController {
 
   @Post("tools/generate-quote-draft")
   async generateDraft(@Body() body: unknown, @Headers("authorization") authorization?: string) {
-    return this.tools.generateQuoteDraft.execute(body, await this.agent.context(authorization));
+    return this.agent.run(authorization, this.kernel, (tools, ctx) =>
+      tools.generateQuoteDraft.execute(body, ctx),
+    );
   }
 
   /** 人类改稿：版本 +1、重算、审计、改幅升级审批。 */
@@ -197,12 +208,13 @@ export class QuoteController {
     }
   }
 
+  /** 单据详情：只读，批准 / 发送之后仍可读（生命周期状态在 `status`，不在草稿契约里）。 */
   @Get("quotes/:id")
-  async draft(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+  async quote(@Param("id") id: string, @Headers("authorization") authorization?: string) {
     try {
-      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
-        draft: await kernel.quotes.getDraft(id, ctx),
-      }));
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) =>
+        kernel.quotes.get(id, ctx),
+      );
     } catch (error) {
       rethrowHttp(error);
     }
@@ -451,12 +463,23 @@ export class ImportController {
 /** 审计流水（只读），页面用来展示「每一步都有记录」。 */
 @Controller("api")
 export class AuditController {
-  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
 
+  /**
+   * 账本只读，且只看得到调用者自己租户：走 `HumanActorService` 既补上鉴权
+   * （生产态缺凭据 401），也让 kernel 来自绑定租户的会话而不是演示租户。
+   */
   @Get("audit")
-  async list(@Query("limit") limit?: string) {
-    const entries = await this.kernel.audit.list(clampLimit(limit, 20, 200));
-    return { entries };
+  async list(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel) => ({ entries: await kernel.audit.list(clampLimit(limit, 20, 200)) }),
+      { scope: "read" },
+    );
   }
 }
 
@@ -468,6 +491,7 @@ export class AuditController {
  * 前端拿不到内核句柄，也没有任何「直接改账本 / 绕过 tools」的端点。
  */
 @Controller("api/approvals")
+@UseInterceptors(ToolStatusInterceptor)
 export class ApprovalController {
   constructor(
     @Inject(KERNEL) private readonly kernel: Kernel,

@@ -1,9 +1,11 @@
 import Taro from "@tarojs/taro";
 import { ApiError, isVersionConflict } from "@weave-order/core";
+import { statusForToolFailure } from "@weave-order/schema";
 import type {
   ApprovalDecisionInput,
   CreateRevisionRequestInput,
   T004GenerateQuoteDraftInput,
+  ToolError,
 } from "@weave-order/schema";
 import type { FlushResult, OfflineQueue, QueueStorage, QueuedOperation } from "@weave-order/core";
 import type { MobileApi, ProofInput } from "./mobile-api";
@@ -194,6 +196,11 @@ async function uploadQueuedMedia(mediaKey: string, deps: QueueDeps): Promise<str
   return uploadStoredMedia(stored, deps.api);
 }
 
+/** 工具契约的失败 → ApiError：状态码沿用服务端映射，队列才认得出版本冲突。 */
+function toApiError(error: ToolError): ApiError {
+  return new ApiError(statusForToolFailure(error), error.code, error.message, error);
+}
+
 /**
  * 一个队列操作 → 一个契约调用。
  * 注意：分享链接不排队（链接必须由服务端签发，离线时只提示联网后再试）。
@@ -204,8 +211,7 @@ export async function submitQueuedOperation(op: QueuedOperation, deps: QueueDeps
     switch (op.kind) {
       case "quote.compose": {
         const result = await deps.api.generateQuoteDraft(payload as T004GenerateQuoteDraftInput);
-        if (!result.ok)
-          throw new ApiError(400, result.error.code, result.error.message, result.error);
+        if (!result.ok) throw toApiError(result.error);
         return;
       }
       case "quote.revise": {
@@ -221,8 +227,7 @@ export async function submitQueuedOperation(op: QueuedOperation, deps: QueueDeps
       }
       case "quote.decide": {
         const result = await deps.api.decideApproval(payload as unknown as ApprovalDecisionInput);
-        if (!result.ok)
-          throw new ApiError(400, result.error.code, result.error.message, result.error);
+        if (!result.ok) throw toApiError(result.error);
         return;
       }
       case "shipment.proof": {

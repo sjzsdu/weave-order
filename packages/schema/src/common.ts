@@ -1,6 +1,15 @@
 import { z } from "zod";
 
 /**
+ * 契约包这一份 zod 的 ZodError 类。
+ *
+ * 跨包做 `instanceof` / `@Catch` 必须用它：消费方直接 `import "zod"` 时可能拿到
+ * 另一份实例（vitest 的模块图里，dist 走 CJS、api 走 ESM），判定会静默失效——
+ * 同 `apps/api/src/approval/approval.service.ts` 里改用形状判定的原因。
+ */
+export { ZodError as ContractZodError } from "zod";
+
+/**
  * 工具层统一失败语义。
  *
  * 契约铁律：任何工具失败都必须落到这里定义的、以 `code` 区分的
@@ -108,4 +117,44 @@ export function toolResultSchema<T extends z.ZodTypeAny>(dataSchema: T) {
     z.object({ ok: z.literal(true), data: dataSchema }),
     z.object({ ok: z.literal(false), error: ToolError }),
   ]);
+}
+
+/**
+ * 内核状态 / 版本 / 唯一键冲突：重试前必须先读到最新状态。
+ * 其余 KERNEL_REJECTED 是「入参合法但业务规则不接受」，落到 422。
+ */
+const CONFLICT_REASONS = new Set([
+  "VERSION_CONFLICT",
+  "INVALID_STATE_TRANSITION",
+  "CUSTOMER_CODE_EXISTS",
+  "MEMBERSHIP_EXISTS",
+  "PRICING_POLICY_EXISTS",
+  "REVISION_REASON_EXISTS",
+  "SAMPLE_CODE_EXISTS",
+  "TENANT_SLUG_EXISTS",
+]);
+
+/**
+ * 工具失败 -> HTTP 状态码：body 的 `{ok:false,error}` 契约不变，只把状态码还给
+ * HTTP（网关指标、重试策略与 agent 判错都读状态码）。服务端的拦截器与端侧
+ * mock 都从这里取，避免两处映射各自漂移。
+ */
+export function statusForToolFailure(error: ToolError): number {
+  switch (error.code) {
+    case "INVALID_INPUT":
+      return 400;
+    case "PERMISSION_DENIED":
+      return 403;
+    case "CUSTOMER_NOT_FOUND":
+    case "RESOURCE_NOT_FOUND":
+      return 404;
+    case "AMOUNT_NOT_AUTHORITATIVE":
+      return 422;
+    case "UPSTREAM_UNAVAILABLE":
+      return 502;
+    case "INTERNAL":
+      return 500;
+    case "KERNEL_REJECTED":
+      return CONFLICT_REASONS.has(error.reason) ? 409 : 422;
+  }
 }

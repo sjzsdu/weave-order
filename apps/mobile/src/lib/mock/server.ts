@@ -5,6 +5,7 @@ import {
   DecideRevisionRequestInput,
   T002SearchFabricBySpecInput,
   T004GenerateQuoteDraftInput,
+  statusForToolFailure,
 } from "@weave-order/schema";
 import type {
   ApprovalItem,
@@ -13,6 +14,7 @@ import type {
   DraftRevision,
   JsonValue,
   RevisionRequest,
+  ToolResult,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
   T001SearchFabricByImageResult,
@@ -80,6 +82,14 @@ function isMockResponse(value: unknown): value is MockResponse {
 
 function fail(status: number, code: string, message: string, details?: unknown): MockResponse {
   return jsonResponse(status, { error: { code, message, ...(details ? { details } : {}) } });
+}
+
+/**
+ * 工具 / 审批面：body 是 `{ok:false,error}` 的业务失败同时落到对应 4xx/5xx，
+ * 与真实服务端的 ToolStatusInterceptor 同源（`statusForToolFailure`）。
+ */
+function toolResponse<T>(result: ToolResult<T>): MockResponse {
+  return jsonResponse(result.ok ? 200 : statusForToolFailure(result.error), result);
 }
 
 function uuid(): string {
@@ -448,17 +458,41 @@ export function createMockServer(options: MockServerOptions): MockServer {
 
   const decideApproval = (body: Body): MockResponse => {
     const parsed = ApprovalDecisionInput.safeParse(body);
-    if (!parsed.success) return fail(400, "INVALID_INPUT", "审批决策入参未通过校验");
+    if (!parsed.success) {
+      return toolResponse({
+        ok: false,
+        error: { code: "INVALID_INPUT", message: "审批决策入参未通过校验", issues: [] },
+      });
+    }
+    const notFound = (resourceType: string, resourceId: string): MockResponse =>
+      toolResponse({
+        ok: false,
+        error: {
+          code: "RESOURCE_NOT_FOUND",
+          message: `${resourceType} 不存在`,
+          resourceType,
+          resourceId,
+        },
+      });
     const approval = state.approvals.find((item) => item.id === parsed.data.id);
-    if (!approval) return fail(404, "NOT_FOUND", "待审批单据不存在");
-    if (approval.kind !== parsed.data.kind) return fail(400, "INVALID_INPUT", "单据类型不匹配");
+    if (!approval) return notFound("approval_request", parsed.data.id);
+    if (approval.kind !== parsed.data.kind) {
+      return toolResponse({
+        ok: false,
+        error: { code: "INVALID_INPUT", message: "单据类型不匹配", issues: [] },
+      });
+    }
 
     let status: ApprovalItem["status"];
     if (approval.kind === "quote") {
       const quote = quoteById(approval.id);
-      if (!quote) return fail(404, "NOT_FOUND", "报价不存在");
-      if (quote.status !== "DRAFT")
-        return fail(409, "CONFLICT", "报价已被处理", { serverVersion: quote.version });
+      if (!quote) return notFound("quote", approval.id);
+      if (quote.status !== "DRAFT") {
+        return toolResponse({
+          ok: false,
+          error: { code: "KERNEL_REJECTED", message: "报价已被处理", reason: "VERSION_CONFLICT" },
+        });
+      }
       status = parsed.data.decision === "APPROVE" ? "SENT" : "REJECTED";
       quote.status = status;
       quote.version += 1;
@@ -726,13 +760,15 @@ export function createMockServer(options: MockServerOptions): MockServer {
     }
 
     if (method === "POST" && path === "/api/tools/search-by-spec")
-      return jsonResponse(200, searchSpec(body));
+      return toolResponse(searchSpec(body));
     if (method === "POST" && path === "/api/tools/search-by-image") {
+      const invalidInput = (message: string): MockResponse =>
+        toolResponse({ ok: false, error: { code: "INVALID_INPUT", message, issues: [] } });
       if (typeof body.base64 === "string" || typeof body.image === "object") {
-        return fail(400, "INVALID_INPUT", "移动端禁止 base64 JSON，请先直传对象存储并传 imageUrl");
+        return invalidInput("移动端禁止 base64 JSON，请先直传对象存储并传 imageUrl");
       }
       if (typeof body.imageUrl !== "string") {
-        return fail(400, "INVALID_INPUT", "缺少 imageUrl");
+        return invalidInput("缺少 imageUrl");
       }
       const result: T001SearchFabricByImageResult = {
         ok: true,
@@ -747,10 +783,10 @@ export function createMockServer(options: MockServerOptions): MockServer {
             .filter((match) => match.score > 0),
         },
       };
-      return jsonResponse(200, result);
+      return toolResponse(result);
     }
     if (method === "POST" && path === "/api/tools/generate-quote-draft")
-      return jsonResponse(200, generateDraft(body));
+      return toolResponse(generateDraft(body));
 
     if (method === "POST" && path === "/api/approvals/decide") return decideApproval(body);
 

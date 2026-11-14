@@ -50,7 +50,8 @@ export class ShipmentService {
 
   async createDraft(input: unknown, ctx: KernelContext): Promise<SampleShipment> {
     const parsed = CreateSampleShipmentInput.parse(input);
-    await this.customers.getById(parsed.customerId);
+    // 与 generateDraft 同一口径：建寄样单先看驱动者能不能碰这个客户。
+    await this.customers.getById(parsed.customerId, ctx);
 
     const sampleIds = parsed.items.map((item) => item.sampleId);
     const sampleRows = await this.db
@@ -135,13 +136,22 @@ export class ShipmentService {
     });
   }
 
-  async getById(shipmentId: string): Promise<SampleShipment> {
+  /** 单条读取；`ctx` 带数据范围时，客户不在范围内的按「不存在」返回。 */
+  async getById(shipmentId: string, ctx?: KernelContext): Promise<SampleShipment> {
+    // 寄样单归属随客户，与 orders.getById 同一套越权语义，避免枚举他人单据。
     const rows = await this.db
-      .select()
+      .select({ shipment: sampleShipments })
       .from(sampleShipments)
-      .where(and(eq(sampleShipments.id, shipmentId), eq(sampleShipments.tenantId, this.tenantId)))
+      .innerJoin(customers, eq(customers.id, sampleShipments.customerId))
+      .where(
+        and(
+          eq(sampleShipments.id, shipmentId),
+          eq(sampleShipments.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
-    const row = rows[0];
+    const row = rows[0]?.shipment;
     if (!row) {
       throw new KernelError("RESOURCE_NOT_FOUND", `寄样单不存在：${shipmentId}`, {
         resourceType: "sample_shipment",
@@ -170,6 +180,10 @@ export class ShipmentService {
         "寄样单确认必须由人类在审批窗口执行，智能体无权确认",
       );
     }
+
+    // 确认前先按驱动者的数据范围判可见性：越权当成不存在。
+    // 少这一步，看不见这张单的人也能把它确认掉，响应体还会把整单内容回吐给他。
+    await this.getById(shipmentId, ctx);
 
     const confirmedAt = new Date();
     await this.db.transaction(async (tx) => {
@@ -230,7 +244,7 @@ export class ShipmentService {
       );
     });
 
-    return this.getById(shipmentId);
+    return this.getById(shipmentId, ctx);
   }
 
   /**

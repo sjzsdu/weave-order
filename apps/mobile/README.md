@@ -148,7 +148,7 @@ src/
 | 调用                                                | 当前状态      | 说明                                                                                                             |
 | --------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `POST /api/revisions`、`POST /api/revisions/decide` | mock 已实现   | 输入用 T0 的 `CreateRevisionRequestInput` / `DecideRevisionRequestInput`；HTTP 路径待 Track A 确认               |
-| `GET /api/quotes/:id`                               | mock 已实现   | 返回 `{ draft, version, status }`，供改价页 / 冲突重载                                                           |
+| `GET /api/quotes/:id`                               | 真后端已对齐  | 共用契约 `QuoteDetail`：`{ draft, version, status }`，批准后 `status` 离开 `DRAFT`；供改价页 / 冲突重载          |
 | `POST /api/media/presign`                           | mock 已实现   | 返回 `{ uploadUrl, publicUrl, method, headers?, formData? }`                                                     |
 | `POST /api/shipments/proof`                         | mock 已实现   | 拍照签收 / 大货 / 回款凭证                                                                                       |
 | `GET /api/quote-shares?quoteId=`                    | mock 已实现   | 客户 360 的链接访问时间线                                                                                        |

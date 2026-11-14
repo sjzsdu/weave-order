@@ -1,6 +1,5 @@
-/** Nest 依赖注入 token：内核、工具、审批服务（控制器拿不到数据库句柄）。 */
+/** Nest 依赖注入 token：内核、审批服务（控制器拿不到数据库句柄）。 */
 export const KERNEL = Symbol("WEAVE_KERNEL");
-export const TOOLS = Symbol("WEAVE_TOOLS");
 export const HUMAN_ACTOR = Symbol("WEAVE_HUMAN_ACTOR");
 /** 工具调用身份：PAT 的 write 作用域与驱动者审计从这里注入。 */
 export const AGENT_ACTOR = Symbol("WEAVE_AGENT_ACTOR");

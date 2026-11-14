@@ -107,7 +107,18 @@ export function createApiClient(options: ApiClientOptions) {
   const doFetch = options.fetchImpl ?? fetch;
   const base = options.baseUrl.replace(/\/$/, "");
 
-  async function request(path: string, init: RequestInit = {}): Promise<unknown> {
+  /**
+   * `toolFailure`：工具 / 审批面用 body 的 `{ok:false,error}` 表达业务失败，
+   * 状态码同时回归 4xx。这类 4xx 不是传输错误，原样交回响应体，调用方的
+   * `result.ok` 判分支继续成立；5xx（INTERNAL / UPSTREAM_UNAVAILABLE）仍抛
+   * ApiError，交给重试与离线队列。只对着工具路由的调用点打开这个开关，
+   * 其余路由族（客户分享链接等）各自的 4xx 语义保持原样。
+   */
+  async function request(
+    path: string,
+    init: RequestInit = {},
+    call: { toolFailure?: boolean } = {},
+  ): Promise<unknown> {
     const token = await options.getToken();
     // 不用 `Headers` 构造器：小程序运行时没有 DOM 的 Headers，端侧注入的
     // fetch 适配器只认普通键值对象。
@@ -131,6 +142,15 @@ export function createApiClient(options: ApiClientOptions) {
       throw new ApiError(response.status, "INTERNAL", `请求失败（HTTP ${response.status}）`);
     }
     if (!response.ok) {
+      if (call.toolFailure && response.status < 500) {
+        const failure = z
+          .object({
+            ok: z.literal(false),
+            error: z.object({ code: z.string(), message: z.string() }).passthrough(),
+          })
+          .safeParse(json);
+        if (failure.success) return json;
+      }
       const parsed = z
         .object({ error: z.object({ code: z.string(), message: z.string() }).passthrough() })
         .safeParse(json);
@@ -149,6 +169,10 @@ export function createApiClient(options: ApiClientOptions) {
 
   const post = (path: string, body: unknown) =>
     request(path, { method: "POST", body: JSON.stringify(body) });
+
+  /** 工具 / 审批面：4xx 的业务失败按契约对象交回。 */
+  const toolPost = (path: string, body: unknown) =>
+    request(path, { method: "POST", body: JSON.stringify(body) }, { toolFailure: true });
 
   return {
     /**
@@ -241,17 +265,17 @@ export function createApiClient(options: ApiClientOptions) {
 
     generateQuoteDraft: async (input: z.input<typeof T004GenerateQuoteDraftInput>) =>
       T004GenerateQuoteDraftResult.parse(
-        await post("/api/tools/generate-quote-draft", T004GenerateQuoteDraftInput.parse(input)),
+        await toolPost("/api/tools/generate-quote-draft", T004GenerateQuoteDraftInput.parse(input)),
       ),
 
     searchBySpec: async (input: z.input<typeof T002SearchFabricBySpecInput>) =>
       T002SearchFabricBySpecResult.parse(
-        await post("/api/tools/search-by-spec", T002SearchFabricBySpecInput.parse(input)),
+        await toolPost("/api/tools/search-by-spec", T002SearchFabricBySpecInput.parse(input)),
       ),
 
     decideApproval: async (input: z.infer<typeof ApprovalDecisionInput>) =>
       ApprovalDecisionResult.parse(
-        await post("/api/approvals/decide", ApprovalDecisionInput.parse(input)),
+        await toolPost("/api/approvals/decide", ApprovalDecisionInput.parse(input)),
       ),
 
     createQuoteShare: async (input: z.input<typeof CreateQuoteShareInput>) =>

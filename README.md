@@ -204,7 +204,7 @@ pnpm format       # Prettier
 | GET    | `/api/health`                         | 只读                          | 服务 + 数据库可用性                             |
 | GET    | `/api/customers`                      | 只读                          | 客户列表                                        |
 | GET    | `/api/samples`                        | 只读                          | 样品目录                                        |
-| GET    | `/api/audit`                          | 只读                          | 审计流水                                        |
+| GET    | `/api/audit`                          | OIDC / `read` PAT             | 审计流水（只看本租户）                          |
 | POST   | `/api/tools/search-by-spec`           | agent                         | T-002 参数匹配                                  |
 | POST   | `/api/tools/search-by-image`          | agent                         | T-001 以图搜图（base64 / imageUrl）             |
 | POST   | `/api/tools/generate-quote-draft`     | agent → `DRAFT`               | T-004 生成报价草稿                              |
@@ -232,6 +232,12 @@ pnpm format       # Prettier
 | POST   | `/api/quote-shares`                   | HUMAN（仅 SENT 报价）         | 移动端契约：quoteId 在 body，返回裸对象         |
 | GET    | `/api/quote-shares?quoteId=`          | 只读                          | 移动端契约：链接访问时间线                      |
 
+> 带 `Authorization` 时，工具面（`/api/tools/*`、`/api/agents/quote`）与 `/api/audit` 都在
+> 为该成员打开的租户会话内核里执行（铁律 G4）：读写与审计落库的 `tenant_id` 由这条会话决定，
+> 不是构造期固化的演示租户；不带凭据只是本地/演示行为，生产态 401。
+> 工具与审批的业务失败仍是 `{ ok: false, error }` 这个 body，但状态码按 `code` / `reason`
+> 映射为 400 / 403 / 404 / 409 / 422 / 502，映射表见 `docs/cli-and-agent-access.md` §4.1。
+>
 > 三个窗口的前端**只**调用上表的只读目录、工具（agent 身份）、`/api/approvals/decide`
 > 三类接口；不提供任何「前端直连内核 / 写业务表」的端点。批准 / 拒绝由
 > `apps/api/src/approval` 调内核 `confirmDraft` / `confirm`（批准）或
@@ -412,7 +418,7 @@ SEED_RESET=1 pnpm seed
 | `sample_shipments` / `sample_shipment_items` | 寄样单与明细，DRAFT → CONFIRMED                                              |
 | `quotes` / `quote_items`                     | 报价单与明细，金额 bigint，行金额/总额由内核计算                             |
 | `sample_embeddings`                          | 样品向量索引（model + dimension + `real[]`），创建样品时写入                 |
-| `audit_log`                                  | 追加型审计日志，数据库触发器禁止 UPDATE / DELETE                             |
+| `audit_log`                                  | 追加型审计日志，数据库触发器禁止 UPDATE / DELETE / TRUNCATE                  |
 | LangGraph 检查点表                           | `checkpoints` / `checkpoint_blobs` / `checkpoint_writes`（saver setup 创建） |
 
 迁移在 `packages/db/drizzle/`，由 `drizzle-kit generate` 生成、`pnpm db:migrate` 应用。

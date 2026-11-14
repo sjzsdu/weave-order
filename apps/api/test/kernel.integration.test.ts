@@ -333,8 +333,8 @@ describe("确定性内核（集成）", () => {
       AGENT,
     );
     expect(draft.total.amount).toBe(30_000_000_000);
-    const reloaded = await kernel.quotes.getDraft(draft.id);
-    expect(reloaded.total.amount).toBe(30_000_000_000);
+    const reloaded = await kernel.quotes.get(draft.id);
+    expect(reloaded.draft.total.amount).toBe(30_000_000_000);
   }, 20_000);
 
   it("找样 T-002 回归：LIKE 元字符按字面量匹配，matchedOn 与 SQL 语义一致", async (ctx) => {

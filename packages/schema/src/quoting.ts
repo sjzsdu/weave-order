@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Currency, EntityId, FabricSample, Quantity } from "./domain";
+import { Currency, EntityId, FabricSample, Quantity, QuoteStatus } from "./domain";
 import { ImagePayload } from "./tools/t001-search-fabric-by-image";
 import { QuotePricingBasis } from "./tools/t006-suggest-line-price";
 import { QuoteDraft } from "./tools/t004-generate-quote-draft";
@@ -153,3 +153,18 @@ export const QuoteAgentResult = z
   })
   .strict();
 export type QuoteAgentResult = z.infer<typeof QuoteAgentResult>;
+
+/**
+ * 单据详情（只读 HTTP 契约）：草稿本体 + 生命周期状态。
+ *
+ * `QuoteDraft.status` 按 T-004 恒为 DRAFT，批准 / 发送之后的真实状态只能靠这里的
+ * `status` 表达 —— 少了它，客户端读到一个「永远 DRAFT 的已批准报价单」。
+ */
+export const QuoteDetail = z
+  .object({
+    draft: QuoteDraft,
+    version: z.number().int().positive(),
+    status: QuoteStatus,
+  })
+  .strict();
+export type QuoteDetail = z.infer<typeof QuoteDetail>;

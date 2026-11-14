@@ -11,6 +11,7 @@ import {
   ApprovalItem,
   DraftRevision,
   QuoteApprovalView,
+  QuoteDetail,
   ReviseQuoteDraftInput,
   RevisionDiff,
   T004GenerateQuoteDraftInput,
@@ -275,7 +276,9 @@ export class QuoteService {
 
   async generateDraft(input: unknown, ctx: KernelContext): Promise<QuoteDraft> {
     const parsed = T004GenerateQuoteDraftInput.parse(input);
-    const customer = await this.customers.getById(parsed.customerId);
+    // 入口按驱动者的数据范围判客户归属：越权当成不存在（与其它读路径同一套语义），
+    // 智能体因此不能替 OWN 成员碰同事名下的客户。定价计算本身仍不受范围限制。
+    const customer = await this.customers.getById(parsed.customerId, ctx);
 
     const sampleIds = parsed.items.map((item) => item.fabricSampleId);
     const samplesById = await this.samples.getManyByIds(sampleIds);
@@ -495,19 +498,24 @@ export class QuoteService {
     });
   }
 
-  async getDraft(quoteId: string, ctx?: KernelContext): Promise<QuoteDraft> {
-    const { row, lines } = await this.loadQuote(quoteId, true, ctx);
+  /** 只读详情：任何合法状态都读得到（批准后 SENT 也要能在单据页看到完整行项）。 */
+  async get(quoteId: string, ctx?: KernelContext): Promise<QuoteDetail> {
+    const { row, lines } = await this.loadQuote(quoteId, ctx);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
     });
     const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
-    return mapQuote(row, lines, requirement);
+    return QuoteDetail.parse({
+      draft: mapQuote(row, lines, requirement),
+      version: row.version,
+      status: row.status,
+    });
   }
 
   /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
   async getApprovalView(quoteId: string, ctx?: KernelContext): Promise<QuoteApprovalView> {
-    const { row, lines } = await this.loadQuote(quoteId, false, ctx);
+    const { row, lines } = await this.loadQuote(quoteId, ctx);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
@@ -1360,7 +1368,6 @@ export class QuoteService {
 
   private async loadQuote(
     quoteId: string,
-    requireDraft: boolean,
     ctx?: KernelContext,
   ): Promise<{ row: QuoteRow; lines: CurrentLine[] }> {
     // 报价没有自己的归属人列：归属随客户，越权时按「不存在」返回。
@@ -1381,11 +1388,6 @@ export class QuoteService {
       throw new KernelError("RESOURCE_NOT_FOUND", `报价单不存在：${quoteId}`, {
         resourceType: "quote",
         resourceId: quoteId,
-      });
-    }
-    if (requireDraft && row.status !== "DRAFT") {
-      throw new KernelError("KERNEL_REJECTED", `报价单不是草稿状态：${row.status}`, {
-        reason: "INVALID_STATE_TRANSITION",
       });
     }
     const itemRows = await this.db

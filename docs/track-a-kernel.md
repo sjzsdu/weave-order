@@ -116,22 +116,22 @@ floor = ceil(base × (1 + minMarginPct / 100))
 
 ## 5. HTTP 面（Track C/D/E 联调）
 
-| 方法     | 路径                                                | 说明                                           |
-| -------- | --------------------------------------------------- | ---------------------------------------------- |
-| POST     | `/api/quotes/revise`                                | 人类改稿，返回 `ReviseQuoteDraftResult`        |
-| GET      | `/api/quotes/:id`                                   | 草稿视图（含版本 / 审批要求）                  |
-| GET      | `/api/quotes/:id/approval-view`                     | 审批卡详情：逐行 diff + 出处 + 版本历史        |
-| GET      | `/api/pricing/policies?limit=&cursor=`              | 策略列表（有界游标分页，按 scope 过滤）        |
-| POST     | `/api/pricing/policies`                             | 新建策略（审计 + 变更日志）                    |
-| PATCH    | `/api/pricing/policies/:id`                         | 更新策略                                       |
-| GET      | `/api/pricing/resolve?key=...`                      | 生效值 + 来源                                  |
-| GET      | `/api/approvals?limit=&cursor=`                     | 审批队列（有界游标分页，只含 DRAFT）           |
-| POST     | `/api/approvals/decide`                             | 批准 / 驳回（支持 `baseVersion` / `reasonId`） |
-| GET      | `/api/customers/:id/decision-deltas`                | 决策增量历史（训练信号）                       |
-| GET/POST | `/api/revision-reasons`                             | 改稿原因字典                                   |
-| POST     | `/api/revision-reasons/defaults`                    | 幂等补齐默认原因                               |
-| GET/POST | `/api/orders`、`/api/orders/:id/confirm`            | 订单草稿 / 确认                                |
-| GET/POST | `/api/receivables`、`/api/receivables/:id/payments` | 应收 / 收款                                    |
+| 方法     | 路径                                                | 说明                                                                                      |
+| -------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| POST     | `/api/quotes/revise`                                | 人类改稿，返回 `ReviseQuoteDraftResult`                                                   |
+| GET      | `/api/quotes/:id`                                   | 单据详情 `QuoteDetail`：草稿 + 版本 + 生命周期状态（批准后仍可读，`status` 已离开 DRAFT） |
+| GET      | `/api/quotes/:id/approval-view`                     | 审批卡详情：逐行 diff + 出处 + 版本历史                                                   |
+| GET      | `/api/pricing/policies?limit=&cursor=`              | 策略列表（有界游标分页，按 scope 过滤）                                                   |
+| POST     | `/api/pricing/policies`                             | 新建策略（审计 + 变更日志）                                                               |
+| PATCH    | `/api/pricing/policies/:id`                         | 更新策略                                                                                  |
+| GET      | `/api/pricing/resolve?key=...`                      | 生效值 + 来源                                                                             |
+| GET      | `/api/approvals?limit=&cursor=`                     | 审批队列（有界游标分页，只含 DRAFT）                                                      |
+| POST     | `/api/approvals/decide`                             | 批准 / 驳回（支持 `baseVersion` / `reasonId`）                                            |
+| GET      | `/api/customers/:id/decision-deltas`                | 决策增量历史（训练信号）                                                                  |
+| GET/POST | `/api/revision-reasons`                             | 改稿原因字典                                                                              |
+| POST     | `/api/revision-reasons/defaults`                    | 幂等补齐默认原因                                                                          |
+| GET/POST | `/api/orders`、`/api/orders/:id/confirm`            | 订单草稿 / 确认                                                                           |
+| GET/POST | `/api/receivables`、`/api/receivables/:id/payments` | 应收 / 收款                                                                               |
 
 > 人类写接口（改稿 / 审批 / 定价 / 订单 / 应收 / 改稿原因）统一走
 > `HumanActorService`：`Authorization: Bearer <token>` → Casdoor/Casdoor-dev 校验 →

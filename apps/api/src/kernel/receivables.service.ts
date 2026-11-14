@@ -40,12 +40,20 @@ export class ReceivableService {
 
   async create(input: unknown, ctx: KernelContext): Promise<Receivable> {
     const parsed = CreateReceivableInput.parse(input);
+    // 应收归属随订单的客户：看不见这张订单的人不能给它挂账。
     const orderRows = await this.db
-      .select()
+      .select({ order: orders })
       .from(orders)
-      .where(and(eq(orders.id, parsed.orderId), eq(orders.tenantId, this.tenantId)))
+      .innerJoin(customers, eq(customers.id, orders.customerId))
+      .where(
+        and(
+          eq(orders.id, parsed.orderId),
+          eq(orders.tenantId, this.tenantId),
+          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+        ),
+      )
       .limit(1);
-    const order = orderRows[0];
+    const order = orderRows[0]?.order;
     if (!order) {
       throw new KernelError("RESOURCE_NOT_FOUND", `订单不存在：${parsed.orderId}`, {
         resourceType: "order",
@@ -115,6 +123,9 @@ export class ReceivableService {
       throw new KernelError("PERMISSION_DENIED", "收款必须由人类确认，智能体无权记账");
     }
     const parsed = RecordPaymentInput.parse(input);
+    // 锁内按 id + 租户读，够不到「谁该看见这笔账」：先按驱动者的数据范围判一次可见性，
+    // 越权当成不存在，否则看不见这笔应收的人也能替它收款。
+    await this.getById(parsed.receivableId, ctx);
 
     return this.db.transaction(async (tx) => {
       // 账本动作必须在锁内读-算-写：并发收款若读在事务外，两笔都会基于同一个

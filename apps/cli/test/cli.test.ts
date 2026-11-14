@@ -3,9 +3,10 @@ import type { AddressInfo } from "node:net";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../src/args";
 import { ApiError, createClient, exitCodeFor, NetworkError, request } from "../src/api";
+import { decideCommand } from "../src/commands";
 import {
   clearConfig,
   configPath,
@@ -93,6 +94,17 @@ describe("API 客户端错误语义", () => {
       );
       return;
     }
+    if (req.url === "/api/approvals/decide") {
+      // 版本冲突：body 是工具契约的 `{ok:false}`，状态码按 BUG-4 的映射回到 409。
+      res.writeHead(409, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: false,
+          error: { code: "KERNEL_REJECTED", message: "服务端版本已变", reason: "VERSION_CONFLICT" },
+        }),
+      );
+      return;
+    }
     res.writeHead(404).end();
   });
 
@@ -131,6 +143,23 @@ describe("API 客户端错误语义", () => {
       expect(error).toBeInstanceOf(NetworkError);
       expect((error as Error).message).toContain("WEAVE_SERVER");
       expect(exitCodeFor(error)).toBe(4);
+    }
+  });
+
+  it("4xx 的 `{ok:false}` 是业务失败：原样交回，审批决策退出码 1", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await expect(
+        request({ serverUrl: baseUrl }, "POST", "/api/approvals/decide", {}),
+      ).resolves.toMatchObject({ ok: false, error: { code: "KERNEL_REJECTED" } });
+      const exit = await decideCommand(
+        "APPROVE",
+        parseArgs(["approve", "11111111-1111-4111-8111-111111111111", "--kind", "quote"]),
+        { json: true, serverFlag: baseUrl },
+      );
+      expect(exit).toBe(1);
+    } finally {
+      stdout.mockRestore();
     }
   });
 });

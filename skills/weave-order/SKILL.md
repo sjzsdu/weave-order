@@ -72,7 +72,7 @@ weave whoami --json
    不要自己算总额，也不要改写 `lineTotal`。
 4. **不创建、不撤销凭据**，除非用户明确要求。`weave token create` 的输出是一次性明文。
 5. **失败要如实转述**：工具失败返回 `{ ok: false, error: { code, message } }`，
-   把 `code` 与 `message` 告诉用户，不要编造成功结果。
+   把 `code` 与 `message` 告诉用户，不要编造成功结果，也不要把失败重发一次当作重试。
 
 ## 3. 常用命令
 
@@ -210,19 +210,35 @@ weave token revoke <token-id 或前缀> --json
 
 ## 5. 错误与退出码
 
-| 退出码 | 含义                        | 你的动作                             |
-| ------ | --------------------------- | ------------------------------------ |
-| 0      | 成功                        | 解析 stdout JSON                     |
-| 1      | 业务失败（工具 `ok:false`） | 转述 `error.code` 与 `error.message` |
-| 2      | 用法错误                    | 修正命令，别重复同样参数             |
-| 3      | 凭据问题（401/403）         | 提示用户登录或缺作用域，不要自行登录 |
-| 4      | 网络不可达                  | 提示用户检查 `WEAVE_SERVER` 或服务   |
+| 退出码 | 含义                                   | 你的动作                             |
+| ------ | -------------------------------------- | ------------------------------------ |
+| 0      | 成功                                   | 解析 stdout JSON                     |
+| 1      | 业务失败（工具 / 审批决策 `ok:false`） | 转述 `error.code` 与 `error.message` |
+| 2      | 用法错误                               | 修正命令，别重复同样参数             |
+| 3      | 凭据问题（401/403）                    | 提示用户登录或缺作用域，不要自行登录 |
+| 4      | 网络不可达                             | 提示用户检查 `WEAVE_SERVER` 或服务   |
 
 `--json` 模式下错误也输出 JSON：`{ "ok": false, "error": { "code": "…", "message": "…" } }`。
 
 常见 code：`AUTH_REQUIRED`、`INVALID_TOKEN`、`TOKEN_REVOKED`、`SCOPE_REQUIRED`、
 `INVALID_INPUT`（含 `issues` 数组）、`CUSTOMER_NOT_FOUND`、`RESOURCE_NOT_FOUND`、
 `KERNEL_REJECTED`、`PERMISSION_DENIED`。
+
+绕过 CLI 直连 HTTP 时，`/api/tools/*` 与 `/api/approvals/decide` 的失败体形状不变，
+状态码跟随 `code`（`KERNEL_REJECTED` 再看 `reason`）：
+
+| 状态码 | code / reason                                                                                |
+| ------ | -------------------------------------------------------------------------------------------- |
+| 400    | `INVALID_INPUT`（契约校验失败也是 400，不再是 500）                                          |
+| 403    | `PERMISSION_DENIED`                                                                          |
+| 404    | `CUSTOMER_NOT_FOUND`、`RESOURCE_NOT_FOUND`                                                   |
+| 409    | `KERNEL_REJECTED` + 冲突类 `reason`（如 `VERSION_CONFLICT`）                                 |
+| 422    | `KERNEL_REJECTED` + 其它 `reason`（如 `PRICE_BELOW_COST_FLOOR`）、`AMOUNT_NOT_AUTHORITATIVE` |
+| 502    | `UPSTREAM_UNAVAILABLE`                                                                       |
+
+这里的 4xx 是业务失败，不是传输错误：不要照着状态码盲目重试，先读 `code` / `reason`。
+凭据与作用域被拒（`SCOPE_REQUIRED` 等）走的是 `{ "error": … }` 网关形状，与上面的
+`{ "ok": false, "error": … }` 工具形状不同，`weave` 只对前者返回退出码 3。
 
 ## 6. 不要做的事
 

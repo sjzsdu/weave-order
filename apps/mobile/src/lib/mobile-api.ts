@@ -4,9 +4,8 @@ import type { ApiClient } from "@weave-order/core";
 import {
   CreateRevisionRequestInput,
   DecideRevisionRequestInput,
+  QuoteDetail,
   QuoteShare,
-  QuoteDraft,
-  QuoteStatus,
   RevisionRequest,
   T001SearchFabricByImageResult,
 } from "@weave-order/schema";
@@ -51,12 +50,6 @@ export interface ShareSummary {
   lastViewedAt: string | null;
 }
 
-export interface QuoteDetail {
-  draft: QuoteDraft;
-  version: number;
-  status: QuoteStatus;
-}
-
 export interface MobileApi extends ApiClient {
   getQuote(quoteId: string): Promise<QuoteDetail>;
   /**
@@ -74,7 +67,11 @@ export interface MobileApi extends ApiClient {
   createShare(input: Parameters<ApiClient["createQuoteShare"]>[0]): Promise<CreatedQuoteShare>;
 }
 
-export type RequestFn = (path: string, init?: RequestInit) => Promise<unknown>;
+export type RequestFn = (
+  path: string,
+  init?: RequestInit,
+  call?: { toolFailure?: boolean },
+) => Promise<unknown>;
 
 const ShareSummarySchema = z
   .object({
@@ -98,11 +95,13 @@ const PresignResultSchema = z
 
 const ProofReceiptSchema = z.object({ id: z.string(), recordedAt: z.string() }).passthrough();
 
-const QuoteDetailSchema = z
-  .object({ draft: QuoteDraft, version: z.number().int().positive(), status: QuoteStatus })
-  .passthrough();
-
-/** 与 core 相同的失败解析：统一 `{ error: { code, message } }`。 */
+/**
+ * 与 core 相同的失败解析：统一 `{ error: { code, message } }`。
+ *
+ * `toolFailure`：工具 / 审批面用 body 的 `{ok:false,error}` 表达业务失败，状态码
+ * 同时回归 4xx。这类 4xx 不是传输错误，原样交回响应体，调用方的 `result.ok`
+ * 判分支继续成立；只对工具路由的调用点打开，其余路由族保持原样。
+ */
 export function createRequester(
   baseUrl: string,
   fetchImpl: (
@@ -112,7 +111,7 @@ export function createRequester(
   getToken?: () => string | null | Promise<string | null>,
 ): RequestFn {
   const base = baseUrl.replace(/\/$/, "");
-  return async (path, init = {}) => {
+  return async (path, init = {}, call = {}) => {
     const token = getToken ? await getToken() : null;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (init.body !== undefined) headers["Content-Type"] = "application/json";
@@ -127,6 +126,15 @@ export function createRequester(
       throw new ApiError(response.status, "INTERNAL", `请求失败（HTTP ${response.status}）`);
     }
     if (!response.ok) {
+      if (call.toolFailure && response.status < 500) {
+        const failure = z
+          .object({
+            ok: z.literal(false),
+            error: z.object({ code: z.string(), message: z.string() }).passthrough(),
+          })
+          .safeParse(json);
+        if (failure.success) return json;
+      }
       const parsed = z
         .object({ error: z.object({ code: z.string(), message: z.string() }).passthrough() })
         .safeParse(json);
@@ -160,17 +168,20 @@ export function createMobileApi(
   });
   const post = (path: string, body: unknown) =>
     request(path, { method: "POST", body: JSON.stringify(body) });
+  /** 工具面：4xx 的业务失败按契约对象交回。 */
+  const toolPost = (path: string, body: unknown) =>
+    request(path, { method: "POST", body: JSON.stringify(body) }, { toolFailure: true });
 
   return {
     ...core,
 
     async getQuote(quoteId) {
-      return QuoteDetailSchema.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`));
+      return QuoteDetail.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`));
     },
 
     async searchByImageUrl(imageUrl) {
       return T001SearchFabricByImageResult.parse(
-        await post("/api/tools/search-by-image", { imageUrl, topK: 5, minSimilarity: 0.3 }),
+        await toolPost("/api/tools/search-by-image", { imageUrl, topK: 5, minSimilarity: 0.3 }),
       );
     },
 

@@ -57,26 +57,29 @@ afterAll(async () => {
   await app?.close();
 });
 
-async function postJson(path: string, body: unknown): Promise<{ ok: boolean; json: unknown }> {
+async function postJson(
+  path: string,
+  body: unknown,
+): Promise<{ ok: boolean; status: number; json: unknown }> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return { ok: response.ok, json: await response.json() };
+  return { ok: response.ok, status: response.status, json: await response.json() };
 }
 
 async function postJsonAuth(
   path: string,
   body: unknown,
   authorization: string,
-): Promise<{ ok: boolean; json: unknown }> {
+): Promise<{ ok: boolean; status: number; json: unknown }> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authorization },
     body: JSON.stringify(body),
   });
-  return { ok: response.ok, json: await response.json() };
+  return { ok: response.ok, status: response.status, json: await response.json() };
 }
 
 async function getJson(path: string): Promise<{ ok: boolean; json: unknown }> {
@@ -262,7 +265,7 @@ describe("Track A HTTP 面（真起服务 + 真连 PG）", () => {
       },
       `Bearer dev:${salesSubject}:${org}`,
     );
-    expect(salesAttempt.ok, JSON.stringify(salesAttempt.json)).toBe(true);
+    expect(salesAttempt.status, JSON.stringify(salesAttempt.json)).toBe(403);
     const denied = ApprovalDecisionResult.parse(salesAttempt.json);
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.error.code).toBe("PERMISSION_DENIED");
