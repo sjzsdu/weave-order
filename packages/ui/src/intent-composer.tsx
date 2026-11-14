@@ -14,12 +14,15 @@ export function IntentComposer({
   onSubmit,
   busy,
   error,
+  initialText,
 }: {
   onSubmit: (text: string) => void;
   busy?: boolean;
   error?: string | null;
+  /** 从客户 360 带过来的上下文（如「给杭州青禾报价：」）。 */
+  initialText?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText ?? "");
   const submit = () => {
     const value = text.trim();
     if (!value || busy) return;

@@ -2,29 +2,37 @@ import {
   customerContexts,
   customers,
   decisionDeltas,
+  orders,
   quotes,
   sampleShipmentItems,
   sampleShipments,
   samples,
 } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { CreateCustomerInput } from "@weave-order/schema";
+import { CreateCustomerInput, Customer360 } from "@weave-order/schema";
 import type {
   Customer,
   CustomerContext,
   CustomerContextImport,
+  CustomerListOptions,
+  CustomerListItem,
+  CustomerSummary,
+  CustomerTimelineKind,
+  CustomerTimelinePage,
   DecisionDelta,
   JsonValue,
   FabricSampleSummary,
   FollowupPreference,
+  OrderSummary,
   PaymentPattern,
   PricingBehavior,
   QuoteSummary,
   T003GetCustomerHistoryData,
 } from "@weave-order/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { loadCustomerList, loadCustomerSummary, loadCustomerTimeline } from "./customer-aggregates";
 import { KernelError, isUniqueViolation } from "./errors";
 import { ownerScopeFilter } from "./data-scope";
 import { currencyOf, toIso } from "./mappers";
@@ -179,7 +187,7 @@ export class CustomerService {
     return mapCustomer(row);
   }
 
-  /** T-003 get_customer_history 的内核实现。订单表尚未建立，recentOrders 为空。 */
+  /** T-003 get_customer_history 的内核实现。 */
   async getHistory(
     customerId: string,
     limit: number,
@@ -220,6 +228,23 @@ export class CustomerService {
       createdAt: toIso(row.createdAt),
     }));
 
+    // 订单按确认时间倒序；未确认的草稿用创建时间兜底，否则 null 会排在最前。
+    const orderRows = await this.db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.customerId, customerId), eq(orders.tenantId, this.tenantId)))
+      .orderBy(sql`coalesce(${orders.confirmedAt}, ${orders.createdAt}) desc`, desc(orders.id))
+      .limit(limit);
+
+    const recentOrders: OrderSummary[] = orderRows.map((row) => ({
+      id: row.id,
+      // 契约里草稿订单叫 PENDING，与 orders 表的 DRAFT 同义。
+      status: row.status === "DRAFT" ? "PENDING" : row.status,
+      currency: currencyOf(row.currency),
+      total: { amount: row.totalAmount, currency: currencyOf(row.currency) },
+      placedAt: toIso(row.confirmedAt ?? row.createdAt),
+    }));
+
     const sampleRows = await this.db
       .select({ sample: samples })
       .from(sampleShipmentItems)
@@ -246,9 +271,53 @@ export class CustomerService {
       customer,
       context: mapContext(contextRow),
       recentQuotes,
-      recentOrders: [],
+      recentOrders,
       recentSamples,
     };
+  }
+
+  /**
+   * 客户 360 的数字面板：未决报价、在途寄样、应收余额、逾期、最近往来。
+   * 一次聚合查询，口径与列表一致；不可见客户按「不存在」返回。
+   */
+  async customerSummary(customerId: string, ctx?: KernelContext): Promise<CustomerSummary> {
+    return loadCustomerSummary(this.db, this.tenantId, customerId, ctx);
+  }
+
+  /** 客户 360 首屏：档案 + 上下文 + 汇总。 */
+  async customer360(customerId: string, ctx?: KernelContext): Promise<Customer360> {
+    const customer = await this.getById(customerId, ctx);
+    // 顺序执行：生产路径下 `db` 是绑定 app.tenant_id 的单连接会话，
+    // 同一 client 并发 query 会被 pg 拒绝/排队，不能让 RLS 会话里出现交错查询。
+    const context = await this.getContext(customerId);
+    const summary = await this.customerSummary(customerId, ctx);
+    const ownerRows = await this.db.execute<{ owner_id: string | null; owner_name: string | null }>(
+      sql`
+        SELECT customers.owner_id, memberships.subject AS owner_name
+        FROM customers
+        LEFT JOIN memberships
+          ON memberships.id = customers.owner_id
+         AND memberships.tenant_id = customers.tenant_id
+        WHERE customers.tenant_id = ${this.tenantId}
+          AND customers.id = ${customerId}::uuid
+        LIMIT 1
+      `,
+    );
+    const owner = ownerRows.rows[0];
+    const ownerId = owner?.owner_id ?? null;
+    const ownerName = owner?.owner_name ?? null;
+    return Customer360.parse({ customer, ownerId, ownerName, context, summary });
+  }
+
+  /** 客户时间线：五类源单据合并后按时间倒序，游标翻页。 */
+  async customerTimeline(
+    customerId: string,
+    options: { kinds?: CustomerTimelineKind[]; limit?: number; cursor?: string | null } = {},
+    ctx?: KernelContext,
+  ): Promise<CustomerTimelinePage> {
+    // 先判可见性：越权客户的时间线与档案一并按「不存在」返回，不泄露单据。
+    await this.getById(customerId, ctx);
+    return loadCustomerTimeline(this.db, this.tenantId, customerId, options);
   }
 
   /** 记录人类修改智能体建议的决策增量（护城河核心数据）。 */
@@ -292,20 +361,17 @@ export class CustomerService {
     });
   }
 
-  /** 只读列表，给页面选择演示客户用；按数据范围过滤。 */
-  async list(limit = 20, ctx?: KernelContext): Promise<Customer[]> {
-    const rows = await this.db
-      .select()
-      .from(customers)
-      .where(
-        and(
-          eq(customers.tenantId, this.tenantId),
-          ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
-        ),
-      )
-      .orderBy(desc(customers.createdAt))
-      .limit(limit);
-    return rows.map(mapCustomer);
+  /**
+   * 只读列表；按数据范围过滤，并附带四个聚合数字。
+   * 接受数字（兼容旧调用）或筛选对象（客户列表页）。
+   */
+  async list(
+    limitOrOptions: number | CustomerListOptions = 20,
+    ctx?: KernelContext,
+  ): Promise<CustomerListItem[]> {
+    const options: CustomerListOptions =
+      typeof limitOrOptions === "number" ? { limit: limitOrOptions } : limitOrOptions;
+    return loadCustomerList(this.db, this.tenantId, options, ctx);
   }
 
   async getContext(customerId: string): Promise<CustomerContext> {

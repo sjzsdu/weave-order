@@ -14,6 +14,10 @@ import {
   CreatePrintJobInput,
   CreateShipmentInput,
   Customer,
+  Customer360,
+  CustomerListItem,
+  CustomerTimelineKind,
+  CustomerTimelinePage,
   FabricSample,
   InviteMemberInput,
   InvitePreview,
@@ -110,6 +114,7 @@ export class ApiError extends Error {
 }
 
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
+const CustomerListResponse = z.object({ customers: z.array(CustomerListItem) }).strict();
 const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
 const SamplePageResponse = z
   .object({
@@ -298,6 +303,48 @@ export function createApiClient(options: ApiClientOptions) {
 
     listCustomers: async (limit = 20) =>
       CustomersResponse.parse(await request(`/api/customers?limit=${limit}`)).customers,
+
+    /** 客户列表（全景 → 客户）：后端聚合未决报价 / 在途寄样 / 应收余额。 */
+    customerList: async (
+      options: {
+        query?: string;
+        owner?: "mine" | "all";
+        tier?: string;
+        overdueOnly?: boolean;
+        limit?: number;
+      } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (options.query) params.set("query", options.query);
+      if (options.owner) params.set("owner", options.owner);
+      if (options.tier) params.set("tier", options.tier);
+      if (options.overdueOnly) params.set("overdue", "1");
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      const qs = params.toString();
+      return CustomerListResponse.parse(await request(`/api/customers${qs ? `?${qs}` : ""}`))
+        .customers;
+    },
+
+    /** 客户 360 首屏：档案 + 上下文 + 汇总。 */
+    customer360: async (customerId: string) =>
+      Customer360.parse(await request(`/api/customers/${encodeURIComponent(customerId)}`)),
+
+    /** 客户时间线（游标分页）。 */
+    customerTimeline: async (
+      customerId: string,
+      options: { kinds?: CustomerTimelineKind[]; limit?: number; cursor?: string | null } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (options.kinds && options.kinds.length > 0) params.set("types", options.kinds.join(","));
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.cursor) params.set("cursor", options.cursor);
+      const qs = params.toString();
+      return CustomerTimelinePage.parse(
+        await request(
+          `/api/customers/${encodeURIComponent(customerId)}/timeline${qs ? `?${qs}` : ""}`,
+        ),
+      );
+    },
 
     listSamples: async (limit = 50) =>
       SamplesResponse.parse(await request(`/api/samples?limit=${limit}`)).samples,

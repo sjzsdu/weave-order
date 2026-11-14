@@ -40,7 +40,28 @@ export const STATUS_LABEL: Record<string, string> = {
   REJECTED: "已驳回",
   EXPIRED: "已过期",
   CONFIRMED: "已确认",
+  IN_PRODUCTION: "生产中",
   SHIPPED: "已发出",
   DELIVERED: "已签收",
   CANCELLED: "已取消",
+  PENDING: "待处理",
+  PARTIAL: "部分收款",
+  PAID: "已收清",
+  OVERDUE: "已逾期",
+  COMPLETED: "已完成",
+};
+
+export const TIER_LABEL: Record<string, string> = {
+  VIP: "VIP",
+  REGULAR: "常规",
+  NEW: "新客",
+  COLD: "沉睡",
+};
+
+export const TIMELINE_KIND_LABEL: Record<string, string> = {
+  quote: "报价",
+  sample_shipment: "寄样",
+  order: "订单",
+  receivable: "回款",
+  followup: "跟进",
 };

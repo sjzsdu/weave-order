@@ -5,6 +5,9 @@ import {
   AuthContextResponse,
   TenantChoicesResponse,
   CreatedQuoteShare,
+  Customer360,
+  CustomerListItem,
+  CustomerTimelinePage,
   PrintCenterSnapshot,
   PrintDevices,
   PrintJobList,
@@ -36,6 +39,7 @@ const MEMBERSHIP_ID = "55555555-5555-4555-8555-555555555555";
 const AUDIT_ID = "66666666-6666-4666-8666-666666666666";
 const REVISION_ID = "77777777-7777-4777-8777-777777777777";
 const SHIPMENT_ID = "88888888-8888-4888-8888-888888888888";
+const ORDER_ID = "99999999-9999-4999-8999-999999999999";
 
 const NOW = "2026-11-12T09:00:00.000Z";
 const EXPIRES = "2026-11-26T09:00:00.000Z";
@@ -50,6 +54,94 @@ const customer = {
   contactPhone: "138****6621",
   contactEmail: "zhoumin@example.com",
 };
+
+const customerListItem = CustomerListItem.parse({
+  ...customer,
+  ownerId: MEMBERSHIP_ID,
+  ownerName: "孙巨中",
+  pendingQuoteCount: 1,
+  inTransitSampleCount: 2,
+  activeOrderCount: 3,
+  receivableBalance: [{ amount: 1280000, currency: "CNY" }],
+  overdueReceivableCount: 1,
+  lastContactAt: NOW,
+});
+
+const customer360 = Customer360.parse({
+  customer,
+  ownerId: MEMBERSHIP_ID,
+  ownerName: "孙巨中",
+  context: {
+    customerId: CUSTOMER_ID,
+    preferenceNotes: ["只做本白与浅色，不接受荧光增白。", "样布一次寄三色，附成分单。"],
+    pricingBehavior: {
+      sensitivity: "HIGH",
+      counterofferAcceptanceRate: 0.62,
+      typicalAcceptanceWindowDays: 3,
+      notes: ["报价高于 15.5 元会先还价一轮。"],
+    },
+    paymentPattern: {
+      preferredTerms: "TT_30D",
+      onTimeRate: 0.86,
+      averageDelayDays: 4,
+      notes: [],
+    },
+    followupPreference: {
+      preferredChannel: "WECHAT",
+      preferredTimeWindow: "09:00-11:00",
+      avoidDays: ["MONDAY"],
+      notes: [],
+    },
+    decisionDeltas: [],
+    updatedAt: NOW,
+  },
+  summary: {
+    customerId: CUSTOMER_ID,
+    pendingQuoteCount: 1,
+    inTransitSampleCount: 2,
+    activeOrderCount: 3,
+    receivableBalance: [{ amount: 1280000, currency: "CNY" }],
+    overdueReceivableCount: 1,
+    lastContactAt: NOW,
+  },
+});
+
+const customerTimeline = CustomerTimelinePage.parse({
+  events: [
+    {
+      id: `quote:${QUOTE_ID}`,
+      kind: "quote",
+      refId: QUOTE_ID,
+      sourceId: QUOTE_ID,
+      code: QUOTE_ID,
+      status: "DRAFT",
+      amount: { amount: 760000, currency: "CNY" },
+      occurredAt: NOW,
+    },
+    {
+      id: `sample_shipment:${SHIPMENT_ID}`,
+      kind: "sample_shipment",
+      refId: SHIPMENT_ID,
+      sourceId: SHIPMENT_ID,
+      code: SHIPMENT_ID,
+      status: "CONFIRMED",
+      amount: null,
+      occurredAt: "2026-11-11T09:00:00.000Z",
+    },
+    {
+      id: `order:${ORDER_ID}`,
+      kind: "order",
+      refId: ORDER_ID,
+      sourceId: ORDER_ID,
+      code: "SO-2611-018",
+      status: "IN_PRODUCTION",
+      amount: { amount: 1280000, currency: "CNY" },
+      occurredAt: "2026-11-10T09:00:00.000Z",
+    },
+  ],
+  hasMore: false,
+  nextCursor: null,
+});
 
 const sample = {
   id: SAMPLE_ID,
@@ -287,6 +379,15 @@ export function createMockApiClient(): ApiClient {
     logout: () => Promise.resolve(),
 
     listCustomers: () => Promise.resolve([customer]),
+
+    customerList: () => Promise.resolve([customerListItem]),
+
+    customer360: (id) =>
+      id === CUSTOMER_ID
+        ? Promise.resolve(customer360)
+        : Promise.reject(new Error("CUSTOMER_NOT_FOUND")),
+
+    customerTimeline: () => Promise.resolve(customerTimeline),
 
     listSamples: () => Promise.resolve([sample]),
 

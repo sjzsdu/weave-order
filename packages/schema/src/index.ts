@@ -2,6 +2,7 @@ export * from "./common";
 export * from "./domain";
 export * from "./tenancy";
 export * from "./entities";
+export * from "./customer";
 export * from "./revisions";
 export * from "./quote-revision";
 export * from "./pricing";
