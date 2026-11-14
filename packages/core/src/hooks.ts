@@ -25,6 +25,12 @@ export const queryKeys = {
   approvalDetail: (id: string, kind: ApprovalKind) => ["approvals", id, kind] as const,
   audit: (limit: number) => ["audit", limit] as const,
   orders: (limit: number) => ["orders", limit] as const,
+  orderList: (filters: unknown) => ["orders", "list", filters] as const,
+  orderFunnel: (filters: unknown) => ["orders", "funnel", filters] as const,
+  orderWorkbench: (id: string) => ["order", id, "workbench"] as const,
+  receivables: (filters: unknown) => ["receivables", "list", filters] as const,
+  statement: (customerId: string, range: unknown) =>
+    ["receivables", "statement", customerId, range] as const,
   order: (id: string) => ["order", id] as const,
   orderShipments: (id: string) => ["order", id, "shipments"] as const,
   shippingPending: ["shipping", "pending"] as const,
@@ -145,10 +151,96 @@ export function useDecideApproval(client: ApiClient) {
   });
 }
 
-export function useOrders(client: ApiClient, limit = 50) {
+export interface OrderListFilters {
+  statuses?: string[];
+  customerId?: string;
+  dueFrom?: string;
+  dueBefore?: string;
+  overdueOnly?: boolean;
+}
+
+/** 订单列表（游标分页）：返回已加载页的合并列表。 */
+export function useOrderList(client: ApiClient, filters: OrderListFilters = {}) {
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.orderList(filters),
+    queryFn: ({ pageParam }) => client.orders({ ...filters, cursor: pageParam, limit: 20 }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+  });
+  const items = query.data?.pages.flatMap((page) => page.orders) ?? [];
+  return { ...query, items, total: query.data?.pages[0]?.total ?? 0 };
+}
+
+/** 漏斗数字：筛选与列表一致（不含状态），点进去条数刚好对上。 */
+export function useOrderFunnel(
+  client: ApiClient,
+  filters: Omit<OrderListFilters, "statuses"> = {},
+) {
   return useQuery({
-    queryKey: queryKeys.orders(limit),
-    queryFn: () => client.orders(limit),
+    queryKey: queryKeys.orderFunnel(filters),
+    queryFn: () => client.orderFunnel(filters),
+  });
+}
+
+export function useOrderWorkbench(client: ApiClient, orderId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.orderWorkbench(orderId ?? "none"),
+    queryFn: () => client.orderWorkbench(orderId as string),
+    enabled: orderId !== null,
+  });
+}
+
+export type ReceivableBucketFilter = "overdue" | "dueSoon" | "settled" | "all";
+
+/** 应收列表（游标分页）：分组计数与余额随页返回，页面不再自己聚合。 */
+export function useReceivableList(
+  client: ApiClient,
+  filters: { bucket: ReceivableBucketFilter; customerId?: string },
+) {
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.receivables(filters),
+    queryFn: ({ pageParam }) => client.receivables({ ...filters, cursor: pageParam, limit: 20 }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+  });
+  const items = query.data?.pages.flatMap((page) => page.receivables) ?? [];
+  return { ...query, items, summary: query.data?.pages[0]?.summary ?? null };
+}
+
+/**
+ * 登记回款：成功后失效应收、对账单、订单与全景，
+ * 验收要求「余额 / 逾期状态 / 全景数字同步变化，无需刷新页面」。
+ */
+export function useRecordPayment(client: ApiClient, receivableId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      amount: { amount: number; currency: string };
+      paidAt?: string;
+      note?: string | null;
+      proofObjectKey?: string | null;
+    }) => client.recordPayment(receivableId, input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["receivables"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.panorama }),
+      ]);
+    },
+  });
+}
+
+export function useCustomerStatement(
+  client: ApiClient,
+  customerId: string | null,
+  range: { from?: string; to?: string } = {},
+) {
+  return useQuery({
+    queryKey: queryKeys.statement(customerId ?? "none", range),
+    queryFn: () => client.statement(customerId as string, range),
+    enabled: customerId !== null,
   });
 }
 
@@ -294,7 +386,7 @@ export function useCreateShipment(client: ApiClient) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.shippingPending }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.orders(50) }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
         queryClient.invalidateQueries({ queryKey: ["order"] }),
       ]);
     },

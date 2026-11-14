@@ -25,6 +25,7 @@ import { SearchService } from "./search.service";
 import { ShareService } from "./shares.service";
 import { ShipmentService } from "./shipments.service";
 import { TenancyService } from "./tenancy.service";
+import { WorkbenchService } from "./workbench.service";
 
 export interface KernelOptions {
   /**
@@ -70,6 +71,15 @@ export function createKernel(
   const orders = new OrderService(db, customers, pricing, tenantId);
   const orderShipments = new OrderShipmentService(db, tenantId);
   const receivables = new ReceivableService(db, tenantId);
+  const workbench = new WorkbenchService(
+    db,
+    orders,
+    customers,
+    orderShipments,
+    shipments,
+    receivables,
+    tenantId,
+  );
   const revisions = new RevisionService(db, tenantId);
   const search = new SearchService(db, embedder, tenantId, sampleImages);
   const importing = new ImportService(db, customers, samples, embedder, tenantId);
@@ -96,6 +106,7 @@ export function createKernel(
     orders,
     orderShipments,
     receivables,
+    workbench,
     revisions,
     search,
     importing,

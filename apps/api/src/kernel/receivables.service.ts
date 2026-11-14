@@ -1,8 +1,8 @@
-import { customers, orders, receivables } from "@weave-order/db";
+import { customers, orders, receivablePayments, receivables } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateReceivableInput, RecordPaymentInput } from "@weave-order/schema";
-import type { Receivable } from "@weave-order/schema";
-import { and, desc, eq } from "drizzle-orm";
+import type { Receivable, ReceivablePayment } from "@weave-order/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
@@ -10,8 +10,9 @@ import { ownerScopeFilter } from "./data-scope";
 import { toIso, toIsoOrNull } from "./mappers";
 
 type ReceivableRow = typeof receivables.$inferSelect;
+type PaymentRow = typeof receivablePayments.$inferSelect;
 
-function mapReceivable(row: ReceivableRow): Receivable {
+export function mapReceivable(row: ReceivableRow): Receivable {
   return {
     id: row.id,
     tenantId: row.tenantId,
@@ -24,6 +25,25 @@ function mapReceivable(row: ReceivableRow): Receivable {
     paidAt: toIsoOrNull(row.paidAt),
     createdAt: toIso(row.createdAt),
   };
+}
+
+export function mapPayment(row: PaymentRow): ReceivablePayment {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    receivableId: row.receivableId,
+    amount: { amount: row.amount, currency: row.currency },
+    paidAt: toIso(row.paidAt),
+    note: row.note ?? null,
+    proofObjectKey: row.proofObjectKey ?? null,
+    recordedBy: row.recordedBy ?? null,
+    createdAt: toIso(row.createdAt),
+  };
+}
+
+/** 凭证 key 只能来自服务端为这笔应收签出的前缀，客户端伪造的 key 一律拒绝。 */
+export function receiptObjectKeyPrefix(tenantId: string, receivableId: string): string {
+  return `tenant/${tenantId}/receipts/${receivableId}/`;
 }
 
 /**
@@ -117,12 +137,30 @@ export class ReceivableService {
     });
   }
 
-  /** 记录收款：部分收款 -> PARTIAL，收满 -> PAID；超额与币种不符一律拒绝。 */
-  async recordPayment(input: unknown, ctx: KernelContext): Promise<Receivable> {
+  /**
+   * 记录收款：部分收款 -> PARTIAL，收满 -> PAID；超额与币种不符一律拒绝。
+   *
+   * 返回值带上刚插入的那笔流水：调用方（HTTP 回执、UI）需要的正是这一次的结果。
+   * 不能事后再按 paidAt 倒序查「第一条」—— paidAt 是用户可回填的到账日，
+   * 补登历史回款时倒序第一条往往不是刚插入的这笔。
+   */
+  async recordPayment(
+    input: unknown,
+    ctx: KernelContext,
+  ): Promise<{ receivable: Receivable; payment: ReceivablePayment }> {
     if (ctx.actor.type !== "HUMAN") {
       throw new KernelError("PERMISSION_DENIED", "收款必须由人类确认，智能体无权记账");
     }
     const parsed = RecordPaymentInput.parse(input);
+    const proofObjectKey = parsed.proofObjectKey ?? null;
+    if (
+      proofObjectKey &&
+      !proofObjectKey.startsWith(receiptObjectKeyPrefix(this.tenantId, parsed.receivableId))
+    ) {
+      throw new KernelError("KERNEL_REJECTED", "回款凭证不是为这笔应收签发的上传地址", {
+        reason: "PROOF_KEY_INVALID",
+      });
+    }
     // 锁内按 id + 租户读，够不到「谁该看见这笔账」：先按驱动者的数据范围判一次可见性，
     // 越权当成不存在，否则看不见这笔应收的人也能替它收款。
     await this.getById(parsed.receivableId, ctx);
@@ -166,8 +204,9 @@ export class ReceivableService {
       }
       const paidAmount = current.paidAmount + parsed.amount.amount;
       const status = paidAmount === current.amount ? "PAID" : "PARTIAL";
-      const paidAt =
-        status === "PAID" ? (parsed.paidAt ? new Date(parsed.paidAt) : new Date()) : null;
+      // 每笔回款都有自己的到账日；应收表的 paidAt 只记录「收满」那一天。
+      const paymentPaidAt = parsed.paidAt ? new Date(parsed.paidAt) : new Date();
+      const paidAt = status === "PAID" ? paymentPaidAt : null;
 
       // 乐观条件作为第二道闸：即使将来有人去掉 FOR UPDATE，命中 0 行也不会覆盖账本。
       const rows = await tx
@@ -187,6 +226,26 @@ export class ReceivableService {
           reason: "VERSION_CONFLICT",
         });
       }
+      // 明细与累计值同一事务落库：只写累计值，对账单就永远答不出「哪几笔回款」。
+      const paymentRows = await tx
+        .insert(receivablePayments)
+        .values({
+          tenantId: this.tenantId,
+          receivableId: row.id,
+          amount: parsed.amount.amount,
+          currency: current.currency,
+          paidAt: paymentPaidAt,
+          note: parsed.note ?? null,
+          proofObjectKey,
+          recordedBy: ctx.actor.id,
+        })
+        .returning();
+      const payment = paymentRows[0];
+      if (!payment) {
+        throw new KernelError("KERNEL_REJECTED", "回款流水写入未返回记录", {
+          reason: "INSERT_RETURNED_NO_ROW",
+        });
+      }
       await appendAudit(
         tx,
         ctx,
@@ -195,12 +254,63 @@ export class ReceivableService {
           entityType: "receivable",
           entityId: row.id,
           before: { paidAmount: current.paidAmount, status: current.status },
-          after: { paidAmount: row.paidAmount, status: row.status, amount: row.amount },
+          after: {
+            paidAmount: row.paidAmount,
+            status: row.status,
+            amount: row.amount,
+            paymentId: payment.id,
+            paymentAmount: payment.amount,
+            paidAt: toIso(payment.paidAt),
+          },
         },
         this.tenantId,
       );
-      return mapReceivable(row);
+      return { receivable: mapReceivable(row), payment: mapPayment(payment) };
     });
+  }
+
+  /** 某笔应收的回款流水（新→旧）。对账单与「点开看来源」共用。 */
+  async listPayments(receivableId: string, ctx?: KernelContext): Promise<ReceivablePayment[]> {
+    await this.getById(receivableId, ctx);
+    const rows = await this.db
+      .select()
+      .from(receivablePayments)
+      .where(
+        and(
+          eq(receivablePayments.tenantId, this.tenantId),
+          eq(receivablePayments.receivableId, receivableId),
+        ),
+      )
+      .orderBy(desc(receivablePayments.paidAt), desc(receivablePayments.id));
+    return rows.map(mapPayment);
+  }
+
+  /**
+   * 批量取流水：对账单一次查完，避免每笔应收各查一次。
+   *
+   * 内部方法，不校验数据范围：入参 `receivableIds` 必须来自已经过
+   * `ownerScopeFilter` 的查询（目前唯一调用方 customerStatement 满足）。
+   * 不要直接把它暴露成 HTTP 接口。
+   */
+  async listPaymentsFor(receivableIds: string[]): Promise<Map<string, ReceivablePayment[]>> {
+    const grouped = new Map<string, ReceivablePayment[]>();
+    if (receivableIds.length === 0) return grouped;
+    const rows = await this.db
+      .select()
+      .from(receivablePayments)
+      .where(
+        and(
+          eq(receivablePayments.tenantId, this.tenantId),
+          inArray(receivablePayments.receivableId, receivableIds),
+        ),
+      )
+      .orderBy(desc(receivablePayments.paidAt), desc(receivablePayments.id));
+    for (const row of rows) {
+      const bucket = grouped.get(row.receivableId) ?? [];
+      bucket.push(mapPayment(row));
+      grouped.set(row.receivableId, bucket);
+    }
+    return grouped;
   }
 
   async getById(receivableId: string, ctx?: KernelContext): Promise<Receivable> {

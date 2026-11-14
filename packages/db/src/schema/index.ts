@@ -5,6 +5,7 @@ export * from "./quotes";
 export * from "./tenants";
 export * from "./orders";
 export * from "./receivables";
+export * from "./receivable-payments";
 export * from "./revisions";
 export * from "./pricing";
 export * from "./decision-deltas";

@@ -308,6 +308,58 @@ export class ShipmentService {
   }
 
   /**
+   * 某个客户的寄样记录（新→旧）。订单详情用它回答「这单之前寄过什么样」，
+   * 寄样单挂在客户名下而不是订单下，所以按客户查而不是按单查。
+   */
+  async listByCustomer(
+    customerId: string,
+    limit = 5,
+    ctx?: KernelContext,
+  ): Promise<SampleShipment[]> {
+    const rows = (
+      await this.db
+        .select({ shipment: sampleShipments })
+        .from(sampleShipments)
+        .innerJoin(customers, eq(customers.id, sampleShipments.customerId))
+        .where(
+          and(
+            eq(sampleShipments.tenantId, this.tenantId),
+            eq(sampleShipments.customerId, customerId),
+            ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId),
+          ),
+        )
+        .orderBy(desc(sampleShipments.createdAt), desc(sampleShipments.id))
+        .limit(limit)
+    ).map((entry) => entry.shipment);
+    if (rows.length === 0) return [];
+    const itemRows = await this.db
+      .select()
+      .from(sampleShipmentItems)
+      .where(
+        inArray(
+          sampleShipmentItems.shipmentId,
+          rows.map((row) => row.id),
+        ),
+      )
+      .orderBy(asc(sampleShipmentItems.id));
+    const byShipment = new Map<string, typeof itemRows>();
+    for (const item of itemRows) {
+      const bucket = byShipment.get(item.shipmentId) ?? [];
+      bucket.push(item);
+      byShipment.set(item.shipmentId, bucket);
+    }
+    return rows.map((row) =>
+      mapShipment(
+        row,
+        (byShipment.get(row.id) ?? []).map((item) => ({
+          sampleId: item.sampleId,
+          quantity: { value: milliToQuantity(item.quantityMilli), unit: item.unit },
+        })),
+      ),
+    );
+  }
+
+  /**
    * 人类在审批窗口驳回寄样单：DRAFT -> CANCELLED，同事务写审计。
    * 智能体无权驳回；只有 DRAFT 能被驳回。
    */

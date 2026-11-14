@@ -14,7 +14,12 @@ import {
   Query,
   UseInterceptors,
 } from "@nestjs/common";
-import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
+import {
+  ApprovalKind,
+  OrderStatus,
+  ReceivableBucket,
+  ReviseQuoteDraftResult,
+} from "@weave-order/schema";
 import { CustomerListOptions, CustomerTimelineKind } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { ZodError } from "zod";
@@ -26,13 +31,49 @@ import type { Kernel } from "../kernel";
 import { toToolError } from "../tools/errors";
 import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
-import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, QUOTE_AGENT } from "./tokens";
+import type { MediaService } from "../media/media.service";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, MEDIA_SERVICE, QUOTE_AGENT } from "./tokens";
 import { ToolStatusInterceptor } from "./tool-status";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), 1), max);
+}
+
+function nonEmpty(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  return value ? value : undefined;
+}
+
+/** 状态筛选支持逗号分隔（漏斗「已发货」= SHIPPED,COMPLETED），非法值直接 400。 */
+function parseStatuses(raw: string | undefined): OrderStatus[] | undefined {
+  const tokens = (raw ?? "")
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) return undefined;
+  return tokens.map((token) => {
+    const parsed = OrderStatus.safeParse(token);
+    if (!parsed.success) throw new BadRequestException(`未知订单状态：${token}`);
+    return parsed.data;
+  });
+}
+
+function parseBucket(raw: string | undefined): ReceivableBucket {
+  const parsed = ReceivableBucket.safeParse(nonEmpty(raw) ?? "all");
+  if (!parsed.success) throw new BadRequestException(`未知应收分组：${raw}`);
+  return parsed.data;
+}
+
+function parseDate(raw: string | undefined, field: string): Date | undefined {
+  const value = nonEmpty(raw);
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestException(`${field} 不是合法时间：${value}`);
+  }
+  return date;
 }
 
 /** 内核错误 -> HTTP 状态；其余继续抛出，交给 Nest 统一处理。 */
@@ -356,13 +397,74 @@ export class OrderController {
   constructor(
     @Inject(KERNEL) private readonly kernel: Kernel,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+    @Inject(MEDIA_SERVICE) private readonly media: MediaService,
   ) {}
 
   @Get("orders")
-  async list(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
-      orders: await kernel.orders.list(clampLimit(limit, 20, 100), ctx),
-    }));
+  async list(
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+    @Query("status") status?: string,
+    @Query("customerId") customerId?: string,
+    @Query("dueFrom") dueFrom?: string,
+    @Query("dueBefore") dueBefore?: string,
+    @Query("overdueOnly") overdueOnly?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.workbench.listOrders(
+            {
+              statuses: parseStatuses(status),
+              customerId: nonEmpty(customerId),
+              dueFrom: parseDate(dueFrom, "dueFrom"),
+              dueBefore: parseDate(dueBefore, "dueBefore"),
+              overdueOnly: overdueOnly === "true" || overdueOnly === "1",
+              cursor: nonEmpty(cursor) ?? null,
+              limit: clampLimit(limit, 20, 50),
+            },
+            ctx,
+          );
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  /** 漏斗：与列表同一套筛选（不含状态），点数字进去条数刚好对上。 */
+  @Get("orders/funnel")
+  async funnel(
+    @Query("customerId") customerId?: string,
+    @Query("dueFrom") dueFrom?: string,
+    @Query("dueBefore") dueBefore?: string,
+    @Query("overdueOnly") overdueOnly?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.workbench.orderFunnel(
+            {
+              customerId: nonEmpty(customerId),
+              dueFrom: parseDate(dueFrom, "dueFrom"),
+              dueBefore: parseDate(dueBefore, "dueBefore"),
+              overdueOnly: overdueOnly === "true" || overdueOnly === "1",
+            },
+            ctx,
+          );
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
+      { scope: "read" },
+    );
   }
 
   @Get("orders/:id")
@@ -374,6 +476,23 @@ export class OrderController {
         rethrowHttp(error);
       }
     });
+  }
+
+  /** 订单详情工作面：行项目 / 关联报价 / 寄样记录 / 发货记录。 */
+  @Get("orders/:id/workbench")
+  async workbench(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.workbench.orderWorkbench(id, ctx);
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
+      { scope: "read" },
+    );
   }
 
   @Post("orders")
@@ -401,11 +520,31 @@ export class OrderController {
   @Get("receivables")
   async receivables(
     @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+    @Query("bucket") bucket?: string,
+    @Query("customerId") customerId?: string,
     @Headers("authorization") authorization?: string,
   ) {
-    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
-      receivables: await kernel.receivables.list(clampLimit(limit, 20, 100), ctx),
-    }));
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.workbench.listReceivables(
+            {
+              bucket: parseBucket(bucket),
+              customerId: nonEmpty(customerId),
+              cursor: nonEmpty(cursor) ?? null,
+              limit: clampLimit(limit, 20, 50),
+            },
+            ctx,
+          );
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
+      { scope: "read" },
+    );
   }
 
   @Post("receivables")
@@ -428,11 +567,61 @@ export class OrderController {
     return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
       try {
         const input = { ...(body as Record<string, unknown>), receivableId: id };
-        return { receivable: await kernel.receivables.recordPayment(input, ctx) };
+        // 内核把刚插入的那笔流水一起返回：不按到账日倒序回查，
+        // 补登历史回款时「倒序第一条」不是这一次。
+        const { receivable, payment } = await kernel.receivables.recordPayment(input, ctx);
+        return {
+          receivable,
+          payment: {
+            id: payment.id,
+            receivableId: payment.receivableId,
+            amount: payment.amount,
+            paidAt: payment.paidAt,
+            note: payment.note,
+            // 凭证 URL 只在这里签发，DB 里只存 object_key。
+            proofUrl: payment.proofObjectKey
+              ? await this.media.imageUrl(payment.proofObjectKey)
+              : null,
+            createdAt: payment.createdAt,
+          },
+        };
       } catch (error) {
         rethrowHttp(error);
       }
     });
+  }
+
+  /**
+   * 客户对账单：哪几笔订单、哪几笔回款。
+   * 打印与页面读同一份整数分汇总，没有第二套计算。
+   */
+  @Get("customers/:id/statement")
+  async statement(
+    @Param("id") id: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.workbench.customerStatement(
+            id,
+            {
+              from: parseDate(from, "from"),
+              to: parseDate(to, "to"),
+            },
+            (objectKey) => this.media.imageUrl(objectKey),
+            ctx,
+          );
+        } catch (error) {
+          rethrowHttp(error);
+        }
+      },
+      { scope: "read" },
+    );
   }
 }
 

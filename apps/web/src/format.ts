@@ -22,6 +22,10 @@ export const ACTION_LABEL: Record<string, string> = {
   REVISION_REQUESTED: "发起了改稿",
   REVISION_RESOLVED: "处理了改稿",
   IMPORT_RESET: "重置了导入数据",
+  ORDER_CREATED: "创建了订单",
+  ORDER_CONFIRMED: "订单已确认",
+  RECEIVABLE_CREATED: "建了应收",
+  RECEIVABLE_PAYMENT_RECORDED: "登记了回款",
 };
 
 export function actionLabel(action: string): string {
@@ -65,3 +69,32 @@ export const TIMELINE_KIND_LABEL: Record<string, string> = {
   receivable: "回款",
   followup: "跟进",
 };
+
+/** 订单状态（合同链路），与 schema 的 OrderStatus 一一对应。 */
+export const ORDER_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "草稿",
+  CONFIRMED: "已成交",
+  IN_PRODUCTION: "生产中",
+  SHIPPED: "已发货",
+  COMPLETED: "已完成",
+  CANCELLED: "已取消",
+};
+
+/** 应收状态：逾期由服务端按到期日派生，前端不改写。 */
+export const RECEIVABLE_STATUS_LABEL: Record<string, string> = {
+  PENDING: "待收",
+  PARTIAL: "部分收款",
+  PAID: "已结清",
+  OVERDUE: "逾期",
+  CANCELLED: "已取消",
+};
+
+/**
+ * 整数分 → 纯数字元（无币种符号、无千分位），用于 CSV 与打印文本。
+ * 用整数除法与补零，不做 `amount / 100` 的浮点格式化。
+ */
+export function plainCents(amount: number): string {
+  const sign = amount < 0 ? "-" : "";
+  const absolute = Math.abs(amount);
+  return `${sign}${Math.trunc(absolute / 100)}.${(absolute % 100).toString().padStart(2, "0")}`;
+}

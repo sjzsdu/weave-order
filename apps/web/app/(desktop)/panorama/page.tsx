@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { usePanorama } from "@weave-order/core";
+import { usePanorama, useTenantContext } from "@weave-order/core";
 import {
   AuditTrail,
   Badge,
@@ -39,6 +39,7 @@ export default function PanoramaPage() {
 function PanoramaPageContent() {
   const api = useApi();
   const panorama = usePanorama(api);
+  const tenantContext = useTenantContext(api);
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
 
   if (panorama.isLoading) return <Spinner label="正在汇总业务全景…" />;
@@ -52,6 +53,9 @@ function PanoramaPageContent() {
   }
 
   const data = panorama.data;
+  // 财务的默认工作面是应收：订单不在一级入口出现，避免把成本链路当日常视图。
+  const role = tenantContext.status === "READY" ? tenantContext.membership.role : null;
+  const showOrders = role !== "FINANCE";
 
   return (
     <div className="grid gap-6">
@@ -65,6 +69,31 @@ function PanoramaPageContent() {
         </div>
         <Badge tone="neutral">只读视图</Badge>
       </header>
+
+      <section className="grid gap-3 md:grid-cols-2">
+        {showOrders && (
+          <Link
+            href="/panorama/orders"
+            className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
+          >
+            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">报价与订单</div>
+            <div className="mt-1 text-base font-semibold text-ink-900">按交期看订单漏斗</div>
+            <p className="mt-1 text-sm text-ink-400">
+              草稿/待确认 → 成交 → 生产中 → 已发货；逾期单排在最前，点进来就是那张单。
+            </p>
+          </Link>
+        )}
+        <Link
+          href="/panorama/receivables"
+          className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
+        >
+          <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">应收与对账</div>
+          <div className="mt-1 text-base font-semibold text-ink-900">逾期、本月到期、已结清</div>
+          <p className="mt-1 text-sm text-ink-400">
+            登记回款后余额与分组立即刷新；对账单能点开看到每笔订单与每笔回款。
+          </p>
+        </Link>
+      </section>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {STAT_KEYS.map((stat) => (

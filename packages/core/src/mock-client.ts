@@ -589,7 +589,49 @@ export function createMockApiClient(): ApiClient {
       ),
 
     // ---- 打印中心（demo 没有代理与任务，保持空态；真实写入一律走后端） ----
-    orders: () => Promise.resolve([]),
+    orders: () => Promise.resolve({ orders: [], total: 0, hasMore: false, nextCursor: null }),
+
+    orderFunnel: () =>
+      Promise.resolve({
+        stages: [
+          { key: "DRAFT" as const, label: "报价草稿", statuses: ["DRAFT" as const], count: 0 },
+          {
+            key: "CONFIRMED" as const,
+            label: "已成交",
+            statuses: ["CONFIRMED" as const],
+            count: 0,
+          },
+          {
+            key: "IN_PRODUCTION" as const,
+            label: "生产中",
+            statuses: ["IN_PRODUCTION" as const],
+            count: 0,
+          },
+          {
+            key: "SHIPPED" as const,
+            label: "已发货",
+            statuses: ["SHIPPED" as const, "COMPLETED" as const],
+            count: 0,
+          },
+        ],
+        generatedAt: NOW,
+      }),
+
+    orderWorkbench: () => Promise.reject(new Error("演示模式没有订单详情")),
+
+    receivables: () =>
+      Promise.resolve({
+        receivables: [],
+        hasMore: false,
+        nextCursor: null,
+        summary: { overdue: 0, dueSoon: 0, settled: 0, balanceByCurrency: [] },
+      }),
+
+    recordPayment: () => Promise.reject(new Error("演示模式不记账")),
+
+    statement: () => Promise.reject(new Error("演示模式没有对账单")),
+
+    presignReceipt: () => Promise.reject(new Error("演示模式不上传凭证")),
 
     order: () => Promise.reject(new Error("演示模式没有订单详情")),
 

@@ -72,6 +72,10 @@ afterAll(async () => {
       createdTenants,
     ]);
     // orders.customer_id 是 restrict：必须先清订单，再清客户。
+    // 回款流水挂在 receivables 上，也要先清。
+    await pool.query("DELETE FROM receivable_payments WHERE tenant_id = ANY($1::uuid[])", [
+      createdTenants,
+    ]);
     await pool.query("DELETE FROM receivables WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
     await pool.query("DELETE FROM order_items WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
     await pool.query("DELETE FROM orders WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
