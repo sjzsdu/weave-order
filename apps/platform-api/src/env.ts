@@ -26,6 +26,10 @@ export const Env = z.object({
   PLATFORM_CORS_ORIGIN: z.string().default("http://localhost:3003"),
   /** 租户端 Web 地址：开通链接指向它（`<WEB_APP_URL>/activate?code=...`）。 */
   WEB_APP_URL: z.string().url().default("http://localhost:3001"),
+  /** 出站通知：log（默认，只记日志）或 webhook（交给网关调邮件/短信）。 */
+  NOTIFY_PROVIDER: z.enum(["log", "webhook"]).default("log"),
+  NOTIFY_WEBHOOK_URL: z.string().url().optional(),
+  NOTIFY_TOKEN: z.string().optional(),
   /** 开通链接签名密钥；必须与 apps/api 的 ONBOARDING_SECRET 相同。 */
   ONBOARDING_SECRET: z.string().min(32).default(DEV_ONBOARDING_SECRET),
 });

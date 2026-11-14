@@ -107,6 +107,14 @@ export const InviteMemberInput = z
     email: z.string().trim().email(),
     name: z.string().trim().max(255).optional(),
     role: MemberRole.exclude(["OWNER"]).default("SALES"),
+    /** 通知方式：邮件（默认）或短信；短信需要同时给手机号。 */
+    channel: z.enum(["email", "sms"]).default("email"),
+    /** 选短信时必填，格式宽松校验（含国际区号也允许）。 */
+    phone: z
+      .string()
+      .trim()
+      .regex(/^\+?[0-9][0-9 -]{5,19}$/)
+      .optional(),
   })
   .strict();
 export type InviteMemberInput = z.infer<typeof InviteMemberInput>;
@@ -121,6 +129,15 @@ export const TeamInvite = z
     url: z.string().nullable(),
     expiresAt: z.string().nullable(),
     createdAt: z.string(),
+    /** 通知发送结果；列表现有邀请为 null。 */
+    delivery: z
+      .object({
+        channel: z.enum(["email", "sms"]),
+        ok: z.boolean(),
+        provider: z.string(),
+        detail: z.string().optional(),
+      })
+      .nullable(),
   })
   .strict();
 export type TeamInvite = z.infer<typeof TeamInvite>;

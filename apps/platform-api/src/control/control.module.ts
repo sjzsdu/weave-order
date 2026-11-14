@@ -9,10 +9,12 @@ import { PricingService } from "./pricing.service";
 import { SettingsService } from "./settings.service";
 import { SupportService } from "./support.service";
 import { TenantsService } from "./tenants.service";
+import { TrialSweepService } from "./trial-sweep.service";
 import { UsageService } from "./usage.service";
 import {
   HealthController,
   InvoicesController,
+  MaintenanceController,
   InvoiceSettingsController,
   OverviewController,
   TenantsController,
@@ -34,6 +36,7 @@ import {
 const services = [
   AuditService,
   TenantsService,
+  TrialSweepService,
   PricingService,
   InvoicesService,
   UsageService,
@@ -50,6 +53,7 @@ const controllers = [
   InternalController,
   OverviewController,
   TenantsController,
+  MaintenanceController,
   InvoicesController,
   InvoiceSettingsController,
   UsageController,

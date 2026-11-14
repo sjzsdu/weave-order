@@ -160,8 +160,12 @@ export class TeamController {
   @Post("invites")
   async invite(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     try {
-      const { membership } = await this.auth.authenticate(authorization);
-      return await this.onboarding.invite(membership, body);
+      const { claims, membership } = await this.auth.authenticate(authorization);
+      return await this.onboarding.invite(
+        membership,
+        body,
+        claims.name ?? claims.email ?? "公司管理员",
+      );
     } catch (error) {
       throw toHttpError(error);
     }

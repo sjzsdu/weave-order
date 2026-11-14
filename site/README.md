@@ -112,11 +112,16 @@ node site/tools/configure.mjs --site https://weave.example.com --dry-run
 1. **老板自助创建**：登录 → `/start` 填公司名 → `POST /api/onboarding/start`建业务库租户 + OWNER 成员；随后由服务端调用控制面 `/platform/api/internal/tenants` 补登记试用订阅。控制面失败不阻断使用，按 slug 可补录。
 2. **员工接受邀请**：老板/主管在「组织与设置 → 邀请同事」填邮箱+角色 → 生成 7 天有效的签名链接 → 员工打开 `/join?code=…`、登录、点接受 → `INVITED` 成员换成真实 `sub` 并激活。
 
+邀请链接会即时尝试发送（邮件默认、短信需手机号）：`NOTIFY_PROVIDER=webhook` 指向自建网关，网关再去调邮件/短信服务商；未配置时如实显示「没有发出通知，请复制链接手动发送」。
+
+试用到期任务：`pnpm --filter @weave-order/platform-api trial-sweep`，用 cron / systemd timer 每天跑一次。到期前 1 天提醒（2 天内不重复），到期当天把租户与订阅转 `SUSPENDED`（只读，数据保留）。
+
 两套链接共用 `ONBOARDING_SECRET` 签名的票据，只是 `kind` 不同（`tenant` / `invite`）；票据核对登记/被邀请邮箱，转发无效。平台侧「生成开通链接」保留给「先谈合同、后上线」的企业客户。
 
 完全不经过人工的开放式注册（不要求邮箱验证、不限流）仍然不做：现在的前提是用户已在统一身份系统里注册并验证过邮箱/手机。Casdoor 的注册项（邮箱/手机号 + 验证码、是否允许自助注册）属于部署配置，不在本仓库。
 
 ## 目录
+
 ## 目录
 
 ## 目录

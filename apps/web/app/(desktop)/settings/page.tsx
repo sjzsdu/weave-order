@@ -251,9 +251,12 @@ function TeamSection() {
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("SALES");
+  const [channel, setChannel] = useState<"email" | "sms">("email");
+  const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  const [delivery, setDelivery] = useState<TeamInvite["delivery"]>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,8 +279,14 @@ function TeamSection() {
     setError(null);
     setLink(null);
     try {
-      const created = await api.inviteMember({ email: email.trim(), role: role as never });
+      const created = await api.inviteMember({
+        email: email.trim(),
+        role: role as never,
+        channel,
+        ...(channel === "sms" && phone.trim() ? { phone: phone.trim() } : {}),
+      });
       setLink(created.url);
+      setDelivery(created.delivery);
       setEmail("");
       const rows = await api.listTeam();
       setInvites(rows);
@@ -334,9 +343,32 @@ function TeamSection() {
             ))}
           </select>
         </label>
+        <label className="grid gap-1 text-[11px] text-ink-400">
+          通知方式
+          <select
+            value={channel}
+            onChange={(event) => setChannel(event.target.value as "email" | "sms")}
+            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+          >
+            <option value="email">邮件</option>
+            <option value="sms">短信</option>
+          </select>
+        </label>
+        {channel === "sms" ? (
+          <label className="grid gap-1 text-[11px] text-ink-400">
+            手机号
+            <input
+              required
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="13800000000"
+              className="min-w-40 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+            />
+          </label>
+        ) : null}
         <button
           type="submit"
-          disabled={busy || !email.includes("@")}
+          disabled={busy || !email.includes("@") || (channel === "sms" && phone.trim().length < 6)}
           className="inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
         >
           {busy ? "生成中…" : "生成邀请链接"}
@@ -345,9 +377,17 @@ function TeamSection() {
 
       {error ? <p className="mt-2 text-xs text-vermilion-600">{error}</p> : null}
 
+      {delivery ? (
+        <p className={`mt-2 text-xs ${delivery.ok ? "text-moss-600" : "text-ink-500"}`}>
+          {delivery.ok
+            ? `已通过${delivery.channel === "sms" ? "短信" : "邮件"}发送给 ${email || "对方"}。也可以复制下面的链接直接发微信。`
+            : `没有发出通知（${delivery.detail ?? "发送通道不可用"}）。请复制下面的链接，自己发给对方。`}
+        </p>
+      ) : null}
+
       {link ? (
         <div className="mt-3 grid gap-2">
-          <p className="text-xs text-ink-500">把这条链接发给对方（7 天有效）：</p>
+          <p className="text-xs text-ink-500">这条链接 7 天有效：</p>
           <div className="flex gap-2">
             <input
               readOnly

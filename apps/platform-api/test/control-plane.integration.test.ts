@@ -15,6 +15,7 @@ import { PricingService } from "../src/control/pricing.service";
 import { TenantsService } from "../src/control/tenants.service";
 import { UsageService } from "../src/control/usage.service";
 import { DEV_ONBOARDING_SECRET, verifyOnboardingTicket } from "../src/control/onboarding-ticket";
+import { TrialSweepService } from "../src/control/trial-sweep.service";
 
 /**
  * 控制面集成测试：需要本地 PostgreSQL + `pnpm platform:migrate`。
@@ -354,5 +355,65 @@ describe("平台控制面（集成）", () => {
 
     const ticket = verifyOnboardingTicket(link.code, DEV_ONBOARDING_SECRET);
     expect(ticket).toMatchObject({ slug: created.slug, ownerEmail: "boss@example.com" });
+  });
+});
+
+describe("试用到期任务（集成）", () => {
+  it("提前一天提醒一次；到期转只读", async (ctx) => {
+    if (!available || !db) {
+      ctx.skip();
+      return;
+    }
+    const sweep = new TrialSweepService(db, audit);
+
+    // 造一间 12 小时后到期的试用租户。
+    const ending = await tenants.provision(owner, {
+      name: `即将到期-${suffix()}`,
+      slug: `sweep-${suffix()}`,
+      planCode: "PRO",
+      seats: 10,
+      billingCycle: "MONTHLY",
+      trialDays: 3,
+      contactEmail: "boss@example.com",
+      region: "cn-east",
+    });
+    const now = new Date();
+    const soon = new Date(now.getTime() + 12 * 3600 * 1000);
+    const connection = pool;
+    if (!connection) {
+      ctx.skip();
+      return;
+    }
+    await connection.query(
+      "UPDATE control.subscriptions SET trial_ends_at = $1 WHERE tenant_id = $2",
+      [soon, ending.id],
+    );
+
+    const first = await sweep.run(now);
+    expect(first.reminded).toBeGreaterThanOrEqual(1);
+    // 两小时内重跑不会重复提醒。
+    const second = await sweep.run(now);
+    expect(second.reminded).toBe(0);
+    expect(second.skipped).toBeGreaterThanOrEqual(1);
+
+    // 到期后：租户与订阅都转 SUSPENDED。
+    const past = new Date(now.getTime() - 3600 * 1000);
+    await connection.query(
+      "UPDATE control.subscriptions SET trial_ends_at = $1 WHERE tenant_id = $2",
+      [past, ending.id],
+    );
+    const expired = await sweep.run(now);
+    expect(expired.suspended).toBeGreaterThanOrEqual(1);
+
+    const tenantRow = await connection.query<{ status: string }>(
+      "SELECT status FROM control.tenants WHERE id = $1",
+      [ending.id],
+    );
+    expect(tenantRow.rows[0]?.status).toBe("SUSPENDED");
+    const subRow = await connection.query<{ status: string }>(
+      "SELECT status FROM control.subscriptions WHERE tenant_id = $1",
+      [ending.id],
+    );
+    expect(subRow.rows[0]?.status).toBe("SUSPENDED");
   });
 });

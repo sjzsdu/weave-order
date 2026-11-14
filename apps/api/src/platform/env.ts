@@ -72,6 +72,10 @@ const EnvSchema = z.object({
   WEB_APP_URL: z.string().url().default("http://localhost:3001"),
   /** 控制面地址：自助开通的公司要登记试用订阅。缺省时不登记（本地/单机模式）。 */
   PLATFORM_API_URL: z.string().url().optional(),
+  /** 出站通知：log（默认，只记日志不发送）或 webhook（交给自建网关调邮件/短信服务商）。 */
+  NOTIFY_PROVIDER: z.enum(["log", "webhook"]).default("log"),
+  NOTIFY_WEBHOOK_URL: z.string().url().optional(),
+  NOTIFY_TOKEN: z.string().optional(),
   /** CLI 设备登录确认码有效期与轮询间隔（秒）。 */
   DEVICE_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   DEVICE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),

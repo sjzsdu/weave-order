@@ -9,6 +9,7 @@ import {
 } from "@weave-order/schema";
 import { TeamInvite, TeamInviteList } from "@weave-order/schema";
 import type { AuthClaims, Membership } from "@weave-order/schema";
+import { createNotifier, inviteMessage } from "@weave-order/notify";
 import { createKernel } from "../kernel";
 import type { KernelContext } from "../kernel";
 import { DatabaseProvider } from "../platform/database.provider";
@@ -252,20 +253,53 @@ export class OnboardingService {
     }
   }
 
-  /** 邀请同事：只允许老板/主管；邀请先落 INVITED 成员，接受后换绑真实身份。 */
-  async invite(actor: Membership, raw: unknown): Promise<TeamInvite> {
+  /**
+   * 邀请同事：只允许老板/主管；邀请先落 INVITED 成员，接受后换绑真实身份。
+   * 生成链接后立即尝试发送（邮件默认、短信需手机号）；没配置发送通道时如实返回 ok:false。
+   */
+  async invite(actor: Membership, raw: unknown, inviterName = "公司管理员"): Promise<TeamInvite> {
     if (actor.role !== "OWNER" && actor.role !== "MANAGER") {
       throw new TeamActionError("只有老板或主管可以邀请同事", 403);
     }
     const input = InviteMemberInput.parse(raw);
     const email = input.email.trim().toLowerCase();
+    if (input.channel === "sms" && !input.phone) {
+      throw new TeamActionError("选短信通知需要填手机号", 400);
+    }
     const kernel = this.kernel();
     const tenant = await kernel.tenancy.getTenant(actor.tenantId);
     const invited = await kernel.tenancy.inviteMember(
       { tenantId: tenant.id, email, role: input.role },
       OnboardingService.systemContext(tenant.id),
     );
-    return this.toInvite(tenant.slug, tenant.name, invited);
+    const invite = this.toInvite(tenant.slug, tenant.name, invited);
+
+    const env = loadEnv();
+    const notifier = createNotifier({
+      provider: env.NOTIFY_PROVIDER,
+      webhookUrl: env.NOTIFY_WEBHOOK_URL,
+      token: env.NOTIFY_TOKEN,
+    });
+    const delivery = await notifier.send(
+      inviteMessage({
+        channel: input.channel,
+        to: input.channel === "sms" ? (input.phone as string) : email,
+        inviterName,
+        tenantName: tenant.name,
+        url: invite.url as string,
+        expiresAt: new Date(invite.expiresAt as string),
+      }),
+    );
+
+    return TeamInvite.parse({
+      ...invite,
+      delivery: {
+        channel: input.channel,
+        ok: delivery.ok,
+        provider: delivery.provider,
+        ...(delivery.detail ? { detail: delivery.detail } : {}),
+      },
+    });
   }
 
   /** 待接受与已加入的成员列表（邀请链接不落库，列表里不回传明文）。 */
@@ -283,6 +317,7 @@ export class OnboardingService {
           url: null,
           expiresAt: null,
           createdAt: item.createdAt,
+          delivery: null,
         })),
     });
   }
@@ -379,6 +414,7 @@ export class OnboardingService {
       url: `${base}/join?code=${encodeURIComponent(code)}`,
       expiresAt: new Date(Date.now() + ONBOARDING_TICKET_TTL_SECONDS * 1000).toISOString(),
       createdAt: membership.createdAt,
+      delivery: null,
     });
   }
 }

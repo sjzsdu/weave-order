@@ -25,6 +25,7 @@ import { InvoicesService } from "../control/invoices.service";
 import { OverviewService } from "../control/overview.service";
 import { PricingService } from "../control/pricing.service";
 import { TenantsService } from "../control/tenants.service";
+import { TrialSweepService } from "../control/trial-sweep.service";
 import { UsageService } from "../control/usage.service";
 
 function actorOf(request: PlatformRequest): PlatformActor {
@@ -335,5 +336,21 @@ export class InvoiceSettingsController {
       return { approval, applied: false };
     }
     return { settings: await this.invoices.applySettings(actor, input), applied: true };
+  }
+}
+
+/**
+ * 维护任务：目前只有试用到期扫描。
+ * 生产用 `pnpm platform:trial-sweep` + cron 跑；这个接口给运维手动补跑或验证。
+ */
+@Controller("platform/api/maintenance")
+export class MaintenanceController {
+  constructor(@Inject(TrialSweepService) private readonly sweep: TrialSweepService) {}
+
+  @Post("trial-sweep")
+  @RequirePermission("tenant:write")
+  async trialSweep(@Req() request: PlatformRequest) {
+    void request;
+    return await this.sweep.run();
   }
 }
