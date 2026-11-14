@@ -2,6 +2,8 @@ import Link from "next/link";
 
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
 const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@weaveorder.cn";
+// 统一登录地址与 OIDC issuer 是同一个，部署时只配一处。
+const SSO_URL = process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com";
 
 export default async function LoginPage({
   searchParams,
@@ -32,7 +34,7 @@ export default async function LoginPage({
         </a>
         <div className="flex items-center justify-between text-xs text-ink-400">
           <a
-            href="https://sso.wnbgj.com"
+            href={SSO_URL}
             className="underline underline-offset-4 hover:text-indigo-600"
             rel="noopener"
           >

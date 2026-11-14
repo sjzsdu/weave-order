@@ -67,26 +67,43 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 3. 数字必须能用：几分钟、多少钱、多少人、几号之前。
 4. 不确定的事直接说「内测中」「登记后发放」，不承诺做不到的即时开通。
 
-## 上线前必须替换的三处
+## 上线：域名在部署时配，不写死在页面里
 
-1. **域名**：全站 canonical / og / sitemap / llms.txt 目前用 `https://weaveorder.cn`（品牌域名占位）。换成正式域名：
+页面里所有绝对地址都来自 `site/site.config.json`。换域名不改 17 个文件，只跑一条命令：
 
-   ```bash
-   cd site
-   grep -rl 'weaveorder.cn' . --include='*.html' --include='*.xml' --include='*.txt' \
-     | xargs sed -i 's#https://weaveorder.cn#https://你的域名#g'
-   ```
+```bash
+# 只换官网域名
+node site/tools/configure.mjs --site https://weave.example.com
 
-   然后重新生成一次文档页（生成器里也有 `SITE` 常量）。
+# 官网、应用、管理端、统一登录、支持邮箱一起换
+node site/tools/configure.mjs \
+  --site https://weave.example.com \
+  --app https://app.example.com \
+  --admin https://admin.example.com \
+  --sso https://sso.example.com \
+  --email ops@example.com
 
-2. **联系方式**：`hello@weaveorder.cn` 与「工作日 4 小时内回复」需要换成真实邮箱与承诺。全站搜索 `hello@weaveorder.cn`。
+# 先看会改哪些文件、多少处，不落盘
+node site/tools/configure.mjs --site https://weave.example.com --dry-run
+```
+
+脚本做的事：把旧值全站替换成新值（canonical、OG、JSON-LD、sitemap、`llms.txt`、站内链接、正文里出现的裸域名），然后写回 `site.config.json`。可重复执行，第二次会告诉你「配置没有变化」。帮助中心的生成器也读这份配置，重新生成文档不会把域名重置回占位值。
+
+当前占位值（部署时按实际环境覆盖）：
+
+| 配置项  | 当前值                          | 用途                         |
+| ------- | ------------------------------- | ---------------------------- |
+| `site`  | `https://weaveorder.cn`         | canonical、OG、sitemap、llms |
+| `app`   | `https://weave.wnbgj.com`       | 登录 / 打开工作台            |
+| `admin` | `https://weave-admin.wnbgj.com` | 平台管理入口                 |
+| `sso`   | `https://sso.wnbgj.com`         | 忘记密码、统一登录           |
+| `email` | `hello@weaveorder.cn`           | 咨询、开通、账单             |
+
+仍有三件不在这个脚本范围内：
+
+1. **应用侧两个环境变量**：`apps/web` 的 `NEXT_PUBLIC_MARKETING_URL`（登录页指向官网）与 `NEXT_PUBLIC_SUPPORT_EMAIL`；统一登录地址直接复用 `CASDOOR_ISSUER`。
+2. **Casdoor 应用回调**：`weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。应用本身不要求固定域名：没设 `PUBLIC_APP_URL` 时按请求来源推导。
 3. **备案号**：若部署在国内服务器，页脚需要补 ICP 备案号与公安备案号。
-
-应用地址已经按当前 wnbgj 环境写好，无需替换：
-
-- 工作台 `https://weave.wnbgj.com`
-- 平台管理 `https://weave-admin.wnbgj.com`
-- 统一登录 `https://sso.wnbgj.com`
 
 ## 仍然缺的一环：自助开通
 
@@ -116,7 +133,10 @@ site/
 │   ├── logo-*.svg        品牌标识
 │   ├── og-cover.png      社交分享图 1200 × 630
 │   └── icons/            iOS / PWA 图标
-├── tools/build-docs.mjs  帮助中心文章生成器（开发期使用）
+├── site.config.json      部署期配置：域名、应用地址、支持邮箱
+├── tools/
+│   ├── build-docs.mjs    帮助中心文章生成器（开发期使用）
+│   └── configure.mjs     部署时把配置写进全站（换域名一条命令）
 ├── llms.txt / robots.txt / sitemap.xml
 └── README.md
 ```

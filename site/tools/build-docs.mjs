@@ -12,13 +12,15 @@
  * 由手工维护，不在此脚本内。
  */
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "docs");
-const SITE = "https://weaveorder.cn";
+// 站点地址取自 site/site.config.json，部署时由 tools/configure.mjs 改写；
+// 生成器跟着读同一份配置，重新生成文档不会把域名重置回占位值。
+const SITE = JSON.parse(readFileSync(join(here, "..", "site.config.json"), "utf8")).site;
 
 const NAV = {
   home: "../index.html",
