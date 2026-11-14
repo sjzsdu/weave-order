@@ -176,14 +176,17 @@ describe("客户 360（真连 PG）", () => {
 
     const now = Date.now();
     // 25 条报价：20 条草稿 + 5 条已发出。用来验证分页与未决口径。
+    const quoteIds: string[] = [];
     for (let index = 0; index < 25; index += 1) {
-      await seedQuote(
-        database,
-        tenant.id,
-        customer.id,
-        index < 20 ? "DRAFT" : "SENT",
-        100_000 + index,
-        new Date(now - index * 60_000),
+      quoteIds.push(
+        await seedQuote(
+          database,
+          tenant.id,
+          customer.id,
+          index < 20 ? "DRAFT" : "SENT",
+          100_000 + index,
+          new Date(now - index * 60_000),
+        ),
       );
     }
 
@@ -253,6 +256,8 @@ describe("客户 360（真连 PG）", () => {
     expect(summary.activeOrderCount).toBe(1);
     expect(row!.overdueReceivableCount).toBe(1);
     expect(summary.overdueReceivableCount).toBe(1);
+    // 分享快捷动作依赖「最近已发报价」，不能被首屏时间线或筛选影响。
+    expect(summary.latestShareableQuoteId).toBe(quoteIds[20]);
     expect(summary.receivableBalance).toEqual(
       expect.arrayContaining([
         { amount: 600_000, currency: "CNY" },

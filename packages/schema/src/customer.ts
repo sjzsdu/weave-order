@@ -56,6 +56,8 @@ export const CustomerSummary = z
     activeOrderCount: z.number().int().nonnegative(),
     receivableBalance: MoneyByCurrency,
     overdueReceivableCount: z.number().int().nonnegative(),
+    /** 最近一张已发出（SENT）的报价；分享快捷动作据此可用，不受时间线分页影响。 */
+    latestShareableQuoteId: EntityId.nullable(),
     lastContactAt: Timestamp.nullable(),
   })
   .strict();

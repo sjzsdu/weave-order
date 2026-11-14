@@ -106,9 +106,6 @@ export function Customer360Panel({
 
   const kinds: CustomerTimelineKind[] = filter === "all" ? [] : [filter];
   const timeline = useCustomerTimeline(api, customerId, kinds);
-  // 分享按钮要的是「有没有已发出的报价」，不能被当前时间线筛选影响；
-  // filter=all 时与上面的 query 同 key，不会多发请求。
-  const allTimeline = useCustomerTimeline(api, customerId, []);
 
   // 抽屉可以用 Esc 关掉，键盘用户不用去够右上角。
   useEffect(() => {
@@ -166,9 +163,9 @@ export function Customer360Panel({
   const customer = data.customer;
   const context = data.context;
 
-  const sentQuote = allTimeline.events.find(
-    (event) => event.kind === "quote" && event.status === "SENT",
-  );
+  // 分享按钮读汇总里的「最近一张已发报价」：既不受时间线筛选影响，
+  // 也不会因为历史超过首屏 20 条而误判为「没有可分享的报价」。
+  const shareableQuoteId = summary.latestShareableQuoteId;
 
   function focus(kind: CustomerTimelineKind) {
     setFilter((current) => (current === kind ? "all" : kind));
@@ -342,11 +339,11 @@ export function Customer360Panel({
         </Link>
         <Button
           className="min-h-9 px-3 text-xs"
-          disabled={!sentQuote}
-          title={sentQuote ? undefined : "还没有已发出的报价可分享"}
+          disabled={!shareableQuoteId}
+          title={shareableQuoteId ? undefined : "还没有已发出的报价可分享"}
           onClick={() =>
-            sentQuote &&
-            setShareTarget({ id: sentQuote.sourceId, title: `报价 · ${customer.name}` })
+            shareableQuoteId &&
+            setShareTarget({ id: shareableQuoteId, title: `报价 · ${customer.name}` })
           }
         >
           分享报价链接

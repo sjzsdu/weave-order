@@ -53,6 +53,7 @@ interface CustomerSummaryRow {
   active_order_count: number;
   receivable_balance: Array<{ amount: string | number; currency: string }>;
   overdue_receivable_count: number;
+  latest_shareable_quote_id: string | null;
   last_contact_at: Date | string | null;
 }
 
@@ -114,6 +115,12 @@ function aggregateColumns(): SQL {
         AND receivables.customer_id = customers.id
         AND receivables.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
         AND receivables.due_date < now()) AS overdue_receivable_count,
+    (SELECT quotes.id FROM quotes
+      WHERE quotes.tenant_id = customers.tenant_id
+        AND quotes.customer_id = customers.id
+        AND quotes.status = 'SENT'
+      ORDER BY quotes.created_at DESC
+      LIMIT 1) AS latest_shareable_quote_id,
     -- 「最近联系」只算真实往来（报价 / 寄样 / 订单）；客户档案被编辑不算联系，
     -- 三者都没有时为 NULL，页面显示「还没有往来记录」而不是假装刚联系过。
     GREATEST(
@@ -249,6 +256,7 @@ export async function loadCustomerSummary(
     activeOrderCount: row.active_order_count,
     receivableBalance: balancesOf(row.receivable_balance),
     overdueReceivableCount: row.overdue_receivable_count,
+    latestShareableQuoteId: row.latest_shareable_quote_id,
     lastContactAt: isoOf(row.last_contact_at),
   });
 }

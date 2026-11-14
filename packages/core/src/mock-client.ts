@@ -102,6 +102,7 @@ const customer360 = Customer360.parse({
     activeOrderCount: 3,
     receivableBalance: [{ amount: 1280000, currency: "CNY" }],
     overdueReceivableCount: 1,
+    latestShareableQuoteId: QUOTE_ID,
     lastContactAt: NOW,
   },
 });
