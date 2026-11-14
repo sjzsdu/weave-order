@@ -16,7 +16,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -28,6 +30,8 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   // 业务 API 一律走网络，离线时让页面读本地缓存并显示「已存本地」。
   if (url.pathname.startsWith("/api/")) return;
+  // OIDC 回调带 code/state，既不缓存也不做离线回退，避免授权码被复用。
+  if (url.pathname.startsWith("/auth/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(

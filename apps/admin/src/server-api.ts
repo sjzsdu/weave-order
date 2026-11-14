@@ -33,24 +33,33 @@ export class PlatformApiError extends Error {
 export async function platformFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await tokenFromCookies();
   if (!token) throw new PlatformApiError(401, "UNAUTHENTICATED", "请先登录平台控制台");
-  const response = await fetch(`${PLATFORM_API_URL}/platform/api${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...(init?.headers ?? {}),
-      Authorization: `Bearer ${token}`,
-    },
-    cache: "no-store",
-  });
+  const url = `${PLATFORM_API_URL}/platform/api${path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers ?? {}),
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
+  } catch (cause) {
+    console.error("[admin] 控制面不可达", {
+      path,
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+    throw new PlatformApiError(502, "PLATFORM_UNREACHABLE", "控制面不可达，请稍后重试");
+  }
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       error?: { code?: string; message?: string };
     } | null;
-    throw new PlatformApiError(
-      response.status,
-      body?.error?.code ?? "INTERNAL",
-      body?.error?.message ?? `控制面返回 ${response.status}`,
-    );
+    const code = body?.error?.code ?? "INTERNAL";
+    const message = body?.error?.message ?? `控制面返回 ${response.status}`;
+    console.error("[admin] 控制面返回错误", { path, status: response.status, code, message });
+    throw new PlatformApiError(response.status, code, message);
   }
   return (await response.json()) as T;
 }

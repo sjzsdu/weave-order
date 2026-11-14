@@ -42,4 +42,16 @@ describe("平台端登录跳转", () => {
       /PLATFORM_PUBLIC_URL/,
     );
   });
+
+  it("外站 next 不会写进回跳 cookie，避免开放重定向", () => {
+    vi.stubEnv("PLATFORM_PUBLIC_URL", PUBLIC_ORIGIN);
+
+    const response = GET(
+      new NextRequest(
+        `${PUBLIC_ORIGIN}/auth/login?next=${encodeURIComponent("https://evil.example")}`,
+      ),
+    );
+
+    expect(response.cookies.get("weave_platform_oidc_next")?.value).toBe("/");
+  });
 });

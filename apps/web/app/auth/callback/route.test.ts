@@ -8,8 +8,7 @@ import { GET } from "./route";
  */
 const PUBLIC_ORIGIN = "https://tenant.example.test";
 // 容器内收到的请求 origin 是内部地址，回跳地址必须来自注入的环境变量。
-const internalCallback =
-  "http://localhost:3001/auth/callback?code=test-code&state=test-state";
+const internalCallback = "http://localhost:3001/auth/callback?code=test-code&state=test-state";
 
 function callbackRequest(cookie?: string) {
   return new NextRequest(internalCallback, {
@@ -123,5 +122,25 @@ describe("租户端 OIDC 回调", () => {
     vi.stubEnv("NODE_ENV", "production");
 
     await expect(GET(callbackRequest())).rejects.toThrow(/WEB_APP_URL/);
+  });
+
+  it("回跳 cookie 被规整：外站地址不跳转、官网静态页不产生 404", async () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+    vi.stubEnv("CASDOOR_ISSUER", "https://sso.wnbgj.com");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ id_token: "test-id-token" }), { status: 200 }),
+        ),
+      ),
+    );
+
+    for (const raw of ["https://evil.example/steal", "/download.html"]) {
+      const response = await GET(
+        callbackRequest(`weave_oidc_state=test-state; weave_oidc_next=${raw}`),
+      );
+      expect(response.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/today`);
+    }
   });
 });

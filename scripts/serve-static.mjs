@@ -15,11 +15,13 @@
  *   --gzip                      文本类型按 Accept-Encoding 压缩
  *   --security-headers          补 X-Frame-Options / Referrer-Policy
  *   --healthz                   提供 /healthz 供容器探针使用
+ *   --runtime-config             把 WEAVE_* / CASDOOR_* 作为内联 script 注入
+ *                                index.html 的 </head> 前（仅移动端 PWA 用）
  */
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
-import { createGzip } from "node:zlib";
+import { readFile, stat } from "node:fs/promises";
+import { createGzip, gzipSync } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 
@@ -71,6 +73,7 @@ const options = {
   gzip: false,
   securityHeaders: false,
   healthz: false,
+  runtimeConfig: false,
 };
 
 for (let i = 0; i < args.length; i++) {
@@ -100,6 +103,9 @@ for (let i = 0; i < args.length; i++) {
     case "--healthz":
       options.healthz = true;
       break;
+    case "--runtime-config":
+      options.runtimeConfig = true;
+      break;
     default:
       console.error(`未知参数：${arg}`);
       process.exit(2);
@@ -112,6 +118,33 @@ if (!options.notFound && !options.spa) {
 }
 
 const NO_CACHE_EXT = new Set(options.noCacheExt.map((e) => e.replace(/^\./, "").toLowerCase()));
+
+/**
+ * 运行时配置只给移动端 PWA：换 API / SSO / 域名不用重发镜像。
+ * 值来自容器环境变量；`<` 转义避免 `</script>` 提前闭合造成注入。
+ * 缺任一项时移动端不启用登录门禁，也不会把页面带崩。
+ */
+function runtimeConfigScript() {
+  const origin = (process.env.WEAVE_MOBILE_URL ?? "").replace(/\/$/, "");
+  const config = {
+    apiBase: process.env.WEAVE_API_BASE ?? "",
+    issuer: process.env.CASDOOR_ISSUER ?? "",
+    clientId: process.env.CASDOOR_CLIENT_ID ?? "",
+    redirectUri: origin ? `${origin}/auth/callback` : "",
+  };
+  return `<script>window.__WEAVE_CONFIG__=${JSON.stringify(config).replace(/</g, "\\u003c")}</script>`;
+}
+
+/**
+ * 插在 </head> 前：业务 bundle 是 defer，内联 script 一定先执行。
+ * 不依赖 HTML 注释占位符 —— Taro 的 html-webpack-plugin 会在压缩时删掉注释。
+ */
+function injectRuntimeConfig(html) {
+  const script = runtimeConfigScript();
+  return html.includes("</head>")
+    ? html.replace("</head>", `${script}</head>`)
+    : html.replace(/<body[^>]*>/i, (tag) => `${tag}${script}`);
+}
 
 /* ------------------------------------------------------------------ 响应头 */
 function baseHeaders(contentType) {
@@ -182,6 +215,12 @@ const server = createServer(async (req, res) => {
       "cache-control": cacheControl(file),
     };
 
+    // 只有显式开启 --runtime-config 时才改写 HTML；官网静态站完全不受影响。
+    const htmlOverride =
+      options.runtimeConfig && ext === ".html"
+        ? injectRuntimeConfig(await readFile(file, "utf8"))
+        : null;
+
     const acceptEncoding = String(req.headers["accept-encoding"] ?? "");
     const compress =
       options.gzip &&
@@ -192,11 +231,19 @@ const server = createServer(async (req, res) => {
       headers["content-encoding"] = "gzip";
       headers.vary = "Accept-Encoding";
       res.writeHead(status, headers);
-      await pipeline(createReadStream(file), createGzip(), res);
+      if (htmlOverride !== null) {
+        res.end(gzipSync(htmlOverride));
+      } else {
+        await pipeline(createReadStream(file), createGzip(), res);
+      }
       return;
     }
 
     res.writeHead(status, headers);
+    if (htmlOverride !== null) {
+      res.end(htmlOverride);
+      return;
+    }
     createReadStream(file).pipe(res);
   } catch {
     res.writeHead(500).end("Internal Server Error");

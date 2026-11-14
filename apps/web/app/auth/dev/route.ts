@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { safeNext } from "@/public-origin";
 
 export const runtime = "nodejs";
 
@@ -9,7 +10,7 @@ export function GET(request: NextRequest) {
     return new NextResponse("Not found", { status: 404 });
   }
   const token = process.env.DEV_AUTH_TOKEN ?? "dev:demo:demo";
-  const next = request.nextUrl.searchParams.get("next") ?? "/today";
+  const next = safeNext(request.nextUrl.searchParams.get("next"));
   const response = NextResponse.redirect(new URL(next, request.url));
   response.cookies.set("weave_token", token, {
     httpOnly: true,

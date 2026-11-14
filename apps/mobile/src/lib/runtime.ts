@@ -12,6 +12,8 @@ import {
   setActiveTenant,
 } from "./offline";
 import type { QueuedMediaStore } from "./offline";
+import { onUnauthorized, runtimeConfig } from "./oidc";
+import { getAuthToken } from "./session";
 import { createTaroFetch } from "./taro-fetch";
 import type { MinimalFetch } from "./taro-fetch";
 
@@ -36,23 +38,15 @@ export const IS_RN = TARO_ENV === "rn";
  * `scripts/check-prod-bundle.mjs` 在 `pnpm build` 末尾断言产物中不含 mock 代码。
  */
 export const IS_MOCK = process.env.TARO_APP_MOCK === "1" && process.env.NODE_ENV !== "production";
-export const API_BASE_URL = process.env.TARO_APP_API_BASE ?? "http://localhost:3000";
-
-const TOKEN_KEY = "weave.session.token";
-
 /**
- * 令牌只驻留内存，不落本地明文；页面刷新 / 冷启动重新走 OIDC 登录。
- * 这是「不落明文 token」的硬约束，不能用「加密存储」打折扣。
+ * 托管层运行时注入优先，构建期常量只作小程序 / RN / 本地开发的回落。
+ * 换 API 域名不用重发镜像（见 scripts/serve-static.mjs --runtime-config）。
  */
-let memoryToken: string | null = null;
+export const API_BASE_URL =
+  runtimeConfig().apiBase || process.env.TARO_APP_API_BASE || "http://localhost:3000";
 
-export function setAuthToken(token: string | null): void {
-  memoryToken = token;
-}
-
-export function getAuthToken(): string | null {
-  return memoryToken;
-}
+// 令牌只驻留内存、不落本地明文；页面刷新 / 冷启动重新走 OIDC 登录。
+export { getAuthToken, setAuthToken, TOKEN_KEY } from "./session";
 
 function readPreference(key: string): string | null {
   try {
@@ -130,9 +124,16 @@ const domFetch: MinimalFetch = async (input, init) => {
 
 const remoteFetch: MinimalFetch = IS_H5 || IS_RN ? domFetch : createTaroFetch();
 
-const fetchImpl = mockServer ? mockServer.fetch : remoteFetch;
+/** 业务请求 401 统一回登录；mock 演示模式不走这层包装。 */
+const authorizedFetch: MinimalFetch = async (input, init) => {
+  const response = await remoteFetch(input, init);
+  if (response.status === 401) onUnauthorized();
+  return response;
+};
 
-export const api: MobileApi = createMobileApi(API_BASE_URL, fetchImpl, () => memoryToken);
+const fetchImpl = mockServer ? mockServer.fetch : authorizedFetch;
+
+export const api: MobileApi = createMobileApi(API_BASE_URL, fetchImpl, getAuthToken);
 
 export const mediaStore: QueuedMediaStore = createMediaStore();
 
@@ -163,5 +164,3 @@ export async function syncQueue(): Promise<FlushResult> {
 export function mockControls() {
   return mockServer;
 }
-
-export { TOKEN_KEY };

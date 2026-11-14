@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { publicOrigin } from "@/src/public-origin";
+import { safeNext } from "@/src/safe-next";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
   const code = params.get("code");
   const state = params.get("state");
   const error = params.get("error");
-  const next = request.cookies.get("weave_platform_oidc_next")?.value ?? "/";
+  const next = safeNext(request.cookies.get("weave_platform_oidc_next")?.value);
   const origin = publicOrigin(request.nextUrl.origin);
 
   const fail = (message: string) =>

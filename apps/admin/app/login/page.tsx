@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { safeNext } from "@/src/safe-next";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; next?: string }>;
 }) {
   const params = await searchParams;
-  const next = params.next ?? "/";
+  const next = safeNext(params.next);
   const dev = process.env.NODE_ENV !== "production";
 
   return (

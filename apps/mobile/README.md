@@ -117,8 +117,24 @@ pnpm --filter @weave-order/mobile build:tabbar-icons
 
 ## 身份与隐私
 
-- token 只驻留内存（`setAuthToken`），**不落本地明文**；冷启动重新走 OIDC 登录。
+- **H5/PWA 登录（生产）**：托管层用 `scripts/serve-static.mjs --runtime-config` 把
+  `window.__WEAVE_CONFIG__` 注入 `index.html`（`WEAVE_API_BASE` / `WEAVE_MOBILE_URL` /
+  `CASDOOR_ISSUER` / `CASDOOR_CLIENT_ID`）。`src/lib/oidc.ts` 实现 Authorization Code + PKCE：
+  启动时未登录直接跳 Casdoor，回调 `/auth/callback` 用 `code_verifier` 换 token
+  （**前端不持有 client_secret**），业务请求 401 自动回登录；回调失败不自动重跳，
+  避免「授权失败 → 再授权」死循环。Service Worker 明确跳过 `/auth/`，不缓存授权码。
+- **没有注入配置时不启用门禁**：本地 dev / 演示包 / 小程序 / RN 保持原有行为，
+  不会被强制跳登录。换域名只改部署环境变量，不用重发镜像。
+- **Casdoor 前提**：`app-weave-order` 的 redirectUris 必须含
+  `https://<移动端域名>/auth/callback`，且应用要允许 public PKCE（不带 `client_secret`
+  的 code 交换）。若换 token 报 `invalid_client` / 要求 secret，需在 Casdoor 侧开启
+  public PKCE，或改走服务端 BFF 换 token（另一种架构，见 deploy README）。
+- token 只驻留内存（`src/lib/session.ts` 的 `setAuthToken`），**不落本地明文**；
+  PKCE 的 state / verifier 暂存在 sessionStorage（不是令牌），回调后立即删除。
 - 手机号默认脱敏；成本 / 毛利不缓存到本地；只缓存今日/待批/客户列表的只读快照。
+- **已知缺口**：`@weave-order/core` 的 `mock-client` 演示数据会被打进生产包
+  （CJS `export *` 无法 tree-shake），但 `IS_MOCK` 编译期恒为 false、运行时不执行。
+  `scripts/check-prod-bundle.mjs` 的 SENTINELS 只覆盖 `src/lib/mock/**`，暂未拦截这处死代码。
 - 大额审批二次验证：小程序走微信 Soter；RN App 走宿主注入的 `WeaveBiometrics`
   （未注入时 fail-closed）；H5 无 Face ID，退化为明确二次确认并标注验证方式。
 - 色卡固定提示「屏幕色仅供参考，以实物色卡为准」。

@@ -1,8 +1,15 @@
 import Link from "next/link";
+import { safeNext } from "@/public-origin";
 import { SupportMailto } from "@/support";
 import { TrackedLink } from "@/tracked-link";
 
-const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
+// MARKETING_URL 是部署时注入的运行时变量，优先读它。
+// NEXT_PUBLIC_* 会在构建期被内联，只靠它的话改 .env 换官网域名不会生效。
+const MARKETING_URL = (
+  process.env.MARKETING_URL ??
+  process.env.NEXT_PUBLIC_MARKETING_URL ??
+  "https://weaveorder.cn"
+).replace(/\/$/, "");
 
 // 统一登录地址与 OIDC issuer 是同一个，部署时只配一处。
 const SSO_URL = process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com";
@@ -13,7 +20,8 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; next?: string }>;
 }) {
   const { error, next } = await searchParams;
-  const target = next ?? "/today";
+  // 官网静态页路径 / 外站地址不进 OIDC 回跳，统一落到工作台首页。
+  const target = safeNext(next);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">

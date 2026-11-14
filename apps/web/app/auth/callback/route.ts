@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { publicOrigin } from "@/public-origin";
+import { publicOrigin, safeNext } from "@/public-origin";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const code = params.get("code");
   const state = params.get("state");
   const error = params.get("error");
-  const next = request.cookies.get("weave_oidc_next")?.value ?? "/today";
+  const next = safeNext(request.cookies.get("weave_oidc_next")?.value);
   // 回跳地址必须用公网地址：容器内 request.nextUrl.origin 是内部地址（localhost:3001），
   // 直接拿它拼 Location 会把浏览器带回容器内部地址。
   const origin = publicOrigin(request.nextUrl.origin);
@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
 
   if (error) return fail(params.get("error_description") ?? error);
   if (!code) return fail("缺少授权码");
-  if (!state || state !== request.cookies.get("weave_oidc_state")?.value) return fail("state 校验失败");
+  if (!state || state !== request.cookies.get("weave_oidc_state")?.value)
+    return fail("state 校验失败");
 
   const issuer = (process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com").replace(/\/$/, "");
   const clientId = process.env.CASDOOR_CLIENT_ID ?? "weave-order-web";
@@ -59,7 +60,8 @@ export async function GET(request: NextRequest) {
     return fail(cause instanceof Error ? cause.message : "身份服务不可达");
   }
 
-  const token = body.id_token ?? body.data?.id_token ?? body.access_token ?? body.data?.access_token;
+  const token =
+    body.id_token ?? body.data?.id_token ?? body.access_token ?? body.data?.access_token;
   if (!token) return fail("身份服务未返回令牌");
 
   const response = NextResponse.redirect(new URL(next, origin));

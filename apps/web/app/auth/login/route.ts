@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
-import { publicOrigin } from "@/public-origin";
+import { publicOrigin, safeNext } from "@/public-origin";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,7 @@ export function GET(request: NextRequest) {
   const clientId = process.env.CASDOOR_CLIENT_ID ?? "weave-order-web";
   const origin = publicOrigin(request.nextUrl.origin);
   const redirectUri = `${origin}/auth/callback`;
-  const next = request.nextUrl.searchParams.get("next") ?? "/today";
+  const next = safeNext(request.nextUrl.searchParams.get("next"));
 
   const state = base64url(randomBytes(24));
   const verifier = base64url(randomBytes(48));
@@ -35,8 +35,26 @@ export function GET(request: NextRequest) {
 
   const response = NextResponse.redirect(authorize);
   const secure = process.env.NODE_ENV === "production";
-  response.cookies.set("weave_oidc_state", state, { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 600 });
-  response.cookies.set("weave_oidc_verifier", verifier, { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 600 });
-  response.cookies.set("weave_oidc_next", next, { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 600 });
+  response.cookies.set("weave_oidc_state", state, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 600,
+  });
+  response.cookies.set("weave_oidc_verifier", verifier, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 600,
+  });
+  response.cookies.set("weave_oidc_next", next, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 600,
+  });
   return response;
 }

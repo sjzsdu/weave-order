@@ -40,4 +40,31 @@ describe("租户端登录跳转", () => {
 
     expect(() => GET(new NextRequest("http://localhost:3001/auth/login"))).toThrow(/WEB_APP_URL/);
   });
+
+  it("回跳参数只接受站内路径：外站地址与官网静态页一律回工作台首页", () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+
+    for (const raw of [
+      "https://evil.example/steal",
+      "//evil.example",
+      "/download.html",
+      "/auth/login",
+    ]) {
+      const response = GET(
+        new NextRequest(`http://localhost:3001/auth/login?next=${encodeURIComponent(raw)}`),
+      );
+      expect(response.cookies.get("weave_oidc_next")?.value).toBe("/today");
+    }
+  });
+
+  it("合法的站内路径原样保留", () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+
+    const response = GET(
+      new NextRequest(
+        `http://localhost:3001/auth/login?next=${encodeURIComponent("/today?tab=a")}`,
+      ),
+    );
+    expect(response.cookies.get("weave_oidc_next")?.value).toBe("/today?tab=a");
+  });
 });
