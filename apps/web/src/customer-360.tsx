@@ -52,6 +52,15 @@ const WEEKDAY_LABEL: Record<string, string> = {
   SUNDAY: "周日",
 };
 
+/**
+ * 订单详情页的归属：WAN-120（PR #63）在 `/panorama/orders/:orderId` 新建，
+ * 本 PR 不重复建一套。它合入前，订单 / 回款先复用现有发货页（同一个订单 id，
+ * 行项目与发货记录都在）；WAN-120 落地后只改这一行即可。回款也指向所属订单。
+ */
+function orderDetailHref(orderId: string): string {
+  return `/shipping/${encodeURIComponent(orderId)}`;
+}
+
 /** 时间线条目点开去哪张源单据。跟进来没有独立页面，返回 null。 */
 function sourceHref(event: CustomerTimelineEvent): string | null {
   if (event.kind === "quote") {
@@ -61,7 +70,7 @@ function sourceHref(event: CustomerTimelineEvent): string | null {
     return `/approvals?id=${encodeURIComponent(event.sourceId)}&kind=sample_shipment`;
   }
   if (event.kind === "order" || event.kind === "receivable") {
-    return `/shipping/${encodeURIComponent(event.sourceId)}`;
+    return orderDetailHref(event.sourceId);
   }
   return null;
 }
