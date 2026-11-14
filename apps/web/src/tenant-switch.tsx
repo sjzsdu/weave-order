@@ -295,7 +295,16 @@ export function NoMembershipNotice({ subject, message }: { subject?: string; mes
       <h1 className="mt-2 text-2xl font-semibold text-ink-900">你的账号还没有加入任何公司</h1>
       <p className="mt-2 text-sm text-ink-400">{message}</p>
       <p className="mt-2 text-sm text-ink-400">
-        织序是邀请制的：把下面的账号 ID 发给你的管理员，让对方用它在公司里邀请你。
+        第一次用就自己创建一间公司，填个名字就能开始；如果是同事邀请你，打开他发你的邀请链接接受即可。
+      </p>
+      <a
+        href="/start"
+        className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700"
+      >
+        创建公司
+      </a>
+      <p className="mt-4 text-xs text-ink-400">
+        也可以把下面的账号 ID 发给管理员，让对方在公司里邀请你。
       </p>
       {subject && (
         <p className="mt-4 break-all rounded-md border border-line bg-surface px-3 py-2 font-mono text-xs text-ink-700">

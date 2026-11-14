@@ -161,25 +161,30 @@ export class OnboardingService {
   /**
    * 老板自助创建公司：登录后填个公司名就能开始用。
    *
-   * 一个账号一间公司：已有成员身份时直接返回那间公司（幂等），不报错；
-   * slug 冲突时提示换一个，不自动加后缀，避免「同一家公司建出两间」。
+   * 已经有公司时直接返回最早加入的那间（幂等，避免重复点击建出两家）；
+   * 多公司入口由登录后的租户选择器负责，这里不重复创建。
+   * slug 冲突时提示换一个，不自动加后缀。
    */
   async start(claims: AuthClaims, raw: unknown): Promise<OnboardingResult> {
     const input = StartTenantInput.parse(raw);
     const kernel = this.kernel();
 
-    const existing = await kernel.tenancy.findMembershipBySubject(claims.sub);
-    if (existing) {
-      const tenant = await kernel.tenancy.getTenant(existing.tenantId);
-      return OnboardingResult.parse({
-        tenantId: tenant.id,
-        tenantSlug: tenant.slug,
-        tenantName: tenant.name,
-        membershipId: existing.id,
-        role: existing.role,
-        dataScope: existing.dataScope,
-        alreadyActivated: true,
-      });
+    const choices = await kernel.tenancy.listTenantChoices(claims.sub);
+    const active = choices.find((choice) => choice.membershipStatus === "ACTIVE");
+    if (active) {
+      const existing = await kernel.tenancy.findMembershipForTenant(claims.sub, active.tenantId);
+      if (existing) {
+        const tenant = await kernel.tenancy.getTenant(existing.tenantId);
+        return OnboardingResult.parse({
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          tenantName: tenant.name,
+          membershipId: existing.id,
+          role: existing.role,
+          dataScope: existing.dataScope,
+          alreadyActivated: true,
+        });
+      }
     }
 
     const slug = input.slug ?? `t-${randomUUID().replace(/-/g, "").slice(0, 10)}`;
@@ -345,14 +350,14 @@ export class OnboardingService {
     const kernel = this.kernel();
     const tenant = await kernel.tenancy.findTenantBySlug(ticket.slug);
     if (!tenant) throw new TeamActionError("这间公司不存在或已停用", 410);
-    const existing = await kernel.tenancy.findMembershipBySubject(claims.sub);
+    const existing = await kernel.tenancy.findMembershipForTenant(claims.sub, tenant.id);
     return InvitePreview.parse({
       tenantName: tenant.name,
       tenantSlug: tenant.slug,
       email: ticket.ownerEmail ?? "",
       role: ticket.role ?? "SALES",
       expiresAt: new Date(ticket.exp * 1000).toISOString(),
-      alreadyMember: existing?.tenantId === tenant.id,
+      alreadyMember: existing !== null,
     });
   }
 
@@ -371,11 +376,8 @@ export class OnboardingService {
     const tenant = await kernel.tenancy.findTenantBySlug(ticket.slug);
     if (!tenant) throw new TeamActionError("这间公司不存在或已停用", 410);
 
-    const existing = await kernel.tenancy.findMembershipBySubject(claims.sub);
-    if (existing) {
-      if (existing.tenantId !== tenant.id) {
-        throw new TeamActionError("这个账号已经属于另一家公司，一个人目前只能属于一家公司", 409);
-      }
+    const existing = await kernel.tenancy.findMembershipForTenant(claims.sub, tenant.id);
+    if (existing && existing.status === "ACTIVE") {
       return OnboardingResult.parse({
         tenantId: tenant.id,
         tenantSlug: tenant.slug,
