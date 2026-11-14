@@ -30,7 +30,31 @@ export default defineConfig({
     options: {},
   },
   framework: "react",
-  compiler: { type: "webpack5", prebundle: { enable: false } },
+  compiler: {
+    type: "webpack5",
+    prebundle: { enable: false },
+  },
+  // Terser 输出选项覆盖。
+  //
+  // 教训：Taro H5 默认 terser 配置带 output.quote_keys:true（见 @tarojs/webpack5-runner
+  // 的 H5BaseConfig.defaultTerserOptions）。Terser 打印 ES 私有类字段时会照做，
+  // 把 @tanstack/react-query 的 `#client` / `#mutationId` 等输出成 `#"client"` ——
+  // 而 JS 规范里 PrivateIdentifier 只能是 `# IdentifierName`，不能是字符串字面量。
+  // 浏览器解析 bundle 时直接抛 SyntaxError: Invalid or unexpected token，
+  // 整个 app bundle 解析失败 → 页面永久白屏（首屏 <div id="app"></div> 空白）。
+  //
+  // 关掉 quote_keys 即可：Terser 默认值本就是 false，Taro 打开它只是为了兼容
+  // 老浏览器保留字做键名，本项目 PWA 面向现代浏览器，不需要。
+  //
+  // 注意：`terser` 是 Taro 的顶层配置项，不在 compiler 里
+  // （见 @tarojs/webpack5-runner 的 setMinimizer：它从整个 project config 读 terser）。
+  terser: {
+    config: {
+      output: {
+        quote_keys: false,
+      },
+    },
+  },
   cache: { enable: false },
   // 共享包走 pnpm workspace 的 node_modules 解析（构建产物 dist），
   // 不用 alias 指向 src，避免 Taro 对绝对/相对路径做二次拼接。
