@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ApiErrorResponse,
+  AuditAction,
+  AuthMeResponse,
   CreateMembershipInput,
   CreateOrderInput,
   CreateQuoteShareInput,
@@ -12,7 +15,9 @@ import {
   QuoteShare,
   Receivable,
   RevisionRequest,
+  SwitchTenantInput,
   Tenant,
+  TenantChoice,
 } from "../src";
 
 const ID = "123e4567-e89b-12d3-a456-426614174000";
@@ -233,5 +238,101 @@ describe("T0 契约：改稿 / 分享", () => {
     expect(() => CustomerQuoteView.parse({ ...view, costFloorAmount: 1000 })).toThrow(
       /Unrecognized key/,
     );
+  });
+});
+
+describe("WAN-81 契约：租户选择", () => {
+  const choice = {
+    tenantId: ID,
+    slug: "acme",
+    name: "Acme",
+    brand: null,
+    role: "SALES",
+    tenantStatus: "ACTIVE",
+    membershipStatus: "ACTIVE",
+    available: true,
+  };
+
+  it("TenantChoice 只接受选择器需要的字段，多余字段一律拒绝", () => {
+    expect(TenantChoice.parse(choice).tenantId).toBe(ID);
+    // 停用的成员身份没有角色，避免暗示权限。
+    expect(TenantChoice.parse({ ...choice, role: null }).role).toBeNull();
+    expect(() => TenantChoice.parse({ ...choice, memberCount: 3 })).toThrow(/Unrecognized key/);
+    expect(() => TenantChoice.parse({ ...choice, tenantStatus: "PENDING" })).toThrow();
+  });
+
+  it("AuthMeResponse 能区分「已绑定」与「待选择」两个分支", () => {
+    const tenant = {
+      id: ID,
+      slug: "acme",
+      name: "Acme",
+      brand: null,
+      bank: null,
+      currency: "CNY" as const,
+      settings: {},
+      status: "ACTIVE" as const,
+      isolationMode: "SHARED_RLS" as const,
+      createdAt: TS,
+      updatedAt: TS,
+    };
+    const membership = {
+      id: ID2,
+      tenantId: ID,
+      subject: "sub-1",
+      casdoorOrg: null,
+      role: "OWNER" as const,
+      dataScope: "ALL" as const,
+      teamId: null,
+      approvalLimitAmount: null,
+      status: "ACTIVE" as const,
+      createdAt: TS,
+      updatedAt: TS,
+    };
+
+    const bound = AuthMeResponse.parse({
+      subject: "sub-1",
+      name: null,
+      email: null,
+      tenant,
+      membership,
+    });
+    expect("tenants" in bound).toBe(false);
+
+    const chooser = AuthMeResponse.parse({
+      status: "MULTI_TENANT",
+      subject: "sub-1",
+      name: null,
+      email: null,
+      tenants: [choice],
+    });
+    expect("tenants" in chooser).toBe(true);
+    // 空列表不是合法选择页：前端应拿到 NO_MEMBERSHIP 错误码而不是空数组。
+    expect(() =>
+      AuthMeResponse.parse({
+        status: "MULTI_TENANT",
+        subject: "sub-1",
+        name: null,
+        email: null,
+        tenants: [],
+      }),
+    ).toThrow();
+  });
+
+  it("SwitchTenantInput 是 strict 的，只接受 tenantId", () => {
+    expect(SwitchTenantInput.parse({ tenantId: ID }).tenantId).toBe(ID);
+    expect(() => SwitchTenantInput.parse({ tenantId: "not-a-uuid" })).toThrow();
+    expect(() => SwitchTenantInput.parse({ tenantId: ID, org: "acme" })).toThrow(
+      /Unrecognized key/,
+    );
+  });
+
+  it("错误码保留可判别的租户语义，前端才能给不同文案", () => {
+    for (const code of ["NO_MEMBERSHIP", "TENANT_UNAVAILABLE", "TENANT_REQUIRED"]) {
+      expect(ApiErrorResponse.parse({ error: { code, message: "x" } }).error.code).toBe(code);
+    }
+  });
+
+  it("审计动作集合包含 TENANT_SWITCHED", () => {
+    expect(AuditAction.parse("TENANT_SWITCHED")).toBe("TENANT_SWITCHED");
   });
 });

@@ -1,5 +1,12 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ApprovalDecisionInput, ApprovalKind, Unit } from "@weave-order/schema";
+import type {
+  ApprovalDecisionInput,
+  ApprovalKind,
+  AuthContextResponse,
+  TenantChoice,
+  Unit,
+} from "@weave-order/schema";
+import { ApiError } from "./api-client";
 import type { ApiClient } from "./api-client";
 
 /** 统一的 query key，避免各端自造字符串。 */
@@ -272,4 +279,61 @@ export function useRegisterPrintAgent(client: ApiClient) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.printCenter });
     },
   });
+}
+
+/** 租户上下文状态：前端只按这几种状态渲染，不自己推断。 */
+export type TenantContextState =
+  | { status: "LOADING" }
+  | {
+      status: "READY";
+      tenant: AuthContextResponse["tenant"];
+      membership: AuthContextResponse["membership"];
+    }
+  | { status: "MULTI_TENANT"; tenants: TenantChoice[] }
+  | { status: "NO_MEMBERSHIP"; message: string }
+  | { status: "ERROR"; message: string };
+
+/**
+ * 租户上下文 + 选择 / 切换动作。
+ *
+ * 切换成功后清空整个 query 缓存再整页重建：租户变了，角色、数据范围、
+ * 审批阈值、币种全变了，局部刷新会出现「新租户标题 + 旧租户数据」的混搭。
+ * 这里不写 localStorage，也不把 tenantId 塞进后续请求：租户只活在服务端会话里。
+ */
+export function useTenantContext(client: ApiClient) {
+  const queryClient = useQueryClient();
+  const me = useAuthContext(client);
+
+  const state: TenantContextState = (() => {
+    if (me.isPending) return { status: "LOADING" };
+    if (me.isError) {
+      const error = me.error;
+      if (error instanceof ApiError && error.code === "NO_MEMBERSHIP") {
+        return { status: "NO_MEMBERSHIP", message: error.message };
+      }
+      return { status: "ERROR", message: error instanceof Error ? error.message : "加载失败" };
+    }
+    const data = me.data;
+    if (!data) return { status: "LOADING" };
+    if ("tenants" in data) return { status: "MULTI_TENANT", tenants: data.tenants };
+    return { status: "READY", tenant: data.tenant, membership: data.membership };
+  })();
+
+  const switchMutation = useMutation({
+    mutationFn: (tenantId: string) => client.switchTenant({ tenantId }),
+    onSuccess: (context) => {
+      // 整库清空 + 预置新上下文；页面随后 reload 到工作台（组件决定怎么跳）。
+      queryClient.clear();
+      queryClient.setQueryData(queryKeys.me, context);
+    },
+  });
+
+  return {
+    ...state,
+    /** 首次选择与运行中切换是同一个动作。 */
+    select: switchMutation.mutateAsync,
+    switching: switchMutation.isPending,
+    switchError: switchMutation.error,
+    refetch: me.refetch,
+  };
 }

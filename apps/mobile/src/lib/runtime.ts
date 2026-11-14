@@ -4,7 +4,13 @@ import type { FlushResult } from "@weave-order/core";
 import { createMobileApi } from "./mobile-api";
 import type { MobileApi } from "./mobile-api";
 import type { MockServer } from "./mock/server";
-import { createMediaStore, createQueueStorage, flushQueue } from "./offline";
+import {
+  createMediaStore,
+  createQueueStorage,
+  flushQueue,
+  getActiveTenant,
+  setActiveTenant,
+} from "./offline";
 import type { QueuedMediaStore } from "./offline";
 import { createTaroFetch } from "./taro-fetch";
 import type { MinimalFetch } from "./taro-fetch";
@@ -134,8 +140,22 @@ export const offlineQueue = createOfflineQueue(createQueueStorage());
 
 export const queueDeps = { api, media: mediaStore };
 
+/**
+ * 从网关取「我在哪家公司」，并写进离线队列的作用域。
+ * 多租户账号还没选租户时置空：此时不提交任何队列条目。
+ */
+export async function loadTenantContext(): Promise<void> {
+  try {
+    const me = await api.me();
+    setActiveTenant("tenants" in me ? null : me.tenant.id);
+  } catch {
+    setActiveTenant(null);
+  }
+}
+
 /** 恢复联网 / 启动时按时间序提交；冲突不自动覆盖。 */
 export async function syncQueue(): Promise<FlushResult> {
+  if (!getActiveTenant()) await loadTenantContext();
   const result = await flushQueue(offlineQueue, queueDeps);
   return result;
 }

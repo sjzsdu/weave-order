@@ -582,6 +582,73 @@ export function createMockServer(options: MockServerOptions): MockServer {
       });
     }
 
+    // 租户选择器契约（mock 只有一家公司，因此 UI 不会出现切换入口，
+    // 但端点形状与真实网关一致，切真后端时页面代码不用改）。
+    if (method === "GET" && path === "/api/auth/tenants") {
+      return jsonResponse(200, {
+        status: "MULTI_TENANT",
+        subject: "mock-user",
+        name: "孙巨中",
+        email: "122828837@qq.com",
+        tenants: [
+          {
+            tenantId: MOCK_TENANT_ID,
+            slug: "weave-demo",
+            name: "织序演示公司",
+            brand: "织序",
+            role: "OWNER",
+            tenantStatus: "ACTIVE",
+            membershipStatus: "ACTIVE",
+            available: true,
+          },
+        ],
+      });
+    }
+
+    if (method === "POST" && path === "/api/auth/switch") {
+      const tenantId = typeof body.tenantId === "string" ? body.tenantId : "";
+      if (tenantId !== MOCK_TENANT_ID) {
+        return jsonResponse(403, {
+          error: { code: "TENANT_UNAVAILABLE", message: "你没有这家公司的权限" },
+        });
+      }
+      return jsonResponse(200, {
+        subject: "mock-user",
+        name: "孙巨中",
+        email: "122828837@qq.com",
+        tenant: {
+          id: MOCK_TENANT_ID,
+          slug: "weave-demo",
+          name: "织序演示公司",
+          brand: "织序",
+          bank: null,
+          currency: "CNY",
+          settings: {},
+          status: "ACTIVE",
+          isolationMode: "SHARED_RLS",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        membership: {
+          id: "99999999-9999-4999-8999-111111111111",
+          tenantId: MOCK_TENANT_ID,
+          subject: "mock-user",
+          casdoorOrg: "weave-demo",
+          role: "OWNER",
+          dataScope: "ALL",
+          teamId: null,
+          approvalLimitAmount: null,
+          status: "ACTIVE",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
+    }
+
+    if (method === "DELETE" && path === "/api/auth/session") {
+      return jsonResponse(204, {});
+    }
+
     if (method === "GET" && path === "/api/customers") {
       const limit = Number(search.get("limit") ?? 20);
       return jsonResponse(200, {

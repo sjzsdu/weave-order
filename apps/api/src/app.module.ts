@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { GatewayModule } from "./gateway/gateway.module";
+import { SessionCredentialMiddleware } from "./gateway/session-credential.middleware";
 import { HttpModule } from "./http/http.module";
 import { DatabaseModule } from "./platform/database.module";
 import { PrintAgentScopeMiddleware } from "./print/print-scope.middleware";
@@ -11,10 +12,11 @@ import { PrintAgentScopeMiddleware } from "./print/print-scope.middleware";
  */
 @Module({
   imports: [DatabaseModule, HttpModule, GatewayModule],
-  providers: [PrintAgentScopeMiddleware],
+  providers: [PrintAgentScopeMiddleware, SessionCredentialMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(PrintAgentScopeMiddleware).forRoutes("*");
+    // 会话 Cookie 必须先归一成凭据头，后面的鉴权与业务中间件才只看一种形态。
+    consumer.apply(SessionCredentialMiddleware, PrintAgentScopeMiddleware).forRoutes("*");
   }
 }

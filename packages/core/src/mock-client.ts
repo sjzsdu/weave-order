@@ -3,6 +3,7 @@ import {
   ApprovalDecisionResult,
   ApprovalQueue,
   AuthContextResponse,
+  TenantChoicesResponse,
   CreatedQuoteShare,
   PrintCenterSnapshot,
   PrintDevices,
@@ -203,41 +204,68 @@ export function createMockApiClient(): ApiClient {
       },
     });
 
+  const mockMe = (): AuthContextResponse =>
+    AuthContextResponse.parse({
+      subject: "demo-owner",
+      name: "孙巨中",
+      email: "owner@example.com",
+      tenant: {
+        id: TENANT_ID,
+        slug: "demo",
+        name: "青禾纺织（演示）",
+        brand: "青禾",
+        bank: null,
+        currency: "CNY",
+        settings: {},
+        status: "ACTIVE",
+        isolationMode: "SHARED_RLS",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      membership: {
+        id: MEMBERSHIP_ID,
+        tenantId: TENANT_ID,
+        subject: "demo-owner",
+        casdoorOrg: "demo",
+        role: "OWNER",
+        dataScope: "ALL",
+        teamId: null,
+        approvalLimitAmount: null,
+        status: "ACTIVE",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    });
+
   return {
-    me: () =>
+    me: () => Promise.resolve(mockMe()),
+
+    /** 演示模式只有一个租户：选择器永远不出现，切租户直接返回当前上下文。 */
+    tenants: () =>
       Promise.resolve(
-        AuthContextResponse.parse({
+        TenantChoicesResponse.parse({
+          status: "MULTI_TENANT",
           subject: "demo-owner",
           name: "孙巨中",
           email: "owner@example.com",
-          tenant: {
-            id: TENANT_ID,
-            slug: "demo",
-            name: "青禾纺织（演示）",
-            brand: "青禾",
-            bank: null,
-            currency: "CNY",
-            settings: {},
-            status: "ACTIVE",
-            isolationMode: "SHARED_RLS",
-            createdAt: NOW,
-            updatedAt: NOW,
-          },
-          membership: {
-            id: MEMBERSHIP_ID,
-            tenantId: TENANT_ID,
-            subject: "demo-owner",
-            casdoorOrg: "demo",
-            role: "OWNER",
-            dataScope: "ALL",
-            teamId: null,
-            approvalLimitAmount: null,
-            status: "ACTIVE",
-            createdAt: NOW,
-            updatedAt: NOW,
-          },
+          tenants: [
+            {
+              tenantId: TENANT_ID,
+              slug: "demo",
+              name: "青禾纺织（演示）",
+              brand: "青禾",
+              role: "OWNER",
+              tenantStatus: "ACTIVE",
+              membershipStatus: "ACTIVE",
+              available: true,
+            },
+          ],
         }),
       ),
+
+    switchTenant: () => Promise.resolve(mockMe()),
+
+    logout: () => Promise.resolve(),
 
     listCustomers: () => Promise.resolve([customer]),
 

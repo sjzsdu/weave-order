@@ -9,9 +9,11 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { createCasdoorVerifier, createDevVerifier } from "./oidc";
 import type { TokenVerifier } from "./oidc";
+import { createSessionService, SessionService } from "./session.service";
 
 export const TOKEN_VERIFIER = Symbol("TOKEN_VERIFIER");
 export const DIRECTORY_KERNEL = Symbol("DIRECTORY_KERNEL");
+export const TENANT_SESSIONS = Symbol("TENANT_SESSIONS");
 
 function verifierFactory(): TokenVerifier {
   const env = loadEnv();
@@ -48,14 +50,26 @@ const providers: Provider[] = [
     inject: [DIRECTORY_KERNEL],
   },
   {
+    // 租户会话：`tenant_id` 只存在这里，前端既拿不到也传不了。
+    provide: TENANT_SESSIONS,
+    useFactory: (): SessionService => createSessionService().service,
+  },
+  {
     provide: AuthService,
     useFactory: (
       app: AppDatabaseProvider,
       verifier: TokenVerifier,
       directory: Kernel,
       personalTokens: PersonalAccessService,
-    ): AuthService => new AuthService(app.pool, verifier, directory, personalTokens),
-    inject: [AppDatabaseProvider, TOKEN_VERIFIER, DIRECTORY_KERNEL, PersonalAccessService],
+      sessions: SessionService,
+    ): AuthService => new AuthService(app.pool, verifier, directory, personalTokens, sessions),
+    inject: [
+      AppDatabaseProvider,
+      TOKEN_VERIFIER,
+      DIRECTORY_KERNEL,
+      PersonalAccessService,
+      TENANT_SESSIONS,
+    ],
   },
 ];
 

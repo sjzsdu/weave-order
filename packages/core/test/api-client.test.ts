@@ -115,3 +115,105 @@ describe("API client（契约解析 + 令牌）", () => {
     if (result.ok) expect(result.data.draft.total.amount).toBe(15000);
   });
 });
+
+describe("API client（租户选择）", () => {
+  const TENANT_A = {
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "acme",
+    name: "华东纺织",
+    brand: null,
+    bank: null,
+    currency: "CNY",
+    settings: {},
+    status: "ACTIVE",
+    isolationMode: "SHARED_RLS",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("/me 的 MULTI_TENANT 分支被识别为待选择，而不是当作上下文解析失败", async () => {
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl: () =>
+        Promise.resolve(
+          jsonResponse({
+            status: "MULTI_TENANT",
+            subject: "sub-1",
+            name: null,
+            email: null,
+            tenants: [
+              {
+                tenantId: TENANT_A.id,
+                slug: "acme",
+                name: "华东纺织",
+                brand: null,
+                role: "SALES",
+                tenantStatus: "ACTIVE",
+                membershipStatus: "ACTIVE",
+                available: true,
+              },
+            ],
+          }),
+        ),
+    });
+    const me = await client.me();
+    expect("tenants" in me).toBe(true);
+  });
+
+  it("switchTenant 只在请求体里传 tenantId，并解析绑定上下文", async () => {
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        jsonResponse({
+          subject: "sub-1",
+          name: null,
+          email: null,
+          tenant: TENANT_A,
+          membership: {
+            id: "aaaaaaaa-1111-4111-8111-111111111111",
+            tenantId: TENANT_A.id,
+            subject: "sub-1",
+            casdoorOrg: null,
+            role: "SALES",
+            dataScope: "ALL",
+            teamId: null,
+            approvalLimitAmount: null,
+            status: "ACTIVE",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl,
+    });
+    const context = await client.switchTenant({ tenantId: TENANT_A.id });
+    expect(context.tenant.id).toBe(TENANT_A.id);
+
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).toBe("http://api.test/api/auth/switch");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({ tenantId: TENANT_A.id });
+  });
+
+  it("切换被拒时保留可判别错误码，供页面渲染原因", async () => {
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl: () =>
+        Promise.resolve(
+          jsonResponse(
+            { error: { code: "TENANT_UNAVAILABLE", message: "你没有这家公司的权限" } },
+            403,
+          ),
+        ),
+    });
+    await expect(client.switchTenant({ tenantId: TENANT_A.id })).rejects.toMatchObject({
+      code: "TENANT_UNAVAILABLE",
+      status: 403,
+    });
+  });
+});

@@ -1,8 +1,8 @@
 import { memberships, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateMembershipInput, CreateTenantInput } from "@weave-order/schema";
-import type { Membership, Tenant } from "@weave-order/schema";
-import { and, eq } from "drizzle-orm";
+import type { Membership, Tenant, TenantChoice } from "@weave-order/schema";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
@@ -155,10 +155,82 @@ export class TenancyService {
   }
 
   /**
-   * `(sub, org)` → membership。org 只用于校验，租户以本地记录为准。
-   * 找不到或已禁用一律抛出同一错误，避免枚举用户。
+   * 租户选择器的数据源：只返回该 subject 自己的成员关系（ACTIVE + DISABLED）。
+   *
+   * INVITED 不算成员，不出现；金额上限、teamId 等内部设置也不出现，
+   * 因为「一个账号属于哪些公司」本身已经是敏感信息。
+   * 必须用目录连接执行：memberships 受 RLS 保护，租户会话只能看到自己那一行。
    */
-  async resolveMembership(subject: string, org: string | null): Promise<Membership> {
+  async listTenantChoices(subject: string): Promise<TenantChoice[]> {
+    const rows = await this.db
+      .select({
+        tenantId: tenants.id,
+        slug: tenants.slug,
+        name: tenants.name,
+        brand: tenants.brand,
+        tenantStatus: tenants.status,
+        membershipStatus: memberships.status,
+        role: memberships.role,
+      })
+      .from(memberships)
+      .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+      .where(
+        and(eq(memberships.subject, subject), inArray(memberships.status, ["ACTIVE", "DISABLED"])),
+      )
+      .orderBy(asc(tenants.name));
+
+    return rows.map((row) => ({
+      tenantId: row.tenantId,
+      slug: row.slug,
+      name: row.name,
+      brand: row.brand,
+      role: row.membershipStatus === "ACTIVE" ? row.role : null,
+      tenantStatus: row.tenantStatus,
+      membershipStatus: row.membershipStatus,
+      available: row.membershipStatus === "ACTIVE" && row.tenantStatus !== "CLOSED",
+    }));
+  }
+
+  /** 该 subject 的 ACTIVE 成员关系条数，用于判断「单租户直进 / 多租户选择 / 零租户」。 */
+  async countActiveMemberships(subject: string): Promise<number> {
+    const rows = await this.db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(and(eq(memberships.subject, subject), eq(memberships.status, "ACTIVE")));
+    return rows.length;
+  }
+
+  /**
+   * `(sub, tenantId)` → 唯一 ACTIVE membership。
+   *
+   * 授权事实只来自 memberships 行：令牌的 `org` 不参与判断（ADR-3），否则
+   * 切换到一个属于另一个 Casdoor Organization 的租户会被误拦。
+   * 找不到（不存在 / 已禁用 / 不属于该 subject）一律同一个错误，避免枚举租户。
+   */
+  async resolveMembership(subject: string, tenantId: string): Promise<Membership> {
+    const rows = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.subject, subject),
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      throw new KernelError("PERMISSION_DENIED", "该账号没有这个租户的可用成员身份");
+    }
+    return mapMembership(row);
+  }
+
+  /**
+   * 单租户（恰好 1 条 ACTIVE）自动绑定路径：保留 `org` 一致性校验作纵深防御。
+   * 多租户账号不在这里处理，由选择流程显式挑一个租户。
+   */
+  async resolveSoleMembership(subject: string, org: string | null): Promise<Membership> {
     const rows = await this.db
       .select()
       .from(memberships)
@@ -169,12 +241,44 @@ export class TenancyService {
       throw new KernelError("PERMISSION_DENIED", "该账号没有可用的租户成员身份");
     }
     if (rows.length > 1) {
-      throw new KernelError("PERMISSION_DENIED", "该账号属于多个租户，请选择组织后再登录");
+      throw new KernelError("PERMISSION_DENIED", "该账号属于多个租户，请先选择租户");
     }
     if (org !== null && row.casdoorOrg !== null && row.casdoorOrg !== org) {
       throw new KernelError("PERMISSION_DENIED", "令牌组织与本地成员记录不一致");
     }
     return mapMembership(row);
+  }
+
+  /**
+   * 记录一次选择 / 切换。
+   *
+   * 审计账本是按租户 RLS + append-only 的，跨租户事件只能落在一边：
+   * - 成功：落 **to** 租户（目标租户的人能看到「谁进来了」）；
+   * - 拒绝：落 **from** 租户（当前所在租户能看到「有人试图越权」），没有 from 时只打日志。
+   * 写失败必须让切换失败：审计是硬要求，不能只切不记。
+   */
+  async recordTenantSwitch(input: {
+    subject: string;
+    fromTenantId: string | null;
+    toTenantId: string;
+    membershipId: string | null;
+    result: "ALLOWED" | "DENIED";
+  }): Promise<void> {
+    const bucket = input.result === "ALLOWED" ? input.toTenantId : input.fromTenantId;
+    if (!bucket) return;
+    const ctx: KernelContext = { actor: { type: "HUMAN", id: input.subject } };
+    await appendAudit(
+      this.db,
+      ctx,
+      {
+        action: "TENANT_SWITCHED",
+        entityType: input.membershipId ? "membership" : "tenant",
+        entityId: input.membershipId ?? input.toTenantId,
+        before: { fromTenantId: input.fromTenantId, result: input.result },
+        after: { toTenantId: input.toTenantId },
+      },
+      bucket,
+    );
   }
 
   async listMemberships(tenantId: string): Promise<Membership[]> {

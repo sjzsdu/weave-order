@@ -161,6 +161,12 @@ export const AuthErrorCode = z.enum([
   "TOKEN_EXPIRED",
   "TOKEN_REVOKED",
   "SCOPE_REQUIRED",
+  /** 已认证但还没选租户：前端应渲染/回到租户选择页。 */
+  "TENANT_REQUIRED",
+  /** 当前绑定的租户已不可用（成员被停用 / 租户关闭）：回选择页并解释。 */
+  "TENANT_UNAVAILABLE",
+  /** 账号没有任何成员关系：渲染「未加入公司」页，而不是裸 403。 */
+  "NO_MEMBERSHIP",
   "INVALID_USER_CODE",
   "USER_CODE_EXPIRED",
   "DEVICE_CODE_INVALID",

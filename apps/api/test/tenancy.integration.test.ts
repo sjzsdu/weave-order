@@ -220,14 +220,56 @@ describe("T0 多租户地基（应用角色 + RLS）", () => {
     }
   });
 
-  it("(sub, org) 映射到本地 membership；org 不一致拒绝", async (ctx) => {
+  it("(sub, tenantId) 映射到唯一 ACTIVE membership；跨租户一律拒绝", async (ctx) => {
     if (!available || !ownerDb) ctx.skip();
     const a = await bootstrapTenant("auth");
+    const b = await bootstrapTenant("auth-b");
     const kernel = createKernel(ownerDb!);
-    const membership = await kernel.tenancy.resolveMembership(a.subject, "org-auth");
+    const membership = await kernel.tenancy.resolveMembership(a.subject, a.tenantId);
     expect(membership.tenantId).toBe(a.tenantId);
-    await expect(kernel.tenancy.resolveMembership(a.subject, "org-other")).rejects.toMatchObject({
+    // 不属于该 subject 的租户：与「租户不存在」同一个错误，不泄露存在性。
+    await expect(kernel.tenancy.resolveMembership(a.subject, b.tenantId)).rejects.toMatchObject({
       code: "PERMISSION_DENIED",
     });
+    await expect(
+      kernel.tenancy.resolveMembership(a.subject, "00000000-0000-4000-8000-000000000000"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+  });
+
+  it("单租户自动绑定仍校验 org；多租户账号列出自己全部 ACTIVE 成员关系", async (ctx) => {
+    if (!available || !ownerDb) ctx.skip();
+    const a = await bootstrapTenant("sole");
+    const kernel = createKernel(ownerDb!);
+    const sole = await kernel.tenancy.resolveSoleMembership(a.subject, "org-sole");
+    expect(sole.tenantId).toBe(a.tenantId);
+    await expect(
+      kernel.tenancy.resolveSoleMembership(a.subject, "org-other"),
+    ).rejects.toMatchObject({
+      code: "PERMISSION_DENIED",
+    });
+
+    // 同一 subject 再挂一个租户：选择列表两条，单租户路径必须拒绝。
+    const b = await bootstrapTenant("multi-b");
+    await kernel.tenancy.createMembership(
+      {
+        tenantId: b.tenantId,
+        subject: a.subject,
+        casdoorOrg: "org-multi-b",
+        role: "FINANCE",
+        dataScope: "OWN",
+      },
+      SYSTEM,
+    );
+    const choices = await kernel.tenancy.listTenantChoices(a.subject);
+    expect(choices.map((choice) => choice.tenantId).sort()).toEqual(
+      [a.tenantId, b.tenantId].sort(),
+    );
+    expect(choices.find((choice) => choice.tenantId === b.tenantId)?.role).toBe("FINANCE");
+    expect(choices.every((choice) => choice.available)).toBe(true);
+    await expect(kernel.tenancy.resolveSoleMembership(a.subject, "org-sole")).rejects.toMatchObject(
+      {
+        code: "PERMISSION_DENIED",
+      },
+    );
   });
 });

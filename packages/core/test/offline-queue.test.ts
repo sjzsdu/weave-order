@@ -70,3 +70,61 @@ describe("离线队列（顺序提交 / 冲突保留）", () => {
     expect(second.sent).toBe(0);
   });
 });
+
+describe("离线队列（多租户隔离）", () => {
+  const TENANT_A = "11111111-1111-4111-8111-111111111111";
+  const TENANT_B = "22222222-2222-4222-8222-222222222222";
+
+  it("切到 B 后只提交 B 的条目，A 的草稿留在队列", async () => {
+    const queue = createOfflineQueue(memoryStorage());
+    await queue.enqueue({
+      opId: "a-1",
+      tenantId: TENANT_A,
+      kind: "quote.revise",
+      payload: {},
+      now,
+    });
+    await queue.enqueue({
+      opId: "b-1",
+      tenantId: TENANT_B,
+      kind: "quote.decide",
+      payload: {},
+      now,
+    });
+
+    const submitted: string[] = [];
+    const result = await queue.flush({
+      tenantId: TENANT_B,
+      submit: (op) => {
+        submitted.push(op.opId);
+        return Promise.resolve();
+      },
+    });
+
+    expect(submitted).toEqual(["b-1"]);
+    expect(result.sent).toBe(1);
+    expect((await queue.list()).map((item) => item.opId)).toEqual(["a-1"]);
+  });
+
+  it("归属未知的历史条目在带租户过滤时不提交", async () => {
+    const queue = createOfflineQueue(memoryStorage());
+    await queue.enqueue({ opId: "legacy", kind: "quote.revise", payload: {}, now });
+    const submitted: string[] = [];
+    await queue.flush({
+      tenantId: TENANT_A,
+      submit: (op) => {
+        submitted.push(op.opId);
+        return Promise.resolve();
+      },
+    });
+    expect(submitted).toEqual([]);
+  });
+
+  it("按租户统计待提交条目", async () => {
+    const queue = createOfflineQueue(memoryStorage());
+    await queue.enqueue({ opId: "a-1", tenantId: TENANT_A, kind: "x", payload: {}, now });
+    await queue.enqueue({ opId: "a-2", tenantId: TENANT_A, kind: "x", payload: {}, now });
+    await queue.enqueue({ opId: "b-1", tenantId: TENANT_B, kind: "x", payload: {}, now });
+    expect(await queue.pendingCounts()).toEqual({ [TENANT_A]: 2, [TENANT_B]: 1 });
+  });
+});

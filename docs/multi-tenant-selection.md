@@ -210,3 +210,20 @@ async resolveMembership(subject: string, tenantId: string): Promise<Membership>;
 2. **按域名自动进入**（`company.weaveorder.cn` 自动选租户）：建议 P1+，不并入 WAN-81。
 3. **CLI 设备登录多租户**：`weave login` 确认页需否加租户选择（建议加，device decision 增可选 `membershipId`）。
 4. **审计落点**：to 租户单条（P0 推荐）vs from+to 双条（合规更强）。
+
+## 13. 实现落地记录（墨子，WAN-81）
+
+架构按本文实现，落地时补了三条架构未写死的决定，改动都在代码注释里写了 why：
+
+| 主题 | 落地决定 | 位置 |
+| --- | --- | --- |
+| 会话存储选择 | `SESSION_STORE=auto`：`AUTH_MODE=dev` 用进程内会话（本地/CI 不要求 Redis），其余用 Redis；多实例部署必须 `redis` | `apps/api/src/gateway/session.service.ts`、`platform/env.ts` |
+| 凭据优先级 | 入口把 `weave_sid` Cookie 归一成 `Bearer session:<sid>`；PAT（`wo_`）与 Cookie 同时出现时保留 PAT，避免低权凭据借浏览器会话提权 | `gateway/session-credential.middleware.ts` |
+| 错误码 | 凭据类错误折成 `UNAUTHENTICATED`；租户类保留 `NO_MEMBERSHIP` / `TENANT_REQUIRED` / `TENANT_UNAVAILABLE`，前端据此渲染零租户页、选择页与不可用原因 | `schema/tenancy.ts`、`gateway/auth.controller.ts` |
+| 拒绝审计 | 成功落 **to** 租户；拒绝落 **from** 租户（没有 from 时不猜租户，只打日志） | `kernel/tenancy.service.ts#recordTenantSwitch` |
+| 可见不可进 | 列表包含 `DISABLED` membership 与 `CLOSED` 租户（`available=false` + 原因）；一家可用都没有时仍返回列表，只有完全没有成员关系才是 `NO_MEMBERSHIP` | `gateway/auth.service.ts#me` |
+| BFF | Next 侧转发 `weave_sid`（请求）与 `set-cookie`（响应）；登出先调 `DELETE /api/auth/session` 再删 Cookie | `apps/web/app/api/[...path]/route.ts`、`apps/web/app/auth/logout/route.ts` |
+| 离线队列 | `QueuedOperation.tenantId` + `flush({ tenantId })` 过滤：切到 B 绝不提交 A 的条目；历史无归属条目在带过滤时不提交 | `packages/core/src/offline-queue.ts` |
+
+未覆盖（P0 之外的已知项）：最近使用排序仍是按租户名（P1）；无 from 会话的拒绝审计只有日志；
+`/api/auth/tenants` 未做分页（成员关系数量级很小）。

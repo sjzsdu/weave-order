@@ -46,6 +46,14 @@ async function proxy(request: NextRequest, segments: string[]): Promise<Response
   const token = tokenFromRequest(request);
   if (token) headers.set("authorization", `Bearer ${token}`);
 
+  /*
+   * 租户会话：网关用 httpOnly Cookie 记住「登录后选了哪家公司」。
+   * 浏览器 → Next 这一跳是同源，Next → Nest 是服务端转发，所以要显式带上；
+   * 回程的 Set-Cookie 也要原样透传，否则切换租户后浏览器永远停留在旧会话。
+   */
+  const sid = request.cookies.get("weave_sid")?.value;
+  if (sid) headers.set("cookie", `weave_sid=${sid}`);
+
   const url = `${targetBase()}/api/${segments.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
 
@@ -75,6 +83,9 @@ async function proxy(request: NextRequest, segments: string[]): Promise<Response
   if (contentType) responseHeaders.set("content-type", contentType);
   const retryAfter = upstream.headers.get("retry-after");
   if (retryAfter) responseHeaders.set("retry-after", retryAfter);
+  for (const cookie of upstream.headers.getSetCookie()) {
+    responseHeaders.append("set-cookie", cookie);
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,

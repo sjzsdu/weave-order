@@ -55,6 +55,16 @@ function SettingsPageContent() {
     );
   }
 
+  // 还没选租户时没有组织信息可展示；外壳会渲染选择页，这里只做兜底。
+  if ("tenants" in me.data) {
+    return (
+      <EmptyState
+        title="请先选择公司"
+        description="选择要进入的公司后，这里会显示该公司的组织资料。"
+      />
+    );
+  }
+
   const { tenant, membership } = me.data;
   const limit = membership.approvalLimitAmount;
 
@@ -79,16 +89,14 @@ function SettingsPageContent() {
               value={<code className="font-mono text-xs">{tenant.id}</code>}
               hint="前端永不传 tenant_id；网关按登录身份注入"
             />
-            <Field
-              label="计费币种"
-              value={tenant.currency}
-              hint="金额一律整数分，由内核计算"
-            />
+            <Field label="计费币种" value={tenant.currency} hint="金额一律整数分，由内核计算" />
             <Field
               label="状态"
               value={
                 <span className="flex items-center gap-2">
-                  <Badge tone={tenant.status === "ACTIVE" ? "success" : "warning"}>{tenant.status}</Badge>
+                  <Badge tone={tenant.status === "ACTIVE" ? "success" : "warning"}>
+                    {tenant.status}
+                  </Badge>
                   <span className="text-xs text-ink-400">{tenant.isolationMode}</span>
                 </span>
               }
@@ -99,12 +107,23 @@ function SettingsPageContent() {
         <section className="rounded-lg border border-line bg-surface px-5 py-3">
           <h2 className="py-2 text-sm font-medium text-ink-900">我的角色与数据范围</h2>
           <dl>
-            <Field label="成员" value={me.data.name ?? me.data.subject} hint={me.data.email ?? undefined} />
+            <Field
+              label="成员"
+              value={me.data.name ?? me.data.subject}
+              hint={me.data.email ?? undefined}
+            />
             <Field label="角色" value={ROLE_LABEL[membership.role] ?? membership.role} />
-            <Field label="数据范围" value={SCOPE_LABEL[membership.dataScope] ?? membership.dataScope} />
+            <Field
+              label="数据范围"
+              value={SCOPE_LABEL[membership.dataScope] ?? membership.dataScope}
+            />
             <Field
               label="审批上限"
-              value={limit === null ? "不限（按角色兜底）" : formatMoney({ amount: limit, currency: tenant.currency })}
+              value={
+                limit === null
+                  ? "不限（按角色兜底）"
+                  : formatMoney({ amount: limit, currency: tenant.currency })
+              }
               hint="超过上限的金额会自动升级审批；阈值判断永远在后端"
             />
             <Field label="登录方式" value="Casdoor OIDC" hint="本地只保留角色映射，不存密码" />
@@ -152,8 +171,15 @@ function SettingsPageContent() {
           <h2 className="text-sm font-medium text-ink-900">登录与安全</h2>
           <dl>
             <Field label="身份提供方" value="Casdoor（自托管）" />
-            <Field label="回调地址" value={<code className="font-mono text-xs">/auth/callback</code>} />
-            <Field label="会话" value="OIDC Authorization Code + PKCE" hint="一个租户一个 Casdoor Organization" />
+            <Field
+              label="回调地址"
+              value={<code className="font-mono text-xs">/auth/callback</code>}
+            />
+            <Field
+              label="会话"
+              value="OIDC Authorization Code + PKCE"
+              hint="一个租户一个 Casdoor Organization"
+            />
           </dl>
         </section>
 
