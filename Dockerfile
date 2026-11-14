@@ -6,7 +6,9 @@
 # 代价：镜像包含全部应用代码与 workspace node_modules（约大），试点期用可回滚性换体积，
 # 后续如需瘦身再用 pnpm deploy / next standalone 分镜像，不影响部署契约。
 #
-# 构建期固化的唯一公开地址：TARO_APP_API_BASE（移动端 PWA 的 defineConstants 是编译期常量）。
+# 构建期固化的公开地址（都是编译期常量，改域名必须重发 tag）：
+#   TARO_APP_API_BASE        移动端 PWA 的 defineConstants
+#   NEXT_PUBLIC_MARKETING_URL 登录页「返回官网 / 帮助中心」指向的官网地址
 # 其余配置一律运行时由 env_file 注入，不进镜像。
 #
 # 不安装系统包：lockfile 无 node-gyp 依赖（esbuild/sharp 均带预编译二进制），
@@ -29,6 +31,8 @@ RUN pnpm install --frozen-lockfile
 
 ARG TARO_APP_API_BASE=https://weave-api.wnbgj.com
 ENV TARO_APP_API_BASE=${TARO_APP_API_BASE}
+ARG NEXT_PUBLIC_MARKETING_URL=https://weaveorder.cn
+ENV NEXT_PUBLIC_MARKETING_URL=${NEXT_PUBLIC_MARKETING_URL}
 # NODE_ENV=production 保证移动端 mock 门禁把 mock 代码从产物中摘除
 RUN NODE_ENV=production pnpm build
 

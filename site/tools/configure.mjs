@@ -137,6 +137,13 @@ urlPairs.sort((a, b) => b[0].length - a[0].length);
 hostPairs.sort((a, b) => b[0].length - a[0].length);
 const pairs = [...urlPairs, ...hostPairs];
 
+// 支持邮箱单独保护：域名替换是按 host 匹配的，如果邮箱还用旧域名
+// （hello@old.com 而站点迁到 new.com），host 替换会把邮箱一起改掉，
+// 变成 hello@new.com 这种没人收信的地址。邮箱只能由 --email 显式改。
+const protectEmail = !changes.includes("email") && config.email.includes("@");
+const emailToken = "\u0000WEAVE_EMAIL\u0000";
+if (protectEmail) tokens.set(emailToken, next.email);
+
 function applyTokens(text) {
   let out = text;
   for (const [token, value] of tokens) out = out.split(token).join(value);
@@ -160,6 +167,7 @@ let replaced = 0;
 
 for (const file of files) {
   let text = readFileSync(file, "utf8");
+  if (protectEmail) text = text.split(config.email).join(emailToken);
   let hits = 0;
   for (const [from, to] of pairs) {
     // 邮箱要同时覆盖 mailto: 与正文里的裸地址；URL 直接替换。

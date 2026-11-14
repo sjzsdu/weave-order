@@ -38,6 +38,8 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       # 可选：仓库变量覆盖移动端 PWA 的公网 API 基址（构建期固化）
       WEAVE_PUBLIC_API_BASE: ${{ vars.WEAVE_PUBLIC_API_BASE }}
+      # 登录页「返回官网 / 帮助中心」指向的官网地址（构建期固化，默认当前测试环境官网）
+      WEAVE_MARKETING_URL: ${{ vars.WEAVE_SITE_URL || 'https://weave.wnbgj.com' }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
@@ -93,4 +95,33 @@ jobs:
             echo "\`${DOCKERHUB_USERNAME}/weave-order:${{ steps.meta.outputs.image_tag }}\`"
             echo ""
             echo "部署时把 \`WEAVE_TAG\` 设为 \`${{ steps.meta.outputs.image_tag }}\`，不要留在 \`latest\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 官网是独立镜像：构建期把域名写死进 HTML（canonical/OG/sitemap 需要绝对地址）。
+      # 域名来自仓库变量，缺省值即当前测试环境；换环境时改变量后重发一次 tag 即可。
+      - name: 构建并推送官网镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: site/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/weave-order-site:${{ steps.meta.outputs.image_tag }}
+            ${{ env.DOCKERHUB_USERNAME }}/weave-order-site:latest
+          build-args: |
+            WEAVE_SITE_URL=${{ vars.WEAVE_SITE_URL || 'https://weave.wnbgj.com' }}
+            WEAVE_APP_URL=${{ vars.WEAVE_APP_URL || 'https://app.wnbgj.com' }}
+            WEAVE_ADMIN_URL=${{ vars.WEAVE_ADMIN_URL || 'https://weave-admin.wnbgj.com' }}
+            WEAVE_SSO_URL=${{ vars.WEAVE_SSO_URL || 'https://sso.wnbgj.com' }}
+            WEAVE_SUPPORT_EMAIL=${{ vars.WEAVE_SUPPORT_EMAIL || 'hello@weaveorder.cn' }}
+
+      - name: 写入官网镜像摘要
+        run: |
+          {
+            echo ""
+            echo "### 官网镜像已发布"
+            echo ""
+            echo "\`${DOCKERHUB_USERNAME}/weave-order-site:${{ steps.meta.outputs.image_tag }}\`"
+            echo ""
+            echo "部署侧 \`weave-site\` 服务与业务镜像共用 \`WEAVE_TAG\`。"
           } >> "$GITHUB_STEP_SUMMARY"
