@@ -113,6 +113,7 @@ weave-order/
 - **Print（`print/`）**：模板与数据分离——模板只能引用变量白名单，不能写业务逻辑/查库；打印任务幂等（`idempotency_key`），每次打印留痕（人/时间/模板版本/份数/设备/结果）。
 - **Billing（`billing/`）**：计量事件幂等（`idempotency_key`），每日汇总、每月出账；额度 80% 提醒、100% 只停 agent 新任务，**绝不阻断审批/查看/导出**。
 - **Gateway（`gateway/`）**：JWT 校验（RS256/JWKS/issuer/audience/exp/nonce）+ membership 映射 + 注入 tenant 上下文；应用角色无 `BYPASSRLS`。
+- **Media（`media/` + `platform/storage.ts`）**：`POST /api/media/presign` 签 PUT → 客户端直传对象存储 → `POST /api/media/confirm` HEAD 一次对象才写 `sample_images`。DB 只存 `object_key`，key 由服务端生成 `tenant/<tenantId>/samples/<sampleId>/<uuid>.<ext>`，客户端传 key 一律拒绝。本地 MinIO，生产 COS（S3 兼容）。
 - **平台与控制面分离**：`platform_*` / `plans` / `subscriptions` / `usage_*` / `invoices` 属控制面，与租户业务数据分离（独立 schema/库）。
 
 ### apps/web（E1 桌面）与 apps/quote（E3 报价页）

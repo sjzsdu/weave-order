@@ -7,6 +7,8 @@ const base = {
   PRINT_AGENT_SECRET: RANDOM_SECRET,
   PERSONAL_TOKEN_PEPPER: RANDOM_SECRET,
   ONBOARDING_SECRET: RANDOM_SECRET,
+  S3_ACCESS_KEY_ID: "prod-s3-key",
+  S3_SECRET_ACCESS_KEY: "prod-s3-secret",
 } as const;
 
 describe("LiteLLM key 的生产门控（与 QUOTE_SHARE_SECRET 同一处）", () => {

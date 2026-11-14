@@ -31,6 +31,24 @@ export type Money = z.infer<typeof Money>;
 export const Unit = z.enum(["meter", "kilogram", "yard", "piece"]);
 export type Unit = z.infer<typeof Unit>;
 
+/** 样品图片用途。与数据库枚举 `sample_image_variant` 取值一致。 */
+export const SampleImageVariant = z.enum(["primary", "angle", "detail", "swatch"]);
+export type SampleImageVariant = z.infer<typeof SampleImageVariant>;
+
+/**
+ * 样品图片读模型：`url` 由服务端按 object_key 拼出（CDN 或签名 URL），
+ * 客户端拿不到 object_key 也不需要知道桶在哪里。
+ */
+export const SampleImage = z.object({
+  id: EntityId,
+  url: z.string().url(),
+  variant: SampleImageVariant,
+  isPrimary: z.boolean(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+});
+export type SampleImage = z.infer<typeof SampleImage>;
+
 /** 数量：正数 + 单位。 */
 export const Quantity = z.object({
   value: z.number().positive().max(1_000_000_000),
@@ -173,6 +191,8 @@ export const FabricSample = z.object({
   /** 内核报价的价格底线（整数分）；低于此线一律 KERNEL_REJECTED。 */
   costFloor: Money.nullable(),
   status: SampleStatus,
+  /** 图片读模型；读接口会带上，写回执 / 审批快照等旧路径可以不带。 */
+  images: z.array(SampleImage).optional(),
   createdAt: Timestamp,
 });
 export type FabricSample = z.infer<typeof FabricSample>;

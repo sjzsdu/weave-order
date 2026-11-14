@@ -82,6 +82,16 @@ export function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+/** 唯一键冲突的约束名（用于区分「编号重复」和「主图重复」这类同码不同因）。 */
+export function uniqueViolationConstraint(error: unknown): string | null {
+  for (const item of causeChain(error)) {
+    if (typeof item === "object" && item !== null && (item as PgErrorLike).code === "23505") {
+      return (item as PgErrorLike).constraint ?? null;
+    }
+  }
+  return null;
+}
+
 /** 把 cause 链拼成一条可读消息，便于日志与演示输出定位真实原因。 */
 export function errorChainMessage(error: unknown): string {
   return causeChain(error)

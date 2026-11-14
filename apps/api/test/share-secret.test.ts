@@ -30,6 +30,8 @@ describe("报价链接密钥的生产门控", () => {
       PRINT_AGENT_SECRET: RANDOM_SECRET,
       PERSONAL_TOKEN_PEPPER: RANDOM_SECRET,
       ONBOARDING_SECRET: RANDOM_SECRET,
+      S3_ACCESS_KEY_ID: "prod-s3-key",
+      S3_SECRET_ACCESS_KEY: "prod-s3-secret",
     });
     expect(env.QUOTE_SHARE_SECRET).toBe(RANDOM_SECRET);
     expect(env.PRINT_AGENT_SECRET).toBe(RANDOM_SECRET);
@@ -68,5 +70,18 @@ describe("报价链接密钥的生产门控", () => {
 
   it("太短的 secret 仍被 env 契约拒绝", () => {
     expect(() => loadEnv({ NODE_ENV: "production", QUOTE_SHARE_SECRET: "too-short" })).toThrow();
+  });
+
+  it("对象存储凭证同样有生产门控（WAN-116）", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        AUTH_MODE: "oidc",
+        QUOTE_SHARE_SECRET: RANDOM_SECRET,
+        PRINT_AGENT_SECRET: RANDOM_SECRET,
+        PERSONAL_TOKEN_PEPPER: RANDOM_SECRET,
+        ONBOARDING_SECRET: RANDOM_SECRET,
+      }),
+    ).toThrow(/S3_ACCESS_KEY_ID/);
   });
 });
