@@ -18,6 +18,12 @@ import { DataScope, MemberRole } from "./tenancy";
 export const OnboardingTicket = z
   .object({
     v: z.literal(1),
+    /**
+     * 票据用途：
+     * - `tenant`：平台批过的公司，打开后建出公司（老板）。
+     * - `invite`：公司里的老板/主管发给同事，打开后加入已有公司。
+     */
+    kind: z.enum(["tenant", "invite"]).default("tenant"),
     /** 公司标识，与控制面租户的 slug 一致；业务库租户用它做幂等键。 */
     slug: z
       .string()
@@ -28,6 +34,8 @@ export const OnboardingTicket = z
     name: z.string().min(1).max(255),
     /** 登记的联系人邮箱：登录邮箱不一致时拒绝领取（可为空，表示不校验）。 */
     ownerEmail: z.string().email().nullable(),
+    /** 仅 `invite` 使用：加入后拿到的角色。 */
+    role: MemberRole.nullable().default(null),
     /** 过期时间（Unix 秒）。 */
     exp: z.number().int().positive(),
   })
@@ -69,3 +77,66 @@ export const OnboardingResult = z
   })
   .strict();
 export type OnboardingResult = z.infer<typeof OnboardingResult>;
+
+/* ------------------------------------------------------------------ 自助开通 */
+
+/**
+ * 老板自助创建公司：登录后填个公司名就能开始用，不再等平台发链接。
+ *
+ * 仍受两条限制（服务端强制，不是界面自觉）：
+ * 1. 一个账号只能属于一间公司（当前数据模型）；
+ * 2. 一个账号只能开一次试用，重复调用返回既有的公司。
+ */
+export const StartTenantInput = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    /** 可读的公司标识；不填则按时间生成 `t-xxxxxxxx`。 */
+    slug: z
+      .string()
+      .min(2)
+      .max(64)
+      .regex(/^[a-z0-9-]+$/)
+      .optional(),
+  })
+  .strict();
+export type StartTenantInput = z.infer<typeof StartTenantInput>;
+
+/** 邀请同事：只允许管理员/老板操作，角色不能是 OWNER（老板只能有一个入口：创建公司）。 */
+export const InviteMemberInput = z
+  .object({
+    email: z.string().trim().email(),
+    name: z.string().trim().max(255).optional(),
+    role: MemberRole.exclude(["OWNER"]).default("SALES"),
+  })
+  .strict();
+export type InviteMemberInput = z.infer<typeof InviteMemberInput>;
+
+export const TeamInvite = z
+  .object({
+    membershipId: z.string(),
+    email: z.string(),
+    role: MemberRole,
+    status: z.enum(["INVITED", "ACTIVE"]),
+    /** 生成新链接时返回；列表现有邀请不再回传明文链接。 */
+    url: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .strict();
+export type TeamInvite = z.infer<typeof TeamInvite>;
+
+export const TeamInviteList = z.object({ invites: z.array(TeamInvite) }).strict();
+export type TeamInviteList = z.infer<typeof TeamInviteList>;
+
+export const InvitePreview = z
+  .object({
+    tenantName: z.string(),
+    tenantSlug: z.string(),
+    email: z.string(),
+    role: MemberRole,
+    expiresAt: z.string(),
+    /** 当前账号是否已经在这间公司里。 */
+    alreadyMember: z.boolean(),
+  })
+  .strict();
+export type InvitePreview = z.infer<typeof InvitePreview>;

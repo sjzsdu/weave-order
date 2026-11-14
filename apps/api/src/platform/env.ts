@@ -70,6 +70,8 @@ const EnvSchema = z.object({
   PERSONAL_TOKEN_PEPPER: z.string().min(16).default(DEV_PERSONAL_TOKEN_PEPPER),
   /** CLI 登录确认页所在的租户端 Web 地址（与 API 分开部署）。 */
   WEB_APP_URL: z.string().url().default("http://localhost:3001"),
+  /** 控制面地址：自助开通的公司要登记试用订阅。缺省时不登记（本地/单机模式）。 */
+  PLATFORM_API_URL: z.string().url().optional(),
   /** CLI 设备登录确认码有效期与轮询间隔（秒）。 */
   DEVICE_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   DEVICE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),

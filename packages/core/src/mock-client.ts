@@ -242,6 +242,11 @@ export function createMockApiClient(): ApiClient {
       Promise.reject(new Error("演示模式不支持开通，请用真实账号打开开通链接")),
     claimOnboarding: () =>
       Promise.reject(new Error("演示模式不支持开通，请用真实账号打开开通链接")),
+    startTenant: () => Promise.reject(new Error("演示模式不支持创建公司，请用真实账号")),
+    previewInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
+    acceptInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
+    listTeam: () => Promise.resolve([]),
+    inviteMember: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     me: () => Promise.resolve(mockMe()),
 
     /** 演示模式只有一个租户：选择器永远不出现，切租户直接返回当前上下文。 */

@@ -105,17 +105,18 @@ node site/tools/configure.mjs --site https://weave.example.com --dry-run
 2. **Casdoor 应用回调**：`weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。应用本身不要求固定域名：没设 `PUBLIC_APP_URL` 时按请求来源推导。
 3. **备案号**：若部署在国内服务器，页脚需要补 ICP 备案号与公安备案号。
 
-## 开通链接：现在怎么走
+## 开通：现在怎么走
 
-`signup.html` 的承诺与代码一致：**登记 → 人工确认 → 发一条开通链接 → 客户自己点开完成开通**。
+两种入口，都不需要运营逐单点：
 
-- 控制面（`apps/platform-api`）：管理员在租户详情页点「生成开通链接」，接口 `POST /platform/api/tenants/:id/onboarding-link` 用 `ONBOARDING_SECRET` 签一条 7 天有效的票据，返回 `<WEB_APP_URL>/activate?code=...`。
-- 租户端（`apps/web` / `apps/api`）：`/activate` 先展示公司名与登记邮箱，客户登录后 `POST /api/onboarding/claim` 验签、核对邮箱，然后建出业务库租户 + 老板成员（`OWNER` / `ALL`）。重复点击幂等。
-- 不需要在 Casdoor 建 Organization：登录身份按 `sub` 解析，`casdoorOrg` 可为空。
-- 两张库靠 `slug` 对齐：控制面租户的 slug 与业务库租户的 slug 相同。
+1. **老板自助创建**：登录 → `/start` 填公司名 → `POST /api/onboarding/start`建业务库租户 + OWNER 成员；随后由服务端调用控制面 `/platform/api/internal/tenants` 补登记试用订阅。控制面失败不阻断使用，按 slug 可补录。
+2. **员工接受邀请**：老板/主管在「组织与设置 → 邀请同事」填邮箱+角色 → 生成 7 天有效的签名链接 → 员工打开 `/join?code=…`、登录、点接受 → `INVITED` 成员换成真实 `sub` 并激活。
 
-仍然缺的一环是**完全开放的自助注册**（不经过人工审核、不依赖链接）：那需要在官网收表后自动落一条待办、自动信用风控与限流，并把开通链接自动发出去。在此之前，官网不写「立即注册」，只写「登记后当天发链接」——这是当前真实能做到的。
+两套链接共用 `ONBOARDING_SECRET` 签名的票据，只是 `kind` 不同（`tenant` / `invite`）；票据核对登记/被邀请邮箱，转发无效。平台侧「生成开通链接」保留给「先谈合同、后上线」的企业客户。
 
+完全不经过人工的开放式注册（不要求邮箱验证、不限流）仍然不做：现在的前提是用户已在统一身份系统里注册并验证过邮箱/手机。Casdoor 的注册项（邮箱/手机号 + 验证码、是否允许自助注册）属于部署配置，不在本仓库。
+
+## 目录
 ## 目录
 
 ## 目录

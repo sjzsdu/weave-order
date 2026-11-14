@@ -117,6 +117,8 @@ export const AuditAction = z.enum([
   "MEMBERSHIP_CREATED",
   /** 登录后选择 / 运行中切换租户：before.fromTenantId → after.toTenantId。 */
   "TENANT_SWITCHED",
+  "MEMBERSHIP_INVITED",
+  "MEMBERSHIP_ACTIVATED",
   "ORDER_CREATED",
   "ORDER_CONFIRMED",
   "SHIPMENT_CREATED",

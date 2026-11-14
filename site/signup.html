@@ -98,13 +98,17 @@
     <div class="container">
       <div class="page-hero__inner">
         <div>
-          <p class="eyebrow">免费试用</p>
-          <h1>登记一下，<br /><em>今天就能用上</em>。</h1>
-          <p class="lede">不用绑卡，不用装软件，不需要 IT 部门配合。填完下面这几项，工作日当天我们会发你一条开通链接；点开、用统一账号登录，你的企业空间当场就建好了，你是这家公司的老板账号。</p>
+          <p class="eyebrow">开始使用</p>
+          <h1>登录，填个公司名，<br /><em>就能开始。</em></h1>
+          <p class="lede">不用绑卡，不用等审核，也不用装软件。用邮箱或手机号登录，填一次公司名，公司空间当场建好，你就是老板账号。3 天全功能试用，觉得值再付钱。</p>
+          <p style="margin-top:22px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+            <a class="btn btn--primary" href="https://weave.wnbgj.com/start">免费创建公司</a>
+            <a class="btn btn--ghost" href="https://weave.wnbgj.com/login">我已有账号，去登录</a>
+          </p>
         </div>
         <div class="page-hero__aside">
           <p><b>3 天</b>全功能试用</p>
-          <p><b>当天</b>工作日 18:00 前登记当天发链接</p>
+          <p><b>1 分钟</b>创建公司，不用等人审核</p>
           <p><b>0 元</b>开通费、实施费、培训费</p>
         </div>
       </div>
@@ -115,23 +119,23 @@
     <div class="container">
       <div class="journey">
         <article class="journey__step">
-          <h3>登记公司与联系人</h3>
-          <p>就下面这张表，1 分钟填完。我们只问必要的信息：公司、你、怎么联系你、团队多少人。</p>
+          <h3>注册 / 登录</h3>
+          <p>用邮箱或手机号收验证码登录，一次性账号，公司里所有人共用这一套。登录由统一身份系统负责，我们不保存密码。</p>
+          <small>≈ 30 秒</small>
+        </article>
+        <article class="journey__step">
+          <h3>填公司名，创建</h3>
+          <p>只填一个公司名（标识可选）就能创建。点完你就成为这家公司的老板账号，3 天试用从此刻开始。</p>
           <small>≈ 1 分钟</small>
         </article>
         <article class="journey__step">
-          <h3>我们发你一条开通链接</h3>
-          <p>工作日当天，按你的人数配好套餐与试用期，把一条 7 天有效的开通链接发到你留的微信或邮箱。</p>
-          <small>工作日当天</small>
-        </article>
-        <article class="journey__step">
-          <h3>点链接、登录，空间当场建好</h3>
-          <p>打开链接会看到公司名，确认无误后登录统一账号，点一下就建好公司空间，你自动成为老板。链接会核对登记邮箱，别人转发了也用不了。</p>
-          <small>≈ 1 分钟</small>
+          <h3>邀请同事，一起用</h3>
+          <p>在「组织与设置 → 邀请同事」填同事邮箱和角色，生成一条专属链接发给他；他登录后点接受就加入，看到的客户范围由角色决定。</p>
+          <small>每邀请 1 人 ≈ 30 秒</small>
         </article>
         <article class="journey__step">
           <h3>导入数据，跑第一单</h3>
-          <p>进入工作台后导入客户与样品 Excel，把客户刚发来的一句话贴进去，审第一张报价草稿。我们陪你跑完这一单。</p>
+          <p>导入客户与样品 Excel，把客户刚发来的一句话贴进去，审第一张报价草稿。我们陪你跑完这一单。</p>
           <small>≈ 10 分钟</small>
         </article>
       </div>
@@ -141,11 +145,11 @@
   <section class="section" id="apply" style="padding-block:clamp(40px,5vw,64px)">
     <div class="container">
       <div class="signup-grid">
-        <form class="signup-form" data-mailform="hello@weaveorder.cn" data-subject="织序 · 免费试用登记" novalidate>
-          <h2>登记免费试用</h2>
-          <p>工作日 18:00 前登记，当天发开通链接；18:00 之后登记，次个工作日 12:00 前发出。</p>
+        <form class="signup-form" data-mailform="hello@weaveorder.cn" data-subject="织序 · 请帮我开通" novalidate>
+          <h2>不想自己弄？我们帮你</h2>
+          <p>创建公司、导入 Excel、配打印，都可以让我们代做。留个联系方式，工作日 4 小时内回你。</p>
           <p style="margin-top:-8px;font-size:12.5px;color:var(--ink-400)">
-            如果你是员工、想加入公司已有的空间，不用在这里登记：把公司名和你的邮箱发给老板或对接人，让他们把你加进来即可。
+            只想自己先试试：点上面的「免费创建公司」，1 分钟就能进工作台，不用填这张表。
           </p>
 
           <div class="form__row">
@@ -165,7 +169,7 @@
               <input id="su-phone" name="联系方式" type="text" inputmode="tel" autocomplete="tel" placeholder="方便找到你的方式" required />
             </div>
             <div class="field">
-              <label for="su-email">邮箱（用于收登录链接）</label>
+              <label for="su-email">邮箱</label>
               <input id="su-email" name="邮箱" type="email" autocomplete="email" placeholder="you@company.com" required />
             </div>
           </div>
@@ -204,10 +208,10 @@
           </div>
 
           <button class="btn btn--primary" type="submit">
-            提交登记
+            提交，让你们联系我
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <p class="form__ok" role="status">已整理好登记信息，正在打开你的邮件客户端。没弹出的话，直接写信到 hello@weaveorder.cn 也可以，我们一样当天处理。</p>
+          <p class="form__ok" role="status">已整理好信息，正在打开你的邮件客户端。没弹出的话，直接写信到 hello@weaveorder.cn 也可以，我们一样当天处理。</p>
           <p class="form__note">表单提交会打开你的邮件客户端，不会静默采集信息。我们只用它来开通你的企业空间，不做群发。</p>
         </form>
 
@@ -217,7 +221,7 @@
             <ul style="margin:10px 0 0;padding-left:1.2em;font-size:13.5px;line-height:1.9">
               <li>客户名单（Excel 或 CSV，有客户名就够）</li>
               <li>常卖的样品 / 面料清单（名称、规格、成本价）</li>
-              <li>要开通的同事姓名与手机号（用于发登录方式）</li>
+              <li>要邀请的同事邮箱与角色（老板/主管才能邀请）</li>
             </ul>
             <p style="margin:12px 0 0;font-size:12.5px;color:var(--ink-400)">没有也没关系，开通后我们帮你从零建。</p>
           </div>
@@ -256,8 +260,8 @@
       </div>
       <div class="faq">
         <details open>
-          <summary>为什么还要等一条链接，不能直接注册？</summary>
-          <p>每个客户公司要单独隔离：一个公司一个独立空间、一套独立权限。我们先人工确认公司主体、配好账号，再把链接发你；你点开链接、登录，公司空间当场就建好。这样你的数据从第一天起就不和别人混在一起，也避免陌生人随便建号。链接 7 天有效，只能被登记邮箱的账号领取。</p>
+          <summary>创建公司要审核吗？要等多久？</summary>
+          <p>不用审核，也不用等。登录后填公司名、点创建，几秒就建好，你直接是老板账号。每个公司一个独立空间、一套独立权限，从第一天起你的数据就不和别人混在一起。3 天试用不需要绑卡。</p>
         </details>
         <details>
           <summary>开通要收钱吗？试用期多长？</summary>

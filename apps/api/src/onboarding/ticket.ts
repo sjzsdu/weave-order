@@ -34,7 +34,15 @@ function fromBase64url(value: string): Buffer {
 }
 
 export function signOnboardingTicket(
-  ticket: Omit<OnboardingTicket, "exp"> & { exp?: number },
+  ticket: {
+    v?: 1;
+    slug: string;
+    name: string;
+    ownerEmail: string | null;
+    kind?: "tenant" | "invite";
+    role?: OnboardingTicket["role"];
+    exp?: number;
+  },
   secret: string,
   ttlSeconds: number = ONBOARDING_TICKET_TTL_SECONDS,
   now: Date = new Date(),

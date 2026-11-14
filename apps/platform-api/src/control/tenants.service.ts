@@ -237,6 +237,58 @@ export class TenantsService {
   }
 
   /**
+   * 自助开通登记：租户端建好公司后调这里补一条控制面记录（租户 + 3 天试用）。
+   *
+   * 幂等：同一个 slug 已存在就直接返回，不重复建订阅。
+   * 失败也不会让业务侧回滚——用户已经能用了，运营按 slug 补录即可。
+   */
+  async registerTrialTenant(input: {
+    slug: string;
+    name: string;
+    ownerEmail?: string | null;
+  }): Promise<{ tenantId: string; slug: string; created: boolean }> {
+    const existing = await this.db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.slug, input.slug))
+      .limit(1);
+    if (existing[0]) {
+      return { tenantId: existing[0].id, slug: input.slug, created: false };
+    }
+
+    const planRows = await this.db
+      .select()
+      .from(plans)
+      .where(eq(plans.status, "ACTIVE"))
+      .orderBy(plans.tier)
+      .limit(1);
+    const plan = planRows[0];
+    if (!plan) {
+      throw invalid("控制面还没有可用套餐，无法登记试用租户");
+    }
+
+    const actor: PlatformActor = {
+      id: "self-serve",
+      sub: "self-serve",
+      name: "自助开通",
+      email: "noreply@weaveorder.cn",
+      role: "platform_owner",
+      permissions: [],
+    };
+    const created = await this.provision(actor, {
+      name: input.name,
+      slug: input.slug,
+      planCode: plan.code,
+      seats: Math.max(1, plan.seatMin),
+      billingCycle: "MONTHLY",
+      trialDays: 3,
+      contactEmail: input.ownerEmail ?? undefined,
+      notes: "自助开通（租户端创建，控制面补登记）",
+    });
+    return { tenantId: created.id, slug: input.slug, created: true };
+  }
+
+  /**
    * 改套餐 / 席位 / 账期。升级即时生效，降级同样立即（MVP 简化，账期折算在
    * 下一张账单体现）；强制定价由调用方先走双人复核，再带 override 调用。
    */

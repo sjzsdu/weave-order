@@ -1,6 +1,8 @@
 "use client";
 
 import { useAuthContext } from "@weave-order/core";
+import { useEffect, useState } from "react";
+import type { TeamInvite } from "@weave-order/schema";
 import { Badge, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
@@ -219,10 +221,175 @@ function SettingsPageContent() {
         </section>
       </div>
 
+      <TeamSection />
+
       <p className="text-xs text-ink-400">
         公司资料与成员由平台管理员维护，本页只读。需要改公司名、抬头或增加席位，写信到
         hello@weaveorder.cn 或联系你的对接人。
       </p>
     </div>
+  );
+}
+
+const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "MANAGER", label: "主管" },
+  { value: "SALES", label: "销售" },
+  { value: "MERCHANDISER", label: "跟单" },
+  { value: "SAMPLE_ADMIN", label: "样品管理" },
+  { value: "FINANCE", label: "财务" },
+  { value: "VIEWER", label: "只读" },
+];
+
+/**
+ * 邀请同事（老板/主管可用）。
+ *
+ * 生成一条 7 天有效的专属链接，复制到微信或邮件发给对方；对方登录后点接受即加入。
+ * 没有接短信/邮件服务，所以这里负责生成与复制，不做「已发送」的假象。
+ */
+function TeamSection() {
+  const api = useApi();
+  const [invites, setInvites] = useState<TeamInvite[]>([]);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("SALES");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listTeam()
+      .then((rows) => {
+        if (!cancelled) setInvites(rows);
+      })
+      .catch(() => {
+        // 没有权限时静默：设置页其它部分仍然可读。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setLink(null);
+    try {
+      const created = await api.inviteMember({ email: email.trim(), role: role as never });
+      setLink(created.url);
+      setEmail("");
+      const rows = await api.listTeam();
+      setInvites(rows);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "邀请失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      setError("复制失败，请手动选中链接复制");
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-line bg-surface px-5 py-4">
+      <h2 className="text-sm font-medium text-ink-900">邀请同事</h2>
+      <p className="mt-1 text-xs text-ink-400">
+        填同事邮箱和角色，生成一条 7
+        天有效的专属链接，复制到微信或邮件发给他。他打开链接、登录后点「接受邀请」就加入你这间公司。
+      </p>
+
+      <form
+        onSubmit={(event) => void submit(event)}
+        className="mt-3 flex flex-wrap items-end gap-2"
+      >
+        <label className="grid gap-1 text-[11px] text-ink-400">
+          同事邮箱
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="colleague@company.com"
+            className="min-w-56 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+          />
+        </label>
+        <label className="grid gap-1 text-[11px] text-ink-400">
+          角色
+          <select
+            value={role}
+            onChange={(event) => setRole(event.target.value)}
+            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
+          >
+            {ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          disabled={busy || !email.includes("@")}
+          className="inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+        >
+          {busy ? "生成中…" : "生成邀请链接"}
+        </button>
+      </form>
+
+      {error ? <p className="mt-2 text-xs text-vermilion-600">{error}</p> : null}
+
+      {link ? (
+        <div className="mt-3 grid gap-2">
+          <p className="text-xs text-ink-500">把这条链接发给对方（7 天有效）：</p>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={link}
+              onFocus={(event) => event.currentTarget.select()}
+              className="flex-1 rounded-md border border-line bg-paper px-3 py-2 font-mono text-xs text-ink-700"
+            />
+            <button
+              type="button"
+              onClick={() => void copy()}
+              className="rounded-md border border-line px-3 text-xs text-ink-700 hover:border-ink-400"
+            >
+              复制
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {invites.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-md border border-line">
+          <table className="w-full text-sm">
+            <thead className="bg-paper text-xs text-ink-400">
+              <tr>
+                <th className="px-3 py-2 text-left font-normal">同事</th>
+                <th className="px-3 py-2 text-left font-normal">角色</th>
+                <th className="px-3 py-2 text-left font-normal">状态</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-ink-700">
+              {invites.map((item) => (
+                <tr key={item.membershipId}>
+                  <td className="px-3 py-2 text-xs">{item.email}</td>
+                  <td className="px-3 py-2 text-xs">{item.role}</td>
+                  <td className="px-3 py-2 text-xs text-ink-400">
+                    {item.status === "INVITED" ? "待接受" : "已加入"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
   );
 }

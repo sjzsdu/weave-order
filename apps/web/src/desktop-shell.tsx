@@ -123,6 +123,35 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [router]);
 
+  // 新用户第一次登录时还没有任何公司：别让他对着一个空工作台发愣，
+  // 直接给两条路——自己开一间，或去打开同事发来的邀请链接。
+  if (me.isError && /成员身份/.test(me.error instanceof Error ? me.error.message : "")) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-paper px-6">
+        <div className="max-w-md rounded-lg border border-line bg-surface px-6 py-6">
+          <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">织序 WeaveOrder</p>
+          <h1 className="mt-2 text-xl font-semibold text-ink-900">你还没有加入任何公司</h1>
+          <p className="mt-2 text-sm text-ink-500">
+            第一次用就自己创建一间公司，填个名字就能开始；如果是同事邀请你，打开他发你的邀请链接接受即可。
+          </p>
+          <a
+            href="/start"
+            className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            创建公司
+          </a>
+          <a
+            href="/login"
+            className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+          >
+            换个账号登录
+          </a>
+          <p className="mt-4 text-xs text-ink-400">邀请链接 7 天内有效，通常在你的微信或邮件里。</p>
+        </div>
+      </div>
+    );
+  }
+
   const pending = approvals.data?.items.length ?? 0;
   const pendingMore = approvals.data?.hasMore === true;
   const pendingLabel = pendingMore ? `${pending}+` : pending;

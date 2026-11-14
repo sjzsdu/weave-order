@@ -9,7 +9,7 @@ import { PrintAgentAuthService } from "../print/agent-auth.service";
 import { PrintAgentHub } from "../print/agent-hub";
 import { AppDatabaseProvider, DatabaseProvider } from "../platform/database.provider";
 import { DatabaseModule } from "../platform/database.module";
-import { OnboardingController } from "../onboarding/onboarding.controller";
+import { OnboardingController, TeamController } from "../onboarding/onboarding.controller";
 import { OnboardingService } from "../onboarding/onboarding.service";
 import { PublicRateLimitService } from "../platform/rate-limit";
 import { createTools } from "../tools";
@@ -105,6 +105,7 @@ const providers: Provider[] = [
     PrintController,
     PrintAgentController,
     OnboardingController,
+    TeamController,
   ],
   providers,
 })

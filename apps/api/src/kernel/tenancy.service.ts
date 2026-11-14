@@ -1,7 +1,7 @@
 import { memberships, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateMembershipInput, CreateTenantInput } from "@weave-order/schema";
-import type { Membership, Tenant, TenantChoice } from "@weave-order/schema";
+import type { DataScope, MemberRole, Membership, Tenant, TenantChoice } from "@weave-order/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
@@ -311,5 +311,117 @@ export class TenancyService {
   async listMemberships(tenantId: string): Promise<Membership[]> {
     const rows = await this.db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
     return rows.map(mapMembership);
+  }
+
+  /**
+   * 邀请同事：先落一条 `INVITED` 成员，`subject` 暂存邮箱。
+   *
+   * 为什么不直接按邮箱建 ACTIVE：登录身份是 Casdoor 的 `sub`，在对方接受之前
+   * 我们拿不到。邀请被接受时再把 `subject` 换成真实 sub（见 activateMembership），
+   * 这样「待接受/已加入」都能在同一张表里看清楚，也不需要额外的邀请表。
+   */
+  async inviteMember(
+    input: { tenantId: string; email: string; role: MemberRole; dataScope?: DataScope },
+    ctx: KernelContext,
+  ): Promise<Membership> {
+    const email = input.email.trim().toLowerCase();
+    try {
+      return await this.db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(memberships)
+          .values({
+            tenantId: input.tenantId,
+            subject: email,
+            role: input.role,
+            dataScope: input.dataScope ?? "OWN",
+            status: "INVITED",
+          })
+          .returning();
+        const row = rows[0];
+        if (!row) throw new KernelError("KERNEL_REJECTED", "邀请写入未返回记录");
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: "MEMBERSHIP_INVITED",
+            entityType: "membership",
+            entityId: row.id,
+            after: { email, role: row.role },
+          },
+          row.tenantId,
+        );
+        return mapMembership(row);
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          `这个邮箱已经在公司里，或已有一条待接受的邀请：${email}`,
+          {
+            reason: "MEMBERSHIP_EXISTS",
+          },
+        );
+      }
+      throw error;
+    }
+  }
+
+  /** 按邮箱找一条待接受的邀请。 */
+  async findInvitedMembership(tenantId: string, email: string): Promise<Membership | null> {
+    const rows = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.subject, email.trim().toLowerCase()),
+          eq(memberships.status, "INVITED"),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    return row ? mapMembership(row) : null;
+  }
+
+  /** 接受邀请：把 INVITED 变成 ACTIVE，并把 subject 从邮箱换成真实登录身份。 */
+  async activateMembership(
+    membershipId: string,
+    subject: string,
+    casdoorOrg: string | null,
+    ctx: KernelContext,
+  ): Promise<Membership> {
+    return await this.db.transaction(async (tx) => {
+      const before = await tx
+        .select()
+        .from(memberships)
+        .where(eq(memberships.id, membershipId))
+        .limit(1);
+      const row = before[0];
+      if (!row) throw new KernelError("RESOURCE_NOT_FOUND", "邀请不存在或已被撤销");
+      if (row.status !== "INVITED")
+        throw new KernelError("KERNEL_REJECTED", "这条邀请已经被接受了");
+
+      const updated = await tx
+        .update(memberships)
+        .set({ subject, casdoorOrg, status: "ACTIVE", updatedAt: new Date() })
+        .where(and(eq(memberships.id, membershipId), eq(memberships.status, "INVITED")))
+        .returning();
+      const next = updated[0];
+      if (!next) throw new KernelError("KERNEL_REJECTED", "这条邀请已经被接受了");
+
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "MEMBERSHIP_ACTIVATED",
+          entityType: "membership",
+          entityId: next.id,
+          before: { subject: row.subject, status: row.status },
+          after: { subject: next.subject, status: next.status },
+        },
+        next.tenantId,
+      );
+      return mapMembership(next);
+    });
   }
 }

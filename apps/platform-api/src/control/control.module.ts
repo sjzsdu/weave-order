@@ -17,6 +17,7 @@ import {
   OverviewController,
   TenantsController,
 } from "../http/controllers";
+import { InternalController } from "../http/internal.controller";
 import {
   ApprovalsController,
   AuditController,
@@ -46,6 +47,7 @@ const services = [
 
 const controllers = [
   HealthController,
+  InternalController,
   OverviewController,
   TenantsController,
   InvoicesController,

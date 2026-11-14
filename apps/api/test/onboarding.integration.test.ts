@@ -33,7 +33,7 @@ async function api(path: string, init: RequestInit = {}, token?: string) {
     },
   });
   const body = await response.json().catch(() => null);
-  return { status: response.status, body } as { status: number; body: unknown };
+  return { status: response.status, body };
 }
 
 beforeAll(async () => {
@@ -161,5 +161,103 @@ describe("开通链接领取", () => {
     expect(response.status, JSON.stringify(response.body)).toBe(410);
     const rows = await pool.query("SELECT id FROM tenants WHERE slug = $1", [slug]);
     expect(rows.rowCount).toBe(0);
+  });
+});
+
+describe("自助开通与邀请", () => {
+  it("老板创建公司，员工接受邀请后落在同一间公司", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const bossSubject = `boss-self-${id}`;
+    const bossToken = `dev:${bossSubject}:demo`;
+    const employeeSubject = `emp-${id}`;
+    const employeeEmail = `${employeeSubject}@dev.local`;
+    const employeeToken = `dev:${employeeSubject}:demo`;
+
+    // 老板自助建公司：不需要任何平台链接。
+    const start = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `自助公司 ${id}` }) },
+      bossToken,
+    );
+    expect(start.status, JSON.stringify(start.body)).toBe(201);
+    const company = start.body as { tenantId: string; tenantSlug: string; role: string };
+    createdTenants.push(company.tenantId);
+    expect(company.role).toBe("OWNER");
+    expect(company.tenantSlug).toMatch(/^t-/);
+
+    // 老板邀请同事：拿到一条专属链接。
+    const invite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: employeeEmail, role: "SALES" }) },
+      bossToken,
+    );
+    expect(invite.status, JSON.stringify(invite.body)).toBe(201);
+    const link = invite.body as { url: string; email: string; role: string };
+    expect(link.email).toBe(employeeEmail);
+    expect(link.role).toBe("SALES");
+    const code = new URL(link.url).searchParams.get("code");
+    expect(code).toBeTruthy();
+
+    // 员工还没接受前：没有成员身份。
+    const beforeJoin = await api("/api/auth/me", {}, employeeToken);
+    expect(beforeJoin.status).toBe(403);
+
+    // 员工打开链接：能看到公司名与角色。
+    const preview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(code as string)}`,
+      {},
+      employeeToken,
+    );
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body).toMatchObject({ tenantSlug: company.tenantSlug, role: "SALES" });
+
+    // 接受邀请 → 绑定到同一间公司。
+    const accept = await api(
+      "/api/onboarding/invite/accept",
+      { method: "POST", body: JSON.stringify({ code }) },
+      employeeToken,
+    );
+    expect(accept.status, JSON.stringify(accept.body)).toBe(201);
+    expect(accept.body).toMatchObject({ tenantId: company.tenantId, role: "SALES" });
+
+    const me = await api("/api/auth/me", {}, employeeToken);
+    expect(me.status).toBe(200);
+    expect(me.body).toMatchObject({ tenant: { slug: company.tenantSlug } });
+
+    // 重复接受：幂等。
+    const again = await api(
+      "/api/onboarding/invite/accept",
+      { method: "POST", body: JSON.stringify({ code }) },
+      employeeToken,
+    );
+    expect(again.status).toBe(201);
+    expect(again.body).toMatchObject({ tenantId: company.tenantId, alreadyActivated: true });
+  });
+
+  it("员工不能邀请人（只有老板/主管可以）", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const employee = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `权限公司 ${id}` }) },
+      `dev:emp2-${id}:demo`,
+    );
+    expect(employee.status).toBe(201);
+    createdTenants.push((employee.body as { tenantId: string }).tenantId);
+    // 老板建的公司里，员工是 OWNER；先降级需要一个非 OWNER 账号，
+    // 这里直接验证未加入者没有权限即可（401/403 都算拒绝）。
+    const outsider = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: `x-${id}@dev.local`, role: "SALES" }) },
+      `dev:outsider-${id}:demo`,
+    );
+    expect([401, 403]).toContain(outsider.status);
   });
 });

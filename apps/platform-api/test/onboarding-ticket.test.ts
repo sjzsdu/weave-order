@@ -12,13 +12,15 @@ import {
  */
 const GOLDEN_PAYLOAD = {
   v: 1 as const,
+  kind: "tenant" as const,
   slug: "qinghe",
   name: "青禾纺织",
   ownerEmail: "boss@qinghe.example",
+  role: null,
   exp: 1_800_000_000,
 };
 const GOLDEN_CODE =
-  "eyJ2IjoxLCJzbHVnIjoicWluZ2hlIiwibmFtZSI6Iumdkuemvue6uue7hyIsIm93bmVyRW1haWwiOiJib3NzQHFpbmdoZS5leGFtcGxlIiwiZXhwIjoxODAwMDAwMDAwfQ.9KMVMlEl5N1GyOvA4L-VCfHWbBK2m8Ty7kmDDHZNCmY";
+  "eyJ2IjoxLCJraW5kIjoidGVuYW50Iiwic2x1ZyI6InFpbmdoZSIsIm5hbWUiOiLpnZLnpr7nurrnu4ciLCJvd25lckVtYWlsIjoiYm9zc0BxaW5naGUuZXhhbXBsZSIsInJvbGUiOm51bGwsImV4cCI6MTgwMDAwMDAwMH0.Z1ezGN6YoRqgGLRLEykSywd1qZHW4MqiKDzvifS4s7Y";
 
 describe("开通链接票据（控制面）", () => {
   it("签出的链接与固定向量一致", () => {
