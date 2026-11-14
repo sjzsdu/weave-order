@@ -275,6 +275,21 @@ describe("订单工作面（集成）", () => {
     });
     expect(statement.legacyPaidByCurrency).toEqual([]);
 
+    // 补登历史回款：返回值必须是刚插入的这笔，而不是「按到账日倒序的第一条」。
+    const backdated = await kernel.receivables.recordPayment(
+      {
+        receivableId: receivable.id,
+        amount: { amount: 1_000, currency: "CNY" },
+        paidAt: "2020-01-02T00:00:00.000Z",
+        note: "补登历史回款",
+      },
+      HUMAN,
+    );
+    expect(backdated.payment.amount.amount).toBe(1_000);
+    expect(backdated.payment.paidAt).toBe("2020-01-02T00:00:00.000Z");
+    const listed = await kernel.receivables.listPayments(receivable.id, HUMAN);
+    expect(listed[0]?.id).not.toBe(backdated.payment.id);
+
     await expect(
       kernel.receivables.recordPayment(
         {

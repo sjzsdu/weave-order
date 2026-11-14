@@ -478,7 +478,7 @@ describe("Track A：订单 / 应收内核", () => {
     );
     expect(receivable.status).toBe("PENDING");
 
-    const partial = await kernel.receivables.recordPayment(
+    const { receivable: partial, payment: firstPayment } = await kernel.receivables.recordPayment(
       {
         receivableId: receivable.id,
         amount: { amount: 60_000, currency: "CNY" },
@@ -487,6 +487,7 @@ describe("Track A：订单 / 应收内核", () => {
     );
     expect(partial.status).toBe("PARTIAL");
     expect(partial.paidAmount.amount).toBe(60_000);
+    expect(firstPayment.amount.amount).toBe(60_000);
 
     await expect(
       kernel.receivables.recordPayment(
@@ -501,7 +502,7 @@ describe("Track A：订单 / 应收内核", () => {
       details: { reason: "PAYMENT_EXCEEDS_REMAINING" },
     });
 
-    const paid = await kernel.receivables.recordPayment(
+    const { receivable: paid, payment: secondPayment } = await kernel.receivables.recordPayment(
       {
         receivableId: receivable.id,
         amount: { amount: 40_000, currency: "CNY" },
@@ -510,6 +511,7 @@ describe("Track A：订单 / 应收内核", () => {
     );
     expect(paid.status).toBe("PAID");
     expect(paid.paidAt).not.toBeNull();
+    expect(secondPayment.amount.amount).toBe(40_000);
   }, 30_000);
 });
 

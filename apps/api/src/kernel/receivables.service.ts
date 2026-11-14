@@ -137,8 +137,17 @@ export class ReceivableService {
     });
   }
 
-  /** 记录收款：部分收款 -> PARTIAL，收满 -> PAID；超额与币种不符一律拒绝。 */
-  async recordPayment(input: unknown, ctx: KernelContext): Promise<Receivable> {
+  /**
+   * 记录收款：部分收款 -> PARTIAL，收满 -> PAID；超额与币种不符一律拒绝。
+   *
+   * 返回值带上刚插入的那笔流水：调用方（HTTP 回执、UI）需要的正是这一次的结果。
+   * 不能事后再按 paidAt 倒序查「第一条」—— paidAt 是用户可回填的到账日，
+   * 补登历史回款时倒序第一条往往不是刚插入的这笔。
+   */
+  async recordPayment(
+    input: unknown,
+    ctx: KernelContext,
+  ): Promise<{ receivable: Receivable; payment: ReceivablePayment }> {
     if (ctx.actor.type !== "HUMAN") {
       throw new KernelError("PERMISSION_DENIED", "收款必须由人类确认，智能体无权记账");
     }
@@ -256,7 +265,7 @@ export class ReceivableService {
         },
         this.tenantId,
       );
-      return mapReceivable(row);
+      return { receivable: mapReceivable(row), payment: mapPayment(payment) };
     });
   }
 
@@ -276,7 +285,13 @@ export class ReceivableService {
     return rows.map(mapPayment);
   }
 
-  /** 批量取流水：对账单一次查完，避免每笔应收各查一次。 */
+  /**
+   * 批量取流水：对账单一次查完，避免每笔应收各查一次。
+   *
+   * 内部方法，不校验数据范围：入参 `receivableIds` 必须来自已经过
+   * `ownerScopeFilter` 的查询（目前唯一调用方 customerStatement 满足）。
+   * 不要直接把它暴露成 HTTP 接口。
+   */
   async listPaymentsFor(receivableIds: string[]): Promise<Map<string, ReceivablePayment[]>> {
     const grouped = new Map<string, ReceivablePayment[]>();
     if (receivableIds.length === 0) return grouped;

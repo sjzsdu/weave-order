@@ -67,10 +67,16 @@ function OrdersPageContent() {
 
   const list = useOrderList(api, filters);
   const funnel = useOrderFunnel(api, dateFilters);
+  // 客户下拉只取前 100 个：这是筛选器的体验上限，不是「客户只有 100 个」的假设。
+  // 超出后应换成搜索式选择器，不要靠调大这个数字解决。
   const customers = useCustomers(api, 100);
 
   const hasFilter =
-    statuses.length > 0 || Boolean(customerId) || Boolean(dueFrom) || Boolean(dueBefore) || overdueOnly;
+    statuses.length > 0 ||
+    Boolean(customerId) ||
+    Boolean(dueFrom) ||
+    Boolean(dueBefore) ||
+    overdueOnly;
 
   function resetFilters() {
     setStatuses([]);
@@ -84,7 +90,10 @@ function OrdersPageContent() {
     <div className="grid gap-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link href="/panorama" className="no-print text-xs text-ink-400 underline underline-offset-2">
+          <Link
+            href="/panorama"
+            className="no-print text-xs text-ink-400 underline underline-offset-2"
+          >
             ← 回全景
           </Link>
           <h1 className="mt-1 text-2xl font-semibold text-ink-900">报价与订单</h1>
@@ -114,7 +123,9 @@ function OrdersPageContent() {
               aria-pressed={active}
               className={cn(
                 "rounded-lg border bg-surface px-4 py-3 text-left transition-colors",
-                active ? "border-indigo-600 ring-1 ring-indigo-600/30" : "border-line hover:border-ink-400",
+                active
+                  ? "border-indigo-600 ring-1 ring-indigo-600/30"
+                  : "border-line hover:border-ink-400",
               )}
             >
               <div className="text-xs text-ink-400">{stage.label}</div>
@@ -208,7 +219,9 @@ function OrdersPageContent() {
       ) : list.items.length === 0 ? (
         <EmptyState
           title="没有符合条件的订单"
-          description={hasFilter ? "放宽筛选再试，或清除筛选看全部。" : "报价成交后会自动出现在这里。"}
+          description={
+            hasFilter ? "放宽筛选再试，或清除筛选看全部。" : "报价成交后会自动出现在这里。"
+          }
           actions={
             hasFilter ? (
               <Button variant="secondary" onClick={resetFilters}>
@@ -254,7 +267,9 @@ function OrdersPageContent() {
                     {order.overdue && <Badge tone="danger">逾期</Badge>}
                   </td>
                   <td className="px-3 py-2">
-                    <Badge tone={STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Badge>
+                    <Badge tone={STATUS_TONE[order.status]}>
+                      {ORDER_STATUS_LABEL[order.status]}
+                    </Badge>
                   </td>
                   <td className="px-3 py-2 text-xs text-ink-700">
                     <span className="font-mono tabular-nums">

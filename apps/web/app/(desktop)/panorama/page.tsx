@@ -80,7 +80,7 @@ function PanoramaPageContent() {
             <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">报价与订单</div>
             <div className="mt-1 text-base font-semibold text-ink-900">按交期看订单漏斗</div>
             <p className="mt-1 text-sm text-ink-400">
-              报价草稿 → 成交 → 生产中 → 已发货；逾期单排在最前，点进来就是那张单。
+              草稿/待确认 → 成交 → 生产中 → 已发货；逾期单排在最前，点进来就是那张单。
             </p>
           </Link>
         )}

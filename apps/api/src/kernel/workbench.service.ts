@@ -71,7 +71,9 @@ export interface StatementRange {
 const OVERDUE_EXCLUDED_STATUSES: OrderStatus[] = ["COMPLETED", "CANCELLED"];
 
 const FUNNEL_STAGES: Array<Omit<OrderFunnelStage, "count">> = [
-  { key: "DRAFT", label: "报价草稿", statuses: ["DRAFT"] },
+  // 这一段是订单草稿（报价草稿成交前的待确认单），不是报价单本身：
+  // 报价没有列表工作面，标签写清楚，避免和「报价」概念混淆。
+  { key: "DRAFT", label: "草稿/待确认", statuses: ["DRAFT"] },
   { key: "CONFIRMED", label: "已成交", statuses: ["CONFIRMED"] },
   { key: "IN_PRODUCTION", label: "生产中", statuses: ["IN_PRODUCTION"] },
   { key: "SHIPPED", label: "已发货", statuses: ["SHIPPED", "COMPLETED"] },
@@ -464,6 +466,18 @@ export class WorkbenchService {
     const paymentsByReceivable = await this.receivableService.listPaymentsFor(
       rows.map((row) => row.receivable.id),
     );
+    // 凭证 URL 一次并发签完：逐行 await 会把「N 笔回款」变成 N 次串行往返。
+    const proofUrls = new Map<string, string | null>();
+    await Promise.all(
+      Array.from(paymentsByReceivable.values())
+        .flat()
+        .flatMap((payment) =>
+          payment.proofObjectKey ? [{ id: payment.id, key: payment.proofObjectKey }] : [],
+        )
+        .map(async ({ id, key }) => {
+          proofUrls.set(id, await proofUrl(key));
+        }),
+    );
 
     const totals = new Map<Currency, { amount: number; paid: number; balance: number }>();
     const legacy = new Map<Currency, number>();
@@ -484,17 +498,15 @@ export class WorkbenchService {
       lines.push({
         receivable: mapReceivable(receivable),
         orderCode,
-        payments: await Promise.all(
-          payments.map(async (payment) => ({
-            id: payment.id,
-            receivableId: payment.receivableId,
-            amount: payment.amount,
-            paidAt: payment.paidAt,
-            note: payment.note,
-            proofUrl: payment.proofObjectKey ? await proofUrl(payment.proofObjectKey) : null,
-            createdAt: payment.createdAt,
-          })),
-        ),
+        payments: payments.map((payment) => ({
+          id: payment.id,
+          receivableId: payment.receivableId,
+          amount: payment.amount,
+          paidAt: payment.paidAt,
+          note: payment.note,
+          proofUrl: proofUrls.get(payment.id) ?? null,
+          createdAt: payment.createdAt,
+        })),
       });
     }
 

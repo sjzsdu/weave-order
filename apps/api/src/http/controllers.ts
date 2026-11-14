@@ -566,23 +566,24 @@ export class OrderController {
     return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
       try {
         const input = { ...(body as Record<string, unknown>), receivableId: id };
-        const receivable = await kernel.receivables.recordPayment(input, ctx);
-        // 回款流水按到账日倒序，第一条就是刚记的这笔；凭证 URL 只在这里签发。
-        const [latest] = await kernel.receivables.listPayments(id, ctx);
-        const payment = latest
-          ? {
-              id: latest.id,
-              receivableId: latest.receivableId,
-              amount: latest.amount,
-              paidAt: latest.paidAt,
-              note: latest.note,
-              proofUrl: latest.proofObjectKey
-                ? await this.media.imageUrl(latest.proofObjectKey)
-                : null,
-              createdAt: latest.createdAt,
-            }
-          : null;
-        return { receivable, payment };
+        // 内核把刚插入的那笔流水一起返回：不按到账日倒序回查，
+        // 补登历史回款时「倒序第一条」不是这一次。
+        const { receivable, payment } = await kernel.receivables.recordPayment(input, ctx);
+        return {
+          receivable,
+          payment: {
+            id: payment.id,
+            receivableId: payment.receivableId,
+            amount: payment.amount,
+            paidAt: payment.paidAt,
+            note: payment.note,
+            // 凭证 URL 只在这里签发，DB 里只存 object_key。
+            proofUrl: payment.proofObjectKey
+              ? await this.media.imageUrl(payment.proofObjectKey)
+              : null,
+            createdAt: payment.createdAt,
+          },
+        };
       } catch (error) {
         rethrowHttp(error);
       }
