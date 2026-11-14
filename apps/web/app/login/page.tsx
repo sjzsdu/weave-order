@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SupportMailto } from "@/support";
+import { TrackedLink } from "@/tracked-link";
 
 // 统一登录地址与 OIDC issuer 是同一个，部署时只配一处。
 const SSO_URL = process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com";
@@ -31,12 +32,14 @@ export default async function LoginPage({
       )}
 
       <div className="mt-6 grid gap-3">
-        <a
+        <TrackedLink
           href={`/auth/login?next=${encodeURIComponent(target)}`}
+          event="login_click"
+          eventProps={{ from: "login-page" }}
           className="inline-flex min-h-12 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700"
         >
           使用公司账号登录
-        </a>
+        </TrackedLink>
         <div className="flex items-center justify-between text-xs text-ink-400">
           <a
             href={SSO_URL}

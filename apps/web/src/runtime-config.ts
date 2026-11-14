@@ -15,6 +15,16 @@ export type RuntimeConfig = {
   supportEmail: string;
   /** 官网地址（不带结尾斜杠）；未配置时为空字符串。 */
   marketingUrl: string;
+  /** 访问统计配置；provider 为空表示不统计。 */
+  analytics: RuntimeAnalytics;
+};
+
+/** 统计配置的原始值，交给 src/analytics.ts 解析与校验。 */
+export type RuntimeAnalytics = {
+  provider: string;
+  domain: string;
+  host: string;
+  key: string;
 };
 
 declare global {
@@ -23,7 +33,11 @@ declare global {
   }
 }
 
-const EMPTY: RuntimeConfig = { supportEmail: "", marketingUrl: "" };
+const EMPTY: RuntimeConfig = {
+  supportEmail: "",
+  marketingUrl: "",
+  analytics: { provider: "", domain: "", host: "", key: "" },
+};
 
 export function readRuntimeConfig(): RuntimeConfig {
   if (typeof window === "undefined") return EMPTY;
@@ -32,6 +46,12 @@ export function readRuntimeConfig(): RuntimeConfig {
   return {
     supportEmail: (value.supportEmail ?? "").trim(),
     marketingUrl: (value.marketingUrl ?? "").trim().replace(/\/+$/, ""),
+    analytics: {
+      provider: (value.analytics?.provider ?? "").trim(),
+      domain: (value.analytics?.domain ?? "").trim(),
+      host: (value.analytics?.host ?? "").trim(),
+      key: (value.analytics?.key ?? "").trim(),
+    },
   };
 }
 
