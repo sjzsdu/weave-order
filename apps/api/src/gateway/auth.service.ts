@@ -273,6 +273,21 @@ export class AuthService {
     return { body, sid: session.sid };
   }
 
+  /**
+   * 只验签、不要求已有成员身份。
+   *
+   * 唯一用途是开通：新老板第一次进来时业务库里还没有他的 membership，
+   * 只要令牌可信就允许他领取开通链接。除开通外不要使用——业务请求必须走
+   * `authenticate()` 拿到租户上下文。
+   */
+  async verifyClaims(header: string | undefined): Promise<AuthClaims> {
+    const token = this.bearer(header);
+    if (token.startsWith("wo_")) {
+      throw authError("INVALID_TOKEN", "开通请先登录，再打开开通链接");
+    }
+    return this.verifier.verify(token);
+  }
+
   private async chooserBody(
     subject: string,
     name: string | null,

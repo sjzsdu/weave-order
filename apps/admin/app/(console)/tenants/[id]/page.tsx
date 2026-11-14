@@ -11,7 +11,7 @@ import {
   statusClass,
 } from "@/src/format";
 import { PlatformApiError, platformFetch } from "@/src/server-api";
-import { SubscriptionForm, TenantStatusActions } from "@/src/actions";
+import { OnboardingLinkPanel, SubscriptionForm, TenantStatusActions } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +58,8 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
           </Link>
         </div>
       </div>
+
+      <OnboardingLinkPanel tenantId={id} ownerEmail={detail.contactEmail ?? null} />
 
       <div className="grid cols-4">
         <div className="stat">

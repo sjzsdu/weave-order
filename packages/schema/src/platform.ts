@@ -551,7 +551,7 @@ export const ProvisionTenantInput = z
     billingCycle: BillingCycle.default("MONTHLY"),
     isolationMode: IsolationMode.default("SHARED_RLS"),
     region: z.string().min(1).max(32).default("cn-east"),
-    trialDays: z.number().int().min(0).max(90).default(14),
+    trialDays: z.number().int().min(0).max(90).default(3),
     notes: z.string().max(2000).optional(),
   })
   .strict();

@@ -382,7 +382,8 @@
 
 .journey {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 开通旅程正文可能是 3 步也可能是 4 步：按可用宽度自适应，避免最后一行孤零零一张卡。 */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 18px;
   counter-reset: step;
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_PLATFORM_DATABASE_URL } from "@weave-order/control-db";
+import { DEV_ONBOARDING_SECRET } from "./control/onboarding-ticket";
 
 /**
  * 控制面环境契约。
@@ -23,6 +24,10 @@ export const Env = z.object({
   PLATFORM_BREAK_GLASS_MINUTES: z.coerce.number().int().positive().max(60).default(60),
   PLATFORM_INGEST_KEY: z.string().optional(),
   PLATFORM_CORS_ORIGIN: z.string().default("http://localhost:3003"),
+  /** 租户端 Web 地址：开通链接指向它（`<WEB_APP_URL>/activate?code=...`）。 */
+  WEB_APP_URL: z.string().url().default("http://localhost:3001"),
+  /** 开通链接签名密钥；必须与 apps/api 的 ONBOARDING_SECRET 相同。 */
+  ONBOARDING_SECRET: z.string().min(32).default(DEV_ONBOARDING_SECRET),
 });
 
 export type Env = z.infer<typeof Env>;
@@ -40,6 +45,11 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Env {
       );
     }
     assertProductionDatabaseUrl(env);
+    if (parsed.data.ONBOARDING_SECRET === DEV_ONBOARDING_SECRET) {
+      throw new Error(
+        "生产环境必须显式配置 ONBOARDING_SECRET（≥32 字节随机值，与控制面/租户端保持一致）；否则任何人都能伪造开通链接。",
+      );
+    }
   }
   return parsed.data;
 }

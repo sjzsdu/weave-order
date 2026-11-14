@@ -155,6 +155,33 @@ export class TenancyService {
   }
 
   /**
+   * 按 slug 找租户，找不到返回 null。
+   *
+   * 开通流程用它做幂等键：同一个开通链接被打开两次，第二次必须落到同一间公司。
+   */
+  async findTenantBySlug(slug: string): Promise<Tenant | null> {
+    const rows = await this.db.select().from(tenants).where(eq(tenants.slug, slug)).limit(1);
+    const row = rows[0];
+    return row ? mapTenant(row) : null;
+  }
+
+  /**
+   * 该 subject 在指定租户下的成员关系（任意状态），找不到返回 null。
+   *
+   * 多租户下不能再用「按 subject 查唯一身份」：同一个人可能同时属于几家公司，
+   * 开通与邀请都必须落到具体租户。
+   */
+  async findMembershipForTenant(subject: string, tenantId: string): Promise<Membership | null> {
+    const rows = await this.db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.subject, subject), eq(memberships.tenantId, tenantId)))
+      .limit(1);
+    const row = rows[0];
+    return row ? mapMembership(row) : null;
+  }
+
+  /**
    * 租户选择器的数据源：只返回该 subject 自己的成员关系（ACTIVE + DISABLED）。
    *
    * INVITED 不算成员，不出现；金额上限、teamId 等内部设置也不出现，

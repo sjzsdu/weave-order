@@ -32,7 +32,9 @@ import type { PlatformDb } from "../db/database.provider";
 import type { PlatformActor } from "../auth/auth.service";
 import { conflict, invalid, notFound } from "../domain/errors";
 import { effectiveMonthlyCents } from "../domain/billing";
+import { loadEnv } from "../env";
 import { AuditService } from "./audit.service";
+import { ONBOARDING_TICKET_TTL_SECONDS, signOnboardingTicket } from "./onboarding-ticket";
 import { addDays, addMonths, currentMonthPeriod, toIso } from "./util";
 
 export interface TenantListFilter {
@@ -420,6 +422,49 @@ export class TenantsService {
     const tenant = rows[0];
     if (!tenant) throw notFound("租户不存在");
     return tenant;
+  }
+
+  /**
+   * 生成开通链接：客户老板打开后，用统一账号登录即可把公司空间建出来。
+   *
+   * 只做签名，不写业务库——控制面碰不到业务数据。链接里的信息只有
+   * slug / 公司名 / 联系人邮箱 / 过期时间，见 `packages/schema/src/onboarding.ts`。
+   */
+  async onboardingLink(
+    actor: PlatformActor,
+    tenantId: string,
+  ): Promise<{
+    url: string;
+    code: string;
+    expiresAt: string;
+    slug: string;
+    name: string;
+    ownerEmail: string | null;
+  }> {
+    const tenant = await this.tenantOrThrow(tenantId);
+    const env = loadEnv();
+    const ownerEmail = tenant.contactEmail ?? null;
+    const code = signOnboardingTicket(
+      {
+        v: 1,
+        slug: tenant.slug,
+        name: tenant.name,
+        ownerEmail,
+      },
+      env.ONBOARDING_SECRET,
+    );
+    const expiresAt = new Date(Date.now() + ONBOARDING_TICKET_TTL_SECONDS * 1000).toISOString();
+    const url = `${env.WEB_APP_URL.replace(/\/$/, "")}/activate?code=${encodeURIComponent(code)}`;
+
+    await this.audit.record(actor, {
+      action: "ONBOARDING_LINK_ISSUED",
+      targetType: "tenant",
+      targetId: tenant.id,
+      after: { slug: tenant.slug, ownerEmail, expiresAt },
+      reason: "生成客户开通链接",
+    });
+
+    return { url, code, expiresAt, slug: tenant.slug, name: tenant.name, ownerEmail };
   }
 
   private async subscriptionOf(tenantId: string): Promise<SubscriptionRow | null> {

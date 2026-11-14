@@ -21,3 +21,4 @@ export * from "./tools/t005-create-sample-shipment";
 export * from "./tools/t006-suggest-line-price";
 export * from "./print";
 export * from "./platform";
+export * from "./onboarding";

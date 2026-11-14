@@ -14,6 +14,8 @@ import {
   Customer,
   FabricSample,
   Order,
+  OnboardingPreview,
+  OnboardingResult,
   OrderShippingSummary,
   PanoramaSnapshot,
   PrintCenterSnapshot,
@@ -164,6 +166,16 @@ export function createApiClient(options: ApiClientOptions) {
     logout: async () => {
       await request("/api/auth/session", { method: "DELETE" });
     },
+
+    /** 开通链接预览：打开链接先确认「这是哪家公司、我是不是已经在了」。 */
+    previewOnboarding: async (code: string) =>
+      OnboardingPreview.parse(
+        await request(`/api/onboarding/preview?code=${encodeURIComponent(code)}`),
+      ),
+
+    /** 领取开通链接：建公司 + 成为老板；重复调用返回 alreadyActivated。 */
+    claimOnboarding: async (code: string) =>
+      OnboardingResult.parse(await post("/api/onboarding/claim", { code })),
 
     listCustomers: async (limit = 20) =>
       CustomersResponse.parse(await request(`/api/customers?limit=${limit}`)).customers,

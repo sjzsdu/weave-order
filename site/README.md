@@ -105,17 +105,18 @@ node site/tools/configure.mjs --site https://weave.example.com --dry-run
 2. **Casdoor 应用回调**：`weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。应用本身不要求固定域名：没设 `PUBLIC_APP_URL` 时按请求来源推导。
 3. **备案号**：若部署在国内服务器，页脚需要补 ICP 备案号与公安备案号。
 
-## 仍然缺的一环：自助开通
+## 开通链接：现在怎么走
 
-`signup.html` 现在是「登记 → 人工开通」：表单提交会打开用户的邮件客户端（不静默采集），承诺工作日当天由人工在企业空间里建好账号。它解决的是「用户知道去哪开通、要准备什么」，不是「点一下就开通」。
+`signup.html` 的承诺与代码一致：**登记 → 人工确认 → 发一条开通链接 → 客户自己点开完成开通**。
 
-要让旅程真正自助，需要后端补三件事（当前 `apps/platform-api` 只有平台管理员调用的 `POST /platform/api/tenants`）：
+- 控制面（`apps/platform-api`）：管理员在租户详情页点「生成开通链接」，接口 `POST /platform/api/tenants/:id/onboarding-link` 用 `ONBOARDING_SECRET` 签一条 7 天有效的票据，返回 `<WEB_APP_URL>/activate?code=...`。
+- 租户端（`apps/web` / `apps/api`）：`/activate` 先展示公司名与登记邮箱，客户登录后 `POST /api/onboarding/claim` 验签、核对邮箱，然后建出业务库租户 + 老板成员（`OWNER` / `ALL`）。重复点击幂等。
+- 不需要在 Casdoor 建 Organization：登录身份按 `sub` 解析，`casdoorOrg` 可为空。
+- 两张库靠 `slug` 对齐：控制面租户的 slug 与业务库租户的 slug 相同。
 
-1. 公开的试用申请接口：校验手机号 / 邮箱、限流、落一张待处理表。
-2. 管理员一键开通：复用现有 `provision()`，开通后回写「已开通 + 登录方式」。
-3. 开通后自动在 Casdoor 建 Organization 并发邀请，用户点链接即可设置密码进入。
+仍然缺的一环是**完全开放的自助注册**（不经过人工审核、不依赖链接）：那需要在官网收表后自动落一条待办、自动信用风控与限流，并把开通链接自动发出去。在此之前，官网不写「立即注册」，只写「登记后当天发链接」——这是当前真实能做到的。
 
-在此之前不要在前端写「立即开通」——那会让用户点完发现进不去。
+## 目录
 
 ## 目录
 

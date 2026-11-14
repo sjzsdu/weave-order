@@ -14,6 +14,7 @@ import { InvoicesService } from "../src/control/invoices.service";
 import { PricingService } from "../src/control/pricing.service";
 import { TenantsService } from "../src/control/tenants.service";
 import { UsageService } from "../src/control/usage.service";
+import { DEV_ONBOARDING_SECRET, verifyOnboardingTicket } from "../src/control/onboarding-ticket";
 
 /**
  * 控制面集成测试：需要本地 PostgreSQL + `pnpm platform:migrate`。
@@ -113,7 +114,7 @@ describe("平台控制面（集成）", () => {
       planCode: "PRO",
       seats: 12,
       billingCycle: "MONTHLY",
-      trialDays: 14,
+      trialDays: 3,
       region: "cn-east",
     });
     tenantId = created.id;
@@ -330,5 +331,28 @@ describe("平台控制面（集成）", () => {
       "SELECT to_regclass('public.customers') AS name",
     );
     expect(result.rows[0]?.name).toBeNull();
+  });
+
+  it("生成开通链接：指向 /activate、7 天有效、可被验签", async (ctx) => {
+    if (!available) {
+      ctx.skip();
+      return;
+    }
+    const created = await tenants.provision(owner, {
+      name: `开通链接公司-${suffix()}`,
+      slug: `onboard-${suffix()}`,
+      planCode: "PRO",
+      seats: 10,
+      billingCycle: "MONTHLY",
+      contactEmail: "boss@example.com",
+      region: "cn-east",
+    });
+    const link = await tenants.onboardingLink(owner, created.id);
+    expect(link.url).toContain("/activate?code=");
+    expect(link.ownerEmail).toBe("boss@example.com");
+    expect(new Date(link.expiresAt).getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 3600 * 1000);
+
+    const ticket = verifyOnboardingTicket(link.code, DEV_ONBOARDING_SECRET);
+    expect(ticket).toMatchObject({ slug: created.slug, ownerEmail: "boss@example.com" });
   });
 });

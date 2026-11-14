@@ -24,8 +24,19 @@ describe("控制面生产环境门控", () => {
       NODE_ENV: "production",
       PLATFORM_AUTH_MODE: "oidc",
       PLATFORM_DATABASE_URL: "postgres://weave:secret@db.internal:5432/weave_platform_prod",
+      ONBOARDING_SECRET: "prod-onboarding-secret-0123456789abcdef",
     });
     expect(env.PLATFORM_DATABASE_URL).toContain("weave_platform_prod");
+  });
+
+  it("生产禁止使用默认开通链接密钥", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        PLATFORM_AUTH_MODE: "oidc",
+        PLATFORM_DATABASE_URL: "postgres://weave:secret@db.internal:5432/weave_platform_prod",
+      }),
+    ).toThrow(/ONBOARDING_SECRET/);
   });
 
   it("生产仍然禁止 dev 鉴权", () => {
