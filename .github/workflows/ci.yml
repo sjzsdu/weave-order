@@ -83,13 +83,12 @@ jobs:
       - name: 打印用例执行数守卫
         run: pnpm --filter @weave-order/api test:print:guard
 
+      # Lint 走 `scripts/lint.mjs`，按 workspace 分片、一片一进程，单分片峰值约 1.1~1.5 GB，
+      # 留得下 runner 上 ~2 GB 的默认 V8 堆上限（实测 2096 MB），所以这里不要再加
+      # NODE_OPTIONS 抬堆：抬上去只会让分片涨到 3~4 GB 时才暴露，抹掉 1.6 GB 水位告警的意义。
+      # 历史：WAN-127 之前全仓单进程 `eslint .` 峰值 4.2 GB，曾用 --max-old-space-size=4096 绕过。
       - name: Lint
         run: pnpm lint
-        env:
-          # `eslint .` 走 TypeScript project service，全仓类型感知 lint 的峰值堆在 2GB 上下，
-          # 而 CI 容器的默认 V8 上限就是 ~2GB —— 会以 FATAL ERROR: Reached heap limit 构红
-          # （用例与 typecheck 其实全绿）。给 lint 单独放宽堆上限。
-          NODE_OPTIONS: --max-old-space-size=4096
 
   # 迁移升级演练（WAN-98）：在「上一个已发布修订」的库上，升级到 PR 头。
   # 守卫两件事：
