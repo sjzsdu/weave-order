@@ -67,44 +67,6 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 3. 数字必须能用：几分钟、多少钱、多少人、几号之前。
 4. 不确定的事直接说「内测中」「登记后发放」，不承诺做不到的即时开通。
 
-## 上线：域名在部署时配，不写死在页面里
-
-页面里所有绝对地址都来自 `site/site.config.json`。换域名不改 17 个文件，只跑一条命令：
-
-```bash
-# 只换官网域名
-node site/tools/configure.mjs --site https://weave.example.com
-
-# 官网、应用、管理端、统一登录、支持邮箱一起换
-node site/tools/configure.mjs \
-  --site https://weave.example.com \
-  --app https://app.example.com \
-  --admin https://admin.example.com \
-  --sso https://sso.example.com \
-  --email ops@example.com
-
-# 先看会改哪些文件、多少处，不落盘
-node site/tools/configure.mjs --site https://weave.example.com --dry-run
-```
-
-脚本做的事：把旧值全站替换成新值（canonical、OG、JSON-LD、sitemap、`llms.txt`、站内链接、正文里出现的裸域名），然后写回 `site.config.json`。可重复执行，第二次会告诉你「配置没有变化」。帮助中心的生成器也读这份配置，重新生成文档不会把域名重置回占位值。
-
-当前占位值（部署时按实际环境覆盖）：
-
-| 配置项  | 当前值                          | 用途                         |
-| ------- | ------------------------------- | ---------------------------- |
-| `site`  | `https://weaveorder.cn`         | canonical、OG、sitemap、llms |
-| `app`   | `https://weave.wnbgj.com`       | 登录 / 打开工作台            |
-| `admin` | `https://weave-admin.wnbgj.com` | 平台管理入口                 |
-| `sso`   | `https://sso.wnbgj.com`         | 忘记密码、统一登录           |
-| `email` | `hello@weaveorder.cn`           | 咨询、开通、账单             |
-
-仍有三件不在这个脚本范围内：
-
-1. **应用侧两个环境变量**：`apps/web` 的 `NEXT_PUBLIC_MARKETING_URL`（登录页指向官网）与 `NEXT_PUBLIC_SUPPORT_EMAIL`；统一登录地址直接复用 `CASDOOR_ISSUER`。
-2. **Casdoor 应用回调**：`weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。应用本身不要求固定域名：没设 `PUBLIC_APP_URL` 时按请求来源推导。
-3. **备案号**：若部署在国内服务器，页脚需要补 ICP 备案号与公安备案号。
-
 ## 开通：现在怎么走
 
 两种入口，都不需要运营逐单点：
@@ -120,23 +82,60 @@ node site/tools/configure.mjs --site https://weave.example.com --dry-run
 
 完全不经过人工的开放式注册（不要求邮箱验证、不限流）仍然不做：现在的前提是用户已在统一身份系统里注册并验证过邮箱/手机。Casdoor 的注册项（邮箱/手机号 + 验证码、是否允许自助注册）属于部署配置，不在本仓库。
 
-## 计费模型（与代码一致）
+## 站内搜索
 
-- 按公司订阅：基础 ¥299 / 专业 ¥899 / 企业 ¥2,999 起，含固定账号数与每月 credits。
-- 1 credit = 1,000 tokens（输入+输出）；credits 落在租户的 LLM 月度预算里，超额时智能体暂停（人仍可看/批/导出），每月 1 日重置。
-- 年付 = 10 个月价；价格表版本化，租户合同价另存。
-- 官网价格页、帮助中心与 `llms.txt` 用同一组数字，改价时一起改。
+- 构建期生成索引：`node site/tools/build-search-index.mjs` → `site/assets/search-index.json`（16 页、约 200 个章节；404 不索引）。
+- 运行时 `site/assets/search.js`：导航栏注入「搜索」按钮，`⌘K` / `/` 打开，浏览器本地匹配（中文按二元组），不联网、不埋点、不需要后端；`?q=报价` 可以直接打开并出结果。
+- 排序权重：页面标题 8、h1 5、description 3、正文 1；章节标题 6、章节正文 4。结果指向最近一次命中的章节锚点。
+- 改完页面内容后重新跑一次索引脚本，否则搜不到新段落的原文。
 
-## 目录
+## 部署：域名由环境变量在部署时决定
 
-## 计费模型（与代码一致）
+站点里所有绝对地址（canonical、OG、JSON-LD、sitemap、llms.txt、正文里的裸域名）都来自 `site/site.config.json`，部署时用环境变量覆盖：
 
-- 按公司订阅：基础 ¥299 / 专业 ¥899 / 企业 ¥2,999 起，含固定账号数与每月 credits。
-- 1 credit = 1,000 tokens（输入+输出）；credits 落在租户的 LLM 月度预算里，超额时智能体暂停（人仍可看/批/导出），每月 1 日重置。
-- 年付 = 10 个月价；价格表版本化，租户合同价另存。
-- 官网价格页、帮助中心与 `llms.txt` 用同一组数字，改价时一起改。
+| 变量                  | 作用                                        |
+| --------------------- | ------------------------------------------- |
+| `WEAVE_SITE_URL`      | 官网地址（canonical / OG / sitemap / llms） |
+| `WEAVE_APP_URL`       | 工作台地址（登录、打开工作台）              |
+| `WEAVE_ADMIN_URL`     | 平台管理后台                                |
+| `WEAVE_SSO_URL`       | 统一登录（忘记密码）                        |
+| `WEAVE_SUPPORT_EMAIL` | 客服邮箱（页脚、错误页、mailto）            |
 
-## 目录
+三种落地方式，任选：
+
+```bash
+# 1) 本地/CI 直接改写
+WEAVE_SITE_URL=https://weave.wnbgj.com WEAVE_APP_URL=https://app.wnbgj.com \
+  sh site/deploy/configure-env.sh
+
+# 2) 构建镜像（域名固化在构建期，运行时零依赖）
+docker build -f site/Dockerfile \
+  --build-arg WEAVE_SITE_URL=https://weave.wnbgj.com \
+  --build-arg WEAVE_APP_URL=https://app.wnbgj.com \
+  -t sjzsdu/weave-order-site:dev .
+
+# 3) rsync 到已有 nginx（在临时目录里替换，不改工作区）
+WEAVE_SITE_URL=https://weave.wnbgj.com \
+  DEPLOY_HOST=user@server DEPLOY_PATH=/var/www/weave-site \
+  ./site/deploy/publish.sh
+```
+
+`site/deploy/nginx.conf` 已配好：HTML 不缓存、静态资源长缓存、`404 → 404.html`、gzip。替换后会自动重建搜索索引。
+
+也可以不走环境变量，直接传命令行参数（优先级高于 env）：
+
+```bash
+node site/tools/configure.mjs --site https://weave.wnbgj.com --app https://app.wnbgj.com
+node site/tools/configure.mjs --site https://weave.wnbgj.com --dry-run
+```
+
+脚本之外还有三处要一起改：
+
+1. `apps/web` 的 `NEXT_PUBLIC_MARKETING_URL`（登录页「申请开通 / 帮助中心 / 返回官网」）与 `NEXT_PUBLIC_SUPPORT_EMAIL`；统一登录地址复用 `CASDOOR_ISSUER`。
+2. Casdoor `weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。
+3. 国内服务器补 ICP 备案号与公安备案号（页脚）。
+
+注意：官网占用 `weave.wnbgj.com` 后，工作台必须换到另一个地址（例如 `app.wnbgj.com`）并同步 `WEAVE_APP_URL`、`PUBLIC_APP_URL` 与 Casdoor 回调；否则「登录/打开工作台」会指回官网。
 
 ## 计费模型（与代码一致）
 
@@ -164,14 +163,20 @@ site/
 ├── site.config.json      部署期配置：域名、应用地址、支持邮箱
 ├── tools/
 │   ├── build-docs.mjs    帮助中心文章生成器（开发期使用）
-│   └── configure.mjs     部署时把配置写进全站（换域名一条命令）
+│   ├── build-search-index.mjs  站内搜索索引生成器
+│   └── configure.mjs     部署时把配置写进全站（换域名一条命令 / 环境变量）
+├── deploy/
+│   ├── configure-env.sh  用 WEAVE_* 环境变量改写全站
+│   ├── nginx.conf        静态托管配置
+│   └── publish.sh        rsync 发布脚本
+├── Dockerfile            官网镜像（构建期注入域名 + nginx）
 ├── llms.txt / robots.txt / sitemap.xml
 └── README.md
 ```
 
-## 部署
+## 托管选择
 
-任选静态托管，把 `site/` 整体发布即可：
+任选一种，把上面按环境变量替换后的 `site/` 发布：
 
 - **Vercel / Netlify / Cloudflare Pages**：根目录 `site`，构建命令留空，输出目录 `.`。
 - **自有 nginx**：`root /var/www/weaveorder;`，`index.html` 设 `Cache-Control: no-cache`，静态资源长缓存，`error_page 404 /404.html;`。

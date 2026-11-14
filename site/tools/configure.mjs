@@ -10,6 +10,14 @@
  *   node site/tools/configure.mjs --dry-run          # 只看会改什么
  *
  * 支持的值：--site --app --admin --sso --email
+ *
+ * 部署时也可以只用环境变量（命令行参数优先）：
+ *   WEAVE_SITE_URL=https://weave.wnbgj.com \
+ *   WEAVE_APP_URL=https://app.wnbgj.com \
+ *   WEAVE_ADMIN_URL=https://admin.wnbgj.com \
+ *   WEAVE_SSO_URL=https://sso.wnbgj.com \
+ *   WEAVE_SUPPORT_EMAIL=hello@weaveorder.cn \
+ *   node site/tools/configure.mjs
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
@@ -70,6 +78,19 @@ function normalizeEmail(value) {
   return trimmed;
 }
 
+const ENV_KEYS = {
+  site: "WEAVE_SITE_URL",
+  app: "WEAVE_APP_URL",
+  admin: "WEAVE_ADMIN_URL",
+  sso: "WEAVE_SSO_URL",
+  email: "WEAVE_SUPPORT_EMAIL",
+};
+
+// 命令行优先；没传就看环境变量，方便部署流水线只注入 env。
+for (const [key, envName] of Object.entries(ENV_KEYS)) {
+  if (!flags[key] && process.env[envName]) flags[key] = process.env[envName];
+}
+
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 const next = { ...config };
 
@@ -88,20 +109,39 @@ if (changes.length === 0) {
   process.exit(0);
 }
 
-// 长的先替换，避免 https://a.com 抢先吃掉 https://a.com.cn 这类前缀重叠。
-const urlPairs = changes
-  .map((key) => [config[key], next[key]])
-  .sort((a, b) => b[0].length - a[0].length);
+// 两阶段替换：先把旧值换成唯一占位符，再统一写新值。
+//
+// 为什么不能顺序替换：新值可能正好等于另一项的旧值（典型场景：官网占用
+// 原来应用的域名）。顺序替换会把刚写进去的地址再改一遍，canonical 会变成应用地址。
+const tokens = new Map();
+const urlPairs = [];
+const hostPairs = [];
 
-// 正文里也会出现不带协议的裸主机名（例如「打开 weave.wnbgj.com」），
-// 放在 URL 替换之后处理；邮箱不参与这一轮。
-const hostPairs = changes
-  .filter((key) => key !== "email")
-  .map((key) => [new URL(config[key]).host, new URL(next[key]).host])
-  .filter(([from, to]) => from !== to)
-  .sort((a, b) => b[0].length - a[0].length);
+for (const key of changes) {
+  const token = `\u0000WEAVE_${key.toUpperCase()}_URL\u0000`;
+  tokens.set(token, next[key]);
+  urlPairs.push([config[key], token]);
 
+  if (key !== "email") {
+    const oldHost = new URL(config[key]).host;
+    const newHost = new URL(next[key]).host;
+    if (oldHost !== newHost) {
+      const hostToken = `\u0000WEAVE_${key.toUpperCase()}_HOST\u0000`;
+      tokens.set(hostToken, newHost);
+      hostPairs.push([oldHost, hostToken]);
+    }
+  }
+}
+
+urlPairs.sort((a, b) => b[0].length - a[0].length);
+hostPairs.sort((a, b) => b[0].length - a[0].length);
 const pairs = [...urlPairs, ...hostPairs];
+
+function applyTokens(text) {
+  let out = text;
+  for (const [token, value] of tokens) out = out.split(token).join(value);
+  return out;
+}
 
 function walk(dir) {
   const out = [];
@@ -129,6 +169,7 @@ for (const file of files) {
       hits += count;
     }
   }
+  if (hits > 0) text = applyTokens(text);
   if (hits > 0) {
     touched += 1;
     replaced += hits;
