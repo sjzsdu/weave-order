@@ -290,6 +290,10 @@ describe("LLM 预算预留—结算", () => {
       },
     ];
 
+    // 用量行按 provider 的 now（2026-11-13）落库；预算快照也必须用同一个「当前时刻」，
+    // 否则真实时钟跨天后 dailyTokens 的窗口不再覆盖这些行，用例会随日期变成红灯。
+    const fixedNow = new Date("2026-11-13T00:00:00.000Z");
+
     for (const testCase of cases) {
       const tenantId = randomUUID();
       const service = new UsageService(requireDb(), tenantId);
@@ -304,7 +308,7 @@ describe("LLM 预算预留—结算", () => {
         apiKey: "sk",
         timeoutMs: 1000,
         fetchImpl: testCase.fetchImpl,
-        now: () => new Date("2026-11-13T00:00:00.000Z"),
+        now: () => fixedNow,
       });
 
       await expect(provider.extractQuoteIntent({ text: "棉 500 米" })).rejects.toThrow();
@@ -317,7 +321,7 @@ describe("LLM 预算预留—结算", () => {
       expect(row.reservedTokens).toBeGreaterThan(0);
       expect(row.promptTokens).toBe(testCase.promptTokens);
 
-      const status = await service.budgetStatus(null, null);
+      const status = await service.budgetStatus(null, null, fixedNow);
       expect(status.dailyTokens).toBe(row.reservedTokens);
     }
   });
