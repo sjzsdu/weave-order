@@ -15,6 +15,7 @@
 | `docs/index.html`                                                        | 帮助中心首页：按任务分类 + 搜索 + 十个高频问题                      | 手工                               |
 | `docs/quickstart.html`                                                   | 5 分钟上手                                                          | 手工                               |
 | `docs/{signup,import,approvals,quotes,printing,agent,security,faq}.html` | 七篇操作文档与 FAQ                                                  | **由 `tools/build-docs.mjs` 生成** |
+| `guides/{textile-erp-selection,fabric-quotation-software,sample-follow-up,textile-reconciliation}.html` | 四个长尾搜索意图落地页（选型 / 报价 / 寄样 / 对账）                 | **由 `tools/build-guides.mjs` 生成** |
 | `404.html`                                                               | 找不到页面时的四个出口                                              | 手工                               |
 | `llms.txt`                                                               | 给 AI 助手（ChatGPT / Claude / Perplexity 等）的产品摘要与事实清单  | 手工                               |
 | `robots.txt` / `sitemap.xml`                                             | 抓取规则与站点地图                                                  | 手工                               |
@@ -41,13 +42,27 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 
 新增一篇文章：在 `pages` 里加一项（`slug`、`title`、`description`、`lede`、`sections`），再把它加进 `SIDE` 导航与 `ORDER`（上下篇顺序），最后补 `sitemap.xml`。
 
+## 改指南页（长尾落地页）
+
+`guides/` 下四页是独立落地页，目标是回答一个具体问题、能被搜索引擎与大模型单独摘录。它们和帮助文档一样共用外壳，但正文、FAQ 与结构化数据不同：
+
+```bash
+node site/tools/build-guides.mjs   # 覆盖生成 4 个指南页
+```
+
+- 正文在 `tools/guides/*.mjs`，只写 `h1`、首段答案、`sections`、`faq`，可选的 `howTo` 会生成 `HowTo` 结构化数据。
+- 每页自动带 `BreadcrumbList` + `FAQPage`（+ 可选 `HowTo`）、独立 `title` / `description` / `canonical` / `og:url`，以及首屏与页尾两个 CTA。
+- CTA 链接带 `data-cta="guide-<slug>-{nav,hero,end}"`，统计任务上线后按这个属性绑 `cta_click`，不用再改页面。
+- 新增一篇：在 `tools/guides/` 加一个导出 default 的模块，登记到 `build-guides.mjs` 的 `GUIDES`，补 `sitemap.xml` 与 `llms.txt`，并在 `docs/index.html` 的「选型与实操指南」卡片加一条。
+- 每页正文建议 ≥ 800 字中文、至少 3 个可核对的具体机制或数字；没有真实客户数据就写方法，不编案例。
+
 ## SEO 与「大模型搜索」优化
 
 搜索引擎部分：
 
 - 每页都有唯一的 `<title>`、`meta description`、`canonical`、Open Graph 与 Twitter Card；`og:image` 用绝对地址。
 - 结构化数据：首页 `Organization` + `WebSite` + `SoftwareApplication` + `FAQPage`；价格页 `Product` + `Offer`；开通页 `HowTo`；文档页 `BreadcrumbList`；FAQ 页 `FAQPage`。
-- `sitemap.xml` 含全部 15 个可索引页面；`robots.txt` 声明 sitemap，并显式允许 GPTBot / ClaudeBot / PerplexityBot。
+- `sitemap.xml` 含全部 20 个可索引页面；`robots.txt` 声明 sitemap，并显式允许 GPTBot / ClaudeBot / PerplexityBot。
 - 语义结构：每页一个 `h1`，章节用 `h2/h3`，正文用短段落与列表；`alt` 全部填写或显式留空。
 - 登录后的工作台与平台管理端在应用层设置了 `noindex`，不参与索引。
 
@@ -55,7 +70,7 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 
 - `llms.txt` 放在站点根目录，按 [llmstxt.org](https://llmstxt.org) 的格式给出：一句话定义、关键事实（入口、价格、试用、开通方式、部署形态、身份、安全）、分主题链接、可直接引用的问答对。首页 `<head>` 里有 `<link rel="alternate" type="text/plain" href="/llms.txt">`。
 - 每个页面开头先给结论，再给细节；FAQ 每条答案都能独立被摘出来（「不」开头也是完整句子）。
-- 事实一致：同一组数字（299 / 499 / 14 天 / 5% / 1 万元）在首页、价格页、帮助中心、`llms.txt` 里保持一致，避免模型引用到互相矛盾的版本。
+- 事实一致：同一组数字（299 / 899 / 3 天 / 5% / 1 万元）在首页、价格页、帮助中心、指南页、`llms.txt` 里保持一致，避免模型引用到互相矛盾的版本。
 - 不写「行业领先」这类无法验证的话；给可核对的具体机制（数据库层隔离、审计只追加、break-glass 限时只读）。
 
 ## 文案规则
@@ -153,6 +168,8 @@ site/
 ├── docs/
 │   ├── index.html / quickstart.html       手工维护
 │   └── signup.html … faq.html             脚本生成
+├── guides/
+│   └── textile-erp-selection.html … textile-reconciliation.html   脚本生成
 ├── assets/
 │   ├── styles.css        品牌与首页样式（CSS 变量 + 响应式 + reduced-motion）
 │   ├── pages.css         站内页面：价格 / 下载 / 登录 / 开通 / 帮助中心
@@ -164,6 +181,8 @@ site/
 ├── site.config.json      部署期配置：域名、应用地址、支持邮箱
 ├── tools/
 │   ├── build-docs.mjs    帮助中心文章生成器（开发期使用）
+│   ├── build-guides.mjs  指南页生成器（开发期使用）
+│   ├── guides/           指南正文（每页一个模块）
 │   └── configure.mjs     部署时把配置写进全站（换域名一条命令）
 ├── llms.txt / robots.txt / sitemap.xml
 └── README.md
@@ -185,6 +204,7 @@ site/
 
 - 首页审批卡：点「批准并发送」，虚线草稿变实线、状态变「已批准 · 已发送」，给出客户报价链接；点「改一处」金额按新价重算。全站唯一的主交互，让人 5 秒内明白产品怎么用。
 - 帮助中心：左侧目录、右侧本页目录随滚动高亮；首页搜索只过滤本地卡片，不联网。
+- 指南页：与帮助文档同一套侧栏与目录交互；CTA 按钮统一带 `data-cta`，等待统计任务接入后上报 `cta_click`。
 - 表单：`data-mailform` 的表单会整理成邮件并打开客户端，不做静默采集。
 - 全部动效为渐进增强；禁用 JS 时内容完整可读；支持 `prefers-reduced-motion`。
 - 无障碍：跳转链接、`aria-label`、`aria-current`、焦点可见、表单 `label` 关联、对比度按 WCAG AA 取值。

@@ -58,6 +58,15 @@ const SIDE = [
       ["faq.html", "常见问题"],
     ],
   },
+  {
+    title: "指南",
+    items: [
+      ["../guides/textile-erp-selection.html", "纺织 ERP 怎么选"],
+      ["../guides/fabric-quotation-software.html", "面料报价软件"],
+      ["../guides/sample-follow-up.html", "寄样跟进 SOP"],
+      ["../guides/textile-reconciliation.html", "纺织对账与回款"],
+    ],
+  },
 ];
 
 const ORDER = [
@@ -250,6 +259,7 @@ ${toc(sections)}
         <h4>资源</h4>
         <ul>
           <li><a href="index.html">帮助文档</a></li>
+          <li><a href="index.html#guides">选型与实操指南</a></li>
           <li><a href="quickstart.html">5 分钟上手</a></li>
           <li><a href="faq.html">常见问题</a></li>
           <li><a href="../llms.txt">给 AI 助手的摘要</a></li>
