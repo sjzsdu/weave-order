@@ -8,7 +8,7 @@
 > 可点击原型（桌面三窗口 + 手机四 Tab）：`prototype/product-design.html`，直接用浏览器打开。
 > 用户凭据 / CLI / agent 接入（codex 等）：`docs/cli-and-agent-access.md`，skill 源文件 `skills/weave-order/SKILL.md`。
 > 品牌（logo、口号、色彩与字体）：`brand/`，入口 `brand/brand-guide.md`，品牌板 `brand/preview.html`。
-> 官方网站（功能介绍，静态站）：`site/`，`cd site && python3 -m http.server 8080` 后打开 `localhost:8080`。
+> 官方网站与帮助中心（静态站，含价格、下载、登录入口、开通流程、SEO 与 llms.txt）：`site/`，`cd site && python3 -m http.server 8080` 后打开 `localhost:8080`；维护方式见 `site/README.md`。
 
 ## 技术栈
 

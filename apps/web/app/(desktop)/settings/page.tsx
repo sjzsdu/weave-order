@@ -22,6 +22,20 @@ const SCOPE_LABEL: Record<string, string> = {
   OWN: "本人",
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  TRIAL: "试用中",
+  ACTIVE: "正常使用",
+  OVERDUE: "已逾期",
+  SUSPENDED: "已暂停",
+  CANCELLED: "已停用",
+};
+
+const ISOLATION_LABEL: Record<string, string> = {
+  SHARED_RLS: "共享库 · 按公司隔离",
+  SCHEMA: "独立 schema",
+  DATABASE: "独立数据库",
+};
+
 function Field({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
     <div className="border-b border-line py-3 last:border-b-0">
@@ -50,7 +64,11 @@ function SettingsPageContent() {
     return (
       <EmptyState
         title="组织信息读取失败"
-        description={me.error instanceof Error ? me.error.message : "请确认后端与登录状态"}
+        description={
+          me.error instanceof Error
+            ? me.error.message
+            : "刷新页面重试一次；仍然不行就联系公司管理员或写信到 hello@weaveorder.cn"
+        }
       />
     );
   }
@@ -74,7 +92,7 @@ function SettingsPageContent() {
         <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">组织与设置</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink-900">{tenant.name}</h1>
         <p className="mt-1 text-sm text-ink-400">
-          管理面只此一份。业务数据与设置都在后端校验，前端只读展示。
+          这里能看到公司资料、你的角色和审批权限。资料由平台管理员维护，需要修改时找管理员即可。
         </p>
       </header>
 
@@ -87,17 +105,23 @@ function SettingsPageContent() {
             <Field
               label="租户标识"
               value={<code className="font-mono text-xs">{tenant.id}</code>}
-              hint="前端永不传 tenant_id；网关按登录身份注入"
+              hint="平台分配的公司编号，和我们的技术支持沟通时提供这一串即可"
             />
-            <Field label="计费币种" value={tenant.currency} hint="金额一律整数分，由内核计算" />
+            <Field
+              label="计费币种"
+              value={tenant.currency}
+              hint="报价、订单与账单都按这个币种计算"
+            />
             <Field
               label="状态"
               value={
                 <span className="flex items-center gap-2">
                   <Badge tone={tenant.status === "ACTIVE" ? "success" : "warning"}>
-                    {tenant.status}
+                    {STATUS_LABEL[tenant.status] ?? tenant.status}
                   </Badge>
-                  <span className="text-xs text-ink-400">{tenant.isolationMode}</span>
+                  <span className="text-xs text-ink-400">
+                    {ISOLATION_LABEL[tenant.isolationMode] ?? tenant.isolationMode}
+                  </span>
                 </span>
               }
             />
@@ -121,12 +145,16 @@ function SettingsPageContent() {
               label="审批上限"
               value={
                 limit === null
-                  ? "不限（按角色兜底）"
+                  ? "不限（按角色规则）"
                   : formatMoney({ amount: limit, currency: tenant.currency })
               }
-              hint="超过上限的金额会自动升级审批；阈值判断永远在后端"
+              hint="超过上限的金额会自动升级给上级审批"
             />
-            <Field label="登录方式" value="Casdoor OIDC" hint="本地只保留角色映射，不存密码" />
+            <Field
+              label="登录方式"
+              value="公司统一账号"
+              hint="不保存密码；忘记密码在统一登录页重置"
+            />
           </dl>
         </section>
       </div>
@@ -134,7 +162,7 @@ function SettingsPageContent() {
       <section className="rounded-lg border border-line bg-surface px-5 py-4">
         <h2 className="text-sm font-medium text-ink-900">角色与审批等级</h2>
         <p className="mt-1 text-xs text-ink-400">
-          L1 记录建议 → L2 人类确认（默认）→ L3 双人复核。金额类动作永不低于 L2。
+          金额类动作一律先出草稿、由人确认；超过上限或改幅超过阈值时，自动升级给上级审批，不需要你手动报备。
         </p>
         <div className="mt-3 overflow-hidden rounded-md border border-line">
           <table className="w-full text-sm">
@@ -170,32 +198,30 @@ function SettingsPageContent() {
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
           <h2 className="text-sm font-medium text-ink-900">登录与安全</h2>
           <dl>
-            <Field label="身份提供方" value="Casdoor（自托管）" />
+            <Field label="身份提供方" value="公司统一账号（单点登录）" />
             <Field
-              label="回调地址"
-              value={<code className="font-mono text-xs">/auth/callback</code>}
+              label="账号归属"
+              value="一个公司一个独立空间"
+              hint="不会看到其他公司的任何数据"
             />
-            <Field
-              label="会话"
-              value="OIDC Authorization Code + PKCE"
-              hint="一个租户一个 Casdoor Organization"
-            />
+            <Field label="会话" value="登录一次即可使用" hint="换电脑或清空浏览器后需要重新登录" />
           </dl>
         </section>
 
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
-          <h2 className="text-sm font-medium text-ink-900">桌面能力</h2>
+          <h2 className="text-sm font-medium text-ink-900">日常使用</h2>
           <dl>
             <Field label="窗口" value="工作台 ⌘1 · 审批 ⌘2 · 全景 ⌘3" />
-            <Field label="管理面" value="组织与设置 ⌘," />
-            <Field label="打印" value="全局抽屉（非第四个窗口），P1 接打印代理" />
-            <Field label="外设桥" value="Tauri 壳仅暴露 print / scan / readFile / 电子秤，P3" />
+            <Field label="设置" value="组织与设置 ⌘," />
+            <Field label="打印" value="任意页面调用打印面板，桌面版直连打印机" />
+            <Field label="外设" value="扫码枪、电子秤、标签机即插即用" />
           </dl>
         </section>
       </div>
 
       <p className="text-xs text-ink-400">
-        组织资料与成员管理由平台控制面（Track F）维护；本页只读，避免前端绕过内核写业务配置。
+        公司资料与成员由平台管理员维护，本页只读。需要改公司名、抬头或增加席位，写信到
+        hello@weaveorder.cn 或联系你的对接人。
       </p>
     </div>
   );

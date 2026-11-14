@@ -76,7 +76,7 @@ function TodayPageContent() {
     try {
       const result = await decide.mutateAsync({ id, kind, decision: "APPROVE" });
       if (result.ok) {
-        setNotice("已批准，报价已由内核 confirm 生效。");
+        setNotice("已批准，报价已发给客户，后面的跟进会自动排上。");
       } else {
         setError(result.error.message);
       }
@@ -256,7 +256,7 @@ function TodayPageContent() {
         <IntentComposer
           onSubmit={(text) => {
             setIntents((current) => [text, ...current].slice(0, 3));
-            setNotice("已派发。智能体接入后（Track B）会把草稿回填到审批窗口。");
+            setNotice("已收到，小织正在拆解这条需求，草稿会出现在审批窗口。");
           }}
         />
       </section>

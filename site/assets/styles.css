@@ -886,7 +886,7 @@ h3 {
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ink-400);
+  color: var(--ink-500);
   padding-block: 12px;
 }
 
@@ -898,7 +898,8 @@ h3 {
 }
 
 .compare__old {
-  color: var(--ink-400);
+  /* 弱化但不牺牲可读性：4.5:1 以上，老年人也能看清 */
+  color: var(--ink-500);
   font-size: 14.5px;
   position: relative;
 }
@@ -1872,8 +1873,12 @@ h3 {
   .nav__links {
     display: none;
   }
-  .nav__actions .btn--ghost {
-    display: none;
+  /* 登录入口在手机上也不能藏：它是回访用户唯一的入口。收窄内边距即可放下。 */
+  .nav__actions {
+    gap: 6px;
+  }
+  .nav__actions .btn {
+    padding-inline: 12px;
   }
   .nav__toggle {
     display: inline-flex;

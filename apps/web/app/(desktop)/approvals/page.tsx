@@ -75,7 +75,9 @@ function ApprovalsPageContent() {
         const result = await decide.mutateAsync({ ...selection, decision });
         if (result.ok) {
           setNotice(
-            decision === "APPROVE" ? "已批准，内核已 confirm 生效。" : "已驳回并写入审计。",
+            decision === "APPROVE"
+              ? "已批准并发给客户。"
+              : "已驳回，原因已记录，后续同类草稿会参考。",
           );
           const approved = selection;
           const title =
@@ -197,7 +199,7 @@ function ApprovalsPageContent() {
               title={items.length > 0 ? "选一条待批单据" : "当前没有待批单据"}
               description={
                 items.length > 0
-                  ? "左侧点一条，或用 J/K 切换；批准后走后端 confirm，前端不落账。"
+                  ? "点左侧任意一条查看详情，或用 J / K 键上下切换。批准之后报价才生效，并生成给客户的链接。"
                   : "新的智能体草稿会出现在队列里。"
               }
             />
@@ -216,8 +218,10 @@ function ApprovalsPageContent() {
               decisionError={decisionError}
               onApprove={() => void submit("APPROVE")}
               onReject={() => void submit("REJECT")}
-              onRevise={() => setNotice("改价由 Track A 的 reviseDraft 提供；当前先走 Chat 改稿。")}
-              onAskAgent={() => setNotice("已请小织解释（Agent 接入后回填）。")}
+              onRevise={() =>
+                setNotice("改价请直接在草稿里写一句，例如「按客户要求让 1%」，金额会重新计算。")
+              }
+              onAskAgent={() => setNotice("已请小织解释这张草稿的依据，稍后会在这里回复。")}
             />
           )}
         </section>

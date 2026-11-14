@@ -516,7 +516,7 @@ function PrintCard({ view }: { view: ShipmentView }) {
     <section className="rounded-lg border border-indigo-600/30 bg-indigo-50/40 px-5 py-4">
       <h2 className="text-base font-semibold">③ 一键打印</h2>
       <p className="mt-1 text-sm text-ink-400">
-        同一动作重复点击不会重复出纸（幂等键 = 单据 + 版本 + 份数 + 操作人）。
+        重复点击不会重复出纸：同一张单、同一版本、同一份数只会打印一次。
       </p>
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <label className="grid gap-1">
