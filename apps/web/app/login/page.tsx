@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { SupportMailto } from "@/support";
 
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
-const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@weaveorder.cn";
+
 // 统一登录地址与 OIDC issuer 是同一个，部署时只配一处。
 const SSO_URL = process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com";
 
@@ -54,7 +55,12 @@ export default async function LoginPage({
         <ul className="mt-3 grid gap-2 text-xs leading-relaxed">
           <li>
             <b className="text-ink-700">提示账号不存在或未开通</b>：让公司管理员在「组织与设置 →
-            成员」里邀请你，或写信到 {SUPPORT_EMAIL}。
+            成员」里邀请你，或{" "}
+            <SupportMailto
+              className="text-indigo-600 underline underline-offset-4"
+              label="写信给我们"
+            />
+            。
           </li>
           <li>
             <b className="text-ink-700">登录成功但看不到数据</b>

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import type { OnboardingPreview, OnboardingResult } from "@weave-order/schema";
 import { useApi } from "@/providers";
+import { SupportMailto } from "@/support";
 
-const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@weaveorder.cn";
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
 
 /**
@@ -99,14 +99,12 @@ export function ActivateClient({ code }: { code: string }) {
         <div className="mt-6 grid gap-2 text-xs text-ink-500">
           <p>可能的原因：链接超过 7 天、已被撤回，或登录邮箱与登记邮箱不一致。</p>
           <p>
-            需要帮助就写信到{" "}
-            <a
+            需要帮助就{" "}
+            <SupportMailto
               className="text-indigo-600 underline underline-offset-4"
-              href={`mailto:${SUPPORT_EMAIL}`}
-            >
-              {SUPPORT_EMAIL}
-            </a>
-            ，把这条消息截图发给我们。
+              label="写信给我们"
+            />
+            ，把这条消息截图发过来。
           </p>
         </div>
         <a href="/login" className="mt-6 text-xs text-ink-400 underline underline-offset-4">

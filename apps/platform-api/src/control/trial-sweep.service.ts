@@ -78,6 +78,7 @@ export class TrialSweepService {
               to: email,
               tenantName: row.tenant.name,
               endsAt,
+              supportEmail: loadEnv().SUPPORT_EMAIL,
             }),
           )
         : { ok: false, provider: "log", detail: "租户没有联系人邮箱" };

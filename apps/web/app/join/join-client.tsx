@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import type { InvitePreview } from "@weave-order/schema";
 import { useApi } from "@/providers";
-
-const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@weaveorder.cn";
+import { SupportMailto } from "@/support";
 
 /**
  * 接受同事邀请。
@@ -90,13 +89,11 @@ export function JoinClient({ code }: { code: string }) {
         <h1 className="mt-2 text-2xl font-semibold text-ink-900">这条邀请用不了</h1>
         <p className="mt-2 text-sm text-ink-500">{error}</p>
         <p className="mt-4 text-xs leading-relaxed text-ink-400">
-          可能是邀请超过 7 天、已被接受，或你的登录邮箱和被邀请的邮箱不一致。需要帮助写信到{" "}
-          <a
+          可能是邀请超过 7 天、已被接受，或你的登录邮箱和被邀请的邮箱不一致。需要帮助就{" "}
+          <SupportMailto
             className="text-indigo-600 underline underline-offset-4"
-            href={`mailto:${SUPPORT_EMAIL}`}
-          >
-            {SUPPORT_EMAIL}
-          </a>
+            label="写信给我们"
+          />
           。
         </p>
         <div className="mt-6 flex gap-4 text-xs">

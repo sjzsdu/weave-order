@@ -130,14 +130,19 @@ export function trialEndingMessage(input: {
   to: string;
   tenantName: string;
   endsAt: Date;
+  /** 支持邮箱由调用方从配置传入；不传就不在文案里出现地址。 */
+  supportEmail?: string;
 }): NotifyMessage {
+  const contact = input.supportEmail?.trim()
+    ? `回复这条消息或写信到 ${input.supportEmail}`
+    : "回复这条消息或联系你的对接人";
   return {
     channel: input.channel,
     to: input.to,
     subject: `「${input.tenantName}」试用将在明天结束`,
     text: [
       `「${input.tenantName}」的 3 天试用将在 ${input.endsAt.toLocaleString("zh-CN")} 结束。`,
-      `到期后账号转只读 30 天，数据保留；要继续用，回复这条消息或写信到 hello@weaveorder.cn。`,
+      `到期后账号转只读 30 天，数据保留；要继续用，${contact}。`,
       `不自动扣费。`,
     ].join("\n"),
   };

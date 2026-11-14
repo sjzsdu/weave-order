@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { TeamInvite } from "@weave-order/schema";
 import { Badge, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
 import { formatMoney } from "@weave-order/ui";
 
@@ -69,7 +70,13 @@ function SettingsPageContent() {
         description={
           me.error instanceof Error
             ? me.error.message
-            : "刷新页面重试一次；仍然不行就联系公司管理员或写信到 hello@weaveorder.cn"
+            : "刷新页面重试一次；仍然不行就联系公司管理员。"
+        }
+        actions={
+          <SupportMailto
+            className="text-sm text-indigo-600 underline underline-offset-2"
+            label="写信给我们"
+          />
         }
       />
     );
@@ -226,8 +233,12 @@ function SettingsPageContent() {
       <TeamSection />
 
       <p className="text-xs text-ink-400">
-        公司资料与成员由平台管理员维护，本页只读。需要改公司名、抬头或增加席位，写信到
-        hello@weaveorder.cn 或联系你的对接人。
+        公司资料与成员由平台管理员维护，本页只读。需要改公司名、抬头或增加账号数，
+        <SupportMailto
+          className="text-indigo-600 underline underline-offset-2"
+          label="写信给我们"
+        />{" "}
+        或联系你的对接人。
       </p>
     </div>
   );

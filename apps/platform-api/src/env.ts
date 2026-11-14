@@ -30,6 +30,8 @@ export const Env = z.object({
   NOTIFY_PROVIDER: z.enum(["log", "webhook"]).default("log"),
   NOTIFY_WEBHOOK_URL: z.string().url().optional(),
   NOTIFY_TOKEN: z.string().optional(),
+  /** 支持邮箱：出现在试用提醒等对外文案里；不配则只写「联系对接人」。 */
+  SUPPORT_EMAIL: z.string().email().optional(),
   /** 开通链接签名密钥；必须与 apps/api 的 ONBOARDING_SECRET 相同。 */
   ONBOARDING_SECRET: z.string().min(32).default(DEV_ONBOARDING_SECRET),
 });
