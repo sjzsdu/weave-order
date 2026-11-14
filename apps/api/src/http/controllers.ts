@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -15,6 +16,7 @@ import {
 } from "@nestjs/common";
 import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
+import { ZodError } from "zod";
 import { createApprovalService } from "../approval";
 import { isKernelError } from "../kernel";
 import { narrowPricingContext } from "../kernel/pricing-scope";
@@ -23,8 +25,7 @@ import type { Kernel } from "../kernel";
 import { toToolError } from "../tools/errors";
 import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
-import type { MediaService } from "../media/media.service";
-import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, MEDIA_SERVICE, QUOTE_AGENT } from "./tokens";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, QUOTE_AGENT } from "./tokens";
 import { ToolStatusInterceptor } from "./tool-status";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
@@ -35,14 +36,33 @@ function clampLimit(raw: string | undefined, fallback: number, max: number): num
 
 /** 内核错误 -> HTTP 状态；其余继续抛出，交给 Nest 统一处理。 */
 export function rethrowHttp(error: unknown): never {
+  // 契约校验失败是客户端错误，HTTP 面统一 400，不把它漏成 500。
+  // 用形状判定而不是 instanceof：workspace 包可能各带一份 zod。
+  if (isZodError(error)) {
+    throw new BadRequestException(error.issues[0]?.message ?? "输入不合法");
+  }
   if (isKernelError(error)) {
     if (error.code === "RESOURCE_NOT_FOUND" || error.code === "CUSTOMER_NOT_FOUND") {
       throw new NotFoundException(error.message);
     }
     if (error.code === "PERMISSION_DENIED") throw new ForbiddenException(error.message);
+    // 编码唯一冲突是「请求本身没问题、与现有数据冲突」，必须 409 而不是 400。
+    if (error.details.reason === "SAMPLE_CODE_EXISTS") {
+      throw new ConflictException(error.message);
+    }
     throw new BadRequestException(error.message);
   }
   throw error;
+}
+
+function isZodError(error: unknown): error is ZodError {
+  if (error instanceof ZodError) return true;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "ZodError" &&
+    Array.isArray((error as { issues?: unknown }).issues)
+  );
 }
 
 @Controller("api")
@@ -65,7 +85,6 @@ export class CatalogController {
     @Inject(KERNEL) private readonly kernel: Kernel,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
     @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
-    @Inject(MEDIA_SERVICE) private readonly media: MediaService,
   ) {}
 
   @Get("customers")
@@ -79,42 +98,6 @@ export class CatalogController {
       async (kernel, ctx) => ({
         customers: await kernel.customers.list(clampLimit(limit, 20, 100), ctx),
       }),
-      { scope: "read" },
-    );
-  }
-
-  @Get("samples")
-  async samples(@Query("limit") limit?: string, @Headers("authorization") authorization?: string) {
-    return this.human.run(
-      authorization,
-      this.kernel,
-      async (kernel, ctx) => {
-        const samples = await kernel.search.listSamples(clampLimit(limit, 50, 200), ctx);
-        const images = await kernel.sampleImages.listForSampleIds(samples.map((s) => s.id));
-        return {
-          samples: await Promise.all(
-            samples.map(async (sample) => ({
-              ...sample,
-              images: await this.media.presentAll(images.get(sample.id) ?? []),
-            })),
-          ),
-        };
-      },
-      { scope: "read" },
-    );
-  }
-
-  /** 样品详情：规格 + 图片图墙。图片 URL 由服务端按 object_key 生成，DB 不存 URL。 */
-  @Get("samples/:id")
-  async sample(@Param("id") id: string, @Headers("authorization") authorization?: string) {
-    return this.human.run(
-      authorization,
-      this.kernel,
-      async (kernel) => {
-        const sample = await kernel.samples.getById(id);
-        const images = await kernel.sampleImages.listForSample(sample.id);
-        return { sample: { ...sample, images: await this.media.presentAll(images) } };
-      },
       { scope: "read" },
     );
   }

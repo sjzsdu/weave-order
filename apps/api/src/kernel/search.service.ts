@@ -8,6 +8,7 @@ import type { AnyColumn, SQL } from "drizzle-orm";
 import type { KernelContext } from "./audit";
 import { mapSample, presentSample } from "./samples.service";
 import { sampleEmbeddingText } from "./sample-embedding-text";
+import type { SampleImageService } from "./sample-images.service";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -55,7 +56,14 @@ export class SearchService {
     private readonly db: Db,
     private readonly embedder: EmbeddingProvider,
     private readonly tenantId: string,
+    private readonly sampleImages?: SampleImageService,
   ) {}
+
+  /** 给候选样品补主图 URL，前端 `SampleTile` 才有真缩略图。 */
+  private async primaryUrls(samples: FabricSample[]): Promise<Map<string, string>> {
+    if (!this.sampleImages || samples.length === 0) return new Map();
+    return this.sampleImages.primaryUrlsFor(samples.map((sample) => sample.id));
+  }
 
   /** 给尚未建索引的样品补向量，返回本次补齐的数量。 */
   async ensureIndexed(): Promise<number> {
@@ -120,10 +128,14 @@ export class SearchService {
       .sort((a, b) => b.score - a.score || a.sample.code.localeCompare(b.sample.code))
       .slice(0, topK);
 
+    const images = await this.primaryUrls(scored.map((match) => match.sample));
     return {
       embeddingModel: this.embedder.name,
       dimension: this.embedder.dimension,
-      matches: scored,
+      matches: scored.map((match) => ({
+        ...match,
+        sample: { ...match.sample, primaryImageUrl: images.get(match.sample.id) ?? null },
+      })),
     };
   }
 
@@ -172,7 +184,13 @@ export class SearchService {
 
     // 命中字段越多越靠前；同分按创建时间（已是倒序）。
     matches.sort((a, b) => b.score - a.score);
-    return { matches };
+    const images = await this.primaryUrls(matches.map((match) => match.sample));
+    return {
+      matches: matches.map((match) => ({
+        ...match,
+        sample: { ...match.sample, primaryImageUrl: images.get(match.sample.id) ?? null },
+      })),
+    };
   }
 
   /**
@@ -187,6 +205,11 @@ export class SearchService {
       .where(eq(samples.tenantId, this.tenantId))
       .orderBy(desc(samples.createdAt))
       .limit(limit);
-    return rows.map((row: SampleRow) => presentSample(row, ctx?.actor.role));
+    const mapped = rows.map((row: SampleRow) => presentSample(row, ctx?.actor.role));
+    const images = await this.primaryUrls(mapped);
+    return mapped.map((sample) => ({
+      ...sample,
+      primaryImageUrl: images.get(sample.id) ?? null,
+    }));
   }
 }

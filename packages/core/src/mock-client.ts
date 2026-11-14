@@ -61,6 +61,8 @@ const sample = {
   unit: "meter" as const,
   costFloor: { amount: 1420, currency: "CNY" as const },
   status: "ACTIVE" as const,
+  images: [],
+  primaryImageUrl: null,
   createdAt: NOW,
 };
 
@@ -288,6 +290,43 @@ export function createMockApiClient(): ApiClient {
 
     listSamples: () => Promise.resolve([sample]),
 
+    listSamplesPage: () =>
+      Promise.resolve({
+        samples: [sample],
+        nextCursor: null,
+        hasMore: false,
+        total: 1,
+        remaining: 0,
+        categories: sample.composition ? ["针织"] : [],
+      }),
+
+    getSample: () => Promise.resolve(sample),
+
+    createSample: (input) =>
+      Promise.resolve({
+        ...sample,
+        id: SAMPLE_ID,
+        code: input.code,
+        name: input.name,
+        composition: input.composition ?? null,
+        weight: input.weight ?? null,
+      }),
+
+    updateSample: (_id, input) =>
+      Promise.resolve({
+        ...sample,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.composition !== undefined ? { composition: input.composition } : {}),
+        ...(input.weight !== undefined ? { weight: input.weight } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+      }),
+
+    archiveSample: () => Promise.resolve({ ...sample, status: "ARCHIVED" as const }),
+
+    presignImage: () => Promise.reject(new Error("演示模式不支持上传图片，请用真实账号")),
+
+    confirmImage: () => Promise.reject(new Error("演示模式不支持上传图片，请用真实账号")),
+
     panorama: () =>
       Promise.resolve(
         PanoramaSnapshot.parse({
@@ -329,6 +368,14 @@ export function createMockApiClient(): ApiClient {
           data: { matches: [{ sample, score: 1, matchedOn: ["name"] }] },
         }),
       ),
+
+    searchByImageUrl: () =>
+      Promise.resolve({
+        ok: true,
+        data: { embeddingModel: "mock", dimension: 16, matches: [{ sample, score: 1 }] },
+      }),
+
+    createSampleShipment: () => Promise.reject(new Error("演示模式不支持建寄样单，请用真实账号")),
 
     generateQuoteDraft: (_input: Parameters<ApiClient["generateQuoteDraft"]>[0]) =>
       Promise.resolve(T004GenerateQuoteDraftResult.parse({ ok: true, data: { draft } })),

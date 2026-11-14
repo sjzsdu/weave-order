@@ -32,6 +32,9 @@ export const CreateCustomerInput = z
   .strict();
 export type CreateCustomerInput = z.infer<typeof CreateCustomerInput>;
 
+/** 样品图片 objectKey 列表（已上传到对象存储、属于本租户）。 */
+export const SampleImageKeyList = z.array(z.string().min(1).max(512)).max(20);
+
 /** 创建面料样品。 */
 export const CreateSampleInput = z
   .object({
@@ -43,9 +46,64 @@ export const CreateSampleInput = z
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
     status: SampleStatus.default("ACTIVE"),
+    /**
+     * 已上传成功的图片 objectKey（有序）。
+     * 桌面/移动端先直传对象存储，再把 key 交给内核挂到样品上。
+     */
+    imageKeys: SampleImageKeyList.optional(),
+    /** 主图 key；必须在 `imageKeys` 里。缺省时取第一张。 */
+    primaryImageKey: z.string().min(1).max(512).nullable().optional(),
   })
   .strict();
 export type CreateSampleInput = z.infer<typeof CreateSampleInput>;
+
+/**
+ * 更新面料样品（部分字段）。
+ * `imageKeys` 提供即为「整组替换」：不在列表里的图片行被移除（对象留待回收任务）。
+ */
+export const UpdateSampleInput = z
+  .object({
+    code: z.string().min(1).max(64).optional(),
+    name: z.string().min(1).max(255).optional(),
+    composition: z.string().max(255).nullable().optional(),
+    category: z.string().max(64).nullable().optional(),
+    weight: z.string().max(64).nullable().optional(),
+    unit: Unit.optional(),
+    costFloor: Money.nullable().optional(),
+    status: SampleStatus.optional(),
+    imageKeys: SampleImageKeyList.optional(),
+    primaryImageKey: z.string().min(1).max(512).nullable().optional(),
+    /**
+     * 已有图片的 ID 顺序（整组替换）。读模型不暴露 objectKey，
+     * 所以桌面端的排序 / 删除 / 设主图用图片 ID 表达。
+     */
+    imageIds: z.array(EntityId).max(20).optional(),
+    primaryImageId: EntityId.nullable().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "至少需要更新一个字段",
+  })
+  .refine(
+    (value) =>
+      value.primaryImageKey === undefined ||
+      value.primaryImageKey === null ||
+      value.imageKeys === undefined ||
+      value.imageKeys.includes(value.primaryImageKey),
+    { message: "主图必须包含在 imageKeys 里" },
+  )
+  .refine((value) => value.imageKeys === undefined || value.imageIds === undefined, {
+    message: "imageKeys 与 imageIds 只能二选一",
+  })
+  .refine(
+    (value) =>
+      value.primaryImageId === undefined ||
+      value.primaryImageId === null ||
+      value.imageIds === undefined ||
+      value.imageIds.includes(value.primaryImageId),
+    { message: "主图必须包含在 imageIds 里" },
+  );
+export type UpdateSampleInput = z.infer<typeof UpdateSampleInput>;
 
 /** 寄样单行输入（工具层 / 内核共用）。 */
 export const CreateSampleShipmentItemInput = z
@@ -103,6 +161,8 @@ export const AuditAction = z.enum([
   "CUSTOMER_CREATED",
   "CUSTOMER_CONTEXT_UPDATED",
   "SAMPLE_CREATED",
+  "SAMPLE_UPDATED",
+  "SAMPLE_ARCHIVED",
   "SAMPLE_IMAGE_ADDED",
   "IMPORT_RESET",
   "SAMPLE_SHIPMENT_DRAFTED",

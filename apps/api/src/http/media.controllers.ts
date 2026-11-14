@@ -23,7 +23,7 @@ export class MediaController {
       return await this.human.run(
         authorization,
         this.kernel,
-        (kernel) => this.media.presign(kernel, body),
+        (kernel, ctx) => this.media.presign(kernel, body, ctx),
         { scope: "write" },
       );
     } catch (error) {

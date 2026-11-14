@@ -1,18 +1,27 @@
 import type { FabricSample } from "@weave-order/schema";
 import { Badge, cn } from "./primitives";
 
-/** 找样候选：色卡占位 + 规格 + 命中理由（理由由后端给）。 */
+/**
+ * 找样候选 / 图墙卡片：有图渲染缩略图，无图显示「待补图」占位。
+ * 不用斜纹伪装色卡 —— 没图就是没图，补图入口由调用方给。
+ */
 export function SampleTile({
   sample,
+  imageUrl,
   reason,
   selected,
   onSelect,
 }: {
-  sample: Pick<FabricSample, "id" | "code" | "name" | "composition" | "weight" | "unit">;
+  sample: Pick<FabricSample, "id" | "code" | "name" | "composition" | "weight" | "unit"> & {
+    primaryImageUrl?: string | null;
+  };
+  /** 覆盖 `sample.primaryImageUrl`（例如缩略图地址）。 */
+  imageUrl?: string | null;
   reason?: string;
   selected?: boolean;
   onSelect?: () => void;
 }) {
+  const thumb = imageUrl ?? sample.primaryImageUrl ?? null;
   return (
     <button
       type="button"
@@ -20,16 +29,27 @@ export function SampleTile({
       aria-pressed={selected}
       className={cn(
         "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors",
-        selected ? "border-indigo-600 ring-1 ring-indigo-600/30" : "border-line hover:border-ink-400",
+        selected
+          ? "border-indigo-600 ring-1 ring-indigo-600/30"
+          : "border-line hover:border-ink-400",
       )}
     >
-      <span
-        aria-hidden
-        className="mt-0.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-line bg-paper text-xs text-ink-400"
-        style={{ backgroundImage: "repeating-linear-gradient(45deg, #F7F4EE, #F7F4EE 4px, #FFFFFF 4px, #FFFFFF 8px)" }}
-      >
-        色卡
-      </span>
+      {thumb ? (
+        <img
+          src={thumb}
+          alt={`${sample.name} 样品图`}
+          loading="lazy"
+          decoding="async"
+          className="mt-0.5 h-12 w-12 shrink-0 rounded-md border border-line object-cover"
+        />
+      ) : (
+        <span
+          aria-hidden
+          className="mt-0.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-line bg-paper text-[10px] text-ink-400"
+        >
+          待补图
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium text-ink-900">{sample.name}</span>

@@ -4,6 +4,8 @@ import { createEmbeddingProvider } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { loadEnv } from "../platform/env";
 import { createPrintCenter } from "../print";
+import { createObjectStorageFromEnv } from "../platform/storage";
+import type { ObjectStorage } from "../platform/storage";
 import { AccessService } from "./access.service";
 import { listAuditLog } from "./audit";
 import { LlmSettingsService } from "./llm-settings.service";
@@ -34,6 +36,8 @@ export interface KernelOptions {
   shareSecret?: string;
   /** 客户报价页站点根地址；缺省读 `PUBLIC_APP_URL`。 */
   publicAppUrl?: string;
+  /** 对象存储；缺省按环境变量创建。测试可注入假实现，避免真实网络。 */
+  storage?: ObjectStorage;
 }
 
 /**
@@ -51,9 +55,15 @@ export function createKernel(
   options: KernelOptions = {},
 ) {
   const tenantId = options.tenantId ?? DEFAULT_TENANT_ID;
+  const env = loadEnv();
   const customers = new CustomerService(db, tenantId);
-  const samples = new SampleService(db, embedder, tenantId);
-  const sampleImages = new SampleImageService(db, tenantId);
+  const sampleImages = new SampleImageService(
+    db,
+    tenantId,
+    options.storage ?? createObjectStorageFromEnv(env),
+    env,
+  );
+  const samples = new SampleService(db, embedder, tenantId, sampleImages);
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
   const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
@@ -61,14 +71,13 @@ export function createKernel(
   const orderShipments = new OrderShipmentService(db, tenantId);
   const receivables = new ReceivableService(db, tenantId);
   const revisions = new RevisionService(db, tenantId);
-  const search = new SearchService(db, embedder, tenantId);
+  const search = new SearchService(db, embedder, tenantId, sampleImages);
   const importing = new ImportService(db, customers, samples, embedder, tenantId);
   const tenancy = new TenancyService(db);
   const access = new AccessService(db);
   const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
-  const env = loadEnv();
   const shares = new ShareService(db, tenantId, {
     secret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
