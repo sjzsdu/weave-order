@@ -55,6 +55,10 @@ export default tseslint.config(
       // 官网（apps/site）是有 tsconfig 的 Astro 工程，正常参与类型检查与 lint；
       // 只有它的 .astro 模板与 .mjs 脚本不在 TS project 里（.mjs 已在上条覆盖）。
       "apps/site/**/*.astro",
+      // apps/site/public 是原样拷贝到产物的静态资源（含手写的 analytics.js）。
+      // 它不在 TS project 里，按浏览器全局写，跑类型感知规则只会刷 no-unsafe-*；
+      // 行为由 tests/analytics.test.ts 用 vm 跑真实文件来保证。
+      "apps/site/public/**",
       "apps/mobile/src/pwa/**",
       "apps/print-agent/src/**",
       "packages/db/drizzle/**",
