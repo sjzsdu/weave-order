@@ -17,9 +17,10 @@ export async function GET(request: NextRequest) {
   const state = params.get("state");
   const error = params.get("error");
   const next = request.cookies.get("weave_platform_oidc_next")?.value ?? "/";
+  const origin = (process.env.PLATFORM_PUBLIC_URL ?? request.nextUrl.origin).replace(/\/$/, "");
 
   const fail = (message: string) =>
-    NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));
+    NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, origin));
 
   if (error) return fail(params.get("error_description") ?? error);
   if (!code) return fail("缺少授权码");
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
   const issuer = (process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com").replace(/\/$/, "");
   const clientId = process.env.CASDOOR_PLATFORM_CLIENT_ID ?? "weave-platform";
   const clientSecret = process.env.CASDOOR_PLATFORM_CLIENT_SECRET;
-  const redirectUri = `${process.env.PLATFORM_PUBLIC_URL ?? request.nextUrl.origin}/auth/callback`;
+  const redirectUri = `${origin}/auth/callback`;
   const verifier = request.cookies.get("weave_platform_oidc_verifier")?.value;
 
   const form = new URLSearchParams({
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
   if (!token) return fail("身份服务未返回令牌");
 
   const secure = process.env.NODE_ENV === "production";
-  const response = NextResponse.redirect(new URL(next, request.url));
+  const response = NextResponse.redirect(new URL(next, origin));
   response.cookies.set("weave_platform_token", token, {
     httpOnly: true,
     sameSite: "strict",

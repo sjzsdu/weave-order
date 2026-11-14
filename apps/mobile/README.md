@@ -88,6 +88,33 @@ Mock 模式下可在「更多 → 演示模式」里模拟断网与「服务端�
 `initPwa()` 在 H5 注册 Service Worker；只缓存静态壳，不缓存 `/api` 鉴权响应。
 安装提示由 `beforeinstallprompt` 驱动，「更多」里提供安装入口（HTTPS 或 localhost 满足安装条件）。
 
+## Tab 图标
+
+底部 5 个 Tab 的图标不在 `app.config.ts` 里手写路径以外的东西——那里只写相对 `src/` 的路径：
+
+```ts
+{ pagePath: "pages/today/index", text: "今日",
+  iconPath: "assets/tab/today.png", selectedIconPath: "assets/tab/today-active.png" }
+```
+
+**少了 `iconPath` 的代价**：Taro H5 的 `taro-tabbar` 组件无条件渲染
+`<img class="weui-tabbar__icon">`，`src` 为空就是一个 27×27 的空框（小程序端退化成纯文字）。
+所以图标路径不是可选项。
+
+图标本身是生成物，不要手改 PNG：
+
+```bash
+pnpm --filter @weave-order/mobile build:tabbar-icons
+```
+
+母版在 `assets/tabbar/*.svg`（24×24 描边，`currentColor` 取色），
+脚本渲染成 `src/assets/tab/<name>.png` 与 `<name>-active.png`（81×81，透明底）。
+普通态 `#5f646d`、选中态 `#1f6f5c`，与 `app.scss` 的 `$muted` / `$accent` 及
+`app.config.ts` 的 `tabBar.color` / `selectedColor` 对齐。
+
+同一份 PNG 两端通用：H5 由 taro-loader 当 asset 打包（体积小会内联成 data URI），
+小程序由 MiniPlugin 原样拷到包根 `assets/tab/`。
+
 ## 身份与隐私
 
 - token 只驻留内存（`setAuthToken`），**不落本地明文**；冷启动重新走 OIDC 登录。
@@ -101,6 +128,7 @@ Mock 模式下可在「更多 → 演示模式」里模拟断网与「服务端�
 ```
 src/
 ├── app.tsx / app.config.ts       # 5 Tab + 2 二级页；PWA、离线恢复
+├── assets/tab/                    # Tab 图标 PNG（生成物，母版在 ../../assets/tabbar）
 ├── components/                   # 移动端基础组件（Taro 原生组件，不复用 DOM）
 ├── lib/
 │   ├── runtime.ts                # 唯一组合根：mock / 真后端 / 队列 / 偏好

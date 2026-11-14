@@ -54,9 +54,30 @@ Windows 热敏打印机**必须**配置 RAW TCP（`IP:9100`）：Windows 打印�
 
 1. `pnpm --filter @weave-order/print-agent exec tauri signer generate -w ~/.tauri/weave.key`
 2. 把公钥填进 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`。
-3. 构建时设置 `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
+3. 把私钥内容存成仓库密钥 `TAURI_SIGNING_PRIVATE_KEY`，密码存 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
 4. 把 `latest.json` 与安装包发布到 `https://print.weaveorder.cn/agent/`（或改 endpoints）。
 5. 灰度：先让一台代理升级试打，再放量；回滚只换 `latest.json` 指向旧版本。
+
+## 发版：多平台安装包
+
+`.github/workflows/print-client.yml` 负责打包与发布，触发方式：
+
+```bash
+# 推 tag 即发布；只有 apps/print-agent/** 相对上一个 tag 有改动才会真的打包
+git tag -a v0.2.0 -m "print agent v0.2.0" && git push origin v0.2.0
+```
+
+- 平台矩阵：Windows x64、macOS x64 + arm64、Linux x64 + arm64（`ubuntu-24.04-arm` 仅公开仓库可用）。
+- 产物进 GitHub Release（资产名 `weave-print-agent_<版本>_<平台>_<架构>.<格式>`），Linux 额外出 `.deb`/`.rpm`/`.AppImage`，
+  macOS 出 `.dmg`，Windows 出 `.msi` 与 `-setup.exe`。
+- 版本号以 tag 为准：`v0.2.0` → 客户端版本 `0.2.0`，同时写进安装包名与 `latest.json`。
+- 自动更新产物：仓库密钥 `TAURI_SIGNING_PRIVATE_KEY` 存在、且 `plugins.updater.pubkey` 已替换成真实公钥时才生成
+  `latest.json`；否则只出安装包并在构建摘要里告警（客户端不会自动升级）。
+- 代码签名可选：配置 `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD`（macOS，未配则用 ad-hoc 签名）、
+  `TAURI_WINDOWS_CERTIFICATE` / `TAURI_WINDOWS_CERTIFICATE_PASSWORD`（Windows，未配则安装包不带签名，可能被杀毒软件拦截）。
+- 手动触发（Actions → print-client → Run workflow）可以不带 tag 只出包（产物落在 workflow artifacts），
+  或带 tag 补发；`updater` 可选 `auto` / `signed` / `none`。
+- 发布前默认等该提交的 `ci` 跑绿（与镜像流水线同一道质量门），需要跳过时手动触发并关掉 `require_ci`。
 
 ## 安全与隐私
 
@@ -68,7 +89,8 @@ Windows 热敏打印机**必须**配置 RAW TCP（`IP:9100`）：Windows 打印�
 
 CI 的 `print-agent` 作业（`.github/workflows/ci.yml`）会安装 Tauri 2 的 Linux 系统依赖，跑
 `cargo check --all-targets --locked` 与 `cargo test --lib --locked`：Rust 编译失败或单元测试失败都会让 PR 变红。
-`Cargo.lock` 已提交，依赖漂移同样会变红。`tauri build` 打安装包仍需在本机（或发布流水线）上按上文的签名步骤执行。
+`Cargo.lock` 已提交，依赖漂移同样会变红。`tauri build` 打安装包由 `.github/workflows/print-client.yml`
+在推 tag 时执行（见上文「发版：多平台安装包」）。
 
 单元测试覆盖纯逻辑：配置读写与 WSS 地址推导（`config.rs`）、ZPL/TSPL 校准注入（`printer.rs`）、
 spool 幂等 / 顺序 / 回执 / 清空（`spool.rs`）。涉及真实打印机的路径（`lp`、RAW TCP）不做自动化，

@@ -1,0 +1,450 @@
+name: print-client
+
+# 打印客户端（apps/print-agent，Tauri 2）多平台安装包。
+#
+# 触发：推送 v* tag（与 images.yml 的发版约定一致）。
+# 判据：只有 apps/print-agent/** 相对「上一个 tag」有改动才构建；
+#       只改了 API / 网页 / 移动端 → 跳过，不空跑 5 个编译矩阵。
+# 产物：Windows x64 / macOS x64+arm64 / Linux x64+arm64 安装包 → GitHub Release。
+#
+# 手动触发（workflow_dispatch）参数：
+#   tag         留空 → 只构建并上传为 workflow artifact，不发 Release；
+#               填写 → 以该 tag 发布 Release（tag 不存在时在当前提交上创建）。
+#   force       即使 apps/print-agent 没有改动也构建。
+#   updater     auto=有密钥才签；signed=必须签名否则失败；none=不生成更新产物。
+#   require_ci  是否先等该提交的 ci 跑绿（与 images.yml 一致的发版质量门）。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "发布用 tag（留空只构建，不发 Release）"
+        required: false
+        default: ""
+      force:
+        description: "即使 apps/print-agent 没有改动也构建"
+        type: boolean
+        default: true
+      updater:
+        description: "自动更新产物签名策略"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - signed
+          - none
+      require_ci:
+        description: "先等该提交的 ci 跑绿再发布"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: print-client-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: 判定是否需要构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      build: ${{ steps.meta.outputs.build }}
+      release: ${{ steps.meta.outputs.release }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      updater: ${{ steps.meta.outputs.updater }}
+      require_ci: ${{ steps.meta.outputs.require_ci }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 需要完整历史与 tag：用来定位「上一个 tag」并比较打印代理目录的改动
+          fetch-depth: 0
+
+      - name: 解析版本 / 改动范围 / 签名策略
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_UPDATER: ${{ inputs.updater }}
+          INPUT_FORCE: ${{ inputs.force }}
+          INPUT_REQUIRE_CI: ${{ inputs.require_ci }}
+          REF_NAME: ${{ github.ref_name }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          APP_DIR="apps/print-agent"
+          CONF="$APP_DIR/src-tauri/tauri.conf.json"
+
+          # ---------- 1. 发布 tag 与版本号 ----------
+          RELEASE=false
+          TAG=""
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ -n "$INPUT_TAG" ]; then
+              TAG="$INPUT_TAG"
+              RELEASE=true
+            fi
+          else
+            TAG="$REF_NAME"
+            RELEASE=true
+          fi
+
+          if [ -n "$TAG" ]; then
+            if ! printf '%s' "$TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+              echo "::error::tag「$TAG」不是合法版本号（应形如 v0.2.0 / v0.2.0-rc.1）"
+              exit 1
+            fi
+            # 版本号以 tag 为准：安装包名、latest.json、About 里的版本都用它
+            VERSION="${TAG#v}"
+          else
+            # 手动构建不发 Release：版本沿用仓库里的声明
+            VERSION="$(jq -r '.version' "$CONF")"
+          fi
+
+          PRERELEASE=false
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; fi
+
+          # ---------- 2. 打印代理目录相对上一个 tag 有没有改动 ----------
+          BASE="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          CHANGED=""
+          if [ -n "$BASE" ]; then
+            CHANGED="$(git diff --name-only "$BASE" HEAD -- "$APP_DIR" || true)"
+          else
+            # 第一个 tag：没有基线，按「有改动」处理
+            CHANGED="$APP_DIR"
+          fi
+
+          # ---------- 3. 是否构建 ----------
+          BUILD=false
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$INPUT_FORCE" = "true" ] || [ -n "$CHANGED" ]; then BUILD=true; fi
+          elif [ -n "$CHANGED" ]; then
+            BUILD=true
+          fi
+
+          # ---------- 4. 更新产物签名策略 ----------
+          PUBKEY="$(jq -r '.plugins.updater.pubkey // ""' "$CONF")"
+          PUBKEY_OK=false
+          if [ -n "$PUBKEY" ] && [ "$PUBKEY" != "REPLACE_WITH_TAURI_UPDATER_PUBKEY" ]; then
+            PUBKEY_OK=true
+          fi
+          HAS_KEY=false
+          if [ -n "$SIGNING_KEY" ]; then HAS_KEY=true; fi
+
+          MODE="${INPUT_UPDATER:-auto}"
+          if [ "$EVENT" != "workflow_dispatch" ]; then MODE=auto; fi
+
+          UPDATER=none
+          case "$MODE" in
+            none)
+              UPDATER=none
+              ;;
+            signed)
+              if [ "$HAS_KEY" != true ] || [ "$PUBKEY_OK" != true ]; then
+                echo "::error::updater=signed 要求同时具备 TAURI_SIGNING_PRIVATE_KEY 密钥，与 tauri.conf.json 中已替换的 plugins.updater.pubkey"
+                exit 1
+              fi
+              UPDATER=signed
+              ;;
+            auto)
+              if [ "$HAS_KEY" = true ] && [ "$PUBKEY_OK" = true ]; then UPDATER=signed; fi
+              ;;
+            *)
+              echo "::error::未知的 updater 策略：$MODE"
+              exit 1
+              ;;
+          esac
+
+          # ---------- 5. 发版质量门开关 ----------
+          REQUIRE_CI=true
+          if [ "$EVENT" = "workflow_dispatch" ]; then REQUIRE_CI="$INPUT_REQUIRE_CI"; fi
+
+          # ---------- 6. 输出 ----------
+          {
+            echo "build=$BUILD"
+            echo "release=$RELEASE"
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "prerelease=$PRERELEASE"
+            echo "updater=$UPDATER"
+            echo "require_ci=$REQUIRE_CI"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 打印客户端发布判定"
+            echo ""
+            echo "- 版本：**$VERSION**"
+            echo "- 发布 tag：${TAG:-（无，只构建）}"
+            echo "- 上一个 tag：${BASE:-（无）}"
+            echo "- 是否构建：**$BUILD**"
+            if [ -n "$CHANGED" ]; then
+              echo "- 打印代理改动："
+              echo ""
+              echo '```'
+              git diff --name-only "$BASE" HEAD -- "$APP_DIR" 2>/dev/null || echo "$APP_DIR"
+              echo '```'
+            else
+              echo "- 打印代理自上一个 tag 起无改动 → 本次不重新打包"
+            fi
+            echo "- 自动更新产物：**$UPDATER**"
+            if [ "$UPDATER" = "none" ]; then
+              echo ""
+              echo "> ⚠️ 未生成签名更新产物：安装包可用，但客户端无法自动升级。"
+              echo "> 配置方法见 apps/print-agent/README.md「自动更新与签名」。"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+      - name: 发版质量门：等该提交的 ci 跑完并确认全绿
+        if: steps.meta.outputs.build == 'true' && steps.meta.outputs.require_ci == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_GATE_SUBJECT: 打印客户端
+        run: ./scripts/ci_release_gate.sh "$(git rev-parse HEAD)"
+
+  build:
+    name: 构建 ${{ matrix.target }}
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    permissions:
+      # 创建/更新 Release 需要写权限；其余步骤仍然只读
+      contents: write
+    strategy:
+      # 单个平台失败不影响其他平台出包
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+          - platform: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          # ARM 托管 runner 仅对公开仓库免费；仓库转私有后需要换成交叉编译方案
+          - platform: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Tauri 2 的 Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            rpm \
+            xdg-utils
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖（Tauri CLI）
+        run: pnpm install --frozen-lockfile --filter @weave-order/print-agent
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/print-agent/src-tauri -> target
+
+      - name: 准备 macOS 签名身份
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            # 真实证书：导入临时 keychain，取出签名身份并顺带开启公证
+            KEYCHAIN_PASS="$(openssl rand -hex 16)"
+            echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+            security create-keychain -p "$KEYCHAIN_PASS" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "$KEYCHAIN_PASS" build.keychain
+            security set-keychain-settings -t 3600 -u build.keychain
+            security import "$RUNNER_TEMP/certificate.p12" -k build.keychain \
+              -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" build.keychain
+            rm -f "$RUNNER_TEMP/certificate.p12"
+            CERT_ID="$(security find-identity -v -p codesigning build.keychain | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+            if [ -z "$CERT_ID" ]; then
+              CERT_ID="$(security find-identity -v -p codesigning build.keychain | awk -F'"' '/Apple/ {print $2; exit}')"
+            fi
+            if [ -z "$CERT_ID" ]; then
+              echo "::error::导入了 Apple 证书，但 keychain 里没有可用的签名身份"
+              exit 1
+            fi
+            echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
+            echo "APPLE_CERTIFICATE=$(echo "$APPLE_CERTIFICATE" | tr -d '\n')" >> "$GITHUB_ENV"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
+            for v in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              val="${!v}"
+              if [ -n "$val" ]; then echo "$v=$val" >> "$GITHUB_ENV"; fi
+            done
+            echo "macOS 签名身份：$CERT_ID"
+          else
+            # 没有 Apple 证书：ad-hoc 签名，避免 Apple Silicon 把 Release 下载的包判为「已损坏」
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "未配置 APPLE_CERTIFICATE：使用 ad-hoc 签名（用户首次打开需在「隐私与安全性」放行）"
+          fi
+
+      - name: 导入 Windows 代码签名证书
+        id: wincert
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERT_B64: ${{ secrets.TAURI_WINDOWS_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.TAURI_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERT_B64)) {
+            Write-Host "未配置 TAURI_WINDOWS_CERTIFICATE：安装包不带签名，可能被杀毒软件拦截"
+            "thumbprint=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "weave-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_B64))
+          $secure = ConvertTo-SecureString $env:CERT_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          Remove-Item $pfx -Force
+          "thumbprint=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Windows 签名证书已导入：$($cert.Thumbprint)"
+
+      - name: 生成 Tauri 构建覆盖配置
+        id: cfg
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          UPDATER: ${{ needs.prepare.outputs.updater }}
+          WIN_THUMBPRINT: ${{ steps.wincert.outputs.thumbprint }}
+        run: |
+          set -euo pipefail
+          # 覆盖配置只做三件事：
+          #   1. 把版本钉到 tag（安装包名、latest.json、About 里的版本都跟它走）；
+          #   2. 没有签名密钥时关掉 updater 产物（否则打包会直接失败）；
+          #   3. Windows 有证书时挂上签名指纹。
+          CONFIG_PATH="$(echo "$RUNNER_TEMP" | tr '\\' '/')/tauri-release.json"
+          export CONFIG_PATH
+          node -e '
+            const fs = require("fs");
+            const cfg = {
+              version: process.env.VERSION,
+              bundle: { createUpdaterArtifacts: process.env.UPDATER === "signed" },
+            };
+            if (process.env.WIN_THUMBPRINT) {
+              cfg.bundle.windows = {
+                certificateThumbprint: process.env.WIN_THUMBPRINT,
+                timestampUrl: "http://timestamp.digicert.com",
+              };
+            }
+            fs.writeFileSync(process.env.CONFIG_PATH, JSON.stringify(cfg, null, 2));
+          '
+          echo "config_path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
+          cat "$CONFIG_PATH"
+
+      - name: 构建安装包并发布
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.prepare.outputs.updater == 'signed' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.prepare.outputs.updater == 'signed' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        with:
+          projectPath: apps/print-agent
+          tauriScript: pnpm exec tauri
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: 织序打印代理 ${{ needs.prepare.outputs.version }}
+          releaseBody: |
+            织序打印代理 v${{ needs.prepare.outputs.version }}（打印中心本地客户端）。
+
+            - Windows：`.msi`（推荐）或 `-setup.exe`（NSIS）
+            - macOS：`.dmg`（Apple Silicon 选 aarch64，Intel 选 x64）
+            - Linux：`.deb` / `.rpm` / `.AppImage`
+
+            安装后到织序桌面「打印 → 设备 → 注册打印代理」取 token 填入即可。
+          releaseDraft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          generateReleaseNotes: true
+          uploadUpdaterJson: ${{ needs.prepare.outputs.updater == 'signed' }}
+          uploadWorkflowArtifacts: ${{ needs.prepare.outputs.release == 'false' }}
+          # 产物名统一成 ASCII：中文产品名会被 action 清洗成一堆点号
+          releaseAssetNamePattern: weave-print-agent_[version]_[platform]_[arch][setup][ext]
+          retryAttempts: 3
+          args: --target ${{ matrix.target }} --config ${{ steps.cfg.outputs.config_path }}
+
+  report:
+    name: 发布摘要
+    needs: [prepare, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 汇总
+        env:
+          BUILD: ${{ needs.prepare.outputs.build }}
+          RELEASE: ${{ needs.prepare.outputs.release }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          UPDATER: ${{ needs.prepare.outputs.updater }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### 打印客户端构建结果"
+            echo ""
+            if [ "$BUILD" != "true" ]; then
+              echo "本次未构建：打印代理相对上一个 tag 没有改动。"
+              exit 0
+            fi
+            echo "- 版本：**$VERSION**"
+            echo "- tag：${TAG:-（无）}"
+            echo "- 矩阵结果：**$BUILD_RESULT**"
+            echo "- 自动更新产物：**$UPDATER**"
+            if [ "$RELEASE" = "true" ] && [ -n "$TAG" ]; then
+              echo ""
+              echo "下载页：https://github.com/$REPO/releases/tag/$TAG"
+            fi
+            if [ "$UPDATER" = "signed" ]; then
+              echo ""
+              echo "> Release 里已生成 `latest.json`（含各平台签名）。"
+              echo "> 自动更新指向 https://print.weaveorder.cn/agent/latest.json，"
+              echo "> **需要把 latest.json 与安装包同步到该地址**，客户端才能升级。"
+              echo "> 同步前请确认 latest.json 里 5 个平台都在（并发上传可能互相覆盖，缺平台就重跑该平台作业）。"
+            else
+              echo ""
+              echo "> 本次未生成 `latest.json`：安装包可用，但客户端不会自动升级。"
+              echo "> 启用自动更新需要配置 `TAURI_SIGNING_PRIVATE_KEY` 密钥，"
+              echo "> 并把对应公钥写进 `apps/print-agent/src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`。"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
