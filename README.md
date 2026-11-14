@@ -202,7 +202,9 @@ pnpm format       # Prettier
 | 方法   | 路径                                  | 身份 / 状态                   | 说明                                            |
 | ------ | ------------------------------------- | ----------------------------- | ----------------------------------------------- |
 | GET    | `/api/health`                         | 只读                          | 服务 + 数据库可用性                             |
-| GET    | `/api/customers`                      | 只读                          | 客户列表                                        |
+| GET    | `/api/customers`                      | 只读                          | 客户列表 + 聚合（未决报价 / 在途寄样 / 应收）   |
+| GET    | `/api/customers/:id`                  | 只读                          | 客户 360：档案 + 上下文 + 汇总                  |
+| GET    | `/api/customers/:id/timeline`         | 只读                          | 客户时间线（游标分页，可按单据类型筛选）        |
 | GET    | `/api/samples`                        | 只读                          | 样品图墙（`query`/`category`/`status`/游标分页） |
 | POST   | `/api/samples`                        | HUMAN（样品管理员/经理/老板） | 新建样品（可带已上传的 `imageKeys`）            |
 | GET    | `/api/samples/:id`                    | 只读                          | 样品详情（图片按 `sortOrder`，成本按角色裁剪）  |

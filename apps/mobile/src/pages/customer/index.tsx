@@ -1,6 +1,8 @@
 import { Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useState } from "react";
+import { ApiError } from "@weave-order/core";
+import type { CustomerTimelineEvent } from "@weave-order/schema";
 import {
   Amount,
   Badge,
@@ -11,27 +13,51 @@ import {
   Page,
   SectionTitle,
 } from "../../components/ui";
-import { useApprovals, useCustomers, usePanorama } from "../../lib/hooks";
+import { useCustomer360, useCustomerTimeline } from "../../lib/hooks";
 import { formatMoneyShort, maskPhone, relativeTime, shortDate } from "../../lib/format";
 import { api } from "../../lib/runtime";
 import { openQuote } from "../../lib/nav";
 import type { ShareSummary } from "../../lib/mobile-api";
 
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: "草稿",
+  SENT: "已发出",
+  ACCEPTED: "客户接受",
+  REJECTED: "已驳回",
+  EXPIRED: "已过期",
+  CONFIRMED: "已确认",
+  SHIPPED: "已发出",
+  DELIVERED: "已签收",
+  CANCELLED: "已取消",
+  PARTIAL: "部分收款",
+  PAID: "已收清",
+  IN_PRODUCTION: "生产中",
+};
+
+/**
+ * 移动端客户 360。
+ *
+ * 数据源与 PC 端是同一个聚合接口（`/api/customers/:id` + `/timeline`），
+ * 页面只负责排版：未决 / 在途 / 应收三个数字不再由前端拿列表自己数。
+ */
 export default function CustomerPage() {
   const router = useRouter();
   const id = router.params.id ?? "";
-  const customers = useCustomers(100);
-  const panorama = usePanorama();
-  const approvals = useApprovals();
+  const detail = useCustomer360(id);
+  const timeline = useCustomerTimeline(id);
   const [revealPhone, setRevealPhone] = useState(false);
   const [shares, setShares] = useState<ShareSummary[]>([]);
   const [shareError, setShareError] = useState<string | null>(null);
 
-  const customer = (customers.data ?? []).find((entry) => entry.id === id);
-  const quotes = (panorama.data?.items ?? []).filter(
-    (item) => item.customerId === id && item.kind === "quote",
+  const customer = detail.data?.customer;
+  const summary = detail.data?.summary;
+  const context = detail.data?.context;
+  const events = timeline.data?.events ?? [];
+  const pending = events.filter(
+    (event) =>
+      (event.kind === "quote" || event.kind === "sample_shipment") && event.status === "DRAFT",
   );
-  const pending = (approvals.data?.items ?? []).filter((item) => item.customerId === id);
+  const quotes = events.filter((event) => event.kind === "quote");
 
   useEffect(() => {
     if (customer) void Taro.setNavigationBarTitle({ title: customer.name });
@@ -40,13 +66,13 @@ export default function CustomerPage() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const quoteIds = quotes.map((quote) => quote.id);
+      const quoteIds = quotes.map((quote) => quote.sourceId);
       if (quoteIds.length === 0) return;
       try {
         const results = await Promise.all(quoteIds.map((quoteId) => api.listQuoteShares(quoteId)));
         if (!cancelled) setShares(results.flat());
       } catch {
-        if (!cancelled) setShareError("报价链接访问数据需联网读取（待 Track E 联调）");
+        if (!cancelled) setShareError("报价链接访问数据需联网读取");
       }
     };
     void load();
@@ -54,19 +80,30 @@ export default function CustomerPage() {
       cancelled = true;
     };
     // quotes 来自远程数据，按 id 串去重，避免每次渲染重新请求。
-  }, [quotes.map((quote) => quote.id).join(",")]);
+  }, [quotes.map((quote) => quote.sourceId).join(",")]);
 
-  if (customers.isLoading && !customers.data)
+  if (detail.isLoading && !detail.data) {
     return (
       <Page>
         <Loading />
       </Page>
     );
+  }
 
-  if (!customer) {
+  if (detail.isError || !customer || !summary) {
+    const notFound = detail.error instanceof ApiError && detail.error.status === 404;
     return (
       <Page>
-        <EmptyState title="客户不存在" desc="可能已交接给其他同事，或链接已过期。" />
+        <EmptyState
+          title={notFound ? "客户不存在" : "客户 360 暂时不可用"}
+          desc={
+            notFound
+              ? "可能已交接给其他同事，或链接已过期。"
+              : detail.error instanceof Error
+                ? detail.error.message
+                : "请稍后重试。"
+          }
+        />
       </Page>
     );
   }
@@ -75,7 +112,7 @@ export default function CustomerPage() {
     <Page>
       <View className="page-title">{customer.name}</View>
       <View className="page-sub">
-        {customer.code} · {customer.tier} · 归属数据范围由服务端决定
+        {customer.code} · {customer.tier} · 负责人 {detail.data?.ownerName ?? "未分配"}
       </View>
 
       <Card>
@@ -118,6 +155,57 @@ export default function CustomerPage() {
         <View className="footnote">定位只在点击「签到」时取一次；手机不做后台定位。</View>
       </Card>
 
+      <SectionTitle title="数字面板" hint="与 PC 端同一口径" />
+      <Card className="card-flat">
+        <View className="list-row">
+          <View>
+            <View className="list-sub">未决报价</View>
+            <View className="list-title">{summary.pendingQuoteCount}</View>
+          </View>
+          <View>
+            <View className="list-sub">在途寄样</View>
+            <View className="list-title">{summary.inTransitSampleCount}</View>
+          </View>
+          <View>
+            <View className="list-sub">逾期应收</View>
+            <View className="list-title">{summary.overdueReceivableCount}</View>
+          </View>
+        </View>
+        <View className="list-row">
+          <View>
+            <View className="list-sub">应收余额</View>
+            {summary.receivableBalance.length === 0 ? (
+              <View className="muted">无未收金额</View>
+            ) : (
+              summary.receivableBalance.map((money) => (
+                <Amount key={money.currency}>
+                  {formatMoneyShort(money.amount, money.currency)}
+                </Amount>
+              ))
+            )}
+          </View>
+          <View>
+            <View className="list-sub">最近往来</View>
+            <View className="list-title">
+              {summary.lastContactAt ? relativeTime(summary.lastContactAt) : "—"}
+            </View>
+          </View>
+        </View>
+      </Card>
+
+      {context && context.preferenceNotes.length > 0 && (
+        <>
+          <SectionTitle title="选样偏好" hint="客户上下文" />
+          <Card className="card-flat">
+            {context.preferenceNotes.map((note) => (
+              <View key={note} className="muted">
+                · {note}
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
+
       <SectionTitle
         title="待处理"
         hint="客户相关草稿"
@@ -132,11 +220,11 @@ export default function CustomerPage() {
           <Card key={item.id} className="card-draft">
             <View className="row">
               <View>
-                <View className="list-title">{item.title}</View>
-                <View className="list-sub">{item.summary}</View>
+                <View className="list-title">{eventTitle(item)}</View>
+                <View className="list-sub">{STATUS_LABEL[item.status] ?? item.status}</View>
               </View>
-              {item.amountCents !== null && (
-                <Amount>{formatMoneyShort(item.amountCents, item.currency ?? "CNY")}</Amount>
+              {item.amount && (
+                <Amount>{formatMoneyShort(item.amount.amount, item.amount.currency)}</Amount>
               )}
             </View>
             <View className="actions">
@@ -158,12 +246,14 @@ export default function CustomerPage() {
           <Card key={quote.id} className="card-flat">
             <View className="row">
               <View>
-                <View className="list-title">{quote.title}</View>
+                <View className="list-title">{eventTitle(quote)}</View>
                 <View className="list-sub">
-                  {quote.summary} · {shortDate(quote.createdAt)}
+                  {STATUS_LABEL[quote.status] ?? quote.status} · {shortDate(quote.occurredAt)}
                 </View>
               </View>
-              <Badge tone={quote.status === "DRAFT" ? "warn" : "accent"}>{quote.status}</Badge>
+              {quote.amount && (
+                <Amount>{formatMoneyShort(quote.amount.amount, quote.amount.currency)}</Amount>
+              )}
             </View>
           </Card>
         ))
@@ -180,11 +270,18 @@ export default function CustomerPage() {
         ))}
       </Card>
 
-      <View className="footnote">
-        客户 360 在此只展示移动端需要的上下文；完整时间线与交接记录在 PC 端。
-      </View>
+      <View className="footnote">完整时间线与交接记录在 PC 端客户 360。</View>
     </Page>
   );
+}
+
+function eventTitle(event: CustomerTimelineEvent): string {
+  if (event.kind === "order") return `订单 · ${event.code ?? ""}`;
+  if (event.kind === "quote") return `报价 · ${event.sourceId.slice(0, 8).toUpperCase()}`;
+  if (event.kind === "sample_shipment") {
+    return `寄样 · ${event.sourceId.slice(0, 8).toUpperCase()}`;
+  }
+  return event.code ?? event.kind;
 }
 
 function ShareRow({ entry }: { entry: ShareSummary }) {

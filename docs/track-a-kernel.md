@@ -128,6 +128,8 @@ floor = ceil(base × (1 + minMarginPct / 100))
 | GET      | `/api/approvals?limit=&cursor=`                     | 审批队列（有界游标分页，只含 DRAFT）                                                      |
 | POST     | `/api/approvals/decide`                             | 批准 / 驳回（支持 `baseVersion` / `reasonId`）                                            |
 | GET      | `/api/customers/:id/decision-deltas`                | 决策增量历史（训练信号）                                                                  |
+| GET      | `/api/customers/:id`                                | 客户 360：档案 + 上下文 + 聚合数字（与列表同一口径）                                      |
+| GET      | `/api/customers/:id/timeline?types=&cursor=`        | 客户时间线：报价/寄样/订单/回款/跟进，游标分页                                            |
 | GET/POST | `/api/revision-reasons`                             | 改稿原因字典                                                                              |
 | POST     | `/api/revision-reasons/defaults`                    | 幂等补齐默认原因                                                                          |
 | GET/POST | `/api/orders`、`/api/orders/:id/confirm`            | 订单草稿 / 确认                                                                           |

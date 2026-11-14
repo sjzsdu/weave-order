@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import Taro from "@tarojs/taro";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@weave-order/core";
-import type { ApprovalQueue, Customer, PanoramaSnapshot } from "@weave-order/schema";
+import type {
+  ApprovalQueue,
+  Customer,
+  Customer360,
+  CustomerTimelinePage,
+  PanoramaSnapshot,
+} from "@weave-order/schema";
 import { api, offlineQueue, syncQueue } from "./runtime";
 import { readCache, writeCache } from "./cache";
 import { onQueueChanged } from "./offline";
@@ -73,6 +79,44 @@ export function useCustomers(limit = 50) {
       ? { initialData: cached.data, initialDataUpdatedAt: Date.parse(cached.savedAt) }
       : {}),
     staleTime: 60_000,
+  });
+}
+
+/**
+ * 客户 360：与 PC 端读同一个聚合接口，数字不再由前端用列表/全景自己拼。
+ * 缓存按客户 id 分开，弱网回来先给上次的快照。
+ */
+export function useCustomer360(customerId: string) {
+  const cached = readCache<Customer360>(`customer360.${customerId}`);
+  return useQuery({
+    queryKey: queryKeys.customer360(customerId),
+    queryFn: async () => {
+      const data = await api.customer360(customerId);
+      writeCache(`customer360.${customerId}`, data);
+      return data;
+    },
+    ...(cached
+      ? { initialData: cached.data, initialDataUpdatedAt: Date.parse(cached.savedAt) }
+      : {}),
+    staleTime: 30_000,
+  });
+}
+
+/** 客户时间线：移动端一次取首屏（50 条），不在手机上无限翻页。 */
+export function useCustomerTimeline(customerId: string, limit = 50) {
+  const cached = readCache<CustomerTimelinePage>(`customerTimeline.${customerId}.${limit}`);
+  return useQuery({
+    // limit 属于请求参数，进 key，避免不同页大小共用一份缓存。
+    queryKey: [...queryKeys.customerTimeline(customerId, []), limit],
+    queryFn: async () => {
+      const data = await api.customerTimeline(customerId, { limit });
+      writeCache(`customerTimeline.${customerId}.${limit}`, data);
+      return data;
+    },
+    ...(cached
+      ? { initialData: cached.data, initialDataUpdatedAt: Date.parse(cached.savedAt) }
+      : {}),
+    staleTime: 30_000,
   });
 }
 

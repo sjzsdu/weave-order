@@ -80,7 +80,15 @@ function PanoramaPageContent() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="grid content-start gap-3">
-          <h2 className="text-sm font-medium text-ink-700">客户</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-ink-700">客户</h2>
+            <Link
+              href="/panorama/customers"
+              className="text-xs text-indigo-600 underline underline-offset-2"
+            >
+              客户列表与 360 →
+            </Link>
+          </div>
           <div className="overflow-hidden rounded-lg border border-line bg-surface">
             <table className="w-full text-sm">
               <thead className="bg-paper text-xs text-ink-400">
@@ -94,7 +102,12 @@ function PanoramaPageContent() {
                 {data.customers.map((customer) => (
                   <tr key={customer.id}>
                     <td className="px-3 py-2">
-                      <div className="text-ink-900">{customer.name}</div>
+                      <Link
+                        href={`/panorama/customers/${customer.id}`}
+                        className="text-ink-900 underline-offset-2 hover:underline"
+                      >
+                        {customer.name}
+                      </Link>
                       <div className="text-xs text-ink-400">{customer.code}</div>
                     </td>
                     <td className="px-3 py-2">

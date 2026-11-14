@@ -3,6 +3,8 @@ import type {
   ApprovalDecisionInput,
   ApprovalKind,
   AuthContextResponse,
+  CustomerListOptions,
+  CustomerTimelineKind,
   TenantChoice,
   Unit,
 } from "@weave-order/schema";
@@ -13,6 +15,10 @@ import type { ApiClient } from "./api-client";
 export const queryKeys = {
   me: ["auth", "me"] as const,
   customers: (limit: number) => ["customers", limit] as const,
+  customerList: (filters: CustomerListOptions) => ["customers", "list", filters] as const,
+  customer360: (id: string) => ["customers", id, "360"] as const,
+  customerTimeline: (id: string, kinds: CustomerTimelineKind[]) =>
+    ["customers", id, "timeline", kinds.join(",")] as const,
   panorama: ["panorama"] as const,
   approvals: ["approvals"] as const,
   approvalQueue: (limit: number) => ["approvals", "queue", limit] as const,
@@ -35,6 +41,51 @@ export function useCustomers(client: ApiClient, limit = 20) {
     queryKey: queryKeys.customers(limit),
     queryFn: () => client.listCustomers(limit),
   });
+}
+
+/** 客户列表：筛选与分页都交给后端，前端不做聚合。 */
+export function useCustomerList(client: ApiClient, filters: CustomerListOptions = {}) {
+  return useQuery({
+    queryKey: queryKeys.customerList(filters),
+    queryFn: () => client.customerList(filters),
+  });
+}
+
+export function useCustomer360(client: ApiClient, customerId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.customer360(customerId ?? "none"),
+    queryFn: () => client.customer360(customerId as string),
+    enabled: customerId !== null,
+    // 越权 / 不存在是稳定结果，重试只会拖慢 404 页面。
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  });
+}
+
+/**
+ * 客户时间线：游标分页，首屏 20 条，加载更多只追加不重拉。
+ * 按类型筛选时换一个 query key，避免不同筛选的页混在一起。
+ */
+export function useCustomerTimeline(
+  client: ApiClient,
+  customerId: string | null,
+  kinds: CustomerTimelineKind[] = [],
+  limit = 20,
+) {
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.customerTimeline(customerId ?? "none", kinds),
+    queryFn: ({ pageParam }) =>
+      client.customerTimeline(customerId as string, {
+        kinds,
+        limit,
+        cursor: pageParam,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+    enabled: customerId !== null,
+  });
+  const events = query.data?.pages.flatMap((page) => page.events) ?? [];
+  return { ...query, events, hasMore: query.hasNextPage };
 }
 
 export function usePanorama(client: ApiClient) {

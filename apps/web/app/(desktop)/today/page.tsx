@@ -47,6 +47,11 @@ function TodayPageContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [intents, setIntents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
+  const [initialIntent] = useState(() => {
+    if (typeof window === "undefined") return undefined;
+    return new URLSearchParams(window.location.search).get("intent") ?? undefined;
+  });
 
   const runs = useMemo<AgentRun[]>(() => {
     const fromAudit = (panorama.data?.audit ?? []).slice(0, 5).map((entry) => ({
@@ -254,6 +259,7 @@ function TodayPageContent() {
       <section>
         <h2 className="mb-2 text-sm font-medium text-ink-700">说点什么</h2>
         <IntentComposer
+          initialText={initialIntent}
           onSubmit={(text) => {
             setIntents((current) => [text, ...current].slice(0, 3));
             setNotice("已收到，小织正在拆解这条需求，草稿会出现在审批窗口。");

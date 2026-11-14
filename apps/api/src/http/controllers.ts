@@ -15,6 +15,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { ApprovalKind, ReviseQuoteDraftResult } from "@weave-order/schema";
+import { CustomerListOptions, CustomerTimelineKind } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { ZodError } from "zod";
 import { createApprovalService } from "../approval";
@@ -90,16 +91,79 @@ export class CatalogController {
   @Get("customers")
   async customers(
     @Query("limit") limit?: string,
+    @Query("query") query?: string,
+    @Query("owner") owner?: string,
+    @Query("tier") tier?: string,
+    @Query("overdue") overdue?: string,
     @Headers("authorization") authorization?: string,
   ) {
+    const options = CustomerListOptions.parse({
+      limit: clampLimit(limit, 50, 200),
+      ...(query ? { query } : {}),
+      ...(owner === "mine" || owner === "all" ? { owner } : {}),
+      ...(tier ? { tier } : {}),
+      ...(overdue === "1" || overdue === "true" ? { overdueOnly: true } : {}),
+    });
     return this.human.run(
       authorization,
       this.kernel,
       async (kernel, ctx) => ({
-        customers: await kernel.customers.list(clampLimit(limit, 20, 100), ctx),
+        customers: await kernel.customers.list(options, ctx),
       }),
       { scope: "read" },
     );
+  }
+
+  /** 客户 360 首屏：档案 + 上下文 + 聚合数字（与列表同一口径）。 */
+  @Get("customers/:id")
+  async customer360(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.customers.customer360(id, ctx),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 客户时间线：游标翻页，默认 20 条，可筛单据类型。 */
+  @Get("customers/:id/timeline")
+  async customerTimeline(
+    @Param("id") id: string,
+    @Query("types") types?: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const kinds = (types ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .map((value) => {
+        const parsed = CustomerTimelineKind.safeParse(value);
+        if (!parsed.success) {
+          throw new BadRequestException(`未知的时间线类型：${value}`);
+        }
+        return parsed.data;
+      });
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) =>
+          kernel.customers.customerTimeline(
+            id,
+            { kinds, limit: clampLimit(limit, 20, 50), cursor: cursor ?? null },
+            ctx,
+          ),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 
   @Post("tools/search-by-spec")
