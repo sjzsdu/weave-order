@@ -138,10 +138,12 @@ function printerCard(printer, index) {
   const nameInput = document.createElement("input");
   nameInput.className = "printer-name";
   nameInput.value = printer.name;
+  nameInput.title = printer.name;
   nameInput.maxLength = 64;
   nameInput.setAttribute("aria-label", "打印机名称");
   nameInput.addEventListener("input", () => {
     printer.name = nameInput.value;
+    nameInput.title = printer.name;
     refreshTestTarget();
   });
 
@@ -189,10 +191,12 @@ function printerCard(printer, index) {
 
   const addressInput = document.createElement("input");
   addressInput.value = printer.address ?? "";
+  addressInput.title = printer.address ?? "";
   addressInput.placeholder = ADDRESS_PLACEHOLDER[printer.connection] ?? "";
   addressInput.spellcheck = false;
   addressInput.addEventListener("input", () => {
     printer.address = addressInput.value;
+    addressInput.title = addressInput.value;
   });
 
   const syncFormatVisibility = () => {
