@@ -38,6 +38,29 @@ export function parseAllowedHosts(raw: string | undefined): string[] {
   return (raw ?? "").split(",").map(normalizeHost).filter(Boolean);
 }
 
+/**
+ * 取图白名单 = `MEDIA_ALLOWED_HOSTS` ∪ `MEDIA_BASE_URL` 的主机。
+ *
+ * 图片读模型里的 URL 就是 MEDIA_BASE_URL 拼出来的；只认前者会让 imageUrl 变体
+ * 在「配了 CDN 但忘了加白名单」时永久禁用。未配 MEDIA_BASE_URL 时对象存储地址
+ * （本地 MinIO）同样加入，保证本地链路可用；生产必须显式配 CDN。
+ */
+export function resolveAllowedHosts(source: NodeJS.ProcessEnv): string[] {
+  const hosts = parseAllowedHosts(source.MEDIA_ALLOWED_HOSTS);
+  const candidates = source.MEDIA_BASE_URL
+    ? [source.MEDIA_BASE_URL]
+    : [source.S3_ENDPOINT ?? "http://localhost:9000"];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      hosts.push(normalizeHost(new URL(candidate).hostname.replace(/^\[|\]$/g, "")));
+    } catch {
+      // 非法 URL 不扩大白名单；取图时仍会按 MEDIA_ALLOWED_HOSTS 判断。
+    }
+  }
+  return [...new Set(hosts.filter(Boolean))];
+}
+
 export class HttpImageFetcher implements ImageFetcher {
   private readonly allowedHosts: Set<string>;
   private readonly maxBytes: number;
@@ -100,7 +123,7 @@ export class HttpImageFetcher implements ImageFetcher {
 export function createImageFetcherFromEnv(source: NodeJS.ProcessEnv = process.env): ImageFetcher {
   const maxBytes = Number(source.MEDIA_MAX_BYTES ?? "");
   return new HttpImageFetcher({
-    allowedHosts: parseAllowedHosts(source.MEDIA_ALLOWED_HOSTS),
+    allowedHosts: resolveAllowedHosts(source),
     ...(Number.isFinite(maxBytes) && maxBytes > 0 ? { maxBytes } : {}),
   });
 }

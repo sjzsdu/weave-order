@@ -14,6 +14,28 @@ export const DEV_ONBOARDING_SECRET = "dev-only-onboarding-secret-change-me-0001"
 export const DEV_LITELLM_MASTER_KEY = "sk-local-dev";
 
 /**
+ * 本地 MinIO 的占位凭据（docker-compose.yml 同值）；生产出现即拒绝启动。
+ * 对象存储里放的是客户面料图，公开默认凭据等于把整桶图片交出去。
+ */
+export const DEV_S3_ACCESS_KEY_ID = "weave-media";
+export const DEV_S3_SECRET_ACCESS_KEY = "weave-media-secret";
+
+/** 环境变量里的布尔值：只认 1/true/yes/on，"false" 不会被当成 true。 */
+function booleanEnv(fallback: boolean) {
+  return z
+    .preprocess((value) => {
+      if (value === undefined || value === "") return fallback;
+      if (typeof value === "boolean") return value;
+      if (typeof value === "number") return value !== 0;
+      if (typeof value === "string") {
+        return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+      }
+      return fallback;
+    }, z.boolean())
+    .default(fallback);
+}
+
+/**
  * 运行时环境变量契约。
  * 默认值与 docker-compose.yml 一致，因此本地 `docker compose up` 后
  * 不需要 .env 也能跑通；线上用环境变量覆盖。
@@ -58,8 +80,20 @@ const EnvSchema = z.object({
   ONBOARDING_SECRET: z.string().min(32).default(DEV_ONBOARDING_SECRET),
   /** T-001 imageUrl 变体允许取图的对象存储 / CDN 域名（逗号分隔）。 */
   MEDIA_ALLOWED_HOSTS: z.string().default(""),
-  /** 按 URL 取图的最大字节数（默认 2MB，上限 10MB）。 */
-  MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(10_000_000).default(2_000_000),
+  /** 单张图片上限（上传与按 URL 取图共用；默认 10MB）。 */
+  MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(10_485_760).default(10_485_760),
+  // ---- 对象存储（S3 兼容：本地 MinIO / 生产腾讯云 COS）----
+  S3_ENDPOINT: z.string().url().default("http://localhost:9000"),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_BUCKET: z.string().min(1).default("weave-media"),
+  S3_ACCESS_KEY_ID: z.string().min(1).default(DEV_S3_ACCESS_KEY_ID),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).default(DEV_S3_SECRET_ACCESS_KEY),
+  /** MinIO 只支持 path-style；COS 必须关。 */
+  S3_FORCE_PATH_STYLE: booleanEnv(true),
+  /** 公开读域名（CDN）；缺省回落到 `S3_ENDPOINT/<bucket>`，本地即 MinIO 公开读地址。 */
+  MEDIA_BASE_URL: z.string().url().optional(),
+  /** 上传预签名有效期（秒）。 */
+  MEDIA_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(604_800).default(600),
   /** 打印代理 token 的 HS256 密钥；生产必须覆盖为 ≥32 字节随机值。 */
   PRINT_AGENT_SECRET: z.string().min(32).default(DEV_PRINT_AGENT_SECRET),
   /** 服务端 A4 PDF 的中文字体（TTF/OTF；TTC 不受支持）。 */
@@ -121,6 +155,17 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(
       "生产/OIDC 模式使用 LLM_PROVIDER=litellm 时必须显式配置 LITELLM_MASTER_KEY；" +
         "否则会以公开的 dev 占位 key 连接模型网关。",
+    );
+  }
+  // 图片链路不允许「悄悄退回 base64 / 本地磁盘」：没有对象存储凭据就拒绝启动。
+  if (
+    isProductionLike(env) &&
+    (env.S3_ACCESS_KEY_ID === DEV_S3_ACCESS_KEY_ID ||
+      env.S3_SECRET_ACCESS_KEY === DEV_S3_SECRET_ACCESS_KEY)
+  ) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY（对象存储凭证）；" +
+        "否则图片会以公开的 dev 凭据写入桶。",
     );
   }
   return env;

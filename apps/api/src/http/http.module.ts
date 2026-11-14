@@ -14,6 +14,9 @@ import { CreditsController } from "./usage.controller";
 import { OnboardingService } from "../onboarding/onboarding.service";
 import { PublicRateLimitService } from "../platform/rate-limit";
 import { createTools } from "../tools";
+import { MediaService } from "../media/media.service";
+import { createObjectStorageFromEnv } from "../platform/storage";
+import { loadEnv } from "../platform/env";
 import { QuoteAgentService } from "./quote-agent.service";
 import type { Tools } from "../tools";
 import {
@@ -33,10 +36,12 @@ import { AgentActorService } from "./agent-actor.service";
 import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
 import { PrintAgentController, PrintController } from "./print.controllers";
+import { MediaController } from "./media.controllers";
 import {
   AGENT_ACTOR,
   HUMAN_ACTOR,
   KERNEL,
+  MEDIA_SERVICE,
   PUBLIC_RATE_LIMIT,
   PUBLIC_SHARE,
   QUOTE_AGENT,
@@ -84,6 +89,11 @@ const providers: Provider[] = [
     inject: [AppDatabaseProvider],
   },
   OnboardingService,
+  {
+    // 对象存储句柄只在组合根创建；控制器与内核都拿不到它。
+    provide: MEDIA_SERVICE,
+    useFactory: (): MediaService => new MediaService(createObjectStorageFromEnv(loadEnv())),
+  },
 ];
 
 @Module({
@@ -105,6 +115,7 @@ const providers: Provider[] = [
     QuoteSharesController,
     PrintController,
     PrintAgentController,
+    MediaController,
     OnboardingController,
     TeamController,
     CreditsController,

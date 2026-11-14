@@ -30,6 +30,45 @@ services:
       timeout: 3s
       retries: 20
 
+  # 对象存储：本地用 MinIO 模拟 S3（生产走腾讯云 COS）。API 默认连 localhost:9000。
+  # bucket 由 minio-init 建好并开放匿名读（只用于本地：图片 URL 直接可看，免签名）。
+  minio:
+    image: minio/minio:latest
+    container_name: weave-order-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-weave-media}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-weave-media-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - weave_mediadata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: weave-order-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-weave-media}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-weave-media-secret}
+      S3_BUCKET: ${S3_BUCKET:-weave-media}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY" &&
+        mc mb --ignore-existing "local/$$S3_BUCKET" &&
+        mc anonymous set download "local/$$S3_BUCKET"
+    restart: "no"
+
   # 模型网关：智能体只认 LITELLM_BASE_URL，不直连厂商。
   # 无 DEEPSEEK_API_KEY 时仍可启动，仅模型调用失败（不影响内核/前端开发）。
   litellm:
@@ -48,7 +87,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\"",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:4000/health/liveliness'')"',
         ]
       interval: 10s
       timeout: 5s
@@ -57,3 +96,4 @@ services:
 volumes:
   weave_pgdata:
   weave_redisdata:
+  weave_mediadata:

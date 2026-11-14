@@ -13,6 +13,14 @@ export const unitEnum = pgEnum("unit", ["meter", "kilogram", "yard", "piece"]);
 
 export const sampleStatusEnum = pgEnum("sample_status", ["ACTIVE", "ARCHIVED"]);
 
+/** 样品图片用途。契约侧 `SampleImageVariant` 必须与这里取值一致。 */
+export const sampleImageVariantEnum = pgEnum("sample_image_variant", [
+  "primary",
+  "angle",
+  "detail",
+  "swatch",
+]);
+
 export const shipmentStatusEnum = pgEnum("sample_shipment_status", [
   "DRAFT",
   "CONFIRMED",

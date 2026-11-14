@@ -1,5 +1,16 @@
-import { bigint, index, pgTable, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
-import { currencyEnum, sampleStatusEnum, unitEnum } from "./enums";
+import { sql } from "drizzle-orm";
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
+import { currencyEnum, sampleImageVariantEnum, sampleStatusEnum, unitEnum } from "./enums";
 
 /**
  * 面料样品。
@@ -28,5 +39,41 @@ export const samples = pgTable(
   (table) => [
     uniqueIndex("samples_tenant_code_idx").on(table.tenantId, table.code),
     index("samples_name_idx").on(table.name),
+  ],
+);
+
+/**
+ * 样品图片：**DB 只存 object_key，不存 URL**。
+ * 换 CDN / 换桶只要改 `MEDIA_BASE_URL`，不需要回写业务数据。
+ * `sampleId` 级联删除：删样品即清掉图片行（桶里的对象留给 P1 回收任务）。
+ */
+export const sampleImages = pgTable(
+  "sample_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull(),
+    sampleId: uuid("sample_id")
+      .notNull()
+      .references(() => samples.id, { onDelete: "cascade" }),
+    objectKey: varchar("object_key", { length: 512 }).notNull().unique(),
+    variant: sampleImageVariantEnum("variant").notNull().default("primary"),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    mimeType: varchar("mime_type", { length: 32 }).notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // 每样品最多一张主图；由数据库兜底，应用层的「先清后设」只是体验优化。
+    uniqueIndex("sample_images_primary_per_sample_idx")
+      .on(table.sampleId)
+      .where(sql`is_primary = true`),
+    index("sample_images_tenant_sample_sort_idx").on(
+      table.tenantId,
+      table.sampleId,
+      table.sortOrder,
+    ),
   ],
 );

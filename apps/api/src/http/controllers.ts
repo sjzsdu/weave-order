@@ -23,7 +23,8 @@ import type { Tools } from "../tools";
 import { toToolError } from "../tools/errors";
 import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
-import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, QUOTE_AGENT, TOOLS } from "./tokens";
+import type { MediaService } from "../media/media.service";
+import { AGENT_ACTOR, HUMAN_ACTOR, KERNEL, MEDIA_SERVICE, QUOTE_AGENT, TOOLS } from "./tokens";
 
 function clampLimit(raw: string | undefined, fallback: number, max: number): number {
   const parsed = Number(raw);
@@ -32,7 +33,7 @@ function clampLimit(raw: string | undefined, fallback: number, max: number): num
 }
 
 /** 内核错误 -> HTTP 状态；其余继续抛出，交给 Nest 统一处理。 */
-function rethrowHttp(error: unknown): never {
+export function rethrowHttp(error: unknown): never {
   if (isKernelError(error)) {
     if (error.code === "RESOURCE_NOT_FOUND" || error.code === "CUSTOMER_NOT_FOUND") {
       throw new NotFoundException(error.message);
@@ -63,6 +64,7 @@ export class CatalogController {
     @Inject(TOOLS) private readonly tools: Tools,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
     @Inject(AGENT_ACTOR) private readonly agent: AgentActorService,
+    @Inject(MEDIA_SERVICE) private readonly media: MediaService,
   ) {}
 
   @Get("customers")
@@ -85,9 +87,33 @@ export class CatalogController {
     return this.human.run(
       authorization,
       this.kernel,
-      async (kernel, ctx) => ({
-        samples: await kernel.search.listSamples(clampLimit(limit, 50, 200), ctx),
-      }),
+      async (kernel, ctx) => {
+        const samples = await kernel.search.listSamples(clampLimit(limit, 50, 200), ctx);
+        const images = await kernel.sampleImages.listForSampleIds(samples.map((s) => s.id));
+        return {
+          samples: await Promise.all(
+            samples.map(async (sample) => ({
+              ...sample,
+              images: await this.media.presentAll(images.get(sample.id) ?? []),
+            })),
+          ),
+        };
+      },
+      { scope: "read" },
+    );
+  }
+
+  /** 样品详情：规格 + 图片图墙。图片 URL 由服务端按 object_key 生成，DB 不存 URL。 */
+  @Get("samples/:id")
+  async sample(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel) => {
+        const sample = await kernel.samples.getById(id);
+        const images = await kernel.sampleImages.listForSample(sample.id);
+        return { sample: { ...sample, images: await this.media.presentAll(images) } };
+      },
       { scope: "read" },
     );
   }

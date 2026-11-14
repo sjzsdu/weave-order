@@ -17,6 +17,7 @@ import { PricingService } from "./pricing.service";
 import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
 import { RevisionService } from "./revisions.service";
+import { SampleImageService } from "./sample-images.service";
 import { SampleService } from "./samples.service";
 import { SearchService } from "./search.service";
 import { ShareService } from "./shares.service";
@@ -52,6 +53,7 @@ export function createKernel(
   const tenantId = options.tenantId ?? DEFAULT_TENANT_ID;
   const customers = new CustomerService(db, tenantId);
   const samples = new SampleService(db, embedder, tenantId);
+  const sampleImages = new SampleImageService(db, tenantId);
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
   const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
@@ -78,6 +80,7 @@ export function createKernel(
     access,
     customers,
     samples,
+    sampleImages,
     pricing,
     shipments,
     quotes,
