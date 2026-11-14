@@ -21,10 +21,13 @@ export type T002SearchFabricBySpecInput = z.infer<typeof T002SearchFabricBySpecI
 export const SpecMatch = z
   .object({
     sample: FabricSample,
-    /** 命中字段占比，0..1 */
+    /**
+     * 相关性分数 0..1：ILIKE 命中 = 命中字段占比；语义命中 = 原始 cosine 相似度。
+     * 两种来源不混算：ILIKE 结果排前，语义结果补足并标 `matchedOn: ["semantic"]`。
+     */
     score: z.number().min(0).max(1),
-    /** 命中的字段名，如 ["code", "name"] */
-    matchedOn: z.array(z.enum(["code", "name", "composition", "weight"])),
+    /** 命中的字段名；语义命中为 ["semantic"] */
+    matchedOn: z.array(z.enum(["code", "name", "composition", "weight", "semantic"])),
   })
   .strict();
 export type SpecMatch = z.infer<typeof SpecMatch>;

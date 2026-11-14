@@ -15,7 +15,8 @@
     "demo:followup": "tsx scripts/demo-followup.ts",
     "demo:quote": "tsx scripts/demo-quote.ts",
     "seed": "tsx scripts/import-data.ts",
-    "backfill:owner": "tsx scripts/backfill-owner.ts"
+    "backfill:owner": "tsx scripts/backfill-owner.ts",
+    "reindex:samples": "tsx scripts/reindex-samples.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",

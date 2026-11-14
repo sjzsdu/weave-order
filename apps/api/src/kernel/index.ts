@@ -1,6 +1,6 @@
 import { DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { createEmbeddingProvider } from "../platform/embedding";
+import { createEmbeddingProviderFromEnv } from "../platform/embedding";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { loadEnv } from "../platform/env";
 import { createPrintCenter } from "../print";
@@ -20,6 +20,7 @@ import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
 import { RevisionService } from "./revisions.service";
 import { SampleImageService } from "./sample-images.service";
+import { SampleIndexService } from "./sample-index.service";
 import { SampleService } from "./samples.service";
 import { SearchService } from "./search.service";
 import { ShareService } from "./shares.service";
@@ -50,13 +51,12 @@ export interface KernelOptions {
  * 多租户：`db` 必须是已设置 `app.tenant_id` 的会话连接（生产），
  * 或 owner 连接（迁移 / 平台控制面）。绑定租户用于写 tenant_id 与审计。
  */
-export function createKernel(
-  db: Db,
-  embedder: EmbeddingProvider = createEmbeddingProvider(),
-  options: KernelOptions = {},
-) {
+export function createKernel(db: Db, embedder?: EmbeddingProvider, options: KernelOptions = {}) {
   const tenantId = options.tenantId ?? DEFAULT_TENANT_ID;
   const env = loadEnv();
+  // 默认 provider 由环境变量决定；显式注入（测试/演示）优先。
+  const activeEmbedder =
+    embedder ?? createEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
   const customers = new CustomerService(db, tenantId);
   const sampleImages = new SampleImageService(
     db,
@@ -64,7 +64,8 @@ export function createKernel(
     options.storage ?? createObjectStorageFromEnv(env),
     env,
   );
-  const samples = new SampleService(db, embedder, tenantId, sampleImages);
+  const sampleIndex = new SampleIndexService(db, activeEmbedder, tenantId);
+  const samples = new SampleService(db, activeEmbedder, tenantId, sampleImages, sampleIndex);
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
   const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
@@ -81,8 +82,14 @@ export function createKernel(
     tenantId,
   );
   const revisions = new RevisionService(db, tenantId);
-  const search = new SearchService(db, embedder, tenantId, sampleImages);
-  const importing = new ImportService(db, customers, samples, embedder, tenantId);
+  const search = new SearchService(
+    db,
+    activeEmbedder,
+    tenantId,
+    sampleImages,
+    env.SEARCH_SEMANTIC_MIN_SCORE,
+  );
+  const importing = new ImportService(db, customers, samples, sampleIndex, tenantId);
   const tenancy = new TenancyService(db);
   const access = new AccessService(db);
   const quotePricing = new QuotePricingService(customers, samples, pricing);
@@ -99,6 +106,7 @@ export function createKernel(
     access,
     customers,
     samples,
+    sampleIndex,
     sampleImages,
     pricing,
     shipments,

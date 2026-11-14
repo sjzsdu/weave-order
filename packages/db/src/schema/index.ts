@@ -13,5 +13,6 @@ export * from "./shares";
 export * from "./audit";
 export * from "./auth";
 export * from "./embeddings";
+export * from "./sample-text-embeddings";
 export * from "./llm";
 export * from "./print";

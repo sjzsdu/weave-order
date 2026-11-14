@@ -11,6 +11,9 @@ import {
 import { samples } from "./samples";
 
 /**
+ * @deprecated S3 起不再写入：真实文本向量见 `sampleTextEmbeddings`（pgvector + HNSW）。
+ * 本表（`real[]`，16 维哈希）只保留只读兼容，残留数据无害；S4 的图像向量也不会写这里。
+ *
  * 样品向量索引（找样工具用）。
  *
  * MVP 阶段用 `real[]` 存向量并在应用内算 cosine 相似度：不需要 pgvector 扩展，

@@ -1,4 +1,4 @@
-import { sampleEmbeddings, samples } from "@weave-order/db";
+import { samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { CreateSampleInput, UpdateSampleInput } from "@weave-order/schema";
 import type { FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
@@ -10,7 +10,7 @@ import { KernelError, isUniqueViolation, uniqueViolationConstraint } from "./err
 import { mayViewCost, toIso } from "./mappers";
 import { SampleImageService } from "./sample-images.service";
 import type { EmbeddingProvider } from "../platform/embedding";
-import { sampleEmbeddingText } from "./sample-embedding-text";
+import { SampleIndexService } from "./sample-index.service";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -122,6 +122,7 @@ export class SampleService {
     private readonly embedder: EmbeddingProvider,
     private readonly tenantId: string,
     private readonly images: SampleImageService = new SampleImageService(db, tenantId),
+    private readonly index: SampleIndexService = new SampleIndexService(db, embedder, tenantId),
   ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
@@ -135,16 +136,15 @@ export class SampleService {
       });
     }
     // 校验图片与生成向量都在事务前完成：任一失败都不会留下半写入的样品。
+    // 模型超时/5xx 会让整个请求失败（显式报错），绝不写入「看起来正常」的哈希分数。
     const resolvedImages = await this.images.resolveKeys(imageKeys);
-    const embedding = await this.embedder.embedText(
-      sampleEmbeddingText({
-        code: parsed.code,
-        name: parsed.name,
-        composition: parsed.composition ?? null,
-        category: parsed.category ?? null,
-        weight: parsed.weight ?? null,
-      }),
-    );
+    const preparedVector = await this.index.prepare({
+      code: parsed.code,
+      name: parsed.name,
+      composition: parsed.composition ?? null,
+      category: parsed.category ?? null,
+      weight: parsed.weight ?? null,
+    });
     try {
       const row = await this.db.transaction(async (tx) => {
         const rows = await tx
@@ -176,13 +176,7 @@ export class SampleService {
             parsed.primaryImageKey ?? null,
           );
         }
-        await tx.insert(sampleEmbeddings).values({
-          tenantId: this.tenantId,
-          sampleId: inserted.id,
-          model: this.embedder.name,
-          dimension: this.embedder.dimension,
-          embedding,
-        });
+        await this.index.writeWithin(tx, inserted.id, preparedVector);
         await appendAudit(
           tx,
           ctx,
@@ -213,16 +207,12 @@ export class SampleService {
 
   /**
    * 在外部事务内插入样品 + 向量 + 同事务审计，不自行开事务。
-   * 单条 create 与批量导入共用这一处写逻辑；embedding 由调用方在事务前算好。
+   * 单条 create 与批量导入共用这一处写逻辑。向量不在这里写：批量导入在提交后
+   * 由 `reindexTenant` 统一补齐（失败不阻塞导入，但会记审计）。
    *
    * 注意：Excel 导入不带图，所以这里不处理 `imageKeys`（`SampleImportRow` 也不允许填）。
    */
-  async insertWithin(
-    tx: Tx,
-    parsed: CreateSampleInput,
-    ctx: KernelContext,
-    embedding: number[],
-  ): Promise<FabricSample> {
+  async insertWithin(tx: Tx, parsed: CreateSampleInput, ctx: KernelContext): Promise<FabricSample> {
     const rows = await tx
       .insert(samples)
       .values({
@@ -244,13 +234,6 @@ export class SampleService {
         reason: "INSERT_RETURNED_NO_ROW",
       });
     }
-    await tx.insert(sampleEmbeddings).values({
-      tenantId: this.tenantId,
-      sampleId: row.id,
-      model: this.embedder.name,
-      dimension: this.embedder.dimension,
-      embedding,
-    });
     await appendAudit(
       tx,
       ctx,
@@ -295,6 +278,22 @@ export class SampleService {
       values.costFloorAmount = parsed.costFloor?.amount ?? null;
       values.costFloorCurrency = parsed.costFloor?.currency ?? null;
     }
+    // 只有影响向量文本的字段变了才调用模型（改价格/图片不重算）。
+    const textChanged =
+      (parsed.code !== undefined && parsed.code !== before.code) ||
+      (parsed.name !== undefined && parsed.name !== before.name) ||
+      (parsed.composition !== undefined && (parsed.composition ?? null) !== before.composition) ||
+      (parsed.category !== undefined && (parsed.category ?? null) !== before.category) ||
+      (parsed.weight !== undefined && parsed.weight !== before.weight);
+    const preparedVector = textChanged
+      ? await this.index.prepare({
+          code: parsed.code ?? before.code,
+          name: parsed.name ?? before.name,
+          composition: parsed.composition ?? before.composition,
+          category: parsed.category ?? before.category,
+          weight: parsed.weight ?? before.weight,
+        })
+      : null;
     try {
       const row = await this.db.transaction(async (tx) => {
         const rows = await tx
@@ -314,6 +313,7 @@ export class SampleService {
         } else if (primaryKey != null) {
           await this.images.setPrimaryWithin(tx, sampleId, primaryKey);
         }
+        if (preparedVector) await this.index.writeWithin(tx, sampleId, preparedVector);
         await appendAudit(
           tx,
           ctx,

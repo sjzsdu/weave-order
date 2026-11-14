@@ -18,7 +18,7 @@
 | 数据库        | PostgreSQL 16 + pgvector                                             |
 | ORM / 查询层  | Drizzle ORM（TypeScript 优先）                                       |
 | 缓存与队列    | Redis 7                                                              |
-| 向量检索      | MVP：`real[]` + 应用内 cosine；上量后切 pgvector `vector` + HNSW     |
+| 向量检索      | 文本：pgvector `vector(1024)` + HNSW；`local-stub` 仍走 `real[]` 兼容 |
 | 智能体编排    | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）      |
 | 前端·桌面     | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统  |
 | 前端·客户报价 | Next.js 15 独立应用 `apps/quote`（`/s/[token]`，SSR、无鉴权 Cookie） |
@@ -133,8 +133,9 @@ PAT 绑定 membership，仍然走同一租户与 RLS；默认作用域 `read,wri
 8. 审计日志逐条列出，数据库触发器拒绝改写
 
 不需要 `.env`（默认值与 `docker-compose.yml` 一致）；需要覆盖时 `cp .env.example .env`。
-演示**不依赖任何外部模型 key**：embedding 默认走 `local-stub`，真实 provider 在
-`apps/api/src/platform/embedding.ts` 的接口后面，接入时只换 provider。
+演示**不依赖任何外部模型 key**：embedding 默认走 `local-stub`（哈希、无语义）。
+真实语义检索用 `EMBEDDING_PROVIDER=dashscope-text-v3` + key，细节见
+[`docs/semantic-search.md`](docs/semantic-search.md)。
 
 ### 常用命令
 
