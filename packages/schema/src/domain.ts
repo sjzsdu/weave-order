@@ -51,6 +51,13 @@ export const SampleImage = z.object({
   isPrimary: z.boolean(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
+  /**
+   * 图像向量索引状态。图墙据此显示「检索中 / 索引失败」，
+   * 不允许把「还没算向量」表现成「搜不到」。
+   */
+  indexStatus: z.enum(["pending", "ready", "failed"]).default("pending"),
+  /** 索引失败原因（截断）；ready 时为空。 */
+  indexError: z.string().nullable().default(null),
 });
 export type SampleImage = z.infer<typeof SampleImage>;
 

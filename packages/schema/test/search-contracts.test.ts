@@ -49,7 +49,8 @@ describe("T-001 search_fabric_by_image", () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.topK).toBe(5);
-      expect(parsed.data.minSimilarity).toBe(0.5);
+      // S4：默认阈值 0.75（实测异款余弦可到 0.69，0.55 会误召回）。
+      expect(parsed.data.minSimilarity).toBe(0.75);
     }
   });
 
@@ -74,7 +75,8 @@ describe("T-001 search_fabric_by_image", () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.topK).toBe(5);
-      expect(parsed.data.minSimilarity).toBe(0.5);
+      // S4：默认阈值 0.75（实测异款余弦可到 0.69，0.55 会误召回）。
+      expect(parsed.data.minSimilarity).toBe(0.75);
       expect("imageUrl" in parsed.data).toBe(true);
     }
   });

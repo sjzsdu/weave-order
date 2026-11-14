@@ -129,13 +129,16 @@ PAT 绑定 membership，仍然走同一租户与 RLS；默认作用域 `read,wri
 4. 智能体调用确认 → 内核拒绝 `PERMISSION_DENIED`；人类确认 → `CONFIRMED`
 5. 智能体通过工具 T-004 生成报价草稿 —— 金额由内核整数计算
 6. 低于成本底线的报价 → 内核拒绝 `PRICE_BELOW_COST_FLOOR`
-7. 找样工具 T-002（参数匹配）/ T-001（以图搜图，local stub embedding）
+7. 找样工具 T-002（参数匹配）/ T-001（以图搜图，默认 local stub 图像向量）
 8. 审计日志逐条列出，数据库触发器拒绝改写
 
 不需要 `.env`（默认值与 `docker-compose.yml` 一致）；需要覆盖时 `cp .env.example .env`。
 演示**不依赖任何外部模型 key**：embedding 默认走 `local-stub`（哈希、无语义）。
 真实语义检索用 `EMBEDDING_PROVIDER=dashscope-text-v3` + key，细节见
 [`docs/semantic-search.md`](docs/semantic-search.md)。
+真实图搜图用 `IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl` + key，历史图片用
+`pnpm --filter @weave-order/api reindex:images --ensure-index` 回填，细节见
+[`docs/image-search.md`](docs/image-search.md)。
 
 ### 常用命令
 

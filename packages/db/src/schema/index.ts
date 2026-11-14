@@ -14,5 +14,6 @@ export * from "./audit";
 export * from "./auth";
 export * from "./embeddings";
 export * from "./sample-text-embeddings";
+export * from "./sample-image-embeddings";
 export * from "./llm";
 export * from "./print";

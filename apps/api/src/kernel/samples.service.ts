@@ -11,6 +11,7 @@ import { mayViewCost, toIso } from "./mappers";
 import { SampleImageService } from "./sample-images.service";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { SampleIndexService } from "./sample-index.service";
+import type { ImageIndexService } from "./image-index.service";
 import { escapeLikePattern } from "./like";
 
 type SampleRow = typeof samples.$inferSelect;
@@ -124,7 +125,20 @@ export class SampleService {
     private readonly tenantId: string,
     private readonly images: SampleImageService = new SampleImageService(db, tenantId),
     private readonly index: SampleIndexService = new SampleIndexService(db, embedder, tenantId),
+    /** 图像向量索引；未注入时（老单测）跳过图片索引，不静默假装已索引。 */
+    private readonly imageIndex?: ImageIndexService,
   ) {}
+
+  /**
+   * 图片写完（提交后）补算图像向量。
+   * 失败只落在 `sample_images.index_status` 上，不让「建样品」因为模型抖动而失败；
+   * 图墙会显示「索引失败」，随时可用 `reindex:images` 重试。
+   */
+  private async indexImages(sampleId: string): Promise<void> {
+    if (!this.imageIndex) return;
+    // 有后台 worker 时只入队（HTTP 响应不等模型）；CLI/单测退回同步，行为确定。
+    await this.imageIndex.requestSampleIndex(sampleId);
+  }
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
     assertCanWriteSamples(ctx);
@@ -199,6 +213,8 @@ export class SampleService {
         );
         return inserted;
       });
+      // 事务外补图向量：模型调用不该拽着数据库事务。
+      if (imageKeys.length > 0) await this.indexImages(row.id);
       return mapSample(row);
     } catch (error) {
       if (isUniqueViolation(error) && isSampleCodeConflict(error)) throw sampleCodeExists();
@@ -332,6 +348,7 @@ export class SampleService {
         );
         return updated;
       });
+      if (resolvedImages && resolvedImages.length > 0) await this.indexImages(sampleId);
       return mapSample(row);
     } catch (error) {
       if (isUniqueViolation(error) && isSampleCodeConflict(error)) throw sampleCodeExists();

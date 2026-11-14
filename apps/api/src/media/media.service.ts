@@ -191,7 +191,13 @@ export class MediaService {
       },
       ctx,
     );
-    return { image: await this.present(row) };
+    // 挂图即入队：算图向量走后台（HTTP 路径有 worker），confirm 立即返回 `pending`。
+    // 失败不阻塞上传，但会把 `sample_images.index_status` 标成 failed，
+    // 图墙据此显示「索引失败」，不会假装「搜不到」。
+    await kernel.imageIndex.requestIndex(row.id);
+    // 回读一次：状态可能是 pending（后台还没算完），前端据此显示「检索中」。
+    const fresh = (await kernel.sampleImages.findById(row.id)) ?? row;
+    return { image: await this.present(fresh) };
   }
 
   /** 把 DB 行转成读模型；桶非公开时退回签名 URL。 */
@@ -205,6 +211,8 @@ export class MediaService {
       isPrimary: row.isPrimary,
       width: row.width,
       height: row.height,
+      indexStatus: (row.indexStatus as SampleImage["indexStatus"]) ?? "pending",
+      indexError: row.indexError ?? null,
     };
   }
 

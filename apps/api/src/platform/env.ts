@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DASHSCOPE_MULTIMODAL_DIMENSIONS } from "./embedding";
 import { isProductionLike } from "./runtime-mode";
 
 /** 仅本地/测试使用的占位密钥；生产出现即 fail-fast（与 database-guard 同一策略）。 */
@@ -65,6 +66,46 @@ const EnvSchema = z.object({
   /** 语义检索的最低 cosine 相似度；低于它的结果不返回（不做归一化凑数）。 */
   /** 实测：无关文本的 cosine 基线约 0.37–0.49，0.5 能挡住绝大部分噪声。 */
   SEARCH_SEMANTIC_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.5),
+  // ---- 图像向量（S4：以图找样）----
+  /**
+   * 图像 embedding provider：local-stub（默认，无 key，**不携带视觉语义**）或
+   * dashscope-qwen3-vl（通义多模态真实向量）。
+   */
+  IMAGE_EMBEDDING_PROVIDER: z.string().min(1).default("local-stub"),
+  /** 多模态模型名；与文本 provider 独立，别拿文本模型顶图向量。 */
+  IMAGE_EMBEDDING_MODEL: z.string().min(1).default("qwen3-vl-embedding"),
+  /** 向量维度。列不定维，换维度只需新建同维度的 partial HNSW 索引。 */
+  IMAGE_EMBEDDING_DIMENSION: z.coerce.number().int().positive().default(1024),
+  /** DashScope 原生多模态端点（不是 OpenAI 兼容端点）。 */
+  IMAGE_EMBEDDING_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/api/v1"),
+  /** 图像 embedding key；缺省回落到 DASHSCOPE_API_KEY。 */
+  IMAGE_EMBEDDING_API_KEY: z.string().min(1).optional(),
+  IMAGE_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  IMAGE_EMBEDDING_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  /**
+   * 送模型前把图缩到长边多少像素（0 = 不缩）。
+   * 实测 512px 与 1024px 分离度差 0.006（噪声内），而 token 从 1024 降到 256、成本降 4 倍。
+   */
+  IMAGE_EMBEDDING_MAX_EDGE: z.coerce.number().int().min(0).max(2048).default(512),
+  /**
+   * 图-图检索的最低余弦相似度。
+   * 实测（qwen3-vl-embedding）：同款异角度 0.89~0.96，最易混异款 0.61~0.69，
+   * 0.75 能把异款挡住；0.55 会把「浅蓝牛仔 vs 灰针织」当成同款。
+   */
+  SEARCH_IMAGE_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.75),
+  /**
+   * 文-图检索的最低余弦相似度。图-图与文-图不是同一分布
+   * （实测文-图正确配对 0.35~0.57，其余 ≤0.34），所以阈值必须分开配。
+   */
+  SEARCH_IMAGE_TEXT_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.35),
+  /**
+   * 图向量服务不可用时的兜底：视觉模型生成中文描述 → 走文本语义检索。
+   * 默认关：宁可明确报错，也不要静默换一条质量不同的链路。
+   */
+  CAPTION_FALLBACK: booleanEnv(false),
+  /** caption 用的视觉模型（OpenAI 兼容 chat/completions）。 */
+  CAPTION_MODEL: z.string().min(1).default("qwen3-vl-plus"),
+  CAPTION_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/compatible-mode/v1"),
   /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key） */
   LLM_PROVIDER: z.string().min(1).default("local-rule"),
   /** LLM 网关（LiteLLM，OpenAI 兼容）；agent 只认这个地址，不直连厂商。 */
@@ -189,6 +230,38 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(
       `EMBEDDING_DIMENSION=${env.EMBEDDING_DIMENSION} 与 sample_text_embeddings.embedding vector(1024) 不一致；` +
         "改维度必须同时新增迁移与 HNSW 索引。",
+    );
+  }
+  // 图像向量同理：选了真实多模态模型却没 key 就拒绝启动，绝不退回哈希向量。
+  if (
+    env.IMAGE_EMBEDDING_PROVIDER === "dashscope-qwen3-vl" &&
+    !(env.IMAGE_EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "").trim()
+  ) {
+    throw new Error(
+      "IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl 需要 IMAGE_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY；" +
+        "没有 key 请改回 local-stub（哈希向量不携带视觉语义，不能用于以图找样）。",
+    );
+  }
+  if (
+    env.IMAGE_EMBEDDING_PROVIDER === "dashscope-qwen3-vl" &&
+    !DASHSCOPE_MULTIMODAL_DIMENSIONS.includes(
+      env.IMAGE_EMBEDDING_DIMENSION as (typeof DASHSCOPE_MULTIMODAL_DIMENSIONS)[number],
+    )
+  ) {
+    throw new Error(
+      `IMAGE_EMBEDDING_DIMENSION=${env.IMAGE_EMBEDDING_DIMENSION} 不是 ${env.IMAGE_EMBEDDING_MODEL} 支持的维度；` +
+        `可选：${DASHSCOPE_MULTIMODAL_DIMENSIONS.join(" / ")}`,
+    );
+  }
+  if (env.CAPTION_FALLBACK && !(env.IMAGE_EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "").trim()) {
+    throw new Error("CAPTION_FALLBACK=true 需要 IMAGE_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY（caption 走同一个 key）。");
+  }
+  // caption 兜底最终要落到**文本语义检索**上：文本 provider 还是哈希 stub 时，
+  // 兜底会返回一组「按描述检索」但没有语义的结果 —— 宁可拒绝启动。
+  if (env.CAPTION_FALLBACK && env.EMBEDDING_PROVIDER === "local-stub") {
+    throw new Error(
+      "CAPTION_FALLBACK=true 需要真实文本 embedding（EMBEDDING_PROVIDER=dashscope-text-v3）；" +
+        "local-stub 的哈希向量做文本检索没有意义。",
     );
   }
   // 图片链路不允许「悄悄退回 base64 / 本地磁盘」：没有对象存储凭据就拒绝启动。

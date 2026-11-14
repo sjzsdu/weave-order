@@ -86,7 +86,8 @@ describe("工具层：输入校验与失败语义封闭", () => {
     expect(searchByImage).toHaveBeenCalledWith(
       { mimeType: "image/jpeg", base64: "ZmV0Y2hlZA==" },
       5,
-      0.5,
+      // S4 起默认阈值是 0.75（实测异款余弦可到 0.69）；0.55 会把不同面料放进来。
+      0.75,
     );
   });
 

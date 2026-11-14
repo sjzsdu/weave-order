@@ -16,7 +16,9 @@
     "demo:quote": "tsx scripts/demo-quote.ts",
     "seed": "tsx scripts/import-data.ts",
     "backfill:owner": "tsx scripts/backfill-owner.ts",
-    "reindex:samples": "tsx scripts/reindex-samples.ts"
+    "reindex:samples": "tsx scripts/reindex-samples.ts",
+    "reindex:images": "tsx scripts/reindex-images.ts",
+    "verify:image-search": "tsx scripts/verify-image-search.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",
@@ -41,7 +43,8 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "ws": "^8.22.2",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

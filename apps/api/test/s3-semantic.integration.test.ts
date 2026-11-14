@@ -275,6 +275,8 @@ describe("S3 HNSW 索引", () => {
     };
 
     const measure = async (runs: number) => {
+      // 预热 3 次：首次查询要建执行计划 / 拉冷页，混进 p95 会让取样完全取决于机器负载。
+      for (let run = 0; run < 3; run += 1) await pool!.query(sql, params);
       const timings: number[] = [];
       for (let run = 0; run < runs; run += 1) {
         const started = performance.now();
@@ -288,7 +290,8 @@ describe("S3 HNSW 索引", () => {
     // ① 1000 条：planner 认为 Seq Scan + top-N sort 更便宜（成本模型正确，实测 ~5ms），
     //    这里只锁「远低于 50ms」的延迟目标，不强行要求索引。
     await insertSamples(1000);
-    const p95At1000 = await measure(20);
+    // 取样 50 次：20 次时 p95 只取决于最慢 1~2 次，跑在并行测试里会误报。
+    const p95At1000 = await measure(50);
     console.log(`1000 条样品：p95 = ${p95At1000.toFixed(2)}ms`);
     expect(p95At1000).toBeLessThan(50);
 

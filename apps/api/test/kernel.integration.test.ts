@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -5,6 +6,7 @@ import { createDb, sampleEmbeddings, samples, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { createKernel, errorChainMessage } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
+import type { ObjectBytes, ObjectHead, ObjectStorage } from "../src/platform/storage";
 
 /**
  * 内核集成测试：需要本地 PostgreSQL（docker compose up -d && pnpm db:migrate）。
@@ -58,7 +60,7 @@ function kernelOf(): Kernel {
  * 每个用例独立租户：以图搜图 / 参数找样的结果集只由本用例自己决定，
  * 不受并行测试文件往默认租户里写样品的影响（WAN-107）。
  */
-async function isolatedKernel(id: string): Promise<Kernel> {
+async function isolatedTenant(id: string) {
   if (!db) throw new Error("数据库不可用");
   const owner = createKernel(db);
   const tenant = await owner.tenancy.createTenant(
@@ -66,7 +68,40 @@ async function isolatedKernel(id: string): Promise<Kernel> {
     SYSTEM,
   );
   createdTenantIds.push(tenant.id);
-  return createKernel(db, undefined, { tenantId: tenant.id });
+  return tenant;
+}
+
+/** 内存对象存储：图像向量索引要读原图字节，测试不能打真实网络。 */
+class FakeStorage implements ObjectStorage {
+  private readonly objects = new Map<string, { contentType: string; bytes: Buffer }>();
+
+  put(objectKey: string, bytes: Buffer, contentType = "image/jpeg"): void {
+    this.objects.set(objectKey, { contentType, bytes });
+  }
+
+  presignPut(): Promise<string> {
+    return Promise.resolve("https://s3.test/upload");
+  }
+
+  signGet(objectKey: string): Promise<string> {
+    return Promise.resolve(`https://signed.test/${objectKey}`);
+  }
+
+  head(objectKey: string): Promise<ObjectHead | null> {
+    const object = this.objects.get(objectKey);
+    return Promise.resolve(
+      object ? { contentType: object.contentType, contentLength: object.bytes.length } : null,
+    );
+  }
+
+  get(objectKey: string): Promise<ObjectBytes | null> {
+    return Promise.resolve(this.objects.get(objectKey) ?? null);
+  }
+
+  delete(objectKey: string): Promise<void> {
+    this.objects.delete(objectKey);
+    return Promise.resolve();
+  }
 }
 
 const suffix = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -239,13 +274,25 @@ describe("确定性内核（集成）", () => {
 
   it("找样 T-001：以图搜图在隔离数据集内返回确定性、降序且契约内的相似度", async (ctx) => {
     if (!available) ctx.skip();
-    const kernel = await isolatedKernel(suffix());
-    const image = { mimeType: "image/jpeg", base64: "aGVsbG8td2VhdmU=" };
+    const tenant = await isolatedTenant(suffix());
+    const storage = new FakeStorage();
+    // 图片是标签字节而非真 JPEG：关掉服务端缩图，断言才稳定。
+    const kernel = createKernel(db!, undefined, {
+      tenantId: tenant.id,
+      storage,
+      imageEmbeddingMaxEdge: 0,
+    });
 
     // 自建样品：结果集完全由本用例决定，不再与并行测试共享默认租户（WAN-107）。
+    // S4 起以图找样比的是**图像**向量，因此每个样品必须真的挂一张图。
     const ownSampleIds = new Set<string>();
+    const imageBytes = new Map<string, Buffer>();
     const createBatch = async (batch: string, count: number) => {
       for (let index = 0; index < count; index += 1) {
+        const key = `tenant/${tenant.id}/samples/${randomUUID()}/${randomUUID()}.jpg`;
+        const bytes = Buffer.from(`image-${batch}-${index}-${"x".repeat(64)}`);
+        storage.put(key, bytes);
+        imageBytes.set(key, bytes);
         const sample = await kernel.samples.create(
           {
             code: `IT-IMG-${batch}-${index}`,
@@ -253,6 +300,7 @@ describe("确定性内核（集成）", () => {
             composition: index % 2 === 0 ? "100% 棉" : "100% polyester",
             weight: `${200 + index}g/m2`,
             unit: "meter",
+            imageKeys: [key],
           },
           HUMAN,
         );
@@ -261,18 +309,21 @@ describe("确定性内核（集成）", () => {
     };
 
     // 断言只看契约不变量：不锁浮点精确值、不锁具体排名。
-    const assertContract = (
-      result: Awaited<ReturnType<typeof kernel.search.searchByImage>>,
-    ): string[] => {
-      expect(result.embeddingModel).toBe("local-stub-v1");
+    const assertContract = (result: Awaited<ReturnType<typeof kernel.search.searchByImage>>) => {
+      expect(result.embeddingModel).toBe("local-stub-image-v1");
       expect(result.dimension).toBe(16);
+      // stub 向量不携带视觉语义，必须如实标注（不允许冒充真实图搜图）。
+      expect(result.semantic).toBe(false);
+      expect(result.mode).toBe("image");
       expect(result.matches.length).toBeGreaterThan(0);
       expect(result.matches.length).toBeLessThanOrEqual(5);
-      // 隔离租户里只可能有本用例创建的样品
       for (const match of result.matches) {
         expect(ownSampleIds.has(match.sample.id)).toBe(true);
         expect(match.score).toBeGreaterThanOrEqual(0);
         expect(match.score).toBeLessThanOrEqual(1);
+        // 每条结果都要指出命中的是哪张图，且理由可核对。
+        expect(match.matchedImageId).toBeTruthy();
+        expect(match.reasons?.length ?? 0).toBeGreaterThan(0);
       }
       const scores = result.matches.map((match) => match.score);
       expect(scores).toEqual([...scores].sort((left, right) => right - left));
@@ -280,8 +331,14 @@ describe("确定性内核（集成）", () => {
     };
 
     await createBatch("a", 8);
+    const firstBytes = [...imageBytes.values()][0]!;
+    const image = { mimeType: "image/jpeg", base64: firstBytes.toString("base64") };
+
+    // 自召回：拿库里已有的某张图做查询，top-1 必须是它自己（同图同角度）。
     const first = await kernel.search.searchByImage(image, 5, 0);
     const firstSignature = assertContract(first);
+    expect(firstSignature[0]?.startsWith([...ownSampleIds][0]!)).toBe(true);
+    expect(first.matches[0]?.score).toBeCloseTo(1, 5);
 
     // 同租户、同一张图：两次调用必须完全一致（确定性）。
     const second = await kernel.search.searchByImage(image, 5, 0);
@@ -297,7 +354,7 @@ describe("确定性内核（集成）", () => {
     expect(doubledSecond.matches.map((match) => `${match.sample.id}:${match.score}`)).toEqual(
       doubledFirst.matches.map((match) => `${match.sample.id}:${match.score}`),
     );
-  }, 30_000);
+  }, 60_000);
 
   it("报价：bigint 金额可以承载超过 int4 的单笔大单", async (ctx) => {
     if (!available) ctx.skip();

@@ -27,8 +27,10 @@ const createdTenants: string[] = [];
 const suffix = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 beforeAll(async () => {
-  ownerPool = new Pool({ connectionString: OWNER_URL, connectionTimeoutMillis: 1500, max: 3 });
-  appPool = new Pool({ connectionString: APP_URL, connectionTimeoutMillis: 1500, max: 3 });
+  // 5s 而不是 1.5s：整套集成测试并行跑时（几十个文件各开一条池），
+  // 借连接偶尔会超过 1.5s，beforeAll 失败会让整组用例静默跳过。
+  ownerPool = new Pool({ connectionString: OWNER_URL, connectionTimeoutMillis: 5000, max: 3 });
+  appPool = new Pool({ connectionString: APP_URL, connectionTimeoutMillis: 5000, max: 3 });
   try {
     const table = await ownerPool.query<{ exists: boolean }>(
       "SELECT to_regclass('public.tenants') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname='weave_app') AS exists",
