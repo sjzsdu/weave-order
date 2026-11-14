@@ -19,6 +19,7 @@ Astro 5 + Tailwind 4 + MDX 内容集合，构建期产出纯静态 HTML，nginx 
 | `docs/index.html`                                                        | 帮助中心首页：按任务分类 + 搜索 + 十个高频问题                      | `src/pages/docs/index/index.astro` |
 | `docs/quickstart.html`                                                   | 5 分钟上手                                                          | `src/pages/docs/quickstart.astro`  |
 | `docs/{signup,import,approvals,quotes,printing,agent,security,faq}.html` | 七篇操作文档与 FAQ                                                  | `src/content/docs/*.mdx`           |
+| `guides/{textile-erp-selection,fabric-quotation-software,sample-follow-up,textile-reconciliation}.html` | 四个长尾搜索意图落地页（选型 / 报价 / 寄样 / 对账） | `src/content/guides/*.mdx` |
 | `404.html`                                                               | 找不到页面时的四个出口                                              | `src/pages/404.astro`              |
 | `llms.txt`                                                               | 给 AI 助手（ChatGPT / Claude / Perplexity 等）的产品摘要与事实清单  | `public/llms.txt`                  |
 | `robots.txt` / `sitemap.xml`                                             | 抓取规则与站点地图                                                  | `public/robots.txt` + 构建集成     |
@@ -60,13 +61,23 @@ sections: # 本页目录
 （侧栏）与 `src/data/docs-order.json`（阅读顺序），最后补 `src/integrations/xml-sitemap.mjs`
 里的地址表 —— `pnpm --filter @weave-order/site test` 会检查这三处是否一致。
 
+## 改指南页（长尾落地页）
+
+`guides/` 下四页回答客户会直接搜的问题，目标是被搜索引擎与大模型单独摘录。它们是独立的内容集合，和帮助文档共用版式类，但多一层首屏与转化区：
+
+- 正文：`src/content/guides/*.mdx`。frontmatter 里的 `h1`、`answer`、`aside`、`cta` 渲染首屏与页尾，`sections` 生成本页目录，`faq` 同时生成可见问答与 `FAQPage`，可选 `howTo` 额外生成 `HowTo`。
+- 外壳：`src/layouts/GuideLayout.astro`（首屏 + 指南目录 + 正文 + 目录 + FAQ / CTA / 上下篇）；路由在 `src/pages/guides/[...slug].astro`，URL 取 frontmatter 的 `file`（保留 `.html`）。
+- 新增一篇：加一个 `.mdx`，把侧栏项补进 `src/data/guides-nav.json`（本页导航）与 `src/data/docs-nav.json`（帮助文档侧栏的「指南」分组），再补 `src/integrations/xml-sitemap.ts` 的地址表与 `public/llms.txt` 的「指南」分组 —— `test` 会检查地址表与页面是否一致。
+- 每页正文建议 ≥ 800 字中文、至少 3 个可核对的具体机制或数字；没有真实客户数据就写方法，不编案例。
+- CTA 带 `data-cta`（位置枚举）+ `data-cta-label`（指南名），统计接入后按事件字典绑 `cta_click`。
+
 ## SEO 与「大模型搜索」优化
 
 搜索引擎部分：
 
 - 每页都有唯一的 `<title>`、`meta description`、`canonical`、Open Graph 与 Twitter Card；`og:image` 用绝对地址。
 - 结构化数据：首页 `Organization` + `WebSite` + `SoftwareApplication` + `FAQPage`；价格页 `Product` + `Offer`；开通页 `HowTo`；文档页 `BreadcrumbList`；FAQ 页 `FAQPage`。
-- `sitemap.xml` 含全部 15 个可索引页面；`robots.txt` 声明 sitemap，并显式允许 GPTBot / ClaudeBot / PerplexityBot。
+- `sitemap.xml` 含全部 20 个可索引页面；`robots.txt` 声明 sitemap，并显式允许 GPTBot / ClaudeBot / PerplexityBot。
 - 语义结构：每页一个 `h1`，章节用 `h2/h3`，正文用短段落与列表；`alt` 全部填写或显式留空。
 - 登录后的工作台与平台管理端在应用层设置了 `noindex`，不参与索引。
 
@@ -74,7 +85,7 @@ sections: # 本页目录
 
 - `llms.txt` 放在站点根目录，按 [llmstxt.org](https://llmstxt.org) 的格式给出：一句话定义、关键事实（入口、价格、试用、开通方式、部署形态、身份、安全）、分主题链接、可直接引用的问答对。首页 `<head>` 里有 `<link rel="alternate" type="text/plain" href="/llms.txt">`。
 - 每个页面开头先给结论，再给细节；FAQ 每条答案都能独立被摘出来（「不」开头也是完整句子）。
-- 事实一致：同一组数字（299 / 499 / 14 天 / 5% / 1 万元）在首页、价格页、帮助中心、`llms.txt` 里保持一致，避免模型引用到互相矛盾的版本。
+- 事实一致：同一组数字（299 / 899 / 3 天 / 5% / 1 万元）在首页、价格页、帮助中心、`llms.txt` 里保持一致，避免模型引用到互相矛盾的版本。
 - 不写「行业领先」这类无法验证的话；给可核对的具体机制（数据库层隔离、审计只追加、break-glass 限时只读）。
 
 ## 文案规则

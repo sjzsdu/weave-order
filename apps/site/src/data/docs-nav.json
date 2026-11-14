@@ -23,5 +23,14 @@
       { "href": "/docs/security.html", "label": "数据与安全" },
       { "href": "/docs/faq.html", "label": "常见问题" }
     ]
+  },
+  {
+    "title": "指南",
+    "items": [
+      { "href": "/guides/textile-erp-selection.html", "label": "纺织 ERP 怎么选" },
+      { "href": "/guides/fabric-quotation-software.html", "label": "面料报价软件" },
+      { "href": "/guides/sample-follow-up.html", "label": "寄样跟进 SOP" },
+      { "href": "/guides/textile-reconciliation.html", "label": "纺织对账与回款" }
+    ]
   }
 ]

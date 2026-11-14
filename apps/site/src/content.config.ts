@@ -27,4 +27,49 @@ const docs = defineCollection({
   }),
 });
 
-export const collections = { docs };
+/**
+ * 指南：按搜索意图组织、可以被单独摘录的落地页（选型 / 报价 / 寄样 / 对账）。
+ *
+ * 和帮助文档的区别：FAQ 与 HowTo 放在 frontmatter，页面同时渲染可见问答与
+ * JSON-LD —— 结构化数据必须有对应正文，两处不能各写一份。
+ */
+const guides = defineCollection({
+  loader: glob({ pattern: "**/*.mdx", base: "./src/content/guides" }),
+  schema: z.object({
+    /** 浏览器标题（含站点名）。 */
+    title: z.string(),
+    /** 页面描述（SEO 用）。 */
+    description: z.string(),
+    /** 侧栏与上下篇里的短标题。 */
+    navLabel: z.string(),
+    /** 站内文件名，如 "sample-follow-up.html"（决定路由，不用 slug 字段）。 */
+    file: z.string(),
+    /** 顺序，决定侧栏与上下篇。 */
+    order: z.number(),
+    /** 页面标签，如「选型」「报价」。 */
+    kicker: z.string(),
+    /** 正文大标题：直接写成客户会搜的那个问题。 */
+    h1: z.string(),
+    /** 首屏第一段：先回答问题，再展开细节。 */
+    answer: z.string(),
+    /** 首屏右侧的三个要点。 */
+    aside: z.array(z.object({ label: z.string(), text: z.string() })),
+    /** 本页目录（正文里的 h2 要在 MDX 手写 id，与这里对应）。 */
+    sections: z.array(z.object({ id: z.string(), heading: z.string(), toc: z.string().optional() })),
+    /** 页尾 CTA 文案。 */
+    cta: z.object({ title: z.string(), text: z.string() }),
+    /** 可见 FAQ + FAQPage 结构化数据，两处共用这份数据。 */
+    faq: z.array(z.object({ q: z.string(), a: z.string() })),
+    /** 可选：流程型页面额外输出 HowTo。 */
+    howTo: z
+      .object({
+        name: z.string(),
+        description: z.string(),
+        totalTime: z.string(),
+        steps: z.array(z.object({ name: z.string(), text: z.string() })),
+      })
+      .optional(),
+  }),
+});
+
+export const collections = { docs, guides };

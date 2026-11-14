@@ -1,0 +1,155 @@
+---
+/**
+ * 指南页外壳：首屏结论 + 左侧指南目录 + 正文 + 右侧本页目录 + FAQ / CTA / 上下篇。
+ *
+ * 为什么单独一层：指南是营销落地页，首屏要先把问题回答清楚（可被搜索与
+ * 大模型直接摘录），正文又要像帮助文档一样能扫读。DocsLayout 的定位是
+ * 「操作步骤」，没有首屏与转化区，所以这里复用它的版式类，不复用它的语义。
+ */
+import BaseLayout from "./BaseLayout.astro";
+import nav from "../data/guides-nav.json";
+
+interface NavItem {
+  href: string;
+  label: string;
+}
+
+interface Props {
+  title: string;
+  description: string;
+  canonical: string;
+  data: {
+    kicker: string;
+    navLabel: string;
+    h1: string;
+    answer: string;
+    aside: { label: string; text: string }[];
+    sections: { id: string; heading: string; toc?: string }[];
+    cta: { title: string; text: string };
+    faq: { q: string; a: string }[];
+  };
+  jsonLd: unknown;
+  prev?: { href: string; label: string } | null;
+  next?: { href: string; label: string } | null;
+}
+
+const { title, description, canonical, data, jsonLd, prev = null, next = null } = Astro.props;
+const navGroups = nav as { title: string; items: NavItem[] }[];
+const tocItems = [...data.sections.map((s) => ({ id: s.id, label: s.toc ?? s.heading })), { id: "faq", label: "常见问题" }];
+---
+
+<BaseLayout title={title} description={description} canonical={canonical} jsonLd={jsonLd} ogType="article">
+  <section class="page-hero">
+    <div class="container">
+      <div class="page-hero__inner">
+        <div>
+          <p class="eyebrow">指南 · {data.kicker}</p>
+          <h1>{data.h1}</h1>
+          <p class="lede">{data.answer}</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:24px">
+            <a class="btn btn--primary" href="/signup.html" data-cta="hero" data-cta-label={`指南 · ${data.navLabel}`}>
+              免费创建公司
+            </a>
+            <a class="btn btn--ghost" href="/pricing.html" data-cta="hero" data-cta-label="指南 · 看价格">
+              看价格
+            </a>
+          </div>
+        </div>
+        <div class="page-hero__aside">
+          {data.aside.map((item) => (
+            <p>
+              <b>{item.label}</b>
+              {item.text}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container docs-shell docs-shell--guide">
+    <aside class="docs-side">
+      <nav aria-label="指南目录">
+        {navGroups.map((group) => (
+          <div class="docs-side__group">
+            <h2>{group.title}</h2>
+            <ul>
+              {group.items.map((item) => (
+                <li>
+                  <a href={item.href} aria-current={item.href === canonical ? "page" : undefined}>
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <div class="docs-main">
+      <div class="docs-crumbs">
+        <a href="/index.html">首页</a>
+        <span>/</span>
+        <a href="/docs/index.html">帮助中心</a>
+        <span>/</span>
+        <span>{data.kicker}指南</span>
+      </div>
+
+      <slot />
+
+      <h2 id="faq">常见问题</h2>
+      <div class="faq">
+        {data.faq.map((item, index) => (
+          <details open={index === 0}>
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+
+      <div class="note-box" style="margin:44px 0 8px;padding:22px 24px">
+        <p style="margin:0 0 6px;font-family:var(--font-serif);font-size:18px;font-weight:700;color:var(--color-ink-900)">
+          {data.cta.title}
+        </p>
+        <p style="margin:0 0 16px">{data.cta.text}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <a class="btn btn--primary" href="/signup.html" data-cta="docs" data-cta-label={`指南 · ${data.navLabel}`}>
+            免费创建公司
+          </a>
+          <a class="btn btn--ghost" href="/pricing.html" data-cta="docs" data-cta-label="指南 · 看价格与套餐">
+            看价格与套餐
+          </a>
+        </div>
+      </div>
+
+      {(prev || next) && (
+        <div class="docs-pager">
+          {prev && (
+            <a href={prev.href}>
+              <small>上一篇</small>
+              <span>{prev.label}</span>
+            </a>
+          )}
+          {next && (
+            <a href={next.href}>
+              <small>下一篇</small>
+              <span>{next.label}</span>
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+
+    <aside class="docs-toc">
+      <h2>本页目录</h2>
+      <ul>
+        {tocItems.map((item) => (
+          <li>
+            <a href={`#${item.id}`}>{item.label}</a>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  </div>
+</BaseLayout>

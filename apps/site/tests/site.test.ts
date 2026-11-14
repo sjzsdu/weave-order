@@ -31,6 +31,10 @@ const PAGES = [
   "docs/agent.html",
   "docs/security.html",
   "docs/faq.html",
+  "guides/textile-erp-selection.html",
+  "guides/fabric-quotation-software.html",
+  "guides/sample-follow-up.html",
+  "guides/textile-reconciliation.html",
 ];
 
 function walk(dir: string): string[] {
@@ -102,13 +106,29 @@ describe("官网构建产物", () => {
   it("sitemap 覆盖全部可索引页面", () => {
     const sitemap = readFileSync(join(distDir, "sitemap.xml"), "utf8");
     const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-    expect(locations.length).toBe(16);
+    expect(locations.length).toBe(20);
     for (const page of PAGES.filter((p) => p !== "404.html")) {
       const path = page === "index.html" ? "/" : page === "docs/index.html" ? "/docs/" : `/${page}`;
       expect(
         locations.some((loc) => loc.endsWith(path)),
         `sitemap 少了 ${path}`,
       ).toBe(true);
+    }
+  });
+
+  it("指南页：单 h1、正文够长、结构化数据与转化入口都在", () => {
+    const guides = PAGES.filter((page) => page.startsWith("guides/"));
+    expect(guides.length).toBeGreaterThan(0);
+    for (const page of guides) {
+      const html = readFileSync(join(distDir, page), "utf8");
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>/g, " ")
+        .replace(/<[^>]+>/g, " ");
+      const cjk = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length;
+      expect((html.match(/<h1[\s>]/g) ?? []).length, `${page} 的 h1 数量`).toBe(1);
+      expect(cjk, `${page} 的中文字数`).toBeGreaterThanOrEqual(800);
+      expect(html, `${page} 缺 FAQPage`).toContain("FAQPage");
+      expect(html, `${page} 缺 CTA 埋点`).toMatch(/data-cta="(nav|hero|docs)"/);
     }
   });
 

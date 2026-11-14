@@ -1,0 +1,85 @@
+---
+/**
+ * 指南页路由：/guides/textile-erp-selection.html 等四个地址。
+ *
+ * URL 用 frontmatter 的 file 字段（保留 .html，与迁移前一致）；
+ * 结构化数据由 frontmatter 生成，不另开 JSON-LD 文件 —— FAQ / HowTo
+ * 与页面可见正文共用同一份数据，改一处不会漏另一处。
+ */
+import { getCollection, render } from "astro:content";
+import GuideLayout from "../../layouts/GuideLayout.astro";
+import { abs } from "../../lib/site";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("guides");
+  const sorted = entries.sort((a, b) => a.data.order - b.data.order);
+  return sorted.map((entry, index) => {
+    const prev = index > 0 ? sorted[index - 1] : null;
+    const next = index < sorted.length - 1 ? sorted[index + 1] : null;
+    return {
+      // 路由参数不带 .html：build.format=file 会补上后缀，地址与 data.file 一致。
+      params: { slug: entry.id },
+      props: {
+        entry,
+        prev: prev ? { href: `/guides/${prev.data.file}`, label: prev.data.navLabel } : null,
+        next: next ? { href: `/guides/${next.data.file}`, label: next.data.navLabel } : null,
+      },
+    };
+  });
+}
+
+const { entry, prev, next } = Astro.props;
+const { Content } = await render(entry);
+const data = entry.data;
+const url = abs(`/guides/${data.file}`);
+
+const breadcrumb = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "首页", item: abs("/") },
+    { "@type": "ListItem", position: 2, name: "帮助中心", item: abs("/docs/") },
+    { "@type": "ListItem", position: 3, name: data.navLabel, item: url },
+  ],
+};
+
+const faqPage = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: data.faq.map((item) => ({
+    "@type": "Question",
+    name: item.q,
+    acceptedAnswer: { "@type": "Answer", text: item.a },
+  })),
+};
+
+const howTo = data.howTo
+  ? {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      name: data.howTo.name,
+      description: data.howTo.description,
+      totalTime: data.howTo.totalTime,
+      step: data.howTo.steps.map((step, index) => ({
+        "@type": "HowToStep",
+        position: index + 1,
+        name: step.name,
+        text: step.text,
+      })),
+    }
+  : null;
+
+const jsonLd = howTo ? [breadcrumb, faqPage, howTo] : [breadcrumb, faqPage];
+---
+
+<GuideLayout
+  title={data.title}
+  description={data.description}
+  canonical={`/guides/${data.file}`}
+  data={data}
+  jsonLd={jsonLd}
+  prev={prev}
+  next={next}
+>
+  <Content />
+</GuideLayout>

@@ -40,6 +40,11 @@ const ENTRIES: SitemapEntry[] = [
   { path: "/docs/agent.html", changefreq: "monthly", priority: "0.5" },
   { path: "/docs/security.html", changefreq: "monthly", priority: "0.6" },
   { path: "/docs/faq.html", changefreq: "monthly", priority: "0.7" },
+  // 指南：按搜索意图组织的长尾落地页。新增一篇要同时补这里与 tests/site.test.ts。
+  { path: "/guides/textile-erp-selection.html", changefreq: "monthly", priority: "0.7" },
+  { path: "/guides/fabric-quotation-software.html", changefreq: "monthly", priority: "0.7" },
+  { path: "/guides/sample-follow-up.html", changefreq: "monthly", priority: "0.7" },
+  { path: "/guides/textile-reconciliation.html", changefreq: "monthly", priority: "0.7" },
 ];
 
 export default function xmlSitemap(siteConfig: SitemapSiteConfig): AstroIntegration {
