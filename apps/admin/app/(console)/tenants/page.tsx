@@ -117,7 +117,7 @@ export default async function TenantsPage({
                         {tenant.billingCycle === "ANNUAL" ? "年付" : "月付"}
                       </div>
                     </td>
-                    <td className="num">{money(tenant.effectiveMonthlyCents * tenant.seats)}</td>
+                    <td className="num">{money(tenant.effectiveMonthlyCents)}</td>
                     <td>
                       <div className="tiny">
                         {tenant.agentActionsUsed.toLocaleString()} /{" "}

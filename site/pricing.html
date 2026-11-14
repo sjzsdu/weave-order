@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>价格与套餐 · 织序 WeaveOrder</title>
-<meta name="description" content="织序按席位收费，3 天免费试用，不收开通费。基础版 ¥299 / 席位 / 月，专业版 ¥499 / 席位 / 月，老板与只读审批席位不计费。价格、计费规则与合同条款一次说清。" />
+<meta name="description" content="织序按公司订阅：基础 ¥299 / 月、专业 ¥899 / 月、企业 ¥2,999 起，含固定账号数与每月 AI credits。不按人头、不按 token 单价收费。价格、超额规则与合同条款一次说清。" />
 <meta name="theme-color" content="#F7F4EE" />
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
 <link rel="icon" href="assets/icons/icon-32.png" sizes="32x32" type="image/png" />
@@ -14,7 +14,7 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="织序 WeaveOrder" />
 <meta property="og:title" content="价格与套餐 · 织序 WeaveOrder" />
-<meta property="og:description" content="按席位收费，3 天免费试用，不收开通费。老板与只读审批席位不计费。" />
+<meta property="og:description" content="按公司订阅，含账号数与 AI credits。基础 ¥299 / 月、专业 ¥899 / 月。" />
 <meta property="og:image" content="https://weaveorder.cn/assets/og-cover.png" />
 <meta property="og:locale" content="zh_CN" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -35,16 +35,16 @@
       "name": "基础版",
       "price": "299",
       "priceCurrency": "CNY",
-      "description": "每席位每月，适合 3 到 8 人的团队起步",
+      "description": "每月，含 5 个账号与 20,000 credits，适合小团队起步",
       "availability": "https://schema.org/InStock",
       "url": "https://weaveorder.cn/pricing.html"
     },
     {
       "@type": "Offer",
       "name": "专业版",
-      "price": "499",
+      "price": "899",
       "priceCurrency": "CNY",
-      "description": "每席位每月，六个智能体全部上线",
+      "description": "每月，含 20 个账号与 100,000 credits，六个智能体全部上线",
       "availability": "https://schema.org/InStock",
       "url": "https://weaveorder.cn/pricing.html"
     }
@@ -99,8 +99,8 @@
       <div class="page-hero__inner">
         <div>
           <p class="eyebrow">价格</p>
-          <h1>先试 3 天，<br /><em>觉得值再付钱</em>。</h1>
-          <p class="lede">按席位收月费，不收开通费、不收实施费、不按打印张数收费。老板和只看不批的账号不计席位。试用期结束时你什么都不用做：想继续用，我们帮你把账号转正；不想用，数据导出带走。</p>
+          <h1>按公司订阅，<br /><em>用多少 AI 算多少</em>。</h1>
+          <p class="lede">不按人头算，也不看模型账单。选一个月费套餐，含固定账号数和每月 credits；AI 用超了就暂停智能体，人可以继续看、继续批、继续导出。年付相当于送两个月。</p>
         </div>
         <div class="page-hero__aside">
           <p><b>3 天</b>全功能试用，不需要付费信息</p>
@@ -115,60 +115,58 @@
     <div class="container">
       <div class="plans">
         <article class="plan">
-          <h3>基础版</h3>
-          <p class="plan__desc">先把报价和寄样跑顺。适合 3 到 8 人、每月几十张报价单的团队。</p>
-          <div class="plan__price">¥299<small>/ 席位 / 月</small></div>
+          <h3>基础</h3>
+          <p class="plan__desc">先把报价和寄样跑顺。适合 3 到 5 人的小团队。</p>
+          <div class="plan__price">¥299<small>/ 月</small></div>
           <ul class="plan__list">
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>找样、报价两个智能体</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>审批、工作台、全景三个窗口</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>Excel / CSV 客户与样品导入</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>客户报价链接（不用登录即可看）</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>每月 1,000 次智能体动作</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>含 5 个账号</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>每月 20,000 credits（≈2,000 次报价）</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>找样、报价、客户三个能力</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>Excel / CSV 导入、客户报价链接</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>手机拍照派活、离线补交</li>
           </ul>
           <div class="plan__foot">
             <a class="btn btn--ghost" href="signup.html?plan=basic">开始 3 天试用</a>
-            <p class="plan__fine">年付送 2 个月</p>
+            <p class="plan__fine">年付 ¥2,990（省 2 个月）</p>
           </div>
         </article>
 
         <article class="plan plan--featured">
           <span class="plan__badge">多数团队选这个</span>
-          <h3>专业版</h3>
+          <h3>专业</h3>
           <p class="plan__desc">六个智能体全部上线，从找样到回款一条链路跑完。</p>
-          <div class="plan__price">¥499<small>/ 席位 / 月</small></div>
+          <div class="plan__price">¥899<small>/ 月</small></div>
           <ul class="plan__list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>含 20 个账号</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>每月 100,000 credits（≈10,000 次报价）</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>六个智能体 + 客户上下文</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>寄样跟进、订单交期、对账回款</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>打印中心与单证流水线</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>自然语言问数：这个月谁毛利最高</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>每月 5,000 次智能体动作</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>命令行与智能体接入</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>订单交期、对账回款、打印单证</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>自然语言问数、命令行接入</li>
           </ul>
           <div class="plan__foot">
             <a class="btn btn--primary" href="signup.html?plan=pro">开始 3 天试用</a>
-            <p class="plan__fine">年付送 2 个月</p>
+            <p class="plan__fine">年付 ¥8,990（省 2 个月）</p>
           </div>
         </article>
 
         <article class="plan">
-          <h3>定制版</h3>
+          <h3>企业</h3>
           <p class="plan__desc">集团多组织、独立数据库、自有登录与私有化部署。</p>
-          <div class="plan__price">按合同<small>年度</small></div>
+          <div class="plan__price">¥2,999<small>/ 月起</small></div>
           <ul class="plan__list">
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>独立 schema 或独立数据库</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>含 50 个账号起，可扩</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>每月 500,000 credits 起</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>独立 schema / 独立数据库 / 私有化</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>对接企业已有登录与组织架构</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>数据留在你指定的区域</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>专属陪跑、培训、上线支持</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>合同约定 SLA 与数据保留期</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>专属陪跑、SLA 与数据保留期</li>
           </ul>
           <div class="plan__foot">
             <a class="btn btn--ghost" href="signup.html?plan=enterprise">联系我们</a>
-            <p class="plan__fine">先聊需求，再报价</p>
+            <p class="plan__fine">按合同，年付为主</p>
           </div>
         </article>
       </div>
-      <p class="pricing__note">价格含税，可开增值税普通发票或专用发票。席位按可登录账号计，老板与只读审批账号不计费。</p>
+      <p class="pricing__note">价格含税，可开增值税普通发票或专用发票。不按人头、不按打印张数、不按 token 单价收费；按公司订阅，含固定账号数与每月 credits。</p>
     </div>
   </section>
 
@@ -179,7 +177,7 @@
           <p class="eyebrow">计费规则</p>
           <h2>钱怎么算，<br />一次说清。</h2>
         </div>
-        <p class="lede">没有隐藏项，也不会按模型调用实时扣费。你付的是席位和智能体干活的次数，快用完时会提前告诉你，不会自动扣费。</p>
+        <p class="lede">没有隐藏项，也不会按模型调用实时扣费。你付的是公司套餐和每月 credits，快用完时会在设置页提醒你，不自动扣费。</p>
       </div>
 
       <div class="table-wrap">
@@ -194,29 +192,39 @@
           </thead>
           <tbody>
             <tr>
-              <td>席位</td>
-              <td>可登录并操作业务的账号，按月计</td>
-              <td>老板账号、只读审批账号、客户报价页访客都不计席位</td>
+              <td>套餐月费</td>
+              <td>按公司收，一个价，不看人数</td>
+              <td>基础 ¥299、专业 ¥899、企业 ¥2,999 起；不按人头加钱，账号数在套餐里</td>
             </tr>
             <tr>
-              <td>智能体动作</td>
-              <td>一次找样、一次核价、一次跟进算一次</td>
-              <td>基础版每月 1,000 次，专业版每月 5,000 次；余量用到 80% 会提醒，用尽后当月只出草稿不自动执行</td>
+              <td>账号数</td>
+              <td>套餐内含固定账号数</td>
+              <td>基础 5 个、专业 20 个、企业 50 个起；不够就升级套餐，不单独卖座位</td>
+            </tr>
+            <tr>
+              <td>AI credits</td>
+              <td>1 credit = 1,000 tokens（输入+输出）</td>
+              <td>基础 20,000、专业 100,000、企业 500,000 起；每月 1 日重置，不结转</td>
+            </tr>
+            <tr>
+              <td>用超了</td>
+              <td>暂停智能体，不自动扣费</td>
+              <td>80% 在设置页提醒；100% 智能体停止接新活，人仍可查看、审批、导出；充值或升级立刻恢复</td>
+            </tr>
+            <tr>
+              <td>加油包</td>
+              <td>¥99 / 10,000 credits</td>
+              <td>当月有效，随订阅走；不自动购买，需要你确认</td>
             </tr>
             <tr>
               <td>试用</td>
               <td>3 天，全功能</td>
-              <td>不需要付费信息；到期前 1 天提醒，不自动转付费</td>
+              <td>含 2,000 credits、最多 3 个账号；不需要付费信息，到期前 1 天提醒，不自动转付费</td>
             </tr>
             <tr>
               <td>年付</td>
-              <td>一次付 12 个月，用 14 个月</td>
-              <td>折算后基础版约 ¥256 / 席位 / 月</td>
-            </tr>
-            <tr>
-              <td>增购席位</td>
-              <td>当月按剩余天数折算，次月起按整月</td>
-              <td>减少席位在下一个账期生效，已付部分不退回</td>
+              <td>10 个月价用 12 个月</td>
+              <td>基础 ¥2,990 / 年、专业 ¥8,990 / 年；企业按合同</td>
             </tr>
             <tr>
               <td>发票</td>
@@ -225,13 +233,8 @@
             </tr>
             <tr>
               <td>存储</td>
-              <td>每租户 20 GB 起，超出按 ¥1 / GB / 月</td>
-              <td>样品图与单据 PDF 都算在内；可随时导出后清理</td>
-            </tr>
-            <tr>
-              <td>数据导出</td>
-              <td>随时，免费</td>
-              <td>客户、样品、报价、订单、对账可导出为 Excel；停用后保留 90 天</td>
+              <td>基础 50 GB、专业 200 GB</td>
+              <td>样品图与单据 PDF 都算；超出按 ¥1 / GB / 月，可随时导出后清理</td>
             </tr>
           </tbody>
         </table>
@@ -254,12 +257,12 @@
           <p>在。到期后账号进入只读状态 30 天，你可以导出全部数据或联系我们转正付费；30 天后转休眠，保留 90 天可恢复。</p>
         </details>
         <details>
-          <summary>能不能只买两个席位先试试？</summary>
-          <p>可以。基础版 3 个席位起，两个人先跑一条报价链路也够用：老板账号不计席位，业务员加一名跟单就开始了。</p>
+          <summary>我们只有 2 个人，能买基础版吗？</summary>
+          <p>可以。基础版含 5 个账号、¥299 / 月，两个人用绰绰有余，空着的账号不额外收费，以后同事进来直接用。</p>
         </details>
         <details>
-          <summary>为什么要按席位收，而不是按用量？</summary>
-          <p>按用量计费会让你在派活之前先算钱，这违背产品目的。席位是最稳定的成本口径，智能体动作额度按团队规模给足；真超了我们提醒你，不会偷偷扣费。</p>
+          <summary>为什么不按人头收费？</summary>
+          <p>按人头收费会逼你在「多拉一个人」时先算钱。我们按公司收固定月费，账号数包含在套餐里；真正变动的是 AI 用量（credits），那部分按量给足、超了提醒，不自动扣费。</p>
         </details>
         <details>
           <summary>可以开发票吗？能对公转账吗？</summary>
@@ -267,7 +270,7 @@
         </details>
         <details>
           <summary>私有化部署怎么报价？</summary>
-          <p>按年度合同报价，取决于组织数量、隔离方式（独立库 / 私有化）、是否需要对接你们的统一登录。先做一次 30 分钟需求确认，再给方案与报价。</p>
+          <p>按年度合同报价，取决于组织数量、隔离方式（独立库 / 私有化）、是否需要对接统一登录。列表价 ¥2,999 / 月起，先做一次 30 分钟需求确认，再给方案与报价。</p>
         </details>
       </div>
     </div>

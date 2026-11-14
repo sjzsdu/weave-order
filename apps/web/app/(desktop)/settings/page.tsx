@@ -221,6 +221,8 @@ function SettingsPageContent() {
         </section>
       </div>
 
+      <CreditsCard />
+
       <TeamSection />
 
       <p className="text-xs text-ink-400">
@@ -430,6 +432,73 @@ function TeamSection() {
           </table>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+type CreditsState = {
+  period: string;
+  creditsIncluded: number | null;
+  creditsUsed: number;
+  percent: number;
+  state: "OK" | "WARN" | "PAUSED";
+};
+
+/**
+ * 本月 credits：套餐含的额度 + 已用 + 超额提醒。
+ * 到 80% 提示、到 100% 智能体暂停（人仍可查看、审批、导出），充值后恢复。
+ */
+function CreditsCard() {
+  const api = useApi();
+  const [data, setData] = useState<CreditsState | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .creditsUsage()
+      .then((usage) => {
+        if (!cancelled) setData(usage);
+      })
+      .catch(() => {
+        // 拿不到就隐藏，不影响设置页其它内容。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  if (!data) return null;
+
+  const percent = Math.max(0, Math.min(100, data.percent));
+  const tone =
+    data.state === "PAUSED"
+      ? "bg-vermilion-600"
+      : data.state === "WARN"
+        ? "bg-amber-500"
+        : "bg-indigo-600";
+
+  return (
+    <section className="rounded-lg border border-line bg-surface px-5 py-4">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-sm font-medium text-ink-900">本月 AI 额度（credits）</h2>
+        <span className="font-mono text-xs text-ink-400">{data.period}</span>
+      </div>
+      <p className="mt-2 text-2xl font-semibold text-ink-900">
+        {data.creditsUsed.toLocaleString()}
+        <span className="ml-1 text-sm font-normal text-ink-400">
+          / {data.creditsIncluded === null ? "不限" : data.creditsIncluded.toLocaleString()} credits
+        </span>
+      </p>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-paper">
+        <div className={`h-full ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-ink-500">
+        {data.state === "PAUSED"
+          ? "额度已用完：智能体暂停，你仍可以查看、审批和导出；充值或升级后立刻恢复。"
+          : data.state === "WARN"
+            ? "已用超过 80%：接下来智能体会变慢或暂停，建议提前充值或升级套餐。"
+            : "1 credit ≈ 1,000 tokens。额度每月 1 日重置，不结转。"}
+      </p>
     </section>
   );
 }

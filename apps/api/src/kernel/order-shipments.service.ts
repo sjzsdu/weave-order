@@ -256,9 +256,7 @@ export class OrderShipmentService {
       const lockedRows = await tx
         .select()
         .from(orderShipments)
-        .where(
-          and(eq(orderShipments.id, shipmentId), eq(orderShipments.tenantId, this.tenantId)),
-        )
+        .where(and(eq(orderShipments.id, shipmentId), eq(orderShipments.tenantId, this.tenantId)))
         .limit(1)
         .for("update");
       const current = lockedRows[0];

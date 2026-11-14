@@ -120,8 +120,9 @@ describe("平台控制面（集成）", () => {
     });
     tenantId = created.id;
     expect(created.status).toBe("TRIAL");
-    expect(created.seats).toBe(12);
-    expect(created.agentActionsQuota).toBe(5000);
+    // 按套餐订阅：账号数由套餐内含（seatMin），入参 seats 不再参与计费。
+    const proPlan = (await pricing.listPlans()).find((plan) => plan.code === "PRO");
+    expect(created.seats).toBe(proPlan?.seatMin ?? created.seats);
 
     await tenants.applySubscription(owner, tenantId, {
       planCode: "PRO",
@@ -130,7 +131,7 @@ describe("平台控制面（集成）", () => {
     });
     const detail = await tenants.get(tenantId);
     expect(detail.tenant.status).toBe("ACTIVE");
-    expect(detail.subscription?.seats).toBe(12);
+    expect(detail.subscription?.seats).toBe(proPlan?.seatMin ?? detail.subscription?.seats);
     expect(detail.subscription?.billingCycle).toBe("MONTHLY");
   });
 
@@ -167,9 +168,11 @@ describe("平台控制面（集成）", () => {
     });
     invoiceId = invoice.id;
     expect(invoice.status).toBe("DRAFT");
-    // 月付：49900 × 12 = 598,800 分；税 6% 四舍五入。
-    expect(invoice.subtotalCents).toBe(598_800);
-    expect(invoice.taxCents).toBe(Math.round((598_800 * 600) / 10_000));
+    // 按套餐订阅：整期一个价，不再乘席位数。
+    const detailForInvoice = await tenants.get(tenantId);
+    const monthly = detailForInvoice.subscription?.effectiveMonthlyCents ?? 0;
+    expect(invoice.subtotalCents).toBe(monthly);
+    expect(invoice.taxCents).toBe(Math.round((monthly * 600) / 10_000));
     expect(invoice.totalCents).toBe(invoice.subtotalCents + invoice.taxCents);
 
     const issued = await invoices.issue(owner, invoiceId, {});

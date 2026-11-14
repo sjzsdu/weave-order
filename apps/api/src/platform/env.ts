@@ -76,6 +76,8 @@ const EnvSchema = z.object({
   NOTIFY_PROVIDER: z.enum(["log", "webhook"]).default("log"),
   NOTIFY_WEBHOOK_URL: z.string().url().optional(),
   NOTIFY_TOKEN: z.string().optional(),
+  /** 新公司默认每月 credits（1 credit = 1,000 tokens）；套餐升级时由平台调整。 */
+  DEFAULT_MONTHLY_CREDITS: z.coerce.number().int().positive().default(20000),
   /** CLI 设备登录确认码有效期与轮询间隔（秒）。 */
   DEVICE_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   DEVICE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),

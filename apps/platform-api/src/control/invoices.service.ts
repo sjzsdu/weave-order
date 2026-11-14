@@ -111,12 +111,14 @@ export class InvoicesService {
     const settings = await this.getSettings();
     const taxRateBp = profile[0]?.taxRateBp ?? settings.taxRateBp;
 
+    // 按套餐订阅（按公司）计费：整期一个价，不再乘席位数。
     const monthlyUnit = row.subscription.effectiveMonthlyCents;
-    const seatUnitCents =
-      row.subscription.billingCycle === "ANNUAL" ? monthlyUnit * 12 : monthlyUnit;
+    const periodPriceCents =
+      row.subscription.billingCycle === "ANNUAL" ? monthlyUnit * 10 : monthlyUnit;
     const draft = buildInvoiceLines({
       seats: row.subscription.seats,
-      seatUnitCents,
+      seatUnitCents: periodPriceCents,
+      flatPriceCents: periodPriceCents,
       billingCycle: row.subscription.billingCycle,
       usedActions,
       actionQuota: row.plan?.agentActionsQuota ?? 0,

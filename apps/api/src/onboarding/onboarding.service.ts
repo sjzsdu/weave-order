@@ -203,6 +203,23 @@ export class OnboardingService {
       OnboardingService.systemContext(tenant.id),
     );
 
+    // 套餐内含 credits → 本租户的月度 token 预算（1 credit = 1,000 tokens）。
+    // 用创建者本人的身份写入：LLM 设置变更必须由人类发起，这里他正是在接受套餐。
+    try {
+      const tenantKernel = createKernel(this.database.handle.db, undefined, {
+        tenantId: tenant.id,
+      });
+      await tenantKernel.llmSettings.upsertTenant(
+        { monthlyTokenBudget: loadEnv().DEFAULT_MONTHLY_CREDITS * 1000 },
+        {
+          actor: { type: "HUMAN", id: claims.sub, role: "OWNER" },
+          tenantId: tenant.id,
+        },
+      );
+    } catch (error) {
+      console.warn(`[onboarding] 初始化 credits 预算失败（不影响开通）：${tenant.id}`, error);
+    }
+
     // 控制面登记试用：失败不阻断使用，但会留下明显日志，运营可补录。
     await this.syncControlPlane({
       slug: tenant.slug,

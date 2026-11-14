@@ -64,7 +64,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
       <div className="grid cols-4">
         <div className="stat">
           <div className="label">月费（含席位）</div>
-          <div className="value">{money(tenant.effectiveMonthlyCents * tenant.seats)}</div>
+          <div className="value">{money(tenant.effectiveMonthlyCents)}</div>
           <div className="hint">
             {tenant.planCode ?? "无套餐"} × {tenant.seats} 席 ·{" "}
             {tenant.billingCycle === "ANNUAL" ? "年付" : "月付"}

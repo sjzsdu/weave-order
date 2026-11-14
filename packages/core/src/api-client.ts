@@ -199,6 +199,18 @@ export function createApiClient(options: ApiClientOptions) {
     /** 待接受与已加入的同事。 */
     listTeam: async () => TeamInviteList.parse(await request("/api/team/invites")).invites,
 
+    /** 本月 credits 用量：1 credit = 1,000 tokens。 */
+    creditsUsage: async () =>
+      z
+        .object({
+          period: z.string(),
+          creditsIncluded: z.number().nullable(),
+          creditsUsed: z.number(),
+          percent: z.number(),
+          state: z.enum(["OK", "WARN", "PAUSED"]),
+        })
+        .parse(await request("/api/usage/credits")),
+
     /** 邀请同事：返回专属链接（由调用方复制发给对方）。 */
     inviteMember: async (input: z.input<typeof InviteMemberInput>) =>
       TeamInvite.parse(await post("/api/team/invites", input)),

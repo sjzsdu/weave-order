@@ -164,7 +164,12 @@ export class TenantsService {
   async provision(actor: PlatformActor, raw: unknown): Promise<TenantSummary> {
     const input = ProvisionTenantInput.parse(raw);
     const planRow = await this.planOrThrow(input.planCode);
-    this.assertSeats(planRow, input.seats);
+    // 按套餐订阅：账号数由套餐内含（seatMin），不再接受「加座加钱」。
+    // 入参 seats 只保留兼容，不参与计费，也不允许超过套餐上限。
+    const includedSeats = planRow.seatMin;
+    if (planRow.seatMax !== null && input.seats > planRow.seatMax) {
+      this.assertSeats(planRow, input.seats);
+    }
 
     const book = await this.activePriceBook();
     const price = await this.priceFor(book.id, input.planCode);
@@ -200,7 +205,7 @@ export class TenantsService {
           tenantId: tenant.id,
           planCode: input.planCode,
           priceBookId: book.id,
-          seats: input.seats,
+          seats: includedSeats,
           billingCycle: input.billingCycle,
           status: input.trialDays > 0 ? "TRIAL" : "ACTIVE",
           periodStart: now,
@@ -221,7 +226,7 @@ export class TenantsService {
           name: created.name,
           slug: created.slug,
           planCode: input.planCode,
-          seats: input.seats,
+          seats: includedSeats,
           trialDays: input.trialDays,
         },
         reason: "平台开通公司",
@@ -301,7 +306,11 @@ export class TenantsService {
     const parsed = ChangeSubscriptionInput.parse(input);
     const tenant = await this.tenantOrThrow(tenantId);
     const planRow = await this.planOrThrow(parsed.planCode);
-    this.assertSeats(planRow, parsed.seats);
+    // 按套餐订阅：账号数随套餐，不再单独售卖席位。
+    const includedSeats = planRow.seatMin;
+    if (planRow.seatMax !== null && parsed.seats > planRow.seatMax) {
+      this.assertSeats(planRow, parsed.seats);
+    }
     const book = await this.activePriceBook();
     const price = await this.priceFor(book.id, parsed.planCode);
 
@@ -331,7 +340,7 @@ export class TenantsService {
       const values = {
         planCode: parsed.planCode,
         priceBookId: book.id,
-        seats: parsed.seats,
+        seats: includedSeats,
         billingCycle: parsed.billingCycle,
         status: nextStatus,
         effectiveMonthlyCents: monthly,
@@ -376,7 +385,7 @@ export class TenantsService {
         : null,
       after: {
         planCode: parsed.planCode,
-        seats: parsed.seats,
+        seats: includedSeats,
         cycle: parsed.billingCycle,
         effectiveMonthlyCents: monthly,
         forced: options.overrideMonthlyPriceCents !== undefined,
