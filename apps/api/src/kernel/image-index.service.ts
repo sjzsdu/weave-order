@@ -1,8 +1,10 @@
 import { sampleImageEmbeddings, sampleImages, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { ImageEmbeddingProvider } from "../platform/embedding";
 import type { ObjectStorage } from "../platform/storage";
+import { DEFAULT_EMBEDDING_MAX_EDGE, resizeForEmbedding } from "../platform/image-resize";
+import { getImageIndexWorker } from "../platform/image-index-worker";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -11,9 +13,17 @@ function vectorLiteral(vector: number[]): string {
   return JSON.stringify(vector);
 }
 
-/** 索引名前缀 + 模型名，长度截到 PG 的 63 字节上限。 */
-export function imageHnswIndexName(model: string): string {
-  return `sample_image_embeddings_hnsw_${model.replace(/[^a-zA-Z0-9]+/g, "_")}`.slice(0, 63);
+/**
+ * 索引名 = 前缀 + 模型 + 维度。
+ *
+ * 为什么不只带模型：只改 `IMAGE_EMBEDDING_DIMENSION` 时同名索引会被
+ * `CREATE INDEX IF NOT EXISTS` 静默跳过，留下旧维度的索引 —— 查询用新维度 cast 就命不中。
+ * 带上维度后，「换模型」和「换维度」都会落到不同的索引上，不会互相覆盖。
+ */
+export function imageHnswIndexName(model: string, dimension: number): string {
+  const suffix = `_${Math.max(1, Math.round(dimension))}`;
+  const base = `sample_image_embeddings_hnsw_${model.replace(/[^a-zA-Z0-9]+/g, "_")}`;
+  return `${base.slice(0, 63 - suffix.length)}${suffix}`;
 }
 
 export type ImageIndexOutcome = "indexed" | "unchanged" | "missing";
@@ -46,12 +56,19 @@ export interface ImageVectorMatch {
  * 唯一相同的约定是「失败必须显式」，绝不把没索引的图当成「搜不到」。
  */
 export class ImageIndexService {
+  private readonly maxEdge: number;
+
   constructor(
     private readonly db: Db,
     private readonly embedder: ImageEmbeddingProvider,
     private readonly tenantId: string,
     private readonly storage: ObjectStorage | null,
-  ) {}
+    options: { maxEdge?: number } = {},
+  ) {
+    // 送模型前缩到长边 512（默认）：单图 token 从「手机原图档 1225」降到 256，
+    // 分离度实测不掉（差 0.006）。0 = 关闭（测试用假图片时）。
+    this.maxEdge = options.maxEdge ?? DEFAULT_EMBEDDING_MAX_EDGE;
+  }
 
   get model(): string {
     return this.embedder.name;
@@ -67,6 +84,31 @@ export class ImageIndexService {
 
   get enabled(): boolean {
     return this.storage !== null;
+  }
+
+  /**
+   * 请求索引（非阻塞）。
+   *
+   * HTTP 路径上有后台 worker：只入队，接口立刻返回（图状态 `pending`），
+   * 上传/建样品不再等模型。CLI 与单测没有 worker，退回同步索引，行为确定。
+   */
+  async requestIndex(imageId: string): Promise<void> {
+    const worker = getImageIndexWorker();
+    if (worker) {
+      worker.enqueueImage(this.tenantId, imageId);
+      return;
+    }
+    await this.indexImage(imageId).catch(() => undefined);
+  }
+
+  /** 请求补齐一个样品的全部缺图（同上：有 worker 入队，没有则同步）。 */
+  async requestSampleIndex(sampleId: string): Promise<void> {
+    const worker = getImageIndexWorker();
+    if (worker) {
+      worker.enqueueSample(this.tenantId, sampleId);
+      return;
+    }
+    await this.ensureSampleIndexed(sampleId).catch(() => undefined);
   }
 
   /**
@@ -134,7 +176,9 @@ export class ImageIndexService {
         and(
           eq(sampleImages.tenantId, this.tenantId),
           eq(sampleImages.sampleId, sampleId),
-          isNull(sampleImageEmbeddings.id),
+          // 没有向量行 **或** 上次索引失败：两种都要重试，
+          // 否则瞬时失败会变成「这张图永远不进检索」。
+          or(isNull(sampleImageEmbeddings.id), eq(sampleImages.indexStatus, "failed")),
         ),
       );
     const failures: ImageReindexFailure[] = [];
@@ -164,7 +208,12 @@ export class ImageIndexService {
           eq(sampleImageEmbeddings.model, this.model),
         ),
       )
-      .where(and(eq(sampleImages.tenantId, this.tenantId), isNull(sampleImageEmbeddings.id)))
+      .where(
+        and(
+          eq(sampleImages.tenantId, this.tenantId),
+          or(isNull(sampleImageEmbeddings.id), eq(sampleImages.indexStatus, "failed")),
+        ),
+      )
       .limit(1);
     return rows.length > 0;
   }
@@ -175,6 +224,28 @@ export class ImageIndexService {
    * 找样响应里带上这个数字：图墙/找样页要能说「还有 N 张图在检索中」，
    * 而不是把「没索引」表现成「没搜到」。
    */
+  /** 本租户还要处理的图片 id（缺向量或上次失败），单次上限由调用方给。 */
+  async pendingImageIds(limit = 50): Promise<string[]> {
+    const rows = await this.db
+      .select({ id: sampleImages.id })
+      .from(sampleImages)
+      .leftJoin(
+        sampleImageEmbeddings,
+        and(
+          eq(sampleImageEmbeddings.imageId, sampleImages.id),
+          eq(sampleImageEmbeddings.model, this.model),
+        ),
+      )
+      .where(
+        and(
+          eq(sampleImages.tenantId, this.tenantId),
+          or(isNull(sampleImageEmbeddings.id), eq(sampleImages.indexStatus, "failed")),
+        ),
+      )
+      .limit(limit);
+    return rows.map((row) => row.id);
+  }
+
   async pendingCount(): Promise<number> {
     const rows = await this.db
       .select({ count: sql<number>`count(*)::int` })
@@ -186,7 +257,12 @@ export class ImageIndexService {
           eq(sampleImageEmbeddings.model, this.model),
         ),
       )
-      .where(and(eq(sampleImages.tenantId, this.tenantId), isNull(sampleImageEmbeddings.id)));
+      .where(
+        and(
+          eq(sampleImages.tenantId, this.tenantId),
+          or(isNull(sampleImageEmbeddings.id), eq(sampleImages.indexStatus, "failed")),
+        ),
+      );
     return rows[0]?.count ?? 0;
   }
 
@@ -196,86 +272,107 @@ export class ImageIndexService {
    * 一次请求最多送 provider 允许的张数（通义 10 张），单批失败只记入 failures，
    * 不阻塞其它批。1 万张图的成本约 1 元，耗时几分钟 —— 换模型时这就是全部代价。
    */
-  async reindexTenant(batchSize?: number): Promise<ImageReindexResult> {
-    const pending = await this.db
-      .select({
-        imageId: sampleImages.id,
-        sampleId: sampleImages.sampleId,
-        objectKey: sampleImages.objectKey,
-        mimeType: sampleImages.mimeType,
-      })
-      .from(sampleImages)
-      .leftJoin(
-        sampleImageEmbeddings,
-        and(
-          eq(sampleImageEmbeddings.imageId, sampleImages.id),
-          eq(sampleImageEmbeddings.model, this.model),
-        ),
-      )
-      .where(and(eq(sampleImages.tenantId, this.tenantId), isNull(sampleImageEmbeddings.id)));
-
+  async reindexTenant(batchSize?: number, pageSize = 200): Promise<ImageReindexResult> {
     const total = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(sampleImages)
       .where(eq(sampleImages.tenantId, this.tenantId));
+    const totalCount = total[0]?.count ?? 0;
 
-    const chunk = Math.max(1, Math.min(batchSize ?? this.embedder.maxImagesPerRequest, this.embedder.maxImagesPerRequest));
+    const chunk = Math.max(
+      1,
+      Math.min(batchSize ?? this.embedder.maxImagesPerRequest, this.embedder.maxImagesPerRequest),
+    );
     const failures: ImageReindexFailure[] = [];
     let indexed = 0;
+    let seen = 0;
+    // 分页处理而不是「一次 select 全表」：图库上到十万级时不会把内存打满。
+    // 每页都重新查「还缺哪些」，所以已写入的行会自动从下一页消失。
+    for (;;) {
+      const pending = await this.db
+        .select({
+          imageId: sampleImages.id,
+          sampleId: sampleImages.sampleId,
+          objectKey: sampleImages.objectKey,
+          mimeType: sampleImages.mimeType,
+        })
+        .from(sampleImages)
+        .leftJoin(
+          sampleImageEmbeddings,
+          and(
+            eq(sampleImageEmbeddings.imageId, sampleImages.id),
+            eq(sampleImageEmbeddings.model, this.model),
+          ),
+        )
+        .where(and(eq(sampleImages.tenantId, this.tenantId), isNull(sampleImageEmbeddings.id)))
+        .orderBy(sampleImages.createdAt)
+        .limit(pageSize);
+      if (pending.length === 0) break;
+      seen += pending.length;
+      const indexedBeforePage = indexed;
 
-    for (let offset = 0; offset < pending.length; offset += chunk) {
-      const slice = pending.slice(offset, offset + chunk);
-      const usable: { row: (typeof slice)[number]; base64: string; mimeType: string }[] = [];
-      for (const row of slice) {
+      for (let offset = 0; offset < pending.length; offset += chunk) {
+        const slice = pending.slice(offset, offset + chunk);
+        const usable: { row: (typeof slice)[number]; base64: string; mimeType: string }[] = [];
+        for (const row of slice) {
+          try {
+            const object = await this.readObject(row.objectKey);
+            const prepared = await resizeForEmbedding(
+              { mimeType: object.mimeType, base64: object.base64 },
+              this.maxEdge,
+            );
+            usable.push({ row, base64: prepared.base64, mimeType: prepared.mimeType });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            failures.push({ imageId: row.imageId, sampleId: row.sampleId, message });
+            await this.markFailed(row.imageId, message);
+          }
+        }
+        if (usable.length === 0) continue;
+
+        let vectors: number[][];
         try {
-          const bytes = await this.readObject(row.objectKey);
-          usable.push({ row, base64: bytes.base64, mimeType: bytes.mimeType });
+          vectors = await this.embedder.embedImages(
+            usable.map((item) => ({ mimeType: item.mimeType, base64: item.base64 })),
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          failures.push({ imageId: row.imageId, sampleId: row.sampleId, message });
-          await this.markFailed(row.imageId, message);
-        }
-      }
-      if (usable.length === 0) continue;
-
-      let vectors: number[][];
-      try {
-        vectors = await this.embedder.embedImages(
-          usable.map((item) => ({ mimeType: item.mimeType, base64: item.base64 })),
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        for (const item of usable) {
-          failures.push({ imageId: item.row.imageId, sampleId: item.row.sampleId, message });
-          await this.markFailed(item.row.imageId, message);
-        }
-        continue;
-      }
-
-      for (const [index, item] of usable.entries()) {
-        const vector = vectors[index];
-        if (!vector) {
-          const message = "provider 返回条数不足";
-          failures.push({ imageId: item.row.imageId, sampleId: item.row.sampleId, message });
-          await this.markFailed(item.row.imageId, message);
+          for (const item of usable) {
+            failures.push({ imageId: item.row.imageId, sampleId: item.row.sampleId, message });
+            await this.markFailed(item.row.imageId, message);
+          }
           continue;
         }
-        try {
-          await this.writeVector(item.row.sampleId, item.row.imageId, vector);
-          await this.markReady(item.row.imageId);
-          indexed += 1;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          failures.push({ imageId: item.row.imageId, sampleId: item.row.sampleId, message });
-          await this.markFailed(item.row.imageId, message);
+
+        for (const [index, item] of usable.entries()) {
+          const vector = vectors[index];
+          if (!vector) {
+            const message = "provider 返回条数不足";
+            failures.push({ imageId: item.row.imageId, sampleId: item.row.sampleId, message });
+            await this.markFailed(item.row.imageId, message);
+            continue;
+          }
+          try {
+            await this.writeVector(item.row.sampleId, item.row.imageId, vector);
+            await this.markReady(item.row.imageId);
+            indexed += 1;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            failures.push({ imageId: item.row.imageId, sampleId: item.row.sampleId, message });
+            await this.markFailed(item.row.imageId, message);
+          }
         }
       }
+
+      // 整页都没成功：再查还是同一批，必须停下（否则死循环）。
+      // 失败行已经标了 failed，交给下一次 reindex 或后台补漏重试。
+      if (indexed === indexedBeforePage) break;
     }
 
     return {
-      total: total[0]?.count ?? 0,
+      total: totalCount,
       indexed,
-      skipped: Math.max(0, (total[0]?.count ?? 0) - pending.length),
+      skipped: Math.max(0, totalCount - seen),
       failures,
     };
   }
@@ -323,8 +420,25 @@ export class ImageIndexService {
    * 幂等：已存在同名索引直接返回名称。
    */
   async ensureHnswIndex(): Promise<string> {
-    const name = imageHnswIndexName(this.model);
     const dim = Math.max(1, Math.round(this.dimension));
+    const name = imageHnswIndexName(this.model, dim);
+    // 名字带维度，所以「同名但维度不同」只可能来自历史遗留：
+    // 查一次 pg_indexes，发现同模型的旧索引维度不一致就明确报错，绝不静默留一条错维度的索引。
+    const existing = await this.db.execute(
+      sql`select indexdef from pg_indexes where schemaname = 'public' and tablename = 'sample_image_embeddings'`,
+    );
+    for (const row of existing.rows as { indexdef: string }[]) {
+      const definition = row.indexdef;
+      if (!definition.includes(this.model)) continue;
+      const match = /vector\((\d+)\)/.exec(definition);
+      const existingDim = match?.[1] ? Number(match[1]) : null;
+      if (existingDim !== null && existingDim !== dim) {
+        throw new Error(
+          `已存在模型 ${this.model} 的 HNSW 索引但维度是 ${existingDim}（当前配置 ${dim}）；` +
+            "请先 `drop index` 那条旧索引，或把 IMAGE_EMBEDDING_DIMENSION 改回原值再回填",
+        );
+      }
+    }
     await this.db.execute(sql.raw(
       `CREATE INDEX IF NOT EXISTS "${name}" ON "sample_image_embeddings" ` +
         `USING hnsw ((embedding::vector(${dim})) vector_cosine_ops) ` +
@@ -366,8 +480,9 @@ export class ImageIndexService {
   }
 
   private async embedStored(objectKey: string, mimeType: string): Promise<number[]> {
-    const { base64 } = await this.readObject(objectKey, mimeType);
-    const [vector] = await this.embedder.embedImages([{ mimeType, base64 }]);
+    const { base64, mimeType: actualMime } = await this.readObject(objectKey, mimeType);
+    const prepared = await resizeForEmbedding({ mimeType: actualMime, base64 }, this.maxEdge);
+    const [vector] = await this.embedder.embedImages([prepared]);
     if (!vector) throw new Error("图像 embedding provider 未返回向量");
     return vector;
   }

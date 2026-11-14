@@ -276,7 +276,12 @@ describe("确定性内核（集成）", () => {
     if (!available) ctx.skip();
     const tenant = await isolatedTenant(suffix());
     const storage = new FakeStorage();
-    const kernel = createKernel(db!, undefined, { tenantId: tenant.id, storage });
+    // 图片是标签字节而非真 JPEG：关掉服务端缩图，断言才稳定。
+    const kernel = createKernel(db!, undefined, {
+      tenantId: tenant.id,
+      storage,
+      imageEmbeddingMaxEdge: 0,
+    });
 
     // 自建样品：结果集完全由本用例决定，不再与并行测试共享默认租户（WAN-107）。
     // S4 起以图找样比的是**图像**向量，因此每个样品必须真的挂一张图。

@@ -95,6 +95,19 @@ interface DashScopeEmbeddingResponse {
   error?: { message?: unknown; code?: unknown };
 }
 
+/**
+ * 上游**不可用**（超时 / 网络 / 5xx / 429，且重试耗尽）。
+ *
+ * 只有这一类错误允许走 caption 兜底：配置错误（4xx）、维度不符、输入非法
+ * 都不该被兜底吞掉 —— 那会把「配错了」伪装成「换了一条链路」。
+ */
+export class EmbeddingUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmbeddingUnavailableError";
+  }
+}
+
 class EmbeddingRequestError extends Error {
   constructor(
     message: string,
@@ -200,7 +213,7 @@ export class DashScopeTextEmbeddingProvider implements EmbeddingProvider {
         }
       }
     }
-    throw new Error(
+    throw new EmbeddingUnavailableError(
       `embedding 调用失败（model=${this.name}，已尝试 ${this.maxAttempts} 次）：` +
         `${lastError?.message ?? "未知错误"}`,
     );
@@ -474,7 +487,7 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
         }
       }
     }
-    throw new Error(
+    throw new EmbeddingUnavailableError(
       `图像 embedding 调用失败（model=${this.name}，已尝试 ${this.maxAttempts} 次）：` +
         `${lastError?.message ?? "未知错误"}`,
     );

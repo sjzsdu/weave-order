@@ -12,8 +12,11 @@ import { SampleIndexService } from "./sample-index.service";
 import type { ImageIndexService } from "./image-index.service";
 import { escapeLikePattern } from "./like";
 import type { SampleImageService } from "./sample-images.service";
+import { EmbeddingUnavailableError } from "../platform/embedding";
 import type { ImageEmbeddingProvider } from "../platform/embedding";
 import type { ImageCaptioner } from "../platform/caption";
+import { DEFAULT_EMBEDDING_MAX_EDGE, resizeForEmbedding } from "../platform/image-resize";
+import { getImageIndexWorker } from "../platform/image-index-worker";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -47,6 +50,8 @@ export interface ImageSearchDeps {
   minSimilarity?: number;
   /** 文-图阈值（默认 0.35）。 */
   textMinSimilarity?: number;
+  /** 查询图送模型前缩到长边多少（默认 512，与索引侧一致）。0 = 不缩。 */
+  maxEdge?: number;
 }
 
 export interface ImageSearchMatch {
@@ -201,8 +206,12 @@ export class SearchService {
     const { index, embedder, captioner } = this.image;
     const threshold = minSimilarity ?? this.image.minSimilarity ?? DEFAULT_IMAGE_MIN_SIMILARITY;
     const pending = await index.pendingCount();
+    // 还有没索引好的图：让后台按租户节流地补一次（不阻塞本次查询）。
+    if (pending > 0) getImageIndexWorker()?.requestTenantSweep(this.tenantId);
     try {
-      const queryVector = await embedder.embedImage(image);
+      // 查询图与索引图走同一条预处理，才能落在同一个尺度上。
+      const prepared = await resizeForEmbedding(image, this.image.maxEdge ?? DEFAULT_EMBEDDING_MAX_EDGE);
+      const queryVector = await embedder.embedImage(prepared);
       // 多取一些候选：同一样品可能多张图命中，去重后还要凑够 topK。
       const rows = await index.searchByVector(queryVector, Math.min(topK * 5, 200), threshold);
       const best = new Map<string, (typeof rows)[number]>();
@@ -239,7 +248,9 @@ export class SearchService {
         matches,
       };
     } catch (error) {
-      if (!captioner) throw error;
+      // 只有「上游不可用」才允许兜底。配置错误（4xx）、维度不符、图片解不开
+      // 都是必须暴露的问题，换成 caption 只会把「配错了」伪装成「换了一条链路」。
+      if (!captioner || !(error instanceof EmbeddingUnavailableError)) throw error;
       return await this.searchByCaption(image, topK, captioner, pending);
     }
   }

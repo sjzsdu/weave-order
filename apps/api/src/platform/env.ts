@@ -83,6 +83,11 @@ const EnvSchema = z.object({
   IMAGE_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
   IMAGE_EMBEDDING_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   /**
+   * 送模型前把图缩到长边多少像素（0 = 不缩）。
+   * 实测 512px 与 1024px 分离度差 0.006（噪声内），而 token 从 1024 降到 256、成本降 4 倍。
+   */
+  IMAGE_EMBEDDING_MAX_EDGE: z.coerce.number().int().min(0).max(2048).default(512),
+  /**
    * 图-图检索的最低余弦相似度。
    * 实测（qwen3-vl-embedding）：同款异角度 0.89~0.96，最易混异款 0.61~0.69，
    * 0.75 能把异款挡住；0.55 会把「浅蓝牛仔 vs 灰针织」当成同款。
@@ -250,6 +255,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   }
   if (env.CAPTION_FALLBACK && !(env.IMAGE_EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "").trim()) {
     throw new Error("CAPTION_FALLBACK=true 需要 IMAGE_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY（caption 走同一个 key）。");
+  }
+  // caption 兜底最终要落到**文本语义检索**上：文本 provider 还是哈希 stub 时，
+  // 兜底会返回一组「按描述检索」但没有语义的结果 —— 宁可拒绝启动。
+  if (env.CAPTION_FALLBACK && env.EMBEDDING_PROVIDER === "local-stub") {
+    throw new Error(
+      "CAPTION_FALLBACK=true 需要真实文本 embedding（EMBEDDING_PROVIDER=dashscope-text-v3）；" +
+        "local-stub 的哈希向量做文本检索没有意义。",
+    );
   }
   // 图片链路不允许「悄悄退回 base64 / 本地磁盘」：没有对象存储凭据就拒绝启动。
   if (

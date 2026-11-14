@@ -58,7 +58,9 @@ describe("图像 embedding provider 选择", () => {
 describe("DashScopeMultiModalEmbeddingProvider", () => {
   it("请求体是原生多模态端点 + data URI + 指定维度", async () => {
     const requests: { url: string; body: string; authorization: string }[] = [];
-    const fetchImpl = vi.fn((url: string, init?: RequestInit) => {
+    const fetchImpl = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const headers = (init?.headers ?? {}) as Record<string, string>;
       requests.push({
         url,
@@ -141,7 +143,9 @@ describe("DashScopeMultiModalEmbeddingProvider", () => {
 
   it("响应条数不足时抛错（不能把少一条当成成功）", async () => {
     const requests: { url: string; body: string; authorization: string }[] = [];
-    const fetchImpl = vi.fn((url: string, init?: RequestInit) => {
+    const fetchImpl = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const headers = (init?.headers ?? {}) as Record<string, string>;
       requests.push({
         url,
@@ -162,7 +166,9 @@ describe("DashScopeMultiModalEmbeddingProvider", () => {
 describe("DashScopeCaptioner", () => {
   it("把 image + 固定指令发给视觉模型，返回纯描述", async () => {
     const requests: { url: string; body: string }[] = [];
-    const fetchImpl = vi.fn((url: string, init?: RequestInit) => {
+    const fetchImpl = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       requests.push({ url, body: typeof init?.body === "string" ? init.body : "" });
       return Promise.resolve(
         jsonResponse({ choices: [{ message: { content: "米白底深蓝圆点印花棉布，平纹" } }] }),

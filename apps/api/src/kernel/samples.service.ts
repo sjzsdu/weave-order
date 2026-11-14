@@ -136,11 +136,8 @@ export class SampleService {
    */
   private async indexImages(sampleId: string): Promise<void> {
     if (!this.imageIndex) return;
-    try {
-      await this.imageIndex.ensureSampleIndexed(sampleId);
-    } catch {
-      // 单张失败已在 ensureSampleIndexed 内部记录状态。
-    }
+    // 有后台 worker 时只入队（HTTP 响应不等模型）；CLI/单测退回同步，行为确定。
+    await this.imageIndex.requestSampleIndex(sampleId);
   }
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {

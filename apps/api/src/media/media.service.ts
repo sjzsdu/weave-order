@@ -191,15 +191,11 @@ export class MediaService {
       },
       ctx,
     );
-    // 挂图即索引：算图向量并写 `sample_image_embeddings`。
-    // 失败不阻塞上传（图已经存下了），但会把 `sample_images.index_status` 标成 failed，
+    // 挂图即入队：算图向量走后台（HTTP 路径有 worker），confirm 立即返回 `pending`。
+    // 失败不阻塞上传，但会把 `sample_images.index_status` 标成 failed，
     // 图墙据此显示「索引失败」，不会假装「搜不到」。
-    try {
-      await kernel.imageIndex.indexImage(row.id);
-    } catch {
-      // 状态与原因已由 ImageIndexService 写库；这里只保证上传链路不被拖死。
-    }
-    // 回读一次：索引状态（pending/ready/failed）必须反映本次尝试的结果。
+    await kernel.imageIndex.requestIndex(row.id);
+    // 回读一次：状态可能是 pending（后台还没算完），前端据此显示「检索中」。
     const fresh = (await kernel.sampleImages.findById(row.id)) ?? row;
     return { image: await this.present(fresh) };
   }

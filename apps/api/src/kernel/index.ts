@@ -47,6 +47,8 @@ export interface KernelOptions {
   storage?: ObjectStorage;
   /** 图像 embedding provider；缺省按环境变量创建（默认 local-stub，无 key 可跑）。 */
   imageEmbedder?: ImageEmbeddingProvider;
+  /** 送模型前的缩图长边（0 = 关闭）。单测用假图片时需要关掉。 */
+  imageEmbeddingMaxEdge?: number;
 }
 
 /**
@@ -71,7 +73,10 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const storage = options.storage ?? createObjectStorageFromEnv(env);
   const sampleImages = new SampleImageService(db, tenantId, storage, env);
   const sampleIndex = new SampleIndexService(db, activeEmbedder, tenantId);
-  const imageIndex = new ImageIndexService(db, activeImageEmbedder, tenantId, storage);
+  const imageMaxEdge = options.imageEmbeddingMaxEdge ?? env.IMAGE_EMBEDDING_MAX_EDGE;
+  const imageIndex = new ImageIndexService(db, activeImageEmbedder, tenantId, storage, {
+    maxEdge: imageMaxEdge,
+  });
   const samples = new SampleService(
     db,
     activeEmbedder,
@@ -113,6 +118,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
       captioner,
       minSimilarity: env.SEARCH_IMAGE_MIN_SIMILARITY,
       textMinSimilarity: env.SEARCH_IMAGE_TEXT_MIN_SIMILARITY,
+      maxEdge: imageMaxEdge,
     },
   );
   const importing = new ImportService(db, customers, samples, sampleIndex, tenantId);

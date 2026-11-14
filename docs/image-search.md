@@ -42,7 +42,10 @@
 | 1024×1024       | 1024       | 1.84 元/千张  |
 | 手机原图（1536+） | 1225（封顶） | 2.2 元/千张   |
 
-移动端上传前已压到长边 ≤1600px / ≤1MB。按 1 万张图、每天 1000 次查询算，月成本是个位数人民币。
+**服务端在送模型前会把图缩到长边 512px**（`IMAGE_EMBEDDING_MAX_EDGE`，索引与查询共用同一条预处理），
+所以实际落在 0.46 元/千张这一档，而不是手机原图档。客户端压缩（长边 ≤1600px / ≤1MB）是为存储和展示，
+不是为 embedding —— 两者目标不同。
+按 1 万张图、每天 1000 次查询算，月成本是个位数人民币。
 **不要为省钱做架构妥协**（自训模型、拿 flash 顶主路径都不划算）。
 
 ## 4. 阈值
@@ -69,7 +72,7 @@ unique (image_id, model)     -- 同一张图同一模型只算一次
 `embedding` 不定维，索引是**每模型一条 partial 表达式索引**：
 
 ```sql
-create index sample_image_embeddings_hnsw_qwen3_vl_idx
+create index sample_image_embeddings_hnsw_dashscope_qwen3_vl_embedding_1024
   on sample_image_embeddings
   using hnsw ((embedding::vector(1024)) vector_cosine_ops)
   with (m=16, ef_construction=64)
@@ -77,6 +80,10 @@ create index sample_image_embeddings_hnsw_qwen3_vl_idx
 ```
 
 查询必须带 `model = ?` 且用同样的 `::vector(N)` 表达式，planner 才会命中该索引（实测 1000 张 p95 ≈ 1ms）。
+
+索引名带**模型 + 维度**：只改 `IMAGE_EMBEDDING_DIMENSION` 而不改模型时，
+如果索引名只由模型派生，`CREATE INDEX IF NOT EXISTS` 会静默跳过、留下一条错维度的索引。
+`ensureHnswIndex()` 额外会核对已存在索引的维度，不一致直接报错。
 
 ## 6. 换 provider 要做什么
 
@@ -94,17 +101,34 @@ pnpm --filter @weave-order/api reindex:images --ensure-index
   所以本方案坚持 pgvector + 自持原图。
 - 极端兜底：自建 `chinese-clip` / `open_clip`，接入方式只是「再一个 model 值」。
 
-## 7. 索引状态
+## 7. 索引时机（异步，不阻塞上传）
+
+```
+挂图 confirm / 建改样品
+   → 写 sample_images（index_status = pending）
+   → 入队（进程内 ImageIndexWorker，并发 2）
+   → 后台：withTenantSession(tenant) → 缩图 → embedding → 写向量 + ready
+```
+
+- HTTP 响应不等模型：上传/建样品立即返回，图状态是 `pending`，图墙显示「检索中」。
+- 进程崩了不丢任务：行还是 `pending`，该租户下次找样会触发一次补漏（每租户 60s 节流）。
+- 没有上 Redis 队列：数据库本身就是队列（`index_status`），省一个 broker 与多实例抢锁；
+  需要「跨实例秒级派发」时再上 Redis，接口不用改。
+- CLI / 单测没有 worker，退回同步索引，时序确定。
+
+## 8. 索引状态
 
 - `sample_images.index_status`：`pending | ready | failed`，`index_error` 存最近一次失败原因。
-- 挂图（`POST /api/media/confirm`）与建立/更新样品都会尝试索引；**失败不影响上传**，
-  但状态会变 `failed`，图墙显示「索引失败」，不会表现成「搜不到」。
+- **失败会自动重试**：`failed` 的行会出现在下一次补漏 / 建改样品 / `reindex:images` 的候选里，
+  不会因为一次瞬时错误就永远不进检索。
 - 找样响应带 `indexing`（本租户还有多少张图没索引）：前端提示「结果可能不全」。
 - 从 S3 升级上来时，历史图片都是 `pending`，跑一次 `reindex:images` 补齐。
 
-## 8. 上线清单
+## 9. 上线清单
 
 1. 迁移 `0014_steady_nemesis.sql`（建表 + `index_status` 列 + partial HNSW + RLS）。
-2. env：`IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl`、`IMAGE_EMBEDDING_API_KEY`（或 `DASHSCOPE_API_KEY`）。
+2. env：`IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl`、`IMAGE_EMBEDDING_API_KEY`（或 `DASHSCOPE_API_KEY`）；
+   `IMAGE_EMBEDDING_MAX_EDGE` 默认 512。若开 `CAPTION_FALLBACK=true`，文本 embedding 必须是真实模型
+   （`EMBEDDING_PROVIDER=dashscope-text-v3`），否则启动即报错 —— 哈希向量做文本检索没有意义。
 3. `pnpm --filter @weave-order/api reindex:images --ensure-index` 回填历史图片。
 4. 真机验收：拍照 → 上传 → 看到带缩略图的 top-5（含命中图与相似度）。

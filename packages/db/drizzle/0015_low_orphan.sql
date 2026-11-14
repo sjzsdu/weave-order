@@ -23,7 +23,9 @@ ALTER TABLE "sample_images" ADD CONSTRAINT "sample_images_index_status_check"
 -- 回填说明：ADD COLUMN ... NOT NULL DEFAULT 'pending' 已经把历史行填成 pending，
 -- `reindex:images` 据此把 S4 之前入库的图片补上向量，不会漏。
 -- 每模型一条 partial 表达式索引：向量列不定维，HNSW 必须靠 `::vector(N)` 固定维度。
--- 索引名带模型 + 维度（换模型/换维度都不会被同名索引静默跳过）。
+-- 每模型一条 partial 表达式索引，索引名带模型 + 维度：
+-- 换模型/换维度都不会被同名索引静默跳过（ensureHnswIndex 也会核对已有索引维度）。
+-- model 名与 providers 的 `name` 一致：dashscope-qwen3-vl-embedding。
 CREATE INDEX "sample_image_embeddings_hnsw_dashscope_qwen3_vl_embedding_1024"
   ON "sample_image_embeddings"
   USING hnsw ((embedding::vector(1024)) vector_cosine_ops)

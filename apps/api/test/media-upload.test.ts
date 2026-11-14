@@ -109,7 +109,7 @@ function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
     },
     // 这个文件不测索引本身：索引失败/成功的行为由 s4-image-search 集成测试覆盖。
     imageIndex: {
-      indexImage: () => Promise.resolve("indexed"),
+      requestIndex: () => Promise.resolve(),
     },
   };
   (kernel as unknown as { attached: typeof attached }).attached = attached;
