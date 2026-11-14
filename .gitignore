@@ -31,3 +31,6 @@ test-results/
 # Python 缓存（品牌生成脚本 brand/tools）
 __pycache__/
 *.pyc
+
+# 本地对象存储（scripts/dev-storage-up.sh 的二进制/数据/日志）
+.dev-storage/
