@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>纺织对账怎么做：4 个口径、差异定位与逾期分级 · 织序</title>
+<meta name="description" content="纺织贸易月底对账方法：数量、单价、金额、期间 4 个口径怎么统一，对账单必备要素，差异三级下钻与 6 类常见差异，回款核销规则，逾期分级与 5 步月底流程。" />
+<meta name="theme-color" content="#F7F4EE" />
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="../assets/icons/icon-32.png" sizes="32x32" type="image/png" />
+<link rel="apple-touch-icon" href="../assets/icons/icon-180.png" />
+<link rel="canonical" href="https://weaveorder.cn/guides/textile-reconciliation.html" />
+
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="织序 WeaveOrder" />
+<meta property="og:title" content="纺织对账怎么做：4 个口径、差异定位与逾期分级 · 织序" />
+<meta property="og:description" content="先统一 4 个口径，再用总额到单据到行项目的三级下钻定位差异，附回款核销与月末时间盒。" />
+<meta property="og:image" content="https://weaveorder.cn/assets/og-cover.png" />
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:url" content="https://weaveorder.cn/guides/textile-reconciliation.html" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="alternate" type="text/plain" href="../llms.txt" title="给 AI 助手的产品摘要" />
+<link rel="stylesheet" href="../assets/styles.css" />
+<link rel="stylesheet" href="../assets/pages.css" />
+<script>document.documentElement.classList.add("js");</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://weaveorder.cn/" },
+    { "@type": "ListItem", "position": 2, "name": "帮助中心", "item": "https://weaveorder.cn/docs/" },
+    { "@type": "ListItem", "position": 3, "name": "纺织对账指南", "item": "https://weaveorder.cn/guides/textile-reconciliation.html" }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "对账单应该由谁出？",
+      "acceptedAnswer": { "@type": "Answer", "text": "财务出、业务员发、客户回签。让业务员出对账单容易出现「怕得罪客户就不写差异」，让财务直接对接客户又容易吵起来。" }
+    },
+    {
+      "@type": "Question",
+      "name": "客户不承认差异怎么办？",
+      "acceptedAnswer": { "@type": "Answer", "text": "把差异落到行，附三类证据：出库单与签收单、报价或合同的单价页、发票。证据齐了还争，就走书面确认或部分结算，不要把整张单挂住。" }
+    },
+    {
+      "@type": "Question",
+      "name": "预收款怎么处理？",
+      "acceptedAnswer": { "@type": "Answer", "text": "单独挂「预收账款」，核销时再转到具体单据。直接冲最早的单，会让后续对账查不到这笔钱对应哪批货。" }
+    },
+    {
+      "@type": "Question",
+      "name": "逾期多久该停止发货？",
+      "acceptedAnswer": { "@type": "Answer", "text": "按合同账期。常见做法是逾期超过 30 天且没有承诺付款日，暂停新单；超过 60 天转财务与主管处理。具体线要在合同里写明。" }
+    },
+    {
+      "@type": "Question",
+      "name": "对账周期一定要一个月吗？",
+      "acceptedAnswer": { "@type": "Answer", "text": "不一定。大客户常按周对账，小客户可以月结；关键是期间口径固定，不要这个月按自然月、下个月按 25 日截止。" }
+    },
+    {
+      "@type": "Question",
+      "name": "对账和对账单打印是一回事吗？",
+      "acceptedAnswer": { "@type": "Answer", "text": "不是。对账是核对过程，对账单是结果文件。织序里对账单可以走打印流水线出 PDF 或纸质件，模板继承公司抬头与银行信息，每张纸都有打印日志。" }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "纺织贸易的月初对账流程",
+  "description": "从锁定单据到出账龄表的五步对账流程，按 T+1 到 T+5 的时间盒推进。",
+  "totalTime": "P5D",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "position": 1,
+      "name": "锁定上月单据",
+      "text": "次月 1 日锁定上月出库与退货单据，禁止补录无审批的出入库。"
+    },
+    {
+      "@type": "HowToStep",
+      "position": 2,
+      "name": "生成并发出对账单",
+      "text": "按客户生成对账单，附差异说明，同日发出。"
+    },
+    {
+      "@type": "HowToStep",
+      "position": 3,
+      "name": "客户回签确认",
+      "text": "T+3 前拿到书面确认；未回的按逾期跟进，记录承诺付款日。"
+    },
+    {
+      "@type": "HowToStep",
+      "position": 4,
+      "name": "差异清零",
+      "text": "T+5 前把差异清零，或登记未决事项：谁负责、什么时候解决。"
+    },
+    {
+      "@type": "HowToStep",
+      "position": 5,
+      "name": "出应收账龄表",
+      "text": "按逾期分级把应收分配给业务员与财务，生成催收待办。"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<header class="site-header" id="siteHeader">
+  <div class="container">
+    <nav class="nav" aria-label="主导航">
+      <a class="nav__brand" href="../index.html" aria-label="织序 WeaveOrder 首页">
+        <img src="../assets/logo-mark.svg" alt="" width="34" height="34" />
+        <span>
+          <span class="nav__brand-name">织序</span>
+          <span class="nav__brand-sub">WEAVE ORDER</span>
+        </span>
+      </a>
+      <div class="nav__links" id="navLinks">
+        <a href="../index.html#capabilities">能做什么</a>
+        <a href="../pricing.html">价格</a>
+        <a href="../docs/index.html">帮助文档</a>
+        <a href="../download.html">下载</a>
+        <a href="../index.html#faq">常见问题</a>
+      </div>
+      <div class="nav__actions">
+        <a class="btn btn--ghost btn--sm" href="../login.html">登录</a>
+        <a class="btn btn--primary btn--sm" href="../signup.html" data-cta="guide-textile-reconciliation-nav">免费试用</a>
+        <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="page-hero">
+    <div class="container">
+      <div class="page-hero__inner">
+        <div>
+          <p class="eyebrow">指南 · 对账</p>
+          <h1>纺织对账怎么做？先统一四个口径，再谈差异定位。</h1>
+          <p class="lede">对账吵起来通常不是算错，而是四个口径没统一：数量按发货还是签收、单价含不含税、金额四舍五入在哪一位、期间按自然月还是账期截止日。把四句话写进对账单模板，差异会从一堆变成几条；剩下的用总额、单据、行项目三级下钻定位，比逐张翻合同快得多。</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:24px">
+            <a class="btn btn--primary" href="../signup.html" data-cta="guide-textile-reconciliation-hero">免费创建公司</a>
+            <a class="btn btn--ghost" href="../pricing.html" data-cta="guide-textile-reconciliation-hero-pricing">看价格</a>
+          </div>
+        </div>
+        <div class="page-hero__aside">
+          <p><b>4 个口径</b>数量 / 单价 / 金额 / 期间</p>
+          <p><b>3 级下钻</b>总额 → 单据 → 行</p>
+          <p><b>5 步月底</b>T+1 出单，T+5 清零</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container docs-shell docs-shell--guide">
+    <aside class="docs-side">
+      <nav aria-label="指南目录">
+        <div class="docs-side__group">
+          <h2>指南</h2>
+          <ul>
+            <li><a href="textile-erp-selection.html">纺织 ERP 怎么选</a></li>
+            <li><a href="fabric-quotation-software.html">面料报价软件</a></li>
+            <li><a href="sample-follow-up.html">寄样跟进 SOP</a></li>
+            <li><a href="textile-reconciliation.html" aria-current="page">纺织对账与回款</a></li>
+          </ul>
+        </div>
+        <div class="docs-side__group">
+          <h2>相关页面</h2>
+          <ul>
+            <li><a href="../index.html#capabilities">能做什么</a></li>
+            <li><a href="../pricing.html">价格与套餐</a></li>
+            <li><a href="../signup.html">开通与试用</a></li>
+            <li><a href="../docs/index.html">帮助中心</a></li>
+            <li><a href="../index.html#faq">常见问题</a></li>
+          </ul>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="docs-main">
+      <div class="docs-crumbs"><a href="../index.html">首页</a><span>/</span><a href="../docs/index.html">帮助中心</a><span>/</span><span>纺织对账指南</span></div>
+      <h2 id="four-bases">四个口径先写死</h2>
+<p>对账单模板上写清下面四句，后面九成的争执会消失。四句都要具体到「以哪个为准」，不能写「双方协商」。</p>
+        <div class="table-wrap">
+          <table class="price-table">
+            <thead>
+              <tr><th scope="col">口径</th><th scope="col">可选写法</th><th scope="col">不写清的后果</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>数量</td>
+                <td>以发货数量（出库单）为准，或以客户签收数量为准；退货单独一行负数，不冲原单。</td>
+                <td>客户按签收算、你按发货算，差的是一两匹布，却要重对整张单。</td>
+              </tr>
+              <tr>
+                <td>单价</td>
+                <td>含税或不含税；是否含运费、是否含包装。单价必须与报价、合同一致，改价要有审批记录。</td>
+                <td>报价写含 13% 增值税、对账单写不含税，客户财务直接退回。</td>
+              </tr>
+              <tr>
+                <td>金额</td>
+                <td>按分计算；四舍五入在行级还是合计级；税额单独列还是含在单价里。同一家公司只用一种。</td>
+                <td>行级先四舍五入再合计，与先合计再四舍五入会差几分到几元，客户当成算错。</td>
+              </tr>
+              <tr>
+                <td>期间</td>
+                <td>自然月 1 日到月底，或按账期截止日（例如每月 25 日）。跨期发货的归属写清。</td>
+                <td>这个月按自然月、下个月按 25 日，永远差一单，永远对不完。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>四个口径里最容易出错的是金额。一张单几十个规格时，尾差会被客户当成「算错」，然后整张单被退回重核——退款不是问题，重核花的时间才是。</p>
+        <p>单价口径要和报价链同源。报价单写的是含税价，对账单就必须从同一张报价单取价，不要在 Excel 里重抄一遍。抄一次，就多一个出错的机会。</p>
+
+      <h2 id="statement">一张对账单要有什么</h2>
+<p>对账单不是一页纸的总额。客户财务要核的是行，行数对不上，总额对上了也会被退回。</p>
+        <ul>
+          <li><strong>期间与截止日</strong>：写「2026 年 10 月 1 日至 10 月 31 日」，不要只写「10 月账」。</li>
+          <li><strong>客户名称、合同号、开票信息</strong>：与合同一致，避免同名不同主体。</li>
+          <li><strong>每张单据一行</strong>：单号、日期、品名摘要、数量、单位、单价、金额、税额。</li>
+          <li><strong>汇总四行</strong>：期初余额、本期发生、本期已收、期末应收，并写出公式。</li>
+          <li><strong>差异行单独标出</strong>：每条差异给一句话说明，不要混在正常行里。</li>
+          <li><strong>付款信息</strong>：收款账户、开票类型、对账联系人、回复截止日。</li>
+        </ul>
+        <p>小技巧：在对账单页脚写「付款请备注单据号」，能让后面一笔款对多张单的核销省掉大半沟通。这一句话的回报率，比任何对账工具都高。</p>
+
+      <h2 id="diff">差异定位：三级下钻与 6 类常见差异</h2>
+<p>从总额开始，逐级收窄，不要一上来就翻合同：</p>
+        <ol>
+          <li><strong>总额差</strong>：期初 + 本期发生 - 本期已收 = 期末应收。先确认公式没被改过、没人手工调过数。</li>
+          <li><strong>单据差</strong>：按单号比对，找出只在一边出现的单据（漏记、重复记账、跨期归属）。</li>
+          <li><strong>行差</strong>：单据都对上，再比每行的数量与单价，差异通常在单位、税率或折扣。</li>
+        </ol>
+        <div class="table-wrap">
+          <table class="price-table">
+            <thead>
+              <tr><th scope="col">差异类型</th><th scope="col">典型表现</th><th scope="col">怎么核对</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>少发货</td><td>出库数量小于合同数量，客户按合同付</td><td>对出库单与签收单，确认是否分批发货</td></tr>
+              <tr><td>退货未记</td><td>客户已退货，我方没开红字</td><td>查退货单与红字发票，补一行负数</td></tr>
+              <tr><td>运费归属</td><td>合同写含运费，对账单另开运费行</td><td>对合同条款，不看当时的口头约定</td></tr>
+              <tr><td>税率不同</td><td>报价含 13% 增值税，开票按其他税率</td><td>对发票与报价单的税率栏</td></tr>
+              <tr><td>折扣未落</td><td>谈好的折让没进对账单</td><td>查审批记录与折让单</td></tr>
+              <tr><td>重复记账</td><td>同一张出库单录了两次</td><td>查单据号是否唯一，按单号去重</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>六类里只有「少发货」和「退货」需要业务确认，其余四类都是系统内能查到的口径问题。把口径问题从差异里分出去，业务员每周只需要处理真正需要他解释的那几条。</p>
+
+      <h2 id="writeoff">回款核销：一笔钱对多张单</h2>
+<p>钱到账了，要和一张或多张应收对上。先定规则，再谈效率：</p>
+        <ul>
+          <li><strong>指定核销</strong>：客户付款时备注了单号，按备注核销。这是最省事的路径，所以对账单上要印「付款请备注单号」。</li>
+          <li><strong>未指定</strong>：按先进先出核销最早到期的应收；同时把预收款单独挂账，不要直接冲最早的单一——否则以后争议查不清这笔钱对应哪批货。</li>
+          <li><strong>一单多笔</strong>：允许分批核销，记录每笔到账日期与金额，账龄按最后一笔算。</li>
+          <li><strong>尾差</strong>：客户少付几元到几十元（手续费、汇率），设一个容忍阈值，例如 50 元以内走「尾差调整」，超过就挂差异。</li>
+        </ul>
+        <p>核销凭证要留全：银行流水号、到账日期、金额、对应单据号、操作人。审计和对账争议都靠它，尤其是半年后客户说「那笔款我已经付过」的时候。</p>
+
+      <h2 id="overdue">逾期分级与催收节奏</h2>
+<p>分级的目的不是催得更凶，而是让不同的人在不同阶段介入。下面是一条常见分法，具体线要按合同账期调：</p>
+        <div class="table-wrap">
+          <table class="price-table">
+            <thead>
+              <tr><th scope="col">阶段</th><th scope="col">谁负责</th><th scope="col">动作</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>到期前 7 天</td><td>业务员</td><td>提醒客户准备付款，确认发票已收</td></tr>
+              <tr><td>逾期 1 到 30 天</td><td>业务员</td><td>电话确认，记录承诺付款日</td></tr>
+              <tr><td>逾期 31 到 60 天</td><td>财务 + 主管</td><td>暂停新单发货，发对账函</td></tr>
+              <tr><td>逾期 61 到 90 天</td><td>老板</td><td>确认是否走法律途径，评估坏账准备</td></tr>
+              <tr><td>逾期 90 天以上</td><td>老板 + 财务</td><td>停止合作、启动追收，更新客户信用额度</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>分级线要按账期设，不要一刀切。账期 90 天的客户，60 天就催会得罪人；账期 30 天的客户，45 天还不催就是自己贴钱。新客户的第一单建议缩短账期或用部分预付，跑顺之后再放开。</p>
+
+      <h2 id="month-end">月底五步流程</h2>
+<p>时间盒比流程更重要。没有截止日，对账会拖到月中，然后又和下个月的单据混在一起。</p>
+        <ol>
+          <li><strong>T+1（次月 1 日）</strong>：锁定上月单据，禁止补录无审批的出入库。</li>
+          <li><strong>T+1</strong>：按客户生成对账单并发出，附差异说明。</li>
+          <li><strong>T+3</strong>：客户回签确认；未回的按逾期跟进，电话记录承诺时间。</li>
+          <li><strong>T+5</strong>：差异清零，或登记未决事项：谁负责、什么时候解决。</li>
+          <li><strong>T+5</strong>：出应收账龄表，按逾期分级分配给业务员与财务。</li>
+        </ol>
+        <p>五步里最容易被跳过的是第 1 步。单据不锁定，业务员月中补一张出库单，上个月的对账单就作废了；反复两次，客户就不再认真回签。</p>
+
+      <h2 id="system">系统里怎么跑</h2>
+<p>织序里对账是「小账」这个智能体：按期间拉出库单与报价，生成对账单草稿；客户回签后比对差异，把差异定位到单、到行并给出可能原因；回款到账后按规则核销，逾期按等级生成催收待办。</p>
+        <p>它不直接改账。对账单与核销都要人批准，批准时校验操作的是不是人；金额按分计算，审计只追加不可改写。这条约束比对账速度重要——月底最怕的不是慢，是改了看不出谁改的。</p>
+        <p>报价与对账同源是另一个好处：单价、税率、账期都在系统里，对账时不用从 Excel 再抄一遍。抄写是差异的第一来源，而不是算错。对账单要出纸质件时走<a href="../docs/printing.html">打印与单证</a>；谁有权限核销、审批怎么留痕，见<a href="../docs/approvals.html">审批与权限</a>。</p>
+
+      <h2 id="faq">常见问题</h2>
+      <div class="faq">
+        <details open>
+          <summary>对账单应该由谁出？</summary>
+          <p>财务出、业务员发、客户回签。让业务员出对账单容易出现「怕得罪客户就不写差异」，让财务直接对接客户又容易吵起来。</p>
+        </details>
+        <details>
+          <summary>客户不承认差异怎么办？</summary>
+          <p>把差异落到行，附三类证据：出库单与签收单、报价或合同的单价页、发票。证据齐了还争，就走书面确认或部分结算，不要把整张单挂住。</p>
+        </details>
+        <details>
+          <summary>预收款怎么处理？</summary>
+          <p>单独挂「预收账款」，核销时再转到具体单据。直接冲最早的单，会让后续对账查不到这笔钱对应哪批货。</p>
+        </details>
+        <details>
+          <summary>逾期多久该停止发货？</summary>
+          <p>按合同账期。常见做法是逾期超过 30 天且没有承诺付款日，暂停新单；超过 60 天转财务与主管处理。具体线要在合同里写明。</p>
+        </details>
+        <details>
+          <summary>对账周期一定要一个月吗？</summary>
+          <p>不一定。大客户常按周对账，小客户可以月结；关键是期间口径固定，不要这个月按自然月、下个月按 25 日截止。</p>
+        </details>
+        <details>
+          <summary>对账和对账单打印是一回事吗？</summary>
+          <p>不是。对账是核对过程，对账单是结果文件。织序里对账单可以走打印流水线出 PDF 或纸质件，模板继承公司抬头与银行信息，每张纸都有打印日志。</p>
+        </details>
+      </div>
+
+      <div class="note-box" style="margin:44px 0 8px;padding:22px 24px">
+        <p style="margin:0 0 6px;font-family:var(--font-serif);font-size:18px;font-weight:700;color:var(--ink-900)">让对账单自己长出来</p>
+        <p style="margin:0 0 16px">织序按期间拉出库单与报价，生成对账单草稿；差异定位到单、到行，回款到账按规则核销。对账单与核销都要人批准，3 天试用。</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <a class="btn btn--primary" href="../signup.html" data-cta="guide-textile-reconciliation-end">免费创建公司</a>
+          <a class="btn btn--ghost" href="../pricing.html" data-cta="guide-textile-reconciliation-end-pricing">看价格与套餐</a>
+        </div>
+      </div>
+
+      <div class="docs-pager">
+        <a href="sample-follow-up.html"><small>上一篇</small><span>寄样跟进 SOP</span></a>
+        <a href="../pricing.html"><small>下一步</small><span>价格与套餐</span></a>
+      </div>
+    </div>
+
+    <aside class="docs-toc">
+      <h2>本页目录</h2>
+      <ul>
+        <li><a href="#four-bases">四个口径</a></li>
+        <li><a href="#statement">一张对账单要有什么</a></li>
+        <li><a href="#diff">差异定位</a></li>
+        <li><a href="#writeoff">回款核销：一笔钱对多张单</a></li>
+        <li><a href="#overdue">逾期分级与催收节奏</a></li>
+        <li><a href="#month-end">月底五步流程</a></li>
+        <li><a href="#system">系统里怎么跑</a></li>
+        <li><a href="#faq">常见问题</a></li>
+      </ul>
+    </aside>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer__grid">
+      <div>
+        <div class="footer__brand">
+          <img src="../assets/logo-mark.svg" alt="" width="36" height="36" />
+          <span>织序 WeaveOrder</span>
+        </div>
+        <p>纺织贸易的智能体原生操作系统。找样、报价、寄样、跟单、对账由智能体完成，人只负责审批结果。</p>
+        <span class="footer__badge"><i></i>服务运行正常</span>
+      </div>
+      <div>
+        <h4>产品</h4>
+        <ul>
+          <li><a href="../index.html#capabilities">能做什么</a></li>
+          <li><a href="../index.html#how">一句话跑一单</a></li>
+          <li><a href="../pricing.html">价格</a></li>
+          <li><a href="../download.html">下载</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>资源</h4>
+        <ul>
+          <li><a href="../docs/index.html">帮助文档</a></li>
+          <li><a href="../docs/index.html#guides">选型与实操指南</a></li>
+          <li><a href="../index.html#faq">常见问题</a></li>
+          <li><a href="../llms.txt">给 AI 助手的摘要</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>公司</h4>
+        <ul>
+          <li><a href="../signup.html">联系与开通</a></li>
+          <li><a href="../login.html">登录入口</a></li>
+          <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
+          <li><a href="https://github.com/sjzsdu/weave-order">GitHub</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <span>© 2026 织序 WeaveOrder · 纺织贸易的智能体原生操作系统</span>
+      <span>你说生意，系统做单。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="../assets/main.js" defer></script>
+<script src="../assets/pages.js" defer></script>
+</body>
+</html>
