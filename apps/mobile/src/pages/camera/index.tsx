@@ -1,11 +1,17 @@
 import { Image, Input, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@weave-order/core";
-import type { ImageMatch, T001SearchFabricByImageResult } from "@weave-order/schema";
+import type { ImageMatch } from "@weave-order/schema";
 import { Badge, Button, Card, Page, SectionTitle } from "../../components/ui";
 import { useNetworkStatus } from "../../lib/hooks";
-import { compressImage, persistImage, uploadImage } from "../../lib/media";
+import {
+  compressImage,
+  persistImage,
+  uploadImage,
+  uploadImageToPresignedUrl,
+} from "../../lib/media";
 import type { CompressedImage } from "../../lib/media";
 import { api, IS_MOCK, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
@@ -33,6 +39,7 @@ const PROOF_KIND: Record<
 };
 
 export default function CameraPage() {
+  const queryClient = useQueryClient();
   const network = useNetworkStatus();
   const [mode, setMode] = useState<Mode>("find");
   const [busy, setBusy] = useState(false);
@@ -42,6 +49,11 @@ export default function CameraPage() {
   const [error, setError] = useState<string | null>(null);
   const [tracking, setTracking] = useState("");
   const [note, setNote] = useState("");
+  // 「建样品」：拍完只填最少字段，其余可之后在图墙补。
+  const [sampleName, setSampleName] = useState("");
+  const [sampleComposition, setSampleComposition] = useState("");
+  const [sampleWeight, setSampleWeight] = useState("");
+  const [savingSample, setSavingSample] = useState(false);
 
   useDidShow(() => {
     const pending = prefs.takeCameraMode();
@@ -70,7 +82,10 @@ export default function CameraPage() {
       }
       setImage(compressed);
       if (mode === "find") await runFind(compressed);
-      else if (mode !== "waybill") await runProof(compressed, mode);
+      else if (mode === "sample") {
+        // 拍完停在表单：品名/成分/克重填好再保存，避免“拍完就丢”。
+        setResultText(null);
+      } else if (mode !== "waybill") await runProof(compressed, mode);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "图片处理失败");
     } finally {
@@ -85,9 +100,10 @@ export default function CameraPage() {
     }
     try {
       const url = await uploadImage(compressed, api);
-      const result: T001SearchFabricByImageResult = await api.searchByImageUrl(url);
+      const result: Awaited<ReturnType<typeof api.searchByImageUrl>> =
+        await api.searchByImageUrl(url);
       if (!result.ok) {
-        setError(result.error.message);
+        setError(result.error?.message ?? "以图找样失败");
         return;
       }
       setMatches(result.data.matches);
@@ -140,6 +156,55 @@ export default function CameraPage() {
       },
     });
     setResultText(`已存本地（${(compressed.byteSize / 1024).toFixed(0)}KB）· 联网后自动上传`);
+  };
+
+  /** 建样品：先建行 → 图片直传 → confirm 挂图。任何一步失败都显式报错。 */
+  const saveSample = async () => {
+    if (!image) return;
+    if (!sampleName.trim()) {
+      setError("品名必填（其余字段可以之后补）");
+      return;
+    }
+    if (!network.online) {
+      setError("建样品需要联网；图片已留在本页，联网后重试。");
+      return;
+    }
+    setSavingSample(true);
+    setError(null);
+    setResultText(null);
+    try {
+      const code = `SP-${Date.now().toString(36).toUpperCase()}`;
+      const created = await api.createSample({
+        code,
+        name: sampleName.trim(),
+        composition: sampleComposition.trim() || null,
+        weight: sampleWeight.trim() || null,
+        unit: "meter",
+      });
+      const presigned = await api.presignImage({
+        mimeType: image.mimeType,
+        byteSize: image.byteSize,
+        sampleId: created.id,
+      });
+      await uploadImageToPresignedUrl(image, presigned, image.mimeType);
+      await api.confirmImage({
+        objectKey: presigned.objectKey,
+        sortOrder: 0,
+        width: image.width,
+        height: image.height,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["samples"] });
+      setResultText(`已建样品「${created.name}」（${code}），图墙里可以补规格。`);
+      setSampleName("");
+      setSampleComposition("");
+      setSampleWeight("");
+      setImage(null);
+      void Taro.showToast({ title: "样品已保存", icon: "success" });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "建样品失败");
+    } finally {
+      setSavingSample(false);
+    }
   };
 
   const scanWaybill = async () => {
@@ -251,6 +316,37 @@ export default function CameraPage() {
               长边 ≤1600 · ≤1MB
             </Badge>
           </View>
+          {mode === "sample" && (
+            <View>
+              <View className="label">品名（必填）</View>
+              <Input
+                className="input"
+                value={sampleName}
+                placeholder="如 32S 精梳棉汗布"
+                onInput={(event) => setSampleName(event.detail.value)}
+              />
+              <View className="label">成分</View>
+              <Input
+                className="input"
+                value={sampleComposition}
+                placeholder="如 100% 棉"
+                onInput={(event) => setSampleComposition(event.detail.value)}
+              />
+              <View className="label">克重</View>
+              <Input
+                className="input"
+                value={sampleWeight}
+                placeholder="如 220g/m²"
+                onInput={(event) => setSampleWeight(event.detail.value)}
+              />
+              <View className="actions">
+                <Button onClick={() => void saveSample()} loading={savingSample}>
+                  保存到样品库
+                </Button>
+              </View>
+              <View className="footnote">编码自动生成；其余规格可在 PC 图墙继续补。</View>
+            </View>
+          )}
         </Card>
       )}
 
@@ -278,7 +374,32 @@ export default function CameraPage() {
                     {match.sample.weight ?? ""}
                   </View>
                 </View>
-                <Badge tone="accent">相似 {(match.score * 100).toFixed(0)}%</Badge>
+                <View className="row" style={{ gap: 8, alignItems: "center" }}>
+                  {match.sample.primaryImageUrl ? (
+                    <Image
+                      src={match.sample.primaryImageUrl}
+                      mode="aspectFill"
+                      style={{ width: 44, height: 44, borderRadius: 6 }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 6,
+                        border: "1px dashed #d8d3c8",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 10,
+                        color: "#9a9385",
+                      }}
+                    >
+                      待补图
+                    </View>
+                  )}
+                  <Badge tone="accent">相似 {(match.score * 100).toFixed(0)}%</Badge>
+                </View>
               </View>
               <View className="actions">
                 <Button

@@ -8,6 +8,8 @@ import {
   AuthContextResponse,
   CreatedQuoteShare,
   CreateQuoteShareInput,
+  CreateSampleInput,
+  CreateSampleShipmentInput,
   CreateBoxesInput,
   CreatePrintJobInput,
   CreateShipmentInput,
@@ -37,17 +39,20 @@ import {
   QuoteShareStatsList,
   RegisterPrintAgentInput,
   ScanResult,
+  SampleImage,
   Shipment,
   ShipmentView,
   T002SearchFabricBySpecInput,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
+  T005CreateSampleShipmentResult,
   SwitchTenantInput,
   TenantChoicesResponse,
+  UpdateSampleInput,
   VerifyScanInput,
 } from "@weave-order/schema";
-import type { ApprovalKind, ReprintReason } from "@weave-order/schema";
+import type { ApprovalKind, ReprintReason, SampleStatus } from "@weave-order/schema";
 
 /**
  * 前端唯一 API 入口。
@@ -59,6 +64,37 @@ export interface ApiClientOptions {
   baseUrl: string;
   getToken: () => string | null | Promise<string | null>;
   fetchImpl?: typeof fetch;
+}
+
+export interface SampleListParams {
+  query?: string | null;
+  category?: string | null;
+  status?: SampleStatus | "ALL" | null;
+  cursor?: string | null;
+  limit?: number;
+}
+
+export interface PresignImageInput {
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  byteSize: number;
+  /** 绑定到已有样品；不传时 key 落在 `uploads/`，需随样品创建一起提交。 */
+  sampleId?: string;
+}
+
+export interface PresignImageResult {
+  uploadUrl: string;
+  method: "PUT";
+  headers: Record<string, string>;
+  objectKey: string;
+  expiresAt: string;
+}
+
+export interface ConfirmImageInput {
+  objectKey: string;
+  isPrimary?: boolean;
+  sortOrder?: number;
+  width?: number;
+  height?: number;
 }
 
 export class ApiError extends Error {
@@ -75,6 +111,27 @@ export class ApiError extends Error {
 
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
 const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
+const SamplePageResponse = z
+  .object({
+    samples: z.array(FabricSample),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+    total: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+    categories: z.array(z.string()),
+  })
+  .strict();
+const SampleResponse = z.object({ sample: FabricSample }).strict();
+const PresignImageResponse = z
+  .object({
+    uploadUrl: z.string().url(),
+    method: z.literal("PUT"),
+    headers: z.record(z.string()),
+    objectKey: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+const ConfirmImageResponse = z.object({ image: SampleImage }).strict();
 const OrdersResponse = z.object({ orders: z.array(Order) }).strict();
 const PendingShippingResponse = z.object({ orders: z.array(OrderShippingSummary) }).strict();
 const EnqueuePrintJobResponse = z
@@ -245,6 +302,43 @@ export function createApiClient(options: ApiClientOptions) {
     listSamples: async (limit = 50) =>
       SamplesResponse.parse(await request(`/api/samples?limit=${limit}`)).samples,
 
+    /** 样品图墙：游标分页 + 关键词 / 品类 / 状态筛选。 */
+    listSamplesPage: async (params: SampleListParams = {}) => {
+      const search = new URLSearchParams();
+      if (params.query) search.set("query", params.query);
+      if (params.category) search.set("category", params.category);
+      if (params.status) search.set("status", params.status);
+      if (params.cursor) search.set("cursor", params.cursor);
+      if (params.limit !== undefined) search.set("limit", String(params.limit));
+      const qs = search.toString();
+      return SamplePageResponse.parse(await request(`/api/samples${qs ? `?${qs}` : ""}`));
+    },
+
+    getSample: async (id: string) =>
+      SampleResponse.parse(await request(`/api/samples/${encodeURIComponent(id)}`)).sample,
+
+    createSample: async (input: z.input<typeof CreateSampleInput>) =>
+      SampleResponse.parse(await post("/api/samples", CreateSampleInput.parse(input))).sample,
+
+    updateSample: async (id: string, input: z.input<typeof UpdateSampleInput>) =>
+      SampleResponse.parse(
+        await request(`/api/samples/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(UpdateSampleInput.parse(input)),
+        }),
+      ).sample,
+
+    archiveSample: async (id: string) =>
+      SampleResponse.parse(await post(`/api/samples/${encodeURIComponent(id)}/archive`, {})).sample,
+
+    /** 图片直传第 1 步：拿预签名 URL（key 由服务端生成）。 */
+    presignImage: async (input: PresignImageInput) =>
+      PresignImageResponse.parse(await post("/api/media/presign", input)),
+
+    /** 图片直传第 3 步：HEAD 校验后写入 `sample_images`。 */
+    confirmImage: async (input: ConfirmImageInput) =>
+      ConfirmImageResponse.parse(await post("/api/media/confirm", input)).image,
+
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 
     /** 审批队列（游标分页）：不传 cursor 即第一页。 */
@@ -271,6 +365,33 @@ export function createApiClient(options: ApiClientOptions) {
     searchBySpec: async (input: z.input<typeof T002SearchFabricBySpecInput>) =>
       T002SearchFabricBySpecResult.parse(
         await toolPost("/api/tools/search-by-spec", T002SearchFabricBySpecInput.parse(input)),
+      ),
+
+    /** 以图找样：T-001 的 URL 变体（服务端按白名单取图，不接受 base64）。 */
+    searchByImageUrl: async (imageUrl: string) =>
+      z
+        .object({
+          ok: z.boolean(),
+          data: z.object({
+            embeddingModel: z.string(),
+            dimension: z.number(),
+            matches: z.array(z.object({ sample: FabricSample, score: z.number() })),
+          }),
+          error: z.object({ code: z.string(), message: z.string() }).optional(),
+        })
+        .passthrough()
+        .parse(
+          await post("/api/tools/search-by-image", {
+            imageUrl,
+            topK: 5,
+            minSimilarity: 0.3,
+          }),
+        ),
+
+    /** 建寄样单（T-005）：只会得到 DRAFT，确认走审批窗口。 */
+    createSampleShipment: async (input: z.input<typeof CreateSampleShipmentInput>) =>
+      T005CreateSampleShipmentResult.parse(
+        await post("/api/tools/create-sample-shipment", CreateSampleShipmentInput.parse(input)),
       ),
 
     decideApproval: async (input: z.infer<typeof ApprovalDecisionInput>) =>

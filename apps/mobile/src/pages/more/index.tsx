@@ -313,6 +313,20 @@ export default function MorePage() {
         </View>
       </Card>
 
+      <SectionTitle title="样品" hint="图墙与拍照建样" />
+      <Card>
+        <View
+          className="list-row"
+          onClick={() => void Taro.navigateTo({ url: "/pages/samples/index" })}
+        >
+          <View>
+            <View className="list-title">样品库</View>
+            <View className="list-sub">看图墙、拍照建样品、用样品报价</View>
+          </View>
+          <Text className="link">打开</Text>
+        </View>
+      </Card>
+
       <SectionTitle title="身份与审批" hint="角色只改首页排序，权限由服务端决定" />
       <Card>
         <View className="list-row" onClick={() => void switchRole()}>

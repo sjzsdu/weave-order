@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { usePanorama } from "@weave-order/core";
 import {
@@ -67,20 +68,13 @@ function PanoramaPageContent() {
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {STAT_KEYS.map((stat) => (
-          <div
+          <StatCard
             key={stat.key}
-            className={cn(
-              "rounded-lg border bg-surface px-4 py-3",
-              stat.key === "pendingCount" && data.stats.pendingCount > 0
-                ? "border-amber-600/50"
-                : "border-line",
-            )}
-          >
-            <div className="text-xs text-ink-400">{stat.label}</div>
-            <div className="mt-1 font-mono text-2xl font-bold tabular-nums text-ink-900">
-              {data.stats[stat.key]}
-            </div>
-          </div>
+            label={stat.label}
+            value={data.stats[stat.key]}
+            highlight={stat.key === "pendingCount" && data.stats.pendingCount > 0}
+            href={stat.key === "sampleCount" ? "/panorama/samples" : undefined}
+          />
         ))}
       </section>
 
@@ -212,4 +206,40 @@ function PanoramaPageContent() {
       )}
     </div>
   );
+}
+
+/** 全景的统计卡；「样品」可点进图墙，其余保持只读展示。 */
+function StatCard({
+  label,
+  value,
+  highlight,
+  href,
+}: {
+  label: string;
+  value: number;
+  highlight?: boolean;
+  href?: string;
+}) {
+  const body = (
+    <>
+      <div className="flex items-center justify-between text-xs text-ink-400">
+        <span>{label}</span>
+        {href && <span className="text-indigo-600">图墙 →</span>}
+      </div>
+      <div className="mt-1 font-mono text-2xl font-bold tabular-nums text-ink-900">{value}</div>
+    </>
+  );
+  const className = cn(
+    "block rounded-lg border bg-surface px-4 py-3",
+    highlight ? "border-amber-600/50" : "border-line",
+    href && "transition-colors hover:border-indigo-600",
+  );
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {body}
+      </Link>
+    );
+  }
+  return <div className={className}>{body}</div>;
 }

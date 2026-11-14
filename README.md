@@ -203,7 +203,11 @@ pnpm format       # Prettier
 | ------ | ------------------------------------- | ----------------------------- | ----------------------------------------------- |
 | GET    | `/api/health`                         | 只读                          | 服务 + 数据库可用性                             |
 | GET    | `/api/customers`                      | 只读                          | 客户列表                                        |
-| GET    | `/api/samples`                        | 只读                          | 样品目录                                        |
+| GET    | `/api/samples`                        | 只读                          | 样品图墙（`query`/`category`/`status`/游标分页） |
+| POST   | `/api/samples`                        | HUMAN（样品管理员/经理/老板） | 新建样品（可带已上传的 `imageKeys`）            |
+| GET    | `/api/samples/:id`                    | 只读                          | 样品详情（图片按 `sortOrder`，成本按角色裁剪）  |
+| PATCH  | `/api/samples/:id`                    | HUMAN（样品管理员/经理/老板） | 编辑规格 / 图片顺序 / 主图                      |
+| POST   | `/api/samples/:id/archive`            | HUMAN（样品管理员/经理/老板） | 归档（软删，`status=ARCHIVED`）                 |
 | GET    | `/api/audit`                          | OIDC / `read` PAT             | 审计流水（只看本租户）                          |
 | POST   | `/api/tools/search-by-spec`           | agent                         | T-002 参数匹配                                  |
 | POST   | `/api/tools/search-by-image`          | agent                         | T-001 以图搜图（base64 / imageUrl）             |

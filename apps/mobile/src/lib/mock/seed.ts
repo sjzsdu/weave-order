@@ -59,6 +59,7 @@ export const MOCK_SAMPLES: FabricSample[] = [
     unit: "meter",
     costFloor: { amount: 1180, currency: "CNY" },
     status: "ACTIVE",
+    primaryImageUrl: null,
     createdAt: "2026-10-02T03:00:00.000Z",
   },
   {
@@ -71,6 +72,7 @@ export const MOCK_SAMPLES: FabricSample[] = [
     unit: "meter",
     costFloor: { amount: 920, currency: "CNY" },
     status: "ACTIVE",
+    primaryImageUrl: null,
     createdAt: "2026-10-03T03:00:00.000Z",
   },
   {
@@ -83,6 +85,7 @@ export const MOCK_SAMPLES: FabricSample[] = [
     unit: "meter",
     costFloor: { amount: 1560, currency: "CNY" },
     status: "ACTIVE",
+    primaryImageUrl: null,
     createdAt: "2026-10-04T03:00:00.000Z",
   },
   {
@@ -95,6 +98,7 @@ export const MOCK_SAMPLES: FabricSample[] = [
     unit: "meter",
     costFloor: { amount: 1050, currency: "CNY" },
     status: "ACTIVE",
+    primaryImageUrl: null,
     createdAt: "2026-10-05T03:00:00.000Z",
   },
   {
@@ -107,6 +111,7 @@ export const MOCK_SAMPLES: FabricSample[] = [
     unit: "meter",
     costFloor: { amount: 1720, currency: "CNY" },
     status: "ACTIVE",
+    primaryImageUrl: null,
     createdAt: "2026-10-06T03:00:00.000Z",
   },
 ];

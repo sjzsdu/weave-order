@@ -247,6 +247,42 @@ export async function uploadImage(image: CompressedImage, api: MobileApi): Promi
   return uploadStoredMedia(image.path, api, image.mimeType);
 }
 
+/**
+ * 把压缩后的图片直传到服务端签发的 PUT 地址（S1 的 presign/confirm 契约）。
+ * H5 用 fetch + Blob；小程序没有 Blob，就按 ArrayBuffer 发原始 body，
+ * 不能用 `Taro.uploadFile` —— 它固定 multipart，会破坏 S3 预签名的 Content-Type。
+ */
+export async function uploadImageToPresignedUrl(
+  image: CompressedImage,
+  upload: { uploadUrl: string; headers: Record<string, string> },
+  mimeType: CompressedImage["mimeType"] = image.mimeType,
+): Promise<void> {
+  const headers = { ...upload.headers, "Content-Type": mimeType };
+  if (typeof Blob !== "undefined" && image.blob instanceof Blob) {
+    const response = await fetch(upload.uploadUrl, { method: "PUT", headers, body: image.blob });
+    if (!response.ok) throw new Error(`上传失败（HTTP ${response.status}）`);
+    return;
+  }
+  const fileSystem = (
+    Taro as unknown as {
+      getFileSystemManager?: () => {
+        readFileSync(path: string): ArrayBuffer;
+      };
+    }
+  ).getFileSystemManager?.();
+  if (!fileSystem) throw new Error("当前端不支持读取本地图片");
+  const data = fileSystem.readFileSync(image.path);
+  const response = await Taro.request({
+    url: upload.uploadUrl,
+    method: "PUT",
+    header: headers,
+    data,
+  });
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`上传失败（HTTP ${response.statusCode}）`);
+  }
+}
+
 /** 离线时把照片落到本地，队列只存 mediaKey，不存 base64。 */
 export async function persistImage(
   image: CompressedImage,

@@ -1,4 +1,4 @@
-import { Input, Text, Textarea, View } from "@tarojs/components";
+import { Image, Input, Text, Textarea, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "@weave-order/core";
@@ -583,22 +583,48 @@ export default function QuotePage() {
             candidateList.map((match) => (
               <Card key={match.sample.id}>
                 <View className="row">
-                  <View>
-                    <View className="list-title">{match.sample.name}</View>
-                    <View className="list-sub">
-                      {match.sample.code} · {match.sample.composition ?? "成分未填"} ·{" "}
-                      {match.sample.weight ?? ""}
-                    </View>
-                    <View className="tag-row">
-                      {match.matchedOn.length > 0 ? (
-                        match.matchedOn.map((field) => (
-                          <Badge key={field} tone="accent">
-                            {MATCH_LABEL[field] ?? field}
-                          </Badge>
-                        ))
-                      ) : (
-                        <Badge tone="info">相机带入</Badge>
-                      )}
+                  <View className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+                    {match.sample.primaryImageUrl ? (
+                      <Image
+                        src={match.sample.primaryImageUrl}
+                        mode="aspectFill"
+                        style={{ width: 48, height: 48, borderRadius: 6, flexShrink: 0 }}
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: 6,
+                          border: "1px dashed #d8d3c8",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 10,
+                          color: "#9a9385",
+                          flexShrink: 0,
+                        }}
+                      >
+                        待补图
+                      </View>
+                    )}
+                    <View>
+                      <View className="list-title">{match.sample.name}</View>
+                      <View className="list-sub">
+                        {match.sample.code} · {match.sample.composition ?? "成分未填"} ·{" "}
+                        {match.sample.weight ?? ""}
+                      </View>
+                      <View className="tag-row">
+                        {match.matchedOn.length > 0 ? (
+                          match.matchedOn.map((field) => (
+                            <Badge key={field} tone="accent">
+                              {MATCH_LABEL[field] ?? field}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge tone="info">相机带入</Badge>
+                        )}
+                      </View>
                     </View>
                   </View>
                   <Badge tone="accent">{(match.score * 100).toFixed(0)}</Badge>

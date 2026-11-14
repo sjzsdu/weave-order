@@ -7,7 +7,6 @@ import {
   QuoteDetail,
   QuoteShare,
   RevisionRequest,
-  T001SearchFabricByImageResult,
 } from "@weave-order/schema";
 import type { CreatedQuoteShare } from "@weave-order/schema";
 
@@ -52,12 +51,6 @@ export interface ShareSummary {
 
 export interface MobileApi extends ApiClient {
   getQuote(quoteId: string): Promise<QuoteDetail>;
-  /**
-   * 以图搜样（直传后按 URL 检索）。
-   * T-001 现支持 imageUrl（与 base64 `image` 二选一）；真后端需配置
-   * MEDIA_ALLOWED_HOSTS 对象存储域名白名单。
-   */
-  searchByImageUrl(imageUrl: string): Promise<T001SearchFabricByImageResult>;
   createRevision(input: z.input<typeof CreateRevisionRequestInput>): Promise<RevisionRequest>;
   decideRevision(input: z.input<typeof DecideRevisionRequestInput>): Promise<RevisionRequest>;
   listQuoteShares(quoteId: string): Promise<ShareSummary[]>;
@@ -168,21 +161,11 @@ export function createMobileApi(
   });
   const post = (path: string, body: unknown) =>
     request(path, { method: "POST", body: JSON.stringify(body) });
-  /** 工具面：4xx 的业务失败按契约对象交回。 */
-  const toolPost = (path: string, body: unknown) =>
-    request(path, { method: "POST", body: JSON.stringify(body) }, { toolFailure: true });
-
   return {
     ...core,
 
     async getQuote(quoteId) {
       return QuoteDetail.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`));
-    },
-
-    async searchByImageUrl(imageUrl) {
-      return T001SearchFabricByImageResult.parse(
-        await toolPost("/api/tools/search-by-image", { imageUrl, topK: 5, minSimilarity: 0.3 }),
-      );
     },
 
     async createRevision(input) {

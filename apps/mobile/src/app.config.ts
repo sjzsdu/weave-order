@@ -4,6 +4,7 @@ export default defineAppConfig({
     "pages/approvals/index",
     "pages/camera/index",
     "pages/customers/index",
+    "pages/samples/index",
     "pages/more/index",
     "pages/quote/index",
     "pages/customer/index",

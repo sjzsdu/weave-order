@@ -4,6 +4,7 @@ import { SampleImageVariant as SampleImageVariantSchema } from "@weave-order/sch
 import { z } from "zod";
 import type { Kernel, KernelContext } from "../kernel";
 import { KernelError } from "../kernel";
+import { mayWriteSamples } from "../kernel/samples.service";
 import type { SampleImageRow } from "../kernel/sample-images.service";
 import type { Env } from "../platform/env";
 import { loadEnv } from "../platform/env";
@@ -81,7 +82,7 @@ export class MediaService {
   }
 
   /** 生成上传预签名。key 由服务端按租户与样品拼出，客户端无权指定。 */
-  async presign(kernel: Kernel, input: unknown): Promise<PresignResult> {
+  async presign(kernel: Kernel, input: unknown, ctx?: KernelContext): Promise<PresignResult> {
     const parsed = PresignInputSchema.safeParse(input);
     if (!parsed.success) {
       throw new KernelError("KERNEL_REJECTED", "上传参数不合法：仅支持 jpeg/png/webp 图片", {
@@ -89,6 +90,10 @@ export class MediaService {
       });
     }
     const { mimeType, byteSize, sampleId } = parsed.data;
+    // 图片是样品的子资源：没有样品写权限的角色（sales / viewer）不能签上传。
+    if (ctx && !mayWriteSamples(ctx.actor.role)) {
+      throw new KernelError("PERMISSION_DENIED", "当前角色没有样品写权限，不能上传样品图");
+    }
     if (byteSize > this.env.MEDIA_MAX_BYTES) {
       throw new KernelError(
         "KERNEL_REJECTED",
@@ -121,6 +126,9 @@ export class MediaService {
    * `sampleId` 从 key 中解析并再次做租户归属校验——客户端无法用一个合法 key 挂到别家样品。
    */
   async confirm(kernel: Kernel, ctx: KernelContext, input: unknown): Promise<ConfirmResult> {
+    if (!mayWriteSamples(ctx.actor.role)) {
+      throw new KernelError("PERMISSION_DENIED", "当前角色没有样品写权限，不能挂载样品图");
+    }
     const parsed = ConfirmInputSchema.safeParse(input);
     if (!parsed.success) {
       throw new KernelError("KERNEL_REJECTED", "确认参数不合法", {
@@ -173,9 +181,11 @@ export class MediaService {
 
   /** 把 DB 行转成读模型；桶非公开时退回签名 URL。 */
   async present(row: SampleImageRow): Promise<SampleImage> {
+    const url = await this.imageUrl(row.objectKey);
     return {
       id: row.id,
-      url: await this.imageUrl(row.objectKey),
+      url,
+      thumbUrl: await this.thumbUrl(row.objectKey),
       variant: row.variant,
       isPrimary: row.isPrimary,
       width: row.width,
@@ -192,6 +202,17 @@ export class MediaService {
       return `${mediaBaseUrl(this.env)}/${objectKey}`;
     }
     // 未配公开读域名 => 桶不公开，发一串短期签名 URL。
+    return this.storage.signGet(objectKey, this.env.MEDIA_PRESIGN_TTL_SECONDS);
+  }
+
+  /**
+   * 图墙缩略图：CDN 支持按查询参数出图时带 `?w=320`，避免 50 张卡片拉原图。
+   * 本地 MinIO 没有图片处理，退回原图签名 URL（前端仍按固定尺寸渲染 + lazy）。
+   */
+  async thumbUrl(objectKey: string, width = 320): Promise<string> {
+    if (this.env.MEDIA_BASE_URL) {
+      return `${mediaBaseUrl(this.env)}/${objectKey}?w=${width}&q=70`;
+    }
     return this.storage.signGet(objectKey, this.env.MEDIA_PRESIGN_TTL_SECONDS);
   }
 

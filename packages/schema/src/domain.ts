@@ -42,6 +42,11 @@ export type SampleImageVariant = z.infer<typeof SampleImageVariant>;
 export const SampleImage = z.object({
   id: EntityId,
   url: z.string().url(),
+  /**
+   * 图墙用的缩略图地址。配了 CDN（`MEDIA_BASE_URL`）时带 `?w=320` 让 CDN 出缩略图，
+   * 未配 CDN 时退回原图签名 URL —— 前端仍然按缩略尺寸渲染，不放大原图。
+   */
+  thumbUrl: z.string().url().nullable().default(null),
   variant: SampleImageVariant,
   isPrimary: z.boolean(),
   width: z.number().int().positive().nullable(),
@@ -193,6 +198,8 @@ export const FabricSample = z.object({
   status: SampleStatus,
   /** 图片读模型；读接口会带上，写回执 / 审批快照等旧路径可以不带。 */
   images: z.array(SampleImage).optional(),
+  /** 主图 URL（`images` 里 `isPrimary` 那张）；无图时为 null。 */
+  primaryImageUrl: z.string().url().nullable().default(null),
   createdAt: Timestamp,
 });
 export type FabricSample = z.infer<typeof FabricSample>;
