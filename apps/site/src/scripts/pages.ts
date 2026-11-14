@@ -70,3 +70,38 @@ document.querySelectorAll<HTMLFormElement>("form[data-mailform]").forEach((form)
     window.location.href = href;
   });
 });
+
+/* --------------------------------------- 帮助中心目录：就地筛选 + 全站搜索 */
+const docSearch = document.getElementById("docSearch") as HTMLInputElement | null;
+const docHub = document.getElementById("docHub");
+
+if (docSearch && docHub) {
+  const cards = Array.from(docHub.querySelectorAll<HTMLElement>(".docs-hub__card"));
+  const entries = cards.map((card) => ({
+    card,
+    items: Array.from(card.querySelectorAll<HTMLElement>("li")),
+  }));
+
+  const applyFilter = (): void => {
+    const query = docSearch.value.trim().toLowerCase();
+    for (const entry of entries) {
+      let visible = 0;
+      for (const item of entry.items) {
+        const match = !query || (item.textContent ?? "").toLowerCase().includes(query);
+        item.hidden = !match;
+        if (match) visible += 1;
+      }
+      entry.card.hidden = Boolean(query) && visible === 0;
+    }
+  };
+
+  docSearch.addEventListener("input", applyFilter);
+  // 目录卡片只覆盖文章标题；按 Enter 升级成全文搜索（报价、发票这类正文关键词）。
+  docSearch.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const search = (window as unknown as { weaveSearch?: { open: (q?: string) => void } })
+      .weaveSearch;
+    search?.open(docSearch.value.trim());
+  });
+}

@@ -5,11 +5,11 @@
   "description": "织序官网与帮助中心：Astro 静态站，构建期产出纯静态 HTML（与其它应用同一个 workspace 包）",
   "type": "module",
   "scripts": {
-    "build": "node scripts/sync-tokens.mjs && astro build",
+    "build": "node scripts/sync-tokens.mjs && astro build && node scripts/build-search-index.mjs",
     "dev": "astro dev",
     "preview": "astro preview",
     "typecheck": "astro check",
-    "test": "astro build && vitest run"
+    "test": "astro build && node scripts/build-search-index.mjs && vitest run"
   },
   "dependencies": {
     "@astrojs/mdx": "^4.3.14",

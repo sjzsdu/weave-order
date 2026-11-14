@@ -33,12 +33,30 @@ Astro 5 + Tailwind 4 + MDX 内容集合，构建期产出纯静态 HTML，nginx 
 pnpm --filter @weave-order/site dev     # 开发服务器，默认 http://localhost:4321
 pnpm --filter @weave-order/site build   # 构建到 dist/
 pnpm --filter @weave-order/site preview # 预览构建产物
-pnpm --filter @weave-order/site test    # 构建 + 产物体检（页面、SEO、链接、sitemap）
+pnpm --filter @weave-order/site test    # 构建 + 产物体检（页面、SEO、链接、sitemap、搜索）
 ```
 
 `build` 会先跑 `scripts/sync-tokens.mjs`：从 `packages/ui/src/tokens.ts` 生成
 `src/styles/theme.css`（Tailwind v4 的 `@theme` 变量）。所以改品牌色只改
 `packages/ui` 一处，站点和其它应用同步。
+
+构建的最后一步是 `scripts/build-search-index.mjs`：从 `dist/**/*.html` 抽取
+「页面 → 章节」结构，生成 `dist/search-index.json`。它不读源码，读的是渲染后的
+HTML，所以首页、价格、下载这些非 Markdown 页面也进索引；`<header>`、`<footer>`、
+`<aside>` 会被剔掉，避免每篇文档都因为侧栏目录而命中。
+
+## 站内搜索
+
+纯前端，没有后端、不联网、不埋点：
+
+- 入口：页头「搜索」按钮、`⌘K` / `Ctrl+K`、`/`、`?q=报价` 直接打开
+- 匹配：`src/lib/search.ts`（纯函数，有单测）。中文按二元组切词，英文按词切；
+  标题 > 章节标题 > 描述 > 正文加权，结果直接带章节锚点
+- 界面：`src/scripts/search.ts` 负责对话框、键盘上下选择、Esc 关闭、焦点回收
+- 帮助中心目录的输入框会就地筛选卡片，按 Enter 升级成全站搜索
+
+开发服务器（`astro dev`）不产出 `dist/search-index.json`，搜索会提示索引未生成；
+跑一次 `build` 或 `preview` 即可。索引随页面内容一起发版，没有单独的数据管道。
 
 ## 改帮助文档
 
