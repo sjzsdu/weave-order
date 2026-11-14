@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
+import { publicOrigin } from "@/src/public-origin";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ function base64url(buffer: Buffer): string {
 export function GET(request: NextRequest) {
   const issuer = (process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com").replace(/\/$/, "");
   const clientId = process.env.CASDOOR_PLATFORM_CLIENT_ID ?? "weave-platform";
-  const origin = process.env.PLATFORM_PUBLIC_URL ?? request.nextUrl.origin;
+  const origin = publicOrigin(request.nextUrl.origin);
   const redirectUri = `${origin}/auth/callback`;
   const next = request.nextUrl.searchParams.get("next") ?? "/";
 

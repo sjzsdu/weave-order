@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { publicOrigin } from "@/public-origin";
 
 export const runtime = "nodejs";
 
@@ -18,9 +19,12 @@ export async function GET(request: NextRequest) {
   const state = params.get("state");
   const error = params.get("error");
   const next = request.cookies.get("weave_oidc_next")?.value ?? "/today";
+  // 回跳地址必须用公网地址：容器内 request.nextUrl.origin 是内部地址（localhost:3001），
+  // 直接拿它拼 Location 会把浏览器带回容器内部地址。
+  const origin = publicOrigin(request.nextUrl.origin);
 
   const fail = (message: string) =>
-    NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));
+    NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, origin));
 
   if (error) return fail(params.get("error_description") ?? error);
   if (!code) return fail("缺少授权码");
@@ -29,7 +33,7 @@ export async function GET(request: NextRequest) {
   const issuer = (process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com").replace(/\/$/, "");
   const clientId = process.env.CASDOOR_CLIENT_ID ?? "weave-order-web";
   const clientSecret = process.env.CASDOOR_CLIENT_SECRET;
-  const redirectUri = `${process.env.PUBLIC_APP_URL ?? request.nextUrl.origin}/auth/callback`;
+  const redirectUri = `${origin}/auth/callback`;
   const verifier = request.cookies.get("weave_oidc_verifier")?.value;
 
   const form = new URLSearchParams({
@@ -58,7 +62,7 @@ export async function GET(request: NextRequest) {
   const token = body.id_token ?? body.data?.id_token ?? body.access_token ?? body.data?.access_token;
   if (!token) return fail("身份服务未返回令牌");
 
-  const response = NextResponse.redirect(new URL(next, request.url));
+  const response = NextResponse.redirect(new URL(next, origin));
   const secure = process.env.NODE_ENV === "production";
   response.cookies.set("weave_token", token, {
     // 只走同源 BFF 转发；浏览器脚本永远读不到原始 OIDC token。

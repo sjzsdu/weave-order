@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { publicOrigin } from "@/public-origin";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
       cache: "no-store",
     }).catch(() => undefined);
   }
-  const response = NextResponse.redirect(new URL("/login", request.url));
+  const response = NextResponse.redirect(new URL("/login", publicOrigin(request.nextUrl.origin)));
   response.cookies.delete("weave_token");
   response.cookies.delete("weave_demo");
   response.cookies.delete("weave_sid");

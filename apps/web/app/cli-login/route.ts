@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { publicOrigin } from "@/public-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,7 +134,7 @@ export function GET(request: NextRequest): NextResponse {
   const userCode = request.nextUrl.searchParams.get("user_code") ?? "";
   if (!tokenFromRequest(request)) {
     const next = encodeURIComponent(`/cli-login?user_code=${userCode}`);
-    return NextResponse.redirect(new URL(`/auth/login?next=${next}`, request.url));
+    return NextResponse.redirect(new URL(`/auth/login?next=${next}`, publicOrigin(request.nextUrl.origin)));
   }
   return html(page({ userCode }));
 }
@@ -148,7 +149,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const token = tokenFromRequest(request);
   if (!token) {
     const next = encodeURIComponent(`/cli-login?user_code=${userCode}`);
-    return NextResponse.redirect(new URL(`/auth/login?next=${next}`, request.url));
+    return NextResponse.redirect(new URL(`/auth/login?next=${next}`, publicOrigin(request.nextUrl.origin)));
   }
 
   let upstream: Response;
