@@ -108,11 +108,10 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 WEAVE_SITE_URL=https://weave.wnbgj.com WEAVE_APP_URL=https://app.wnbgj.com \
   sh site/deploy/configure-env.sh
 
-# 2) 构建镜像（域名固化在构建期，运行时零依赖）
-docker build -f site/Dockerfile \
-  --build-arg WEAVE_SITE_URL=https://weave.wnbgj.com \
-  --build-arg WEAVE_APP_URL=https://app.wnbgj.com \
-  -t sjzsdu/weave-order-site:dev .
+# 2) 构建镜像（域名在容器启动时注入，构建产物与环境无关）
+docker build -f site/Dockerfile -t sjzsdu/weave-order-site:dev .
+docker run -e WEAVE_SITE_URL=https://weave.wnbgj.com \
+  -e WEAVE_APP_URL=https://app.wnbgj.com -p 8080:80 sjzsdu/weave-order-site:dev
 
 # 3) rsync 到已有 nginx（在临时目录里替换，不改工作区）
 WEAVE_SITE_URL=https://weave.wnbgj.com \
@@ -131,7 +130,7 @@ node site/tools/configure.mjs --site https://weave.wnbgj.com --dry-run
 
 脚本之外还有三处要一起改：
 
-1. `apps/web` 的 `NEXT_PUBLIC_MARKETING_URL`（登录页「申请开通 / 帮助中心 / 返回官网」）与 `NEXT_PUBLIC_SUPPORT_EMAIL`；统一登录地址复用 `CASDOOR_ISSUER`。
+1. 部署侧给工作台容器配 `MARKETING_URL`（登录页「申请开通 / 帮助中心 / 返回官网」）与 `SUPPORT_EMAIL`；两者都是运行时读取，换域名不用重新构建。统一登录地址复用 `CASDOOR_ISSUER`。
 2. Casdoor `weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。
 3. 国内服务器补 ICP 备案号与公安备案号（页脚）。
 
@@ -168,8 +167,9 @@ site/
 ├── deploy/
 │   ├── configure-env.sh  用 WEAVE_* 环境变量改写全站
 │   ├── nginx.conf        静态托管配置
+│   ├── entrypoint.sh     容器启动时渲染域名（运行时配置）
 │   └── publish.sh        rsync 发布脚本
-├── Dockerfile            官网镜像（构建期注入域名 + nginx）
+├── Dockerfile            官网镜像（运行时注入域名 + nginx）
 ├── llms.txt / robots.txt / sitemap.xml
 └── README.md
 ```
@@ -198,4 +198,4 @@ site/
 
 这是独立的静态营销站，不参与 pnpm workspace。品牌变量（墨、纸、靛蓝、朱砂）与 `packages/ui/src/tokens.ts` 同源，改色时两处一起改。
 
-登录页的「申请开通」「帮助中心」「返回官网」指向 `NEXT_PUBLIC_MARKETING_URL`（见 `.env.example`），上线时改成正式域名即可，不需要改代码。
+登录页的「申请开通」「帮助中心」「返回官网」指向部署环境变量 `MARKETING_URL`（经工作台的 `/config.js` 在运行时下发），换域名不需要改代码、也不需要重新构建。

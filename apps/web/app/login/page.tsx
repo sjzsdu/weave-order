@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { SupportMailto } from "@/support";
 
-const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
-
 // 统一登录地址与 OIDC issuer 是同一个，部署时只配一处。
 const SSO_URL = process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com";
 
@@ -13,6 +11,12 @@ export default async function LoginPage({
 }) {
   const { error, next } = await searchParams;
   const target = next ?? "/today";
+  // 官网地址由部署环境的 MARKETING_URL 决定（服务端读取，不内联进客户端包）。
+  const marketingUrl = (
+    process.env.MARKETING_URL ??
+    process.env.NEXT_PUBLIC_MARKETING_URL ??
+    "https://weaveorder.cn"
+  ).replace(/\/+$/, "");
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
@@ -42,7 +46,7 @@ export default async function LoginPage({
             忘记密码
           </a>
           <a
-            href={`${MARKETING_URL}/signup.html`}
+            href={`${marketingUrl}/signup.html`}
             className="underline underline-offset-4 hover:text-indigo-600"
           >
             还没有账号？申请开通
@@ -74,7 +78,7 @@ export default async function LoginPage({
         <p className="mt-3 text-xs">
           更多说明见{" "}
           <a
-            href={`${MARKETING_URL}/docs/faq.html`}
+            href={`${marketingUrl}/docs/faq.html`}
             className="text-indigo-600 underline underline-offset-4"
           >
             帮助中心的登录与账号
@@ -105,7 +109,7 @@ export default async function LoginPage({
         客户查看报价不需要登录：报价链接打开即可看。登录只给内部同事使用，我们不保存你的密码。
       </p>
       <p className="mt-2 text-xs text-ink-400">
-        <a href={MARKETING_URL} className="underline underline-offset-4 hover:text-indigo-600">
+        <a href={marketingUrl} className="underline underline-offset-4 hover:text-indigo-600">
           返回官网
         </a>
       </p>

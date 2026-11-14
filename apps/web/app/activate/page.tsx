@@ -28,5 +28,11 @@ export default async function ActivatePage({
     const next = `/activate?code=${encodeURIComponent(code ?? "")}`;
     redirect(`/auth/login?next=${encodeURIComponent(next)}`);
   }
-  return <ActivateClient code={code ?? ""} />;
+  // 官网地址按部署环境读取，不写进客户端包。
+  const marketingUrl = (
+    process.env.MARKETING_URL ??
+    process.env.NEXT_PUBLIC_MARKETING_URL ??
+    "https://weaveorder.cn"
+  ).replace(/\/+$/, "");
+  return <ActivateClient code={code ?? ""} marketingUrl={marketingUrl} />;
 }

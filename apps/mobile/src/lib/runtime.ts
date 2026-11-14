@@ -36,7 +36,16 @@ export const IS_RN = TARO_ENV === "rn";
  * `scripts/check-prod-bundle.mjs` 在 `pnpm build` 末尾断言产物中不含 mock 代码。
  */
 export const IS_MOCK = process.env.TARO_APP_MOCK === "1" && process.env.NODE_ENV !== "production";
-export const API_BASE_URL = process.env.TARO_APP_API_BASE ?? "http://localhost:3000";
+
+/**
+ * API 基址优先级：
+ *   1. H5 托管层注入的 `window.__WEAVE_API_BASE__`（部署时决定，同一镜像可换域名）
+ *   2. 构建期 `TARO_APP_API_BASE`（小程序 / RN 没有注入层时的回落）
+ *   3. 本地默认
+ */
+const RUNTIME_API_BASE =
+  typeof window === "undefined" ? "" : (window.__WEAVE_API_BASE__ ?? "").trim();
+export const API_BASE_URL = RUNTIME_API_BASE || process.env.TARO_APP_API_BASE || "http://localhost:3000";
 
 const TOKEN_KEY = "weave.session.token";
 

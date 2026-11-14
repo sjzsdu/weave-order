@@ -19,8 +19,6 @@ IMAGE_NAME="${IMAGE_NAME:-weave-order}"
 TAG="${TAG:-$(git rev-parse --short=12 HEAD)}"
 # 移动端 PWA 的 API 基址在构建期固化（Taro defineConstants）
 WEAVE_PUBLIC_API_BASE="${WEAVE_PUBLIC_API_BASE:-https://weave-api.wnbgj.com}"
-# 登录页「返回官网 / 帮助中心」的官网地址（NEXT_PUBLIC_* 编译期内联）
-WEAVE_MARKETING_URL="${WEAVE_MARKETING_URL:-https://weaveorder.cn}"
 PUSH="${PUSH:-1}"
 
 IMAGE="${IMAGE_PREFIX}/${IMAGE_NAME}:${TAG}"
@@ -28,11 +26,9 @@ LATEST="${IMAGE_PREFIX}/${IMAGE_NAME}:latest"
 
 echo "镜像:                 ${IMAGE}"
 echo "移动端 API 基址(构建期): ${WEAVE_PUBLIC_API_BASE}"
-echo "官网地址(构建期):        ${WEAVE_MARKETING_URL}"
 
 docker build \
   --build-arg "TARO_APP_API_BASE=${WEAVE_PUBLIC_API_BASE}" \
-  --build-arg "NEXT_PUBLIC_MARKETING_URL=${WEAVE_MARKETING_URL}" \
   -t "${IMAGE}" -t "${LATEST}" .
 
 echo "✅ 构建完成: ${IMAGE}"

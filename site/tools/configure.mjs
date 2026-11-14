@@ -203,7 +203,7 @@ console.log(
   [
     "",
     "另外两处需要在部署环境里设置，不在静态站内：",
-    "  1. apps/web 的 NEXT_PUBLIC_MARKETING_URL（登录页「申请开通 / 帮助中心 / 返回官网」指向的官网地址）。",
+    "  1. 部署侧工作台容器的 MARKETING_URL / SUPPORT_EMAIL（登录页「申请开通 / 帮助中心 / 返回官网」与客服邮箱，运行时读取）。",
     "  2. Casdoor 应用 weave-order-web 的回调地址必须包含 <应用域名>/auth/callback；不设 PUBLIC_APP_URL 时应用按请求来源推导。",
   ].join("\n"),
 );

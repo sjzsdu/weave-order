@@ -5,15 +5,20 @@ import type { OnboardingPreview, OnboardingResult } from "@weave-order/schema";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 
-const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
-
 /**
  * 开通链接落地页。
  *
  * 三种状态：查看（这是哪家公司）→ 领取（建公司 + 成为老板）→ 进入工作台。
  * 领取是幂等的：老板手滑刷新两次，第二次直接告诉他「已经在里面了」。
  */
-export function ActivateClient({ code }: { code: string }) {
+export function ActivateClient({
+  code,
+  marketingUrl,
+}: {
+  code: string;
+  /** 官网地址，由服务端按部署环境的 MARKETING_URL 传入。 */
+  marketingUrl: string;
+}) {
   const api = useApi();
   const [preview, setPreview] = useState<OnboardingPreview | null>(null);
   const [result, setResult] = useState<OnboardingResult | null>(null);
@@ -81,7 +86,7 @@ export function ActivateClient({ code }: { code: string }) {
           进入工作台
         </a>
         <a
-          href={`${MARKETING_URL}/docs/quickstart.html`}
+          href={`${marketingUrl}/docs/quickstart.html`}
           className="mt-3 text-xs text-ink-400 underline underline-offset-4"
         >
           先看 5 分钟上手

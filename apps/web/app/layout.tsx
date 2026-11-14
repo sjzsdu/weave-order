@@ -19,6 +19,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN">
+      <head>
+        {/*
+          部署期配置：官网地址与支持邮箱由容器环境变量决定，运行时读取。
+          defer 保证在 hydration 之前执行；内容来自本服务的 /config.js，
+          不用 NEXT_PUBLIC_*（那会把域名内联进构建产物）。
+        */}
+        <script src="/config.js" defer />
+      </head>
       <body>
         <ClientRoot>{children}</ClientRoot>
       </body>
