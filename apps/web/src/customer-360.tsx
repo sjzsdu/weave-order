@@ -106,6 +106,9 @@ export function Customer360Panel({
 
   const kinds: CustomerTimelineKind[] = filter === "all" ? [] : [filter];
   const timeline = useCustomerTimeline(api, customerId, kinds);
+  // 分享按钮要的是「有没有已发出的报价」，不能被当前时间线筛选影响；
+  // filter=all 时与上面的 query 同 key，不会多发请求。
+  const allTimeline = useCustomerTimeline(api, customerId, []);
 
   // 抽屉可以用 Esc 关掉，键盘用户不用去够右上角。
   useEffect(() => {
@@ -163,7 +166,7 @@ export function Customer360Panel({
   const customer = data.customer;
   const context = data.context;
 
-  const sentQuote = timeline.events.find(
+  const sentQuote = allTimeline.events.find(
     (event) => event.kind === "quote" && event.status === "SENT",
   );
 

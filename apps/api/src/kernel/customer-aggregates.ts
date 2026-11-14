@@ -114,22 +114,16 @@ function aggregateColumns(): SQL {
         AND receivables.customer_id = customers.id
         AND receivables.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
         AND receivables.due_date < now()) AS overdue_receivable_count,
+    -- 「最近联系」只算真实往来（报价 / 寄样 / 订单）；客户档案被编辑不算联系，
+    -- 三者都没有时为 NULL，页面显示「还没有往来记录」而不是假装刚联系过。
     GREATEST(
-      customers.updated_at,
-      COALESCE((SELECT max(quotes.created_at) FROM quotes
+      (SELECT max(quotes.created_at) FROM quotes
         WHERE quotes.tenant_id = customers.tenant_id AND quotes.customer_id = customers.id),
-        customers.updated_at),
-      COALESCE((SELECT max(sample_shipments.created_at) FROM sample_shipments
+      (SELECT max(sample_shipments.created_at) FROM sample_shipments
         WHERE sample_shipments.tenant_id = customers.tenant_id
           AND sample_shipments.customer_id = customers.id),
-        customers.updated_at),
-      COALESCE((SELECT max(orders.created_at) FROM orders
-        WHERE orders.tenant_id = customers.tenant_id AND orders.customer_id = customers.id),
-        customers.updated_at),
-      COALESCE((SELECT max(customer_contexts.updated_at) FROM customer_contexts
-        WHERE customer_contexts.tenant_id = customers.tenant_id
-          AND customer_contexts.customer_id = customers.id),
-        customers.updated_at)
+      (SELECT max(orders.created_at) FROM orders
+        WHERE orders.tenant_id = customers.tenant_id AND orders.customer_id = customers.id)
     ) AS last_contact_at
   `;
 }

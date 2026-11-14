@@ -42,7 +42,7 @@ export const CustomerListItem = Customer.extend({
   receivableBalance: MoneyByCurrency,
   /** 逾期应收笔数：未付且已过到期日。 */
   overdueReceivableCount: z.number().int().nonnegative(),
-  /** 最近往来：客户档案、报价、寄样、订单里最新的一次动作。 */
+  /** 最近往来：报价 / 寄样 / 订单里最新的一次；没有真实往来为 null。 */
   lastContactAt: Timestamp.nullable(),
 }).strict();
 export type CustomerListItem = z.infer<typeof CustomerListItem>;

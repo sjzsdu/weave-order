@@ -106,7 +106,8 @@ export function useCustomer360(customerId: string) {
 export function useCustomerTimeline(customerId: string, limit = 50) {
   const cached = readCache<CustomerTimelinePage>(`customerTimeline.${customerId}.${limit}`);
   return useQuery({
-    queryKey: queryKeys.customerTimeline(customerId, []),
+    // limit 属于请求参数，进 key，避免不同页大小共用一份缓存。
+    queryKey: [...queryKeys.customerTimeline(customerId, []), limit],
     queryFn: async () => {
       const data = await api.customerTimeline(customerId, { limit });
       writeCache(`customerTimeline.${customerId}.${limit}`, data);

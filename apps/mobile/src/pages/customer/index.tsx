@@ -1,6 +1,7 @@
 import { Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useState } from "react";
+import { ApiError } from "@weave-order/core";
 import type { CustomerTimelineEvent } from "@weave-order/schema";
 import {
   Amount,
@@ -90,9 +91,19 @@ export default function CustomerPage() {
   }
 
   if (detail.isError || !customer || !summary) {
+    const notFound = detail.error instanceof ApiError && detail.error.status === 404;
     return (
       <Page>
-        <EmptyState title="客户不存在" desc="可能已交接给其他同事，或链接已过期。" />
+        <EmptyState
+          title={notFound ? "客户不存在" : "客户 360 暂时不可用"}
+          desc={
+            notFound
+              ? "可能已交接给其他同事，或链接已过期。"
+              : detail.error instanceof Error
+                ? detail.error.message
+                : "请稍后重试。"
+          }
+        />
       </Page>
     );
   }

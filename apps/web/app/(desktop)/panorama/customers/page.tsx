@@ -143,7 +143,11 @@ function CustomersPageContent() {
         </label>
 
         <span className="ml-auto text-xs text-ink-400">
-          {customers.data ? `${customers.data.length} 位客户` : "正在汇总…"}
+          {customers.data
+            ? customers.data.length >= PAGE_SIZE
+              ? `显示前 ${PAGE_SIZE} 位，用搜索缩小范围`
+              : `${customers.data.length} 位客户`
+            : "正在汇总…"}
         </span>
       </section>
 

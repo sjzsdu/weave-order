@@ -305,6 +305,11 @@ describe("客户 360（真连 PG）", () => {
     const overdue = await kernel.customers.list({ overdueOnly: true, limit: 10 }, asSales);
     expect(overdue.map((entry) => entry.id)).toEqual([customer.id]);
 
+    // 没有任何报价/寄样/订单的客户，「最近联系」必须是 null，不能拿档案更新时间冒充。
+    const managerList = await kernel.customers.list({ limit: 10, owner: "all" }, asManager);
+    const otherRow = managerList.find((entry) => entry.id === otherCustomer.id);
+    expect(otherRow?.lastContactAt).toBeNull();
+
     // HTTP 面：销售打开主管的客户 -> 404（不是 403，也不泄露存在性）。
     const salesAuth = `Bearer dev:sales-c360-${id}:${org}`;
     const managerAuth = `Bearer dev:manager-c360-${id}:${org}`;
