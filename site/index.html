@@ -134,8 +134,8 @@
         <a href="#faq">常见问题</a>
       </div>
       <div class="nav__actions">
-        <a class="btn btn--ghost btn--sm" href="login.html">登录</a>
-        <a class="btn btn--primary btn--sm" href="signup.html">免费试用</a>
+        <a class="btn btn--ghost btn--sm" href="login.html" data-login="site-nav">登录</a>
+        <a class="btn btn--primary btn--sm" href="signup.html" data-cta="nav">免费试用</a>
         <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
         </button>
@@ -154,13 +154,13 @@
           <h1 class="hero__title">你说生意，<br /><em>系统做单</em>。</h1>
           <p class="hero__lede">报价、寄样、跟单、对账，智能体做完，你只点头。织序不是「带 AI 功能的纺织 ERP」，而是让<strong>智能体成为默认操作者</strong>的业务系统：它听懂一句话、自己找样、自己起草、自己跟进，人只在最后一张卡上做决定。</p>
           <div class="hero__actions">
-            <a class="btn btn--primary" href="signup.html">
+            <a class="btn btn--primary" href="signup.html" data-cta="hero">
               免费试用 3 天
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
-            <a class="btn btn--ghost" href="#how">看它怎么跑一单</a>
+            <a class="btn btn--ghost" href="#how" data-cta="hero">看它怎么跑一单</a>
           </div>
-          <p class="muted" style="font-size:12.5px;margin:12px 0 0">不绑卡 · 1 分钟创建公司 · 已开通的直接 <a href="login.html" style="color:var(--indigo);text-decoration:underline;text-underline-offset:3px">登录工作台</a></p>
+          <p class="muted" style="font-size:12.5px;margin:12px 0 0">不绑卡 · 1 分钟创建公司 · 已开通的直接 <a href="login.html" data-login="site-hero" style="color:var(--indigo);text-decoration:underline;text-underline-offset:3px">登录工作台</a></p>
           <dl class="hero__meta">
             <div>
               <dt>10 分钟</dt>
@@ -671,7 +671,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>Excel / CSV 冷启动导入</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>手机端同权</li>
           </ul>
-          <a class="btn btn--ghost" href="signup.html?plan=basic">开始 3 天试用</a>
+          <a class="btn btn--ghost" href="signup.html?plan=basic" data-cta="pricing-card" data-cta-label="基础套餐">开始 3 天试用</a>
         </article>
 
         <article class="plan plan--featured">
@@ -686,7 +686,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>对账、回款核销、逾期分级</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>自然语言取数</li>
           </ul>
-          <a class="btn btn--primary" href="signup.html?plan=pro">开始 3 天试用</a>
+          <a class="btn btn--primary" href="signup.html?plan=pro" data-cta="pricing-card" data-cta-label="专业套餐">开始 3 天试用</a>
         </article>
 
         <article class="plan">
@@ -699,7 +699,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>模型与数据区域可选</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>专属陪跑与培训</li>
           </ul>
-          <a class="btn btn--ghost" href="signup.html?plan=enterprise">联系我们</a>
+          <a class="btn btn--ghost" href="signup.html?plan=enterprise" data-cta="pricing-card" data-cta-label="定制套餐">联系我们</a>
         </article>
       </div>
       <p class="pricing__note">含固定账号数 · 年付送 2 个月 · credits 每月重置 · 试点期按「帮你把这周 20 张报价做完」结算</p>
@@ -847,8 +847,8 @@
       <div>
         <h4>公司与支持</h4>
         <ul>
-          <li><a href="signup.html">联系与开通</a></li>
-          <li><a href="login.html">登录入口</a></li>
+          <li><a href="signup.html" data-cta="footer">联系与开通</a></li>
+          <li><a href="login.html" data-login="site-footer">登录入口</a></li>
           <li><a href="docs/security.html">隐私与数据安全</a></li>
           <li><a href="legal.html">服务条款</a></li>
           <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
@@ -865,5 +865,7 @@
 <script src="assets/main.js" defer></script>
 <script src="assets/pages.js" defer></script>
 <script src="assets/search.js" defer></script>
+<script src="assets/analytics.config.js" defer></script>
+<script src="assets/analytics.js" defer></script>
 </body>
 </html>

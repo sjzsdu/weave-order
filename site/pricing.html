@@ -83,8 +83,8 @@
         <a href="index.html#faq">常见问题</a>
       </div>
       <div class="nav__actions">
-        <a class="btn btn--ghost btn--sm" href="login.html">登录</a>
-        <a class="btn btn--primary btn--sm" href="signup.html">免费试用</a>
+        <a class="btn btn--ghost btn--sm" href="login.html" data-login="site-nav">登录</a>
+        <a class="btn btn--primary btn--sm" href="signup.html" data-cta="nav">免费试用</a>
         <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
         </button>
@@ -126,7 +126,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>手机拍照派活、离线补交</li>
           </ul>
           <div class="plan__foot">
-            <a class="btn btn--ghost" href="signup.html?plan=basic">开始 3 天试用</a>
+            <a class="btn btn--ghost" href="signup.html?plan=basic" data-cta="pricing-card" data-cta-label="基础套餐">开始 3 天试用</a>
             <p class="plan__fine">年付 ¥2,990（省 2 个月）</p>
           </div>
         </article>
@@ -144,7 +144,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>自然语言问数、命令行接入</li>
           </ul>
           <div class="plan__foot">
-            <a class="btn btn--primary" href="signup.html?plan=pro">开始 3 天试用</a>
+            <a class="btn btn--primary" href="signup.html?plan=pro" data-cta="pricing-card" data-cta-label="专业套餐">开始 3 天试用</a>
             <p class="plan__fine">年付 ¥8,990（省 2 个月）</p>
           </div>
         </article>
@@ -161,7 +161,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round"/></svg>专属陪跑、SLA 与数据保留期</li>
           </ul>
           <div class="plan__foot">
-            <a class="btn btn--ghost" href="signup.html?plan=enterprise">联系我们</a>
+            <a class="btn btn--ghost" href="signup.html?plan=enterprise" data-cta="pricing-card" data-cta-label="定制套餐">联系我们</a>
             <p class="plan__fine">按合同，年付为主</p>
           </div>
         </article>
@@ -302,8 +302,8 @@
           <p style="margin:0 0 16px;color:#f7f4ee;font-family:var(--font-serif);font-size:19px;font-weight:700">开通与咨询</p>
           <p style="margin:0 0 14px">登录后填个公司名就能创建，几秒建好，试用期 3 天。也可以先约 20 分钟演示，用你自己的客户数据跑一张报价草稿。</p>
           <p style="margin:0 0 20px;font-size:12.5px;color:rgba(247,244,238,.55)">邮箱 <a href="mailto:hello@weaveorder.cn" style="color:inherit;text-decoration:underline;text-underline-offset:3px">hello@weaveorder.cn</a> · 工作日 9:00–18:00</p>
-          <a class="btn btn--light" href="signup.html" style="width:100%">登记开通</a>
-          <a class="btn btn--outline-light" href="index.html#demo" style="width:100%;margin-top:10px">先看演示</a>
+          <a class="btn btn--light" href="signup.html" data-cta="pricing-cta" style="width:100%">登记开通</a>
+          <a class="btn btn--outline-light" href="index.html#demo" data-cta="pricing-cta" style="width:100%;margin-top:10px">先看演示</a>
         </div>
       </div>
     </div>
@@ -342,8 +342,8 @@
       <div>
         <h4>公司</h4>
         <ul>
-          <li><a href="signup.html">联系与开通</a></li>
-          <li><a href="login.html">登录入口</a></li>
+          <li><a href="signup.html" data-cta="footer">联系与开通</a></li>
+          <li><a href="login.html" data-login="site-footer">登录入口</a></li>
           <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
           <li><a href="https://github.com/sjzsdu/weave-order">GitHub</a></li>
         </ul>
@@ -359,5 +359,7 @@
 <script src="assets/main.js" defer></script>
 <script src="assets/pages.js" defer></script>
 <script src="assets/search.js" defer></script>
+<script src="assets/analytics.config.js" defer></script>
+<script src="assets/analytics.js" defer></script>
 </body>
 </html>

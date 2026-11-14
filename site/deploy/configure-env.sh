@@ -18,6 +18,13 @@ add admin WEAVE_ADMIN_URL
 add sso WEAVE_SSO_URL
 add email WEAVE_SUPPORT_EMAIL
 
+# 访问统计：与域名同样在部署期决定，写进 assets/analytics.config.js。
+# 不填 provider 就不生成统计配置，页面完全静默。
+add analytics-provider WEAVE_ANALYTICS_PROVIDER
+add analytics-domain WEAVE_ANALYTICS_DOMAIN
+add analytics-host WEAVE_ANALYTICS_HOST
+add analytics-key WEAVE_ANALYTICS_KEY
+
 if [ -z "$args" ]; then
   echo "[site] 没有提供 WEAVE_* 环境变量，沿用 site/site.config.json"
   exit 0

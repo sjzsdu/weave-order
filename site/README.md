@@ -89,6 +89,82 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 - 排序权重：页面标题 8、h1 5、description 3、正文 1；章节标题 6、章节正文 4。结果指向最近一次命中的章节锚点。
 - 改完页面内容后重新跑一次索引脚本，否则搜不到新段落的原文。
 
+## 访问统计
+
+官网与工作台（`apps/web`）共用一套 cookieless 事件，provider 二选一（Plausible / PostHog），按部署环境切换，默认 `none`。没有 Cookie 同意弹窗：不写 Cookie、不做跨站追踪、不采集邮箱 / 手机号 / 公司名，只发匿名事件本身。
+
+### 事件表
+
+| 事件                   | 触发点                                                     | 属性                        | 说明                                                                        |
+| ---------------------- | ---------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------- |
+| `pageview`             | 自动                                                       | —                           | 页面浏览。Plausible 脚本自带；PostHog 由我们的代码发，两个 provider 事件名一致 |
+| `cta_click`            | 首页 / 价格页 / 开通页 / 下载页 / 帮助中心 / 页脚的关键按钮 | `location` `label` `target` | `label` 默认取链接文案，`target` 默认取 `href`；`location` 取值见下          |
+| `signup_form_submit`   | 官网表单成功交给邮件客户端                                 | —                           | 首页「提交预约」与开通页「登记开通」各记一次；不读表单内容                  |
+| `login_click`          | 登录入口                                                   | `from`                      | `site-nav` / `site-hero` / `site-footer` / `login-page` / `activate-page`   |
+| `activate_link_opened` | 工作台 `/activate` 预览成功                                | —                           | 开通链接真的被人打开（不是打开就关）                                        |
+| `activate_completed`   | 工作台 `/activate` 领取成功                                | —                           | 成为公司老板账号                                                            |
+| `invite_created`       | 工作台设置页「邀请同事」成功                               | `role`                      | 只记角色，不记同事邮箱与手机号                                              |
+| `invite_accepted`      | 工作台 `/join` 接受邀请成功                                | `role`                      | 只记角色                                                                    |
+
+`cta_click.location` 固定取值（表外的值收敛成 `other`，避免分组碎成长尾）：`nav`、`hero`、`pricing-card`、`pricing-cta`、`footer`、`docs`、`download`。
+
+### 配置（与域名同一套部署期机制）
+
+官网：容器启动时给下面四个变量即可，`configure.mjs` 会把它们写进 `assets/analytics.config.js`（页面统一引用这一份，不改 17 个 HTML）：
+
+| 变量                      | 说明                                                          |
+| ------------------------- | ------------------------------------------------------------- |
+| `WEAVE_ANALYTICS_PROVIDER` | `plausible` / `posthog` / `none`（不填等于 none，完全静默）   |
+| `WEAVE_ANALYTICS_DOMAIN`   | Plausible 统计的站点域名（PostHog 不需要）                    |
+| `WEAVE_ANALYTICS_HOST`     | 自建地址，如 `https://stats.weaveorder.cn`；留空用官方默认     |
+| `WEAVE_ANALYTICS_KEY`      | PostHog project key（`phc_` 开头）                            |
+
+```bash
+docker run -e WEAVE_SITE_URL=https://weaveorder.cn \
+  -e WEAVE_ANALYTICS_PROVIDER=plausible -e WEAVE_ANALYTICS_DOMAIN=weaveorder.cn \
+  -p 8080:80 sjzsdu/weave-order-site:dev
+# 或本地直接改：node site/tools/configure.mjs --analytics-provider plausible --analytics-domain weaveorder.cn
+```
+
+`none` 会清空域名与密钥，并让页面完全静默：不注入第三方脚本、不发任何请求。`nginx.conf` 已对 `analytics.config.js` 设 `no-cache`，换部署环境不会读到旧配置；开启 Do Not Track 或全局隐私控制时同样不发请求。
+
+工作台：与 `MARKETING_URL` 同一套运行时配置，服务端环境变量经 `/config.js` 下发给浏览器，**不用 `NEXT_PUBLIC_*`**（那会被内联进镜像，同一个镜像就换不了域名）：
+
+```
+ANALYTICS_PROVIDER=plausible     # plausible | posthog | 留空
+ANALYTICS_DOMAIN=weave.wnbgj.com
+ANALYTICS_HOST=https://plausible.io
+ANALYTICS_KEY=                   # 只有 PostHog 需要
+```
+
+### 给 CTA 加埋点
+
+给链接加 `data-cta`，可选 `data-cta-label` / `data-cta-target` 覆盖默认文案与目标：
+
+```html
+<a class="btn btn--primary" href="signup.html" data-cta="hero">免费试用 3 天</a>
+<a class="btn btn--ghost" href="signup.html?plan=basic" data-cta="pricing-card"
+   data-cta-label="基础套餐">开始 3 天试用</a>
+<!-- 登录入口用 data-login，不要用 data-cta -->
+<a class="btn btn--ghost" href="login.html" data-login="site-nav">登录</a>
+```
+
+点击是事件委托（`assets/analytics.js` 捕获阶段监听），新增按钮不用改 `main.js`。工作台里用 `TrackedLink`（服务端页面）或直接调 `track("事件名", { ... })`。
+
+### 加一个新事件
+
+1. 在 `site/assets/analytics.js` 与 `apps/web/src/analytics.ts` 的 `EVENT_PROPS` 里**同时**加一行（两处必须一致，`apps/web/src/analytics.test.ts` 会比对整张字典）。
+2. 属性只能放白名单里的键。值含 `@` 或 7 位以上连续数字会被丢弃（邮箱、手机号、单据号）。
+3. 在触发点调 `window.weaveAnalytics.track("事件名", { ... })` 或 `track("事件名", { ... })`。
+4. 补用例：`site/tools/analytics.test.mjs`、`apps/web/src/analytics.test.ts`。
+5. 在上面的「事件表」补一行，写清触发点与属性。
+
+### 自查
+
+- **未配置 provider**：`pnpm test:site` 覆盖「不注入脚本、不留全局变量」；浏览器打开首页，Network 里只有本站资源与 `/assets/analytics.config.js`。
+- **配置后**：点首页「免费试用 3 天」，Plausible 后台 Events 出现 `cta_click`，按 `location` 分组能看到 `hero`。
+- **隐私**：点页脚邮箱链接，事件里不应出现 `hello@weaveorder.cn`（含 `@` 的值会被丢弃）。
+
 ## 部署：域名由环境变量在部署时决定
 
 站点里所有绝对地址（canonical、OG、JSON-LD、sitemap、llms.txt、正文里的裸域名）都来自 `site/site.config.json`，部署时用环境变量覆盖：
@@ -100,6 +176,7 @@ node site/tools/build-docs.mjs   # 覆盖生成 8 篇文章页
 | `WEAVE_ADMIN_URL`     | 平台管理后台                                |
 | `WEAVE_SSO_URL`       | 统一登录（忘记密码）                        |
 | `WEAVE_SUPPORT_EMAIL` | 客服邮箱（页脚、错误页、mailto）            |
+| `WEAVE_ANALYTICS_*`   | 访问统计 provider / 域名 / 自建地址 / key（见「访问统计」） |
 
 三种落地方式，任选：
 
@@ -156,14 +233,17 @@ site/
 │   ├── pages.css         站内页面：价格 / 下载 / 登录 / 开通 / 帮助中心
 │   ├── main.js           吸顶、移动菜单、滚动入场、审批卡演示
 │   ├── pages.js          目录高亮、系统识别、表单邮件兜底
+│   ├── analytics.js      访问统计：pageview、CTA 点击委托、属性白名单
+│   ├── analytics.config.js 统计配置（configure.mjs 生成，nginx no-cache，勿手改）
 │   ├── logo-*.svg        品牌标识
 │   ├── og-cover.png      社交分享图 1200 × 630
 │   └── icons/            iOS / PWA 图标
-├── site.config.json      部署期配置：域名、应用地址、支持邮箱
+├── site.config.json      部署期配置：域名、应用地址、支持邮箱、统计 provider
 ├── tools/
 │   ├── build-docs.mjs    帮助中心文章生成器（开发期使用）
 │   ├── build-search-index.mjs  站内搜索索引生成器
-│   └── configure.mjs     部署时把配置写进全站（换域名一条命令 / 环境变量）
+│   ├── configure.mjs     部署时把配置写进全站（换域名一条命令 / 环境变量）
+│   └── analytics.test.mjs 统计的纯函数与「未配置即静默」用例
 ├── deploy/
 │   ├── configure-env.sh  用 WEAVE_* 环境变量改写全站
 │   ├── nginx.conf        静态托管配置

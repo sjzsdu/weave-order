@@ -10,6 +10,11 @@
  *   node site/tools/configure.mjs --dry-run          # 只看会改什么
  *
  * 支持的值：--site --app --admin --sso --email
+ *           --analytics-provider --analytics-domain --analytics-host --analytics-key
+ *
+ * 统计配置不写进每个页面（那样 17 个文件都要改），而是生成一个
+ * assets/analytics.config.js，页面统一引它。provider=none 时它写的就是空配置，
+ * assets/analytics.js 读到空配置就什么都不做。
  *
  * 部署时也可以只用环境变量（命令行参数优先）：
  *   WEAVE_SITE_URL=https://weave.wnbgj.com \
@@ -18,6 +23,8 @@
  *   WEAVE_SSO_URL=https://sso.wnbgj.com \
  *   WEAVE_SUPPORT_EMAIL=hello@weaveorder.cn \
  *   node site/tools/configure.mjs
+ *
+ * 统计同理：WEAVE_ANALYTICS_PROVIDER / DOMAIN / HOST / KEY（命令行参数优先）。
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
@@ -27,6 +34,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const siteDir = join(here, "..");
 const configPath = join(siteDir, "site.config.json");
+const analyticsConfigPath = join(siteDir, "assets", "analytics.config.js");
 
 const TARGET_EXT = new Set([".html", ".txt", ".xml"]);
 
@@ -34,7 +42,9 @@ function usage(message) {
   if (message) console.error("错误：" + message);
   console.error(
     [
-      "用法：node site/tools/configure.mjs [--site URL] [--app URL] [--admin URL] [--sso URL] [--email ADDR] [--dry-run]",
+      "用法：node site/tools/configure.mjs [--site URL] [--app URL] [--admin URL] [--sso URL] [--email ADDR]",
+      "                                    [--analytics-provider plausible|posthog|none] [--analytics-domain HOST]",
+      "                                    [--analytics-host URL] [--analytics-key KEY] [--dry-run]",
       "",
       "  不带参数：按 site/site.config.json 当前值检查一遍，不修改。",
       "  带参数：把旧值全站替换为新值，并写回 site.config.json。",
@@ -58,7 +68,17 @@ for (let i = 0; i < args.length; i += 1) {
   i += 1;
 }
 
-const allowed = new Set(["site", "app", "admin", "sso", "email"]);
+const allowed = new Set([
+  "site",
+  "app",
+  "admin",
+  "sso",
+  "email",
+  "analytics-provider",
+  "analytics-domain",
+  "analytics-host",
+  "analytics-key",
+]);
 for (const key of Object.keys(flags)) {
   if (key === "dryRun") continue;
   if (!allowed.has(key)) usage("未知的配置项：--" + key);
@@ -78,6 +98,91 @@ function normalizeEmail(value) {
   return trimmed;
 }
 
+const ANALYTICS_DEFAULTS = { provider: "none", domain: "", host: "", key: "" };
+
+function normalizeProvider(value) {
+  const trimmed = value.trim().toLowerCase();
+  if (!["plausible", "posthog", "none"].includes(trimmed)) {
+    usage("--analytics-provider 只能是 plausible / posthog / none：" + value);
+  }
+  return trimmed;
+}
+
+function normalizeDomainField(value) {
+  const trimmed = value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!trimmed) return "";
+  if (!/^[a-z0-9.*-]+(:\d+)?$/i.test(trimmed)) usage("--analytics-domain 只填域名：" + value);
+  return trimmed;
+}
+
+function normalizeHostField(value) {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  if (!/^https?:\/\/[^\s/]+$/.test(trimmed)) {
+    usage("--analytics-host 必须是 http(s) 开头的地址：" + value);
+  }
+  return trimmed;
+}
+
+function normalizeKeyField(value) {
+  const trimmed = value.trim();
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(trimmed)) {
+    usage("--analytics-key 只接受字母数字与 - _（8 到 128 位）：" + value);
+  }
+  return trimmed;
+}
+
+/**
+ * 统计配置生成：内容是确定的，重复执行只会重写出同样的字节。
+ * 为什么不直接写进每个页面：provider 改成 none 时页面应该完全无感，
+ * 只改一个 JS 文件最不容易漏；nginx 对这个文件设了 no-cache。
+ */
+function renderAnalyticsConfig(analytics) {
+  const order = ["provider", "domain", "host", "key"];
+  const body = order.map((key) => `  ${key}: ${JSON.stringify(analytics[key] ?? "")}`).join(",\n");
+  return [
+    "/* 织序 WeaveOrder · 访问统计配置",
+    " *",
+    " * 由 site/tools/configure.mjs 从 site/site.config.json 生成，不要手改。",
+    " * 改法：容器启动时给 WEAVE_ANALYTICS_PROVIDER / DOMAIN / HOST / KEY，",
+    " * 或本地跑 node site/tools/configure.mjs --analytics-provider ...",
+    " *",
+    " * provider：plausible | posthog | none。none 时 assets/analytics.js 完全静默，",
+    " * 不注入第三方脚本、不发任何请求。也可以在页面里更早地写",
+    " * window.WEAVE_ANALYTICS 覆盖这里。",
+    " * 事件字典见 site/README.md「访问统计」。",
+    " */",
+    "",
+    "window.WEAVE_ANALYTICS = {",
+    body,
+    "};",
+    "",
+  ].join("\n");
+}
+
+function syncAnalyticsConfig(analytics, dryRun) {
+  const merged = { ...ANALYTICS_DEFAULTS, ...(analytics ?? {}) };
+  const content = renderAnalyticsConfig(merged);
+  let current = "";
+  try {
+    current = readFileSync(analyticsConfigPath, "utf8");
+  } catch {
+    current = "";
+  }
+  if (current === content) {
+    console.log("  assets/analytics.config.js 已是最新（provider=" + merged.provider + "）。");
+    return false;
+  }
+  console.log(
+    (dryRun ? "[dry-run] " : "") +
+      "  assets/analytics.config.js 按 provider=" +
+      merged.provider +
+      " 重写。",
+  );
+  if (!dryRun) writeFileSync(analyticsConfigPath, content, "utf8");
+  return true;
+}
+
 const ENV_KEYS = {
   site: "WEAVE_SITE_URL",
   app: "WEAVE_APP_URL",
@@ -91,6 +196,16 @@ for (const [key, envName] of Object.entries(ENV_KEYS)) {
   if (!flags[key] && process.env[envName]) flags[key] = process.env[envName];
 }
 
+const ANALYTICS_ENV_KEYS = {
+  "analytics-provider": "WEAVE_ANALYTICS_PROVIDER",
+  "analytics-domain": "WEAVE_ANALYTICS_DOMAIN",
+  "analytics-host": "WEAVE_ANALYTICS_HOST",
+  "analytics-key": "WEAVE_ANALYTICS_KEY",
+};
+for (const [key, envName] of Object.entries(ANALYTICS_ENV_KEYS)) {
+  if (!flags[key] && process.env[envName]) flags[key] = process.env[envName];
+}
+
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 const next = { ...config };
 
@@ -100,12 +215,34 @@ if (flags.admin) next.admin = normalizeUrl(flags.admin, "--admin");
 if (flags.sso) next.sso = normalizeUrl(flags.sso, "--sso");
 if (flags.email) next.email = normalizeEmail(flags.email);
 
+next.analytics = { ...ANALYTICS_DEFAULTS, ...(config.analytics ?? {}) };
+if (flags["analytics-provider"] !== undefined) {
+  next.analytics.provider = normalizeProvider(flags["analytics-provider"]);
+}
+if (flags["analytics-domain"] !== undefined) {
+  next.analytics.domain = normalizeDomainField(flags["analytics-domain"]);
+}
+if (flags["analytics-host"] !== undefined) {
+  next.analytics.host = normalizeHostField(flags["analytics-host"]);
+}
+if (flags["analytics-key"] !== undefined) {
+  next.analytics.key = normalizeKeyField(flags["analytics-key"]);
+}
+if (next.analytics.provider === "none") {
+  // provider 关掉时清空域名/密钥，避免配置里留着看似生效的值。
+  next.analytics = { ...ANALYTICS_DEFAULTS };
+}
+
 const keys = ["site", "app", "admin", "sso", "email"];
 const changes = keys.filter((key) => config[key] !== next[key]);
+const analyticsChanged =
+  JSON.stringify(config.analytics ?? null) !== JSON.stringify(next.analytics);
 
-if (changes.length === 0) {
+if (changes.length === 0 && !analyticsChanged) {
+  syncAnalyticsConfig(next.analytics, flags.dryRun);
   console.log("配置没有变化。当前值：");
-  for (const key of keys) console.log("  " + key.padEnd(6) + config[key]);
+  for (const key of keys) console.log("  " + key.padEnd(10) + config[key]);
+  console.log("  " + "analytics".padEnd(10) + JSON.stringify(next.analytics));
   process.exit(0);
 }
 
@@ -191,9 +328,19 @@ for (const key of changes) {
   console.log("  " + key + "：" + config[key] + " → " + next[key]);
 }
 
+if (analyticsChanged) {
+  console.log(
+    "  analytics：" + JSON.stringify(config.analytics ?? null) + " → " + JSON.stringify(next.analytics),
+  );
+}
+
+syncAnalyticsConfig(next.analytics, flags.dryRun);
+
 if (!flags.dryRun) {
   writeFileSync(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
-  console.log(`已更新 ${touched} 个文件、${replaced} 处引用，并写回 site/site.config.json。`);
+  console.log(
+    `已更新 ${touched} 个页面、${replaced} 处引用，重写 assets/analytics.config.js，并写回 site/site.config.json。`,
+  );
 } else {
   console.log(`将更新 ${touched} 个文件、${replaced} 处引用（dry-run，未写入）。`);
 }

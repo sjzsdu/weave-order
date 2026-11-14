@@ -83,8 +83,8 @@
         <a href="index.html#faq">常见问题</a>
       </div>
       <div class="nav__actions">
-        <a class="btn btn--ghost btn--sm" href="login.html">登录</a>
-        <a class="btn btn--primary btn--sm" href="signup.html" aria-current="page">免费试用</a>
+        <a class="btn btn--ghost btn--sm" href="login.html" data-login="site-nav">登录</a>
+        <a class="btn btn--primary btn--sm" href="signup.html" aria-current="page" data-cta="nav">免费试用</a>
         <button class="nav__toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false" aria-controls="navLinks">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
         </button>
@@ -102,8 +102,8 @@
           <h1>登录，填个公司名，<br /><em>就能开始。</em></h1>
           <p class="lede">不用绑卡，不用等审核，也不用装软件。用邮箱或手机号登录，填一次公司名，公司空间当场建好，你就是老板账号。3 天全功能试用，觉得值再付钱。</p>
           <p style="margin-top:22px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-            <a class="btn btn--primary" href="https://weave.wnbgj.com/start">免费创建公司</a>
-            <a class="btn btn--ghost" href="https://weave.wnbgj.com/login">我已有账号，去登录</a>
+            <a class="btn btn--primary" href="https://weave.wnbgj.com/start" data-cta="hero">免费创建公司</a>
+            <a class="btn btn--ghost" href="https://weave.wnbgj.com/login" data-login="site-hero">我已有账号，去登录</a>
           </p>
         </div>
         <div class="page-hero__aside">
@@ -316,8 +316,8 @@
       <div>
         <h4>公司</h4>
         <ul>
-          <li><a href="signup.html">联系与开通</a></li>
-          <li><a href="login.html">登录入口</a></li>
+          <li><a href="signup.html" data-cta="footer">联系与开通</a></li>
+          <li><a href="login.html" data-login="site-footer">登录入口</a></li>
           <li><a href="mailto:hello@weaveorder.cn">hello@weaveorder.cn</a></li>
           <li><a href="https://github.com/sjzsdu/weave-order">GitHub</a></li>
         </ul>
@@ -344,5 +344,7 @@
 <script src="assets/main.js" defer></script>
 <script src="assets/pages.js" defer></script>
 <script src="assets/search.js" defer></script>
+<script src="assets/analytics.config.js" defer></script>
+<script src="assets/analytics.js" defer></script>
 </body>
 </html>

@@ -1,6 +1,12 @@
 /* 织序 WeaveOrder · 站内页面交互
    帮助中心目录高亮、下载页系统识别、开通与演示表单（无后端时的邮件兜底）。
-   与 main.js 一样零依赖，禁用 JS 时内容与链接全部可用。 */
+   与 main.js 一样零依赖，禁用 JS 时内容与链接全部可用。
+   表单成功交给邮件客户端时才上报 signup_form_submit，不读表单字段。 */
+
+function trackFormSubmit() {
+  var analytics = window.weaveAnalytics;
+  if (analytics && typeof analytics.track === "function") analytics.track("signup_form_submit");
+}
 
 (function () {
   "use strict";
@@ -70,6 +76,7 @@
           "已整理好内容，正在打开你的邮件客户端。若没有弹出，直接写信到 " + to + " 也行。";
       }
       form.classList.add("is-sent");
+      trackFormSubmit();
       window.location.href = href;
     });
   });

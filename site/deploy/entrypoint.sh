@@ -9,6 +9,6 @@ set -eu
 
 SITE_DIR=/usr/share/nginx/html
 
-echo "[weave-site] 配置域名：site=${WEAVE_SITE_URL:-<默认>} app=${WEAVE_APP_URL:-<默认>} admin=${WEAVE_ADMIN_URL:-<默认>} sso=${WEAVE_SSO_URL:-<默认>} email=${WEAVE_SUPPORT_EMAIL:-<未配置>}"
+echo "[weave-site] 配置域名：site=${WEAVE_SITE_URL:-<默认>} app=${WEAVE_APP_URL:-<默认>} admin=${WEAVE_ADMIN_URL:-<默认>} sso=${WEAVE_SSO_URL:-<默认>} email=${WEAVE_SUPPORT_EMAIL:-<未配置>} analytics=${WEAVE_ANALYTICS_PROVIDER:-none}"
 
 sh "$SITE_DIR/deploy/configure-env.sh"
