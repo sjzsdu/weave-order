@@ -4,7 +4,7 @@ import {
   customers,
   quoteItems,
   quotes,
-  sampleEmbeddings,
+  sampleTextEmbeddings,
   sampleShipmentItems,
   sampleShipments,
   samples,
@@ -31,8 +31,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import type { CustomerService } from "./customers.service";
 import { errorChainMessage } from "./errors";
-import type { EmbeddingProvider } from "../platform/embedding";
-import { sampleEmbeddingText } from "./sample-embedding-text";
+import type { SampleIndexService } from "./sample-index.service";
 import type { SampleService } from "./samples.service";
 
 interface ValidatedCustomer {
@@ -105,7 +104,7 @@ function buildResult(args: {
 
 /**
  * 数据导入内核服务 —— 业务表（customers / customer_contexts / samples /
- * sample_embeddings / audit_log）的唯一批量写入者。
+ * sample_text_embeddings / audit_log）的唯一批量写入者。
  *
  * 口径：**整批原子、全量校验、单事务回滚（all-or-nothing）**。
  * 1. 信封 + 每行用 `packages/schema` 的 Zod 契约严格 `.strict()` 校验（纯，零写入）；
@@ -120,7 +119,7 @@ export class ImportService {
     private readonly db: Db,
     private readonly customerService: CustomerService,
     private readonly sampleService: SampleService,
-    private readonly embedder: EmbeddingProvider,
+    private readonly sampleIndex: SampleIndexService,
     private readonly tenantId: string,
   ) {}
 
@@ -315,24 +314,13 @@ export class ImportService {
       });
     }
 
-    // ⑥ 单事务原子写入（向量在事务前算好，避免半开事务）
+    // ⑥ 单事务原子写入（向量不在这里算：提交后统一 reindex，模型慢/抖动不拖垮导入）
     const correlationId = randomUUID();
     const fullCtx: KernelContext = { ...ctx, correlationId };
-    const embeddings = new Map<ValidatedSample, number[]>();
+    // 事务提交后才会被赋值；失败分支保持空数组（下面走不到 reindex 也会是安全的）。
+    let importedSampleIdsForReindex: string[] = [];
     try {
-      for (const entry of checked) {
-        if (entry.kind === "fabric_sample") {
-          const embedding = await this.embedder.embedText(
-            sampleEmbeddingText({
-              code: entry.sample.code,
-              name: entry.sample.name,
-              composition: entry.sample.composition ?? null,
-              weight: entry.sample.weight ?? null,
-            }),
-          );
-          embeddings.set(entry, embedding);
-        }
-      }
+      const importedSampleIds: string[] = [];
       await this.db.transaction(async (tx) => {
         if (resetExisting) {
           await this.resetWithin(tx, existingCustomers, existingSamples, fullCtx);
@@ -341,12 +329,13 @@ export class ImportService {
           if (entry.kind === "customer") {
             await this.customerService.insertWithin(tx, entry.customer, fullCtx, entry.context);
           } else {
-            const embedding = embeddings.get(entry);
-            if (!embedding) throw new Error("样品向量缺失，拒绝写入");
-            await this.sampleService.insertWithin(tx, entry.sample, fullCtx, embedding);
+            const sample = await this.sampleService.insertWithin(tx, entry.sample, fullCtx);
+            importedSampleIds.push(sample.id);
           }
         }
       });
+      // 与事务同一作用域：只有提交成功才拿得到这批 id。
+      importedSampleIdsForReindex = importedSampleIds;
     } catch (error) {
       const message = errorChainMessage(error);
       const failed: ImportRowReceipt[] = checked.map((entry) => ({
@@ -373,7 +362,48 @@ export class ImportService {
       });
     }
 
-    // ⑦ 提交成功
+    // ⑦ 提交后补索引：只补本次导入的新样行，不全租户重算；失败不回滚导入，但留审计。
+    try {
+      const reindex = await this.sampleIndex.reindexSamples(importedSampleIdsForReindex);
+      if (reindex.failures.length > 0) {
+        await appendAudit(
+          this.db,
+          fullCtx,
+          {
+            action: "SAMPLE_INDEX_FAILED",
+            entityType: "tenant",
+            entityId: this.tenantId,
+            after: {
+              source: "import",
+              failed: reindex.failures.length,
+              indexed: reindex.indexed,
+              samples: reindex.failures.slice(0, 20).map((failure) => ({
+                sampleId: failure.sampleId,
+                code: failure.code,
+                message: failure.message,
+              })),
+            },
+          },
+          this.tenantId,
+        );
+      }
+    } catch (error) {
+      await appendAudit(
+        this.db,
+        fullCtx,
+        {
+          action: "SAMPLE_INDEX_FAILED",
+          entityType: "tenant",
+          entityId: this.tenantId,
+          after: {
+            source: "import",
+            message: errorChainMessage(error).slice(0, 500),
+          },
+        },
+        this.tenantId,
+      ).catch(() => undefined);
+    }
+
     const okReceipts: ImportRowReceipt[] = checked.map((entry) => ({
       ok: true,
       kind: entry.kind,
@@ -488,7 +518,9 @@ export class ImportService {
       }
     }
     if (sampleIds.length > 0) {
-      await tx.delete(sampleEmbeddings).where(inArray(sampleEmbeddings.sampleId, sampleIds));
+      await tx
+        .delete(sampleTextEmbeddings)
+        .where(inArray(sampleTextEmbeddings.sampleId, sampleIds));
       await tx.delete(samples).where(inArray(samples.id, sampleIds));
       for (const [code, id] of existingSamples) {
         await appendAudit(

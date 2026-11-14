@@ -99,6 +99,13 @@
       "when": 1794665979334,
       "tag": "0013_blushing_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794669858532,
+      "tag": "0014_sample_text_embeddings",
+      "breakpoints": true
     }
   ]
 }

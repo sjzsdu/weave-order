@@ -18,6 +18,7 @@ import type { KernelContext } from "../src/kernel";
 import { CustomerService } from "../src/kernel/customers.service";
 import { ImportService } from "../src/kernel/import.service";
 import { SampleService } from "../src/kernel/samples.service";
+import { SampleIndexService } from "../src/kernel/sample-index.service";
 import { createEmbeddingProvider } from "../src/platform/embedding";
 
 /**
@@ -51,11 +52,12 @@ beforeAll(async () => {
     db = handle.db;
     pool = handle.pool;
     const embedder = createEmbeddingProvider();
+    const sampleIndex = new SampleIndexService(handle.db, embedder, DEFAULT_TENANT_ID);
     service = new ImportService(
       handle.db,
       new CustomerService(handle.db, DEFAULT_TENANT_ID),
-      new SampleService(handle.db, embedder, DEFAULT_TENANT_ID),
-      embedder,
+      new SampleService(handle.db, embedder, DEFAULT_TENANT_ID, undefined, sampleIndex),
+      sampleIndex,
       DEFAULT_TENANT_ID,
     );
   }
@@ -276,18 +278,18 @@ describe("数据导入（集成，整批原子 / 单事务回滚）", () => {
         tx: Tx,
         parsed: CreateSampleInput,
         ctx: KernelContext,
-        embedding: number[],
       ): Promise<FabricSample> {
         if (parsed.code === x2) throw new Error("注入：第二件样品写入失败");
-        return super.insertWithin(tx, parsed, ctx, embedding);
+        return super.insertWithin(tx, parsed, ctx);
       }
     }
     const embedder = createEmbeddingProvider();
+    const faultyIndex = new SampleIndexService(database, embedder, DEFAULT_TENANT_ID);
     const faulty = new ImportService(
       database,
       new CustomerService(database, DEFAULT_TENANT_ID),
-      new FaultySampleService(database, embedder, DEFAULT_TENANT_ID),
-      embedder,
+      new FaultySampleService(database, embedder, DEFAULT_TENANT_ID, undefined, faultyIndex),
+      faultyIndex,
       DEFAULT_TENANT_ID,
     );
 

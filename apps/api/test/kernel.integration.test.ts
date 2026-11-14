@@ -366,8 +366,9 @@ describe("确定性内核（集成）", () => {
       match: {
         sample: { code: string; name: string; composition: string | null; weight: string | null };
       },
-      field: "code" | "name" | "composition" | "weight",
+      field: "code" | "name" | "composition" | "weight" | "semantic",
     ): string => {
+      if (field === "semantic") return "";
       if (field === "code") return match.sample.code;
       if (field === "name") return match.sample.name;
       if (field === "composition") return match.sample.composition ?? "";
@@ -381,6 +382,8 @@ describe("确定性内核（集成）", () => {
         // 任何返回行都必须有非空 matchedOn，且每个命中字段确实字面包含关键词。
         expect(match.matchedOn.length).toBeGreaterThan(0);
         for (const field of match.matchedOn) {
+          // 语义命中没有「字面包含」的复核语义（local-stub 下也不会产生）。
+          if (field === "semantic") continue;
           expect(fieldValue(match, field).toLowerCase()).toContain(query.toLowerCase());
         }
       }

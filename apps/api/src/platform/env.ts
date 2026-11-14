@@ -45,8 +45,26 @@ const EnvSchema = z.object({
   /** 网关业务连接：生产必须是 weave_app（无 BYPASSRLS）；本地缺省沿用 DATABASE_URL。 */
   APP_DATABASE_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
-  /** embedding provider：local-stub（默认，无需外部 key） */
+  /**
+   * embedding provider：local-stub（默认，无需外部 key，但**不携带语义**）或
+   * dashscope-text-v3（通义真实语义向量，需要 key）。
+   */
   EMBEDDING_PROVIDER: z.string().min(1).default("local-stub"),
+  /** 真实 provider 的模型名；local-stub 忽略。 */
+  EMBEDDING_MODEL: z.string().min(1).default("text-embedding-v3"),
+  /** 向量维度；pgvector 列固定 1024，改维度必须同时改迁移。 */
+  EMBEDDING_DIMENSION: z.coerce.number().int().positive().default(1024),
+  /** OpenAI 兼容 embedding 端点（默认直连通义；换成网关时只改这里）。 */
+  EMBEDDING_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+  /** embedding key；缺省回落到 DASHSCOPE_API_KEY。 */
+  EMBEDDING_API_KEY: z.string().min(1).optional(),
+  /** 单次 embedding 请求超时（毫秒）。 */
+  EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  /** embedding 失败重试的总尝试次数（指数退避）。 */
+  EMBEDDING_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  /** 语义检索的最低 cosine 相似度；低于它的结果不返回（不做归一化凑数）。 */
+  /** 实测：无关文本的 cosine 基线约 0.37–0.49，0.5 能挡住绝大部分噪声。 */
+  SEARCH_SEMANTIC_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.5),
   /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key） */
   LLM_PROVIDER: z.string().min(1).default("local-rule"),
   /** LLM 网关（LiteLLM，OpenAI 兼容）；agent 只认这个地址，不直连厂商。 */
@@ -155,6 +173,22 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(
       "生产/OIDC 模式使用 LLM_PROVIDER=litellm 时必须显式配置 LITELLM_MASTER_KEY；" +
         "否则会以公开的 dev 占位 key 连接模型网关。",
+    );
+  }
+  // 语义检索同理：选了真实 provider 却没有 key，就直接拒绝启动，不退回哈希向量。
+  if (
+    env.EMBEDDING_PROVIDER === "dashscope-text-v3" &&
+    !(env.EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "").trim()
+  ) {
+    throw new Error(
+      "EMBEDDING_PROVIDER=dashscope-text-v3 需要 EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY；" +
+        "没有 key 请改回 local-stub（哈希向量不携带语义，不能用于语义检索）。",
+    );
+  }
+  if (env.EMBEDDING_PROVIDER === "dashscope-text-v3" && env.EMBEDDING_DIMENSION !== 1024) {
+    throw new Error(
+      `EMBEDDING_DIMENSION=${env.EMBEDDING_DIMENSION} 与 sample_text_embeddings.embedding vector(1024) 不一致；` +
+        "改维度必须同时新增迁移与 HNSW 索引。",
     );
   }
   // 图片链路不允许「悄悄退回 base64 / 本地磁盘」：没有对象存储凭据就拒绝启动。

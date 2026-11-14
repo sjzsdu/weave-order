@@ -164,6 +164,8 @@ export const AuditAction = z.enum([
   "SAMPLE_UPDATED",
   "SAMPLE_ARCHIVED",
   "SAMPLE_IMAGE_ADDED",
+  /** 导入/重算后补向量失败：导入已提交，需要重跑 reindex。 */
+  "SAMPLE_INDEX_FAILED",
   "IMPORT_RESET",
   "SAMPLE_SHIPMENT_DRAFTED",
   "SAMPLE_SHIPMENT_CONFIRMED",

@@ -85,6 +85,11 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+        env:
+          # `eslint .` 走 TypeScript project service，全仓类型感知 lint 的峰值堆在 2GB 上下，
+          # 而 CI 容器的默认 V8 上限就是 ~2GB —— 会以 FATAL ERROR: Reached heap limit 构红
+          # （用例与 typecheck 其实全绿）。给 lint 单独放宽堆上限。
+          NODE_OPTIONS: --max-old-space-size=4096
 
   # 迁移升级演练（WAN-98）：在「上一个已发布修订」的库上，升级到 PR 头。
   # 守卫两件事：
