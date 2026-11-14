@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { InvitePreview } from "@weave-order/schema";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
+import { track } from "@/analytics";
 
 /**
  * 接受同事邀请。
@@ -48,6 +49,8 @@ export function JoinClient({ code }: { code: string }) {
     try {
       const result = await api.acceptInvite(code);
       setJoined({ tenantName: result.tenantName });
+      // 只记角色，不记被邀请人的邮箱。
+      if (preview) track("invite_accepted", { role: preview.role });
       window.setTimeout(() => window.location.assign("/today"), 1000);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "加入失败，请重试");

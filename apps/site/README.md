@@ -110,6 +110,10 @@ sections: # 本页目录
 | `WEAVE_ADMIN_URL`     | `admin`    | 平台管理入口           | 同上                         |
 | `WEAVE_SSO_URL`       | `sso`      | 忘记密码、统一登录     | 同上                         |
 | `WEAVE_SUPPORT_EMAIL` | `email`    | 咨询、开通、账单       | 同上                         |
+| `WEAVE_ANALYTICS_PROVIDER` | `analytics.provider` | 访问统计开关（`plausible` / `posthog` / `none`） | `none`，完全静默 |
+| `WEAVE_ANALYTICS_DOMAIN`   | `analytics.domain`   | Plausible 统计的站点域名 | 空 |
+| `WEAVE_ANALYTICS_HOST`     | `analytics.host`     | 自建统计地址（必须是 https，本地回环除外） | 官方默认 |
+| `WEAVE_ANALYTICS_KEY`      | `analytics.key`      | PostHog project key | 空 |
 
 deploy 仓库的 compose 已经按这套变量传参，`.env` 里改域名 + `docker compose up -d` 即可。
 
@@ -144,6 +148,69 @@ deploy 仓库的 compose 已经按这套变量传参，`.env` 里改域名 + `do
 
 完全不经过人工的开放式注册（不要求邮箱验证、不限流）仍然不做：现在的前提是用户已在统一身份系统里注册并验证过邮箱/手机。Casdoor 的注册项（邮箱/手机号 + 验证码、是否允许自助注册）属于部署配置，不在本仓库。
 
+## 访问统计
+
+官网与工作台（`apps/web`）共用一套 cookieless 事件（Plausible / PostHog 二选一，按部署环境切换，默认 `none`）。没有 Cookie 同意弹窗：不写 Cookie、不做跨站追踪、不采集邮箱 / 手机号 / 客户名，只发匿名事件本身。
+
+### 事件表
+
+| 事件                   | 触发点                                                     | 属性                        | 说明                                                                        |
+| ---------------------- | ---------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------- |
+| `pageview`             | 自动                                                       | —                           | 页面浏览。Plausible 脚本自带；PostHog 由我们的代码发，两个 provider 事件名一致 |
+| `cta_click`            | 首页 / 价格页 / 开通页 / 下载页 / 页脚的关键按钮            | `location` `label` `target` | `label` 默认取链接文案，`target` 默认取 `href`；`location` 取值见下          |
+| `signup_form_submit`   | 表单成功交给邮件客户端（首页预约、开通页登记）              | —                           | 只记「已经交给邮件客户端」，不读表单内容                                    |
+| `login_click`          | 登录入口                                                   | `from`                      | `site-nav` / `site-hero` / `site-footer` / `login-page` / `activate-page`   |
+| `activate_link_opened` | 工作台 `/activate` 预览成功                                | —                           | 开通链接真的被人打开（不是打开就关）                                        |
+| `activate_completed`   | 工作台 `/activate` 领取成功                                | —                           | 成为公司老板账号                                                            |
+| `invite_created`       | 工作台设置页「邀请同事」成功                               | `role`                      | 只记角色，不记同事邮箱与手机号                                              |
+| `invite_accepted`      | 工作台 `/join` 接受邀请成功                                | `role`                      | 只记角色                                                                    |
+
+`cta_click.location` 固定取值（表外的值收敛成 `other`，避免分组碎成长尾）：`nav`、`hero`、`pricing-card`、`pricing-cta`、`footer`、`docs`、`download`。
+
+### 配置
+
+统计配置和域名走同一套部署期机制：`src/site.config.json` 给默认值（默认 `provider: none`），容器启动时 `docker/entrypoint.sh` 按 `WEAVE_ANALYTICS_*` 渲染进页面的 `window.WEAVE_ANALYTICS`。**构建产物里是占位符**，本地 `preview` 时保持占位符 = 不认识的 provider = 完全静默，不会误发数据。
+
+```bash
+# 部署时（compose 的 environment 或 docker run -e）
+WEAVE_ANALYTICS_PROVIDER=plausible
+WEAVE_ANALYTICS_DOMAIN=weaveorder.cn
+# 自建：WEAVE_ANALYTICS_HOST=https://stats.weaveorder.cn
+# PostHog：WEAVE_ANALYTICS_PROVIDER=posthog WEAVE_ANALYTICS_KEY=phc_xxx
+```
+
+校验不过（provider 拼错、host 不是 https）只会告警并退回 `none`，不会把坏值写进页面。
+
+工作台由服务端环境变量 `ANALYTICS_PROVIDER / DOMAIN / HOST / KEY` 经 `/config.js` 运行时下发，见 `apps/web/src/analytics.ts`。
+
+### 给 CTA 加埋点
+
+给链接加 `data-cta`，可选 `data-cta-label` / `data-cta-target` 覆盖默认文案与目标：
+
+```astro
+<a class="btn btn--primary" href="signup.html" data-cta="hero">免费试用 3 天</a>
+<a class="btn btn--ghost" href="signup.html?plan=basic" data-cta="pricing-card"
+   data-cta-label="基础套餐">开始 3 天试用</a>
+<!-- 登录入口用 data-login，不要用 data-cta -->
+<a class="btn btn--ghost" href="/login.html" data-login="site-nav">登录</a>
+```
+
+点击是事件委托（`public/assets/analytics.js` 捕获阶段监听），新增按钮不用改 `main.ts`。页面脚本要上报事件时用 `src/lib/track.ts` 的 `trackEvent()`，不要直接碰 `window.weaveAnalytics`。
+
+### 加一个新事件
+
+1. 在 `public/assets/analytics.js` 与 `apps/web/src/analytics.ts` 的 `EVENT_PROPS` 里**同时**加一行（两处必须一致，`apps/web/src/analytics.test.ts` 会比对整张字典）。
+2. 属性只能放白名单里的键。值含 `@` 或 7 位以上连续数字会被丢弃（邮箱、手机号、单据号）。
+3. 在触发点调 `trackEvent("事件名", { ... })`（官网）或 `track("事件名", {...})`（工作台）。
+4. 补用例：`tests/analytics.test.ts`、`apps/web/src/analytics.test.ts`。
+5. 在上面的「事件表」补一行，写清触发点与属性。
+
+### 自查
+
+- **未配置 provider**：`pnpm --filter @weave-order/site test` 覆盖「不注入脚本、不留全局变量」；浏览器打开首页，Network 里只有本站资源。
+- **配置后**：点首页「免费试用 3 天」，Plausible 后台 Events 出现 `cta_click`，按 `location` 分组能看到 `hero`。
+- **隐私**：点页脚邮箱链接，事件里不应出现 `hello@weaveorder.cn`（含 `@` 的值会被丢弃）。
+
 ## 计费模型（与代码一致）
 
 - 按公司订阅：基础 ¥299 / 专业 ¥899 / 企业 ¥2,999 起，含固定账号数与每月 credits。
@@ -174,13 +241,14 @@ apps/site/
 │   │   └── docs-order.json     阅读顺序（上一篇 / 下一篇）
 │   ├── integrations/           xml-sitemap.mjs（手写地址表，保持 .html URL）
 │   ├── lib/site.ts             站点配置读取与域名占位符
+│   ├── lib/track.ts            埋点小门面（脚本未加载时静默空操作）
 │   ├── scripts/                main.ts（吸顶、菜单、滚动入场、审批卡）、pages.ts（目录高亮、表单兜底）
 │   ├── styles/
 │   │   ├── theme.css           @theme 变量，由 scripts/sync-tokens.mjs 生成
 │   │   ├── legacy.css          品牌与页面样式（@layer components）
 │   │   └── global.css          基础层 + 引入上面两份
 │   └── site.config.json        部署期默认值（域名、应用地址、支持邮箱）
-├── public/                     原样拷贝到产物根：assets/、llms.txt、robots.txt
+├── public/                     原样拷贝到产物根：assets/（含 analytics.js）、llms.txt、robots.txt
 ├── scripts/
 │   ├── sync-tokens.mjs         packages/ui tokens → src/styles/theme.css
 │   └── prepare-config.mjs      site.config.json → 运行时默认表
@@ -188,6 +256,7 @@ apps/site/
 │   ├── start.sh                官网服务的启动脚本：渲染域名 → 托管静态文件
 │   └── entrypoint.sh           域名渲染（占位符两步替换，避免串扰）
 ├── tests/site.test.ts          产物体检：页面齐全、SEO、JSON-LD、站内链接、sitemap
+├── tests/analytics.test.ts     埋点：静默模式、属性白名单、点击委托、产物里的 CTA
 ├── astro.config.mjs            build.format: "file"（保留 .html 地址）
 └── README.md
 ```

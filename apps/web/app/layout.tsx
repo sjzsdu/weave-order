@@ -19,6 +19,13 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN">
+      <head>
+        {/*
+          部署期配置（目前只有访问统计）：由本服务的 /config.js 按容器环境变量生成。
+          defer 保证它在 hydration 前执行，客户端再用 weave:config 事件收到值。
+        */}
+        <script src="/config.js" defer />
+      </head>
       <body>
         <ClientRoot>{children}</ClientRoot>
       </body>

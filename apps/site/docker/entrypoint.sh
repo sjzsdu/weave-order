@@ -12,6 +12,10 @@
 #   WEAVE_ADMIN_URL      管理端地址   → admin
 #   WEAVE_SSO_URL        统一登录地址 → sso
 #   WEAVE_SUPPORT_EMAIL  支持邮箱     → email
+#   WEAVE_ANALYTICS_PROVIDER  访问统计 provider（plausible / posthog / none）
+#   WEAVE_ANALYTICS_DOMAIN    统计站点域名（Plausible 需要）
+#   WEAVE_ANALYTICS_HOST      自建统计地址（留空用官方默认）
+#   WEAVE_ANALYTICS_KEY       PostHog project key
 #
 # 渲染方式：先把旧值换成占位符，再把占位符换成新值。
 #   两步走是为了避开「新值恰好等于别人的旧值」这种串扰——
@@ -85,6 +89,47 @@ app_new="${WEAVE_APP_URL:-$APP}"
 admin_new="${WEAVE_ADMIN_URL:-$ADMIN}"
 sso_new="${WEAVE_SSO_URL:-$SSO}"
 email_new="${WEAVE_SUPPORT_EMAIL:-$EMAIL}"
+
+# 统计配置：默认值来自 site.config.json（prepare-config 写进 defaults.env），
+# 部署环境用 WEAVE_ANALYTICS_* 覆盖。校验不过就退回 none（页面完全静默），
+# 同时在日志里说明，别让运维以为正在统计。
+analytics_provider="${WEAVE_ANALYTICS_PROVIDER:-${ANALYTICS_PROVIDER:-none}}"
+analytics_domain="${WEAVE_ANALYTICS_DOMAIN:-${ANALYTICS_DOMAIN:-}}"
+analytics_host="${WEAVE_ANALYTICS_HOST:-${ANALYTICS_HOST:-}}"
+analytics_key="${WEAVE_ANALYTICS_KEY:-${ANALYTICS_KEY:-}}"
+
+analytics_fallback() {
+  log "警告：$1 —— 本次访问统计关闭（provider=none）"
+  analytics_provider=none
+  analytics_domain=""
+  analytics_host=""
+  analytics_key=""
+}
+
+case "$analytics_provider" in
+  "") analytics_provider=none ;;
+  none|plausible|posthog) ;;
+  *) analytics_fallback "未知的 WEAVE_ANALYTICS_PROVIDER：$analytics_provider" ;;
+esac
+
+# 下面三个值会写进页面里的 JSON 字符串：引号、反斜杠、空白、竖线都会写坏文件。
+case "$analytics_domain" in
+  "") ;;
+  *[!A-Za-z0-9.*:_-]*) analytics_fallback "analytics domain 只允许域名：$analytics_domain" ;;
+esac
+case "$analytics_host" in
+  "") ;;
+  # 只允许 scheme + 主机 + 端口/路径；dash 的 case 不认方括号里的 & % + @ ~ ?，
+  # 这些字符本来也不需要（统计地址不会带查询串）。
+  *[!A-Za-z0-9.:/_-]*) analytics_fallback "analytics host 含非法字符：$analytics_host" ;;
+  http://localhost*|http://127.0.0.1*) ;;
+  https://*) ;;
+  *) analytics_fallback "analytics host 必须用 https（本地回环除外）：$analytics_host" ;;
+esac
+case "$analytics_key" in
+  "") ;;
+  *[!A-Za-z0-9_-]*) analytics_fallback "analytics key 含非法字符" ;;
+esac
 
 for value in "$site_new" "$app_new" "$admin_new" "$sso_new" "$email_new"; do
   check_value "$value"
@@ -161,6 +206,30 @@ log "管理端   → ${admin_new}"
 log "统一登录 → ${sso_new}"
 log "支持邮箱 → ${email_new}"
 log "已渲染 ${total} 个静态文件"
+
+# 3.5) 访问统计：把 BaseLayout 里的占位符换成部署环境的值。
+#      用占位符而不是「旧值→新值」：provider 的值很短（none）又是常见词，
+#      直接做全局替换会误伤正文。
+analytics_render="$tmp/analytics.sed"
+: > "$analytics_render"
+for pair in \
+  "__WEAVE_ANALYTICS_PROVIDER__|${analytics_provider}" \
+  "__WEAVE_ANALYTICS_DOMAIN__|${analytics_domain}" \
+  "__WEAVE_ANALYTICS_HOST__|${analytics_host}" \
+  "__WEAVE_ANALYTICS_KEY__|${analytics_key}"
+do
+  token="${pair%%|*}"
+  value="${pair#*|}"
+  printf 's|%s|%s|g\n' "$token" "$(esc_replacement "$value")" >> "$analytics_render"
+done
+
+find "$SITE_DIR" -type f -name '*.html' | sort > "$tmp/html"
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  sed -f "$analytics_render" "$file" > "$file.analytics.tmp"
+  mv "$file.analytics.tmp" "$file"
+done < "$tmp/html"
+log "访问统计 → provider=${analytics_provider} domain=${analytics_domain:-<空>} host=${analytics_host:-<默认>}"
 
 # 4) 残留检查：新值里本来就含旧串的情况跳过，只提醒真正没替换掉的硬编码域名。
 all_new="$site_new $app_new $admin_new $sso_new $email_new"

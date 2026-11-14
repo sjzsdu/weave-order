@@ -2,8 +2,11 @@
  * 织序 WeaveOrder · 官网交互
  *
  * 只做四件事：吸顶状态、移动端菜单、滚动入场、审批卡演示。
- * 没有依赖，没有埋点；禁用 JS 时内容与链接全部可用。
+ * 没有依赖；禁用 JS 时内容与链接全部可用。埋点统一走 lib/track.ts，
+ * 这里只在表单真的交给邮件客户端时喊一声 signup_form_submit。
  */
+
+import { trackFormSubmit } from "../lib/track";
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -139,5 +142,7 @@ if (form) {
       return;
     }
     form.classList.add("is-sent");
+    // 到这一步才算「交给邮件客户端」，不读表单内容。
+    trackFormSubmit();
   });
 }

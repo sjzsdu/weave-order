@@ -22,6 +22,45 @@ const config = JSON.parse(readFileSync(configPath, "utf8"));
 // 顺序即 site.config.json 的字段顺序；entrypoint 按同样的名字读环境变量覆盖。
 const KEYS = ["site", "app", "admin", "sso", "email"];
 
+/**
+ * 访问统计的默认值。四个值都允许为空（空 = 不统计），
+ * 但字符集要收紧：它们会被写进页面里的 JSON 字符串，出现引号或反斜杠就会破坏语法。
+ */
+const ANALYTICS_KEYS = ["provider", "domain", "host", "key"];
+const ANALYTICS_DEFAULTS = { provider: "none", domain: "", host: "", key: "" };
+const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+
+function analyticsValues(raw) {
+  const merged = { ...ANALYTICS_DEFAULTS, ...(raw && typeof raw === "object" ? raw : {}) };
+  const out = {};
+  for (const key of ANALYTICS_KEYS) out[key] = String(merged[key] ?? "").trim();
+
+  if (!["none", "plausible", "posthog"].includes(out.provider.toLowerCase())) {
+    console.error(`analytics.provider 只能是 plausible / posthog / none：${out.provider}`);
+    process.exit(1);
+  }
+  out.provider = out.provider.toLowerCase();
+
+  if (out.domain && !/^[A-Za-z0-9.*:-]+$/.test(out.domain)) {
+    console.error(`analytics.domain 只填域名：${out.domain}`);
+    process.exit(1);
+  }
+  if (out.host && !/^https?:\/\/[^\s"\\]+$/.test(out.host)) {
+    console.error(`analytics.host 必须是 http(s) 地址：${out.host}`);
+    process.exit(1);
+  }
+  // 统计脚本在站点自己的 origin 下执行，非本地回环一律要求 https（防中间人替换）。
+  if (out.host && !LOOPBACK.test(out.host) && !/^https:\/\//i.test(out.host)) {
+    console.error(`analytics.host 必须用 https（本地回环除外）：${out.host}`);
+    process.exit(1);
+  }
+  if (out.key && !/^[A-Za-z0-9_-]{8,128}$/.test(out.key)) {
+    console.error(`analytics.key 只接受字母数字与 - _（8 到 128 位）：${out.key}`);
+    process.exit(1);
+  }
+  return out;
+}
+
 const lines = [];
 for (const key of KEYS) {
   const value = String(config[key] ?? "").trim();
@@ -40,6 +79,11 @@ for (const key of KEYS) {
   }
   // JSON.stringify 产出双引号形式，shell source 时不会被空格或 $ 拆开。
   lines.push(`${key.toUpperCase()}=${JSON.stringify(value)}`);
+}
+
+const analytics = analyticsValues(config.analytics);
+for (const key of ANALYTICS_KEYS) {
+  lines.push(`ANALYTICS_${key.toUpperCase()}=${JSON.stringify(analytics[key])}`);
 }
 
 mkdirSync(dirname(outPath), { recursive: true });

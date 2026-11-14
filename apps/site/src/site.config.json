@@ -4,5 +4,12 @@
   "app": "https://weave.wnbgj.com",
   "admin": "https://weave-admin.wnbgj.com",
   "sso": "https://sso.wnbgj.com",
-  "email": "hello@weaveorder.cn"
+  "email": "hello@weaveorder.cn",
+  "$analyticsComment": "访问统计默认关闭。容器启动时 entrypoint 按 WEAVE_ANALYTICS_* 覆盖，渲染进页面。",
+  "analytics": {
+    "provider": "none",
+    "domain": "",
+    "host": "",
+    "key": ""
+  }
 }

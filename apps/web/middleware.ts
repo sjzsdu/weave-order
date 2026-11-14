@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/_next", "/favicon"];
+// /config.js 是部署期配置（目前只有访问统计），登录页也要读它，必须免登录。
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/_next", "/favicon", "/config.js"];
 
 /**
  * 生产：未登录一律回登录页；本地 dev（NODE_ENV != production）放行，

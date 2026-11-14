@@ -5,6 +5,8 @@
  * 与 main.ts 一样零依赖，禁用 JS 时内容与链接全部可用。
  */
 
+import { trackFormSubmit } from "../lib/track";
+
 /* --------------------------------------------------- 文档右侧目录高亮 */
 const tocLinks = document.querySelectorAll<HTMLAnchorElement>(".docs-toc a[href^='#']");
 if (tocLinks.length && "IntersectionObserver" in window) {
@@ -64,6 +66,7 @@ document.querySelectorAll<HTMLFormElement>("form[data-mailform]").forEach((form)
       ok.textContent = `已整理好内容，正在打开你的邮件客户端。若没有弹出，直接写信到 ${to} 也行。`;
     }
     form.classList.add("is-sent");
+    trackFormSubmit();
     window.location.href = href;
   });
 });
