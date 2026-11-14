@@ -6,7 +6,7 @@ import type { Db } from "@weave-order/db";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
 import { isKernelError } from "../src/kernel";
-import type { ObjectHead, ObjectStorage } from "../src/platform/storage";
+import type { ObjectBytes, ObjectHead, ObjectStorage } from "../src/platform/storage";
 
 /**
  * 样品 CRUD / 图墙分页 / 图片排序的真实 PG 契约。
@@ -48,6 +48,12 @@ class FakeStorage implements ObjectStorage {
 
   head(objectKey: string): Promise<ObjectHead | null> {
     return Promise.resolve(this.heads.get(objectKey) ?? null);
+  }
+
+  get(objectKey: string): Promise<ObjectBytes | null> {
+    const head = this.heads.get(objectKey);
+    if (!head) return Promise.resolve(null);
+    return Promise.resolve({ contentType: head.contentType ?? "image/jpeg", bytes: Buffer.from([0xff, 0xd8, 0xff]) });
   }
 
   delete(): Promise<void> {

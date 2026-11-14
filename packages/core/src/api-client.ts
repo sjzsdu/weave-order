@@ -54,6 +54,7 @@ import {
   Shipment,
   ShipmentView,
   T002SearchFabricBySpecInput,
+  T001SearchFabricByImageResult,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
@@ -434,26 +435,14 @@ export function createApiClient(options: ApiClientOptions) {
         await toolPost("/api/tools/search-by-spec", T002SearchFabricBySpecInput.parse(input)),
       ),
 
-    /** 以图找样：T-001 的 URL 变体（服务端按白名单取图，不接受 base64）。 */
+    /**
+     * 以图找样：T-001 的 URL 变体（服务端按白名单取图，不接受 base64）。
+     * 阈值用服务端默认（图-图 0.75）：0.3 那种老值会把不同面料放进来。
+     */
     searchByImageUrl: async (imageUrl: string) =>
-      z
-        .object({
-          ok: z.boolean(),
-          data: z.object({
-            embeddingModel: z.string(),
-            dimension: z.number(),
-            matches: z.array(z.object({ sample: FabricSample, score: z.number() })),
-          }),
-          error: z.object({ code: z.string(), message: z.string() }).optional(),
-        })
-        .passthrough()
-        .parse(
-          await post("/api/tools/search-by-image", {
-            imageUrl,
-            topK: 5,
-            minSimilarity: 0.3,
-          }),
-        ),
+      T001SearchFabricByImageResult.parse(
+        await post("/api/tools/search-by-image", { imageUrl, topK: 5 }),
+      ),
 
     /** 建寄样单（T-005）：只会得到 DRAFT，确认走审批窗口。 */
     createSampleShipment: async (input: z.input<typeof CreateSampleShipmentInput>) =>

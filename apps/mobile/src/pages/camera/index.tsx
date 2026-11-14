@@ -13,7 +13,7 @@ import {
   uploadImageToPresignedUrl,
 } from "../../lib/media";
 import type { CompressedImage } from "../../lib/media";
-import { api, IS_MOCK, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
+import { api, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { openQuote } from "../../lib/nav";
 
@@ -45,6 +45,12 @@ export default function CameraPage() {
   const [busy, setBusy] = useState(false);
   const [image, setImage] = useState<CompressedImage | null>(null);
   const [matches, setMatches] = useState<ImageMatch[]>([]);
+  // 找样结果的元信息：mode=caption 或 semantic=false 时前端文案必须不同，不能假装是真图搜图。
+  const [findMeta, setFindMeta] = useState<{
+    mode: "image" | "caption";
+    semantic: boolean;
+    indexing: number;
+  } | null>(null);
   const [resultText, setResultText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tracking, setTracking] = useState("");
@@ -65,6 +71,7 @@ export default function CameraPage() {
   const pickImage = async (source: "camera" | "album") => {
     setError(null);
     setMatches([]);
+    setFindMeta(null);
     setResultText(null);
     try {
       const picked = await Taro.chooseImage({
@@ -107,16 +114,21 @@ export default function CameraPage() {
         return;
       }
       setMatches(result.data.matches);
-      if (result.data.matches.length === 0)
-        setError("没有匹配的面料。重拍一张光线更好的，或改用规格找样。");
+      setFindMeta({
+        mode: result.data.mode ?? "image",
+        semantic: result.data.semantic ?? true,
+        indexing: result.data.indexing ?? 0,
+      });
+      if (result.data.matches.length === 0) {
+        // 「没索引完」和「真没有」是两件事，不能都显示成「没有匹配」。
+        setError(
+          (result.data.indexing ?? 0) > 0
+            ? `还有 ${result.data.indexing} 张样品图在建立索引，稍后重试；也可以先改用规格找样。`
+            : "没有匹配的面料。重拍一张光线更好的，或改用规格找样。",
+        );
+      }
     } catch (caught) {
-      setError(
-        IS_MOCK
-          ? caught instanceof Error
-            ? caught.message
-            : "找样失败"
-          : "以图找样需要后端支持 imageUrl（T-001 契约当前只收 base64，与移动端禁止 base64 冲突）。",
-      );
+      setError(caught instanceof Error ? caught.message : "找样失败");
     }
   };
 
@@ -361,9 +373,23 @@ export default function CameraPage() {
         </Card>
       )}
 
+      {mode === "find" && findMeta && (findMeta.mode === "caption" || !findMeta.semantic) && (
+        <Card className="card-flat">
+          <Badge tone="warn">{findMeta.mode === "caption" ? "按图像描述检索" : "演示模式"}</Badge>
+          <View className="muted" style={{ marginTop: 8 }}>
+            {findMeta.mode === "caption"
+              ? "图向量服务当前不可用，已改用「看图写描述 → 文本检索」，相似度与图搜图不可直接比较。"
+              : "当前没有配置多模态模型，分数来自本地哈希向量，只用于验证链路，不代表视觉相似度。"}
+          </View>
+        </Card>
+      )}
+
       {mode === "find" && matches.length > 0 && (
         <View>
-          <SectionTitle title="候选面料" hint={`${matches.length} 个 · 点一个直接报价`} />
+          <SectionTitle
+            title="候选面料"
+            hint={`${matches.length} 个 · 点一个直接报价${findMeta && findMeta.indexing > 0 ? ` · 还有 ${findMeta.indexing} 张图索引中` : ""}`}
+          />
           {matches.map((match) => (
             <Card key={match.sample.id}>
               <View className="row">
@@ -375,9 +401,10 @@ export default function CameraPage() {
                   </View>
                 </View>
                 <View className="row" style={{ gap: 8, alignItems: "center" }}>
-                  {match.sample.primaryImageUrl ? (
+                  {match.matchedImageUrl ?? match.sample.primaryImageUrl ? (
                     <Image
-                      src={match.sample.primaryImageUrl}
+                      // 优先显示命中的那张图：让用户看到「你拍的这张最像这个角度的这张图」。
+                      src={(match.matchedImageUrl ?? match.sample.primaryImageUrl)!}
                       mode="aspectFill"
                       style={{ width: 44, height: 44, borderRadius: 6 }}
                     />
@@ -401,6 +428,11 @@ export default function CameraPage() {
                   <Badge tone="accent">相似 {(match.score * 100).toFixed(0)}%</Badge>
                 </View>
               </View>
+              {match.reasons && match.reasons.length > 0 && (
+                <View className="list-sub" style={{ marginTop: 6 }}>
+                  {match.reasons.join(" · ")}
+                </View>
+              )}
               <View className="actions">
                 <Button
                   small

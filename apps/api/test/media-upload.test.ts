@@ -4,7 +4,7 @@ import type { Kernel } from "../src/kernel";
 import { MediaService } from "../src/media/media.service";
 import { loadEnv } from "../src/platform/env";
 import { resolveAllowedHosts } from "../src/platform/media";
-import type { ObjectHead, ObjectStorage } from "../src/platform/storage";
+import type { ObjectBytes, ObjectHead, ObjectStorage } from "../src/platform/storage";
 
 /**
  * presign / confirm 的安全边界（无数据库、无对象存储）。
@@ -37,6 +37,11 @@ class FakeStorage implements ObjectStorage {
     return Promise.resolve(this.objects.get(objectKey) ?? null);
   }
 
+  get(objectKey: string): Promise<ObjectBytes | null> {
+    // 这个文件只测 presign/confirm 的安全边界，不读字节。
+    return Promise.resolve(this.objects.has(objectKey) ? { contentType: "image/jpeg", bytes: Buffer.from([0xff, 0xd8]) } : null);
+  }
+
   delete(objectKey: string): Promise<void> {
     this.deleted.push(objectKey);
     return Promise.resolve();
@@ -45,6 +50,22 @@ class FakeStorage implements ObjectStorage {
 
 function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
   const attached: Parameters<Kernel["sampleImages"]["attach"]>[0][] = [];
+  const rows: {
+    id: string;
+    tenantId: string;
+    sampleId: string;
+    objectKey: string;
+    variant: string;
+    isPrimary: boolean;
+    mimeType: string;
+    byteSize: number;
+    width: number | null;
+    height: number | null;
+    sortOrder: number;
+    indexStatus: string;
+    indexError: string | null;
+    createdAt: Date;
+  }[] = [];
   const kernel = {
     tenantId,
     samples: {
@@ -61,7 +82,7 @@ function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
     sampleImages: {
       attach: (input: Parameters<Kernel["sampleImages"]["attach"]>[0]) => {
         attached.push(input);
-        return Promise.resolve({
+        const row = {
           id: "99999999-9999-4999-8999-999999999999",
           tenantId,
           sampleId: input.sampleId,
@@ -73,9 +94,22 @@ function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
           width: input.width ?? null,
           height: input.height ?? null,
           sortOrder: input.sortOrder ?? 0,
+          indexStatus: "pending",
+          indexError: null,
           createdAt: new Date(),
-        });
+        };
+        rows.push(row);
+        return Promise.resolve(row);
       },
+      // confirm 之后会回读一次拿最新索引状态（S4）。
+      findById: (imageId: string) => {
+        const row = rows.find((entry) => entry.id === imageId);
+        return Promise.resolve(row ? { ...row, indexStatus: "ready" } : null);
+      },
+    },
+    // 这个文件不测索引本身：索引失败/成功的行为由 s4-image-search 集成测试覆盖。
+    imageIndex: {
+      indexImage: () => Promise.resolve("indexed"),
     },
   };
   (kernel as unknown as { attached: typeof attached }).attached = attached;
