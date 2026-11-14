@@ -1,0 +1,43 @@
+---
+/**
+ * 指南页路由：URL 由内容集合的 id 决定（/guides/sample-follow-up.html），
+ * 外壳（页头数字条、目录、CTA、上下篇、结构化数据）来自 GuidesLayout，正文是 MDX。
+ *
+ * 与帮助中心同一套 content collection 机制：加一篇指南＝加一个 mdx 文件，
+ * 路由、侧栏、上一篇 / 下一篇、sitemap 之外的元信息都自动跟上。
+ */
+import { getCollection, render } from "astro:content";
+import GuidesLayout from "../../layouts/GuidesLayout.astro";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("guides");
+  return entries.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const data = entry.data;
+---
+
+<GuidesLayout
+  title={data.title}
+  description={data.description}
+  canonical={`/guides/${data.file}`}
+  file={data.file}
+  kicker={data.kicker}
+  h1={data.h1}
+  lede={data.lede}
+  crumb={data.crumb}
+  navLabel={data.navLabel}
+  ogDescription={data.ogDescription}
+  aside={data.aside}
+  sections={data.sections}
+  cta={data.cta}
+  faq={data.faq}
+  howTo={data.howTo}
+>
+  <Content />
+</GuidesLayout>

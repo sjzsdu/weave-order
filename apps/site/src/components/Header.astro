@@ -10,9 +10,11 @@ interface Props {
   current?: "docs" | null;
   /** 首页：导航里的锚点指向本页内。 */
   homeAnchors?: boolean;
+  /** 试用按钮的埋点 label（如「指南 · 寄样跟进 SOP」）；不传就不加埋点属性。 */
+  ctaLabel?: string;
 }
 
-const { current = null, homeAnchors = false } = Astro.props;
+const { current = null, homeAnchors = false, ctaLabel } = Astro.props;
 
 const anchor = (hash: string) => (homeAnchors ? hash : `/index.html${hash}`);
 
@@ -51,7 +53,12 @@ const links = [
         <a class="btn btn--ghost btn--sm" href="/login.html">
           登录
         </a>
-        <a class="btn btn--primary btn--sm" href="/signup.html">
+        <a
+          class="btn btn--primary btn--sm"
+          href="/signup.html"
+          data-cta={ctaLabel ? "nav" : undefined}
+          data-cta-label={ctaLabel}
+        >
           免费试用
         </a>
         <button

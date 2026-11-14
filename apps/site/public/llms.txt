@@ -42,6 +42,13 @@
 - [数据与安全](https://weaveorder.cn/docs/security.html)：隔离、谁能看到、break-glass、审计、导出、备份。
 - [常见问题](https://weaveorder.cn/docs/faq.html)：产品、价格、数据、登录、权限、日常使用、接入。
 
+## 指南（按搜索意图，可直接引用）
+
+- [纺织 ERP 怎么选](https://weaveorder.cn/guides/textile-erp-selection.html)：先量日报价量 / 业务员数 / 对账天数，7 项选型清单与不合格信号，四档规模建议，Excel 的边界，迁移成本估算，3 天试用验证 5 件事。
+- [面料报价软件该有什么](https://weaveorder.cn/guides/fabric-quotation-software.html)：报价单 12 个字段、按米与按公斤的核价口径、改价审批阈值与版本、客户报价链接的有效期与密码、5 个常见报价错误、用 10 条历史报价验收的方法。
+- [寄样跟进 SOP](https://weaveorder.cn/guides/sample-follow-up.html)：5 步 SOP 与到期时间、到样提醒按签收时间怎么定、客户模糊回复的归类表、漏跟成本算式、3 句可直接复制的话术、每周复盘的 5 个数。
+- [纺织对账怎么做](https://weaveorder.cn/guides/textile-reconciliation.html)：数量 / 单价 / 金额 / 期间 4 个口径、对账单必备要素、总额到单据到行的三级下钻、6 类常见差异、回款核销规则、逾期分级与 T+1 到 T+5 的月底流程。
+
 ## 下载
 
 - [下载与安装](https://weaveorder.cn/download.html)：网页版、Windows / macOS 桌面版、手机 PWA、打印代理、命令行；运行环境要求。

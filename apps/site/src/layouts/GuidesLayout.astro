@@ -1,0 +1,226 @@
+---
+/**
+ * 指南页外壳：页头数字条 + 左侧目录 + 正文 + 右侧本页目录 + CTA + 上下篇。
+ *
+ * 为什么要一个独立 layout，而不是复用 DocsLayout：
+ * 两者的骨架像，语义不同。帮助中心回答「这个按钮在哪」，面包屑回到帮助中心、
+ * 上下篇按 docs-order.json 走；指南是搜索落地页，要的是先给结论的 lede、量化预期、
+ * 结尾的行动区，以及从 frontmatter 生成的 FAQPage / HowTo 结构化数据。
+ * 硬塞进 DocsLayout 会让每个判断都变成 if。
+ *
+ * 样式复用 docs-* 类（同一套目录与正文排版），差异只在 styles/guides.css。
+ */
+import { getCollection } from "astro:content";
+import BaseLayout from "./BaseLayout.astro";
+import related from "../data/guides-nav.json";
+import { guideJsonLd } from "../lib/guides";
+
+interface Props {
+  title: string;
+  description: string;
+  /** 站内路径，如 "/guides/sample-follow-up.html"。 */
+  canonical: string;
+  /** 站内文件名，如 "sample-follow-up.html"，用来定位上一篇 / 下一篇。 */
+  file: string;
+  kicker: string;
+  h1: string;
+  lede: string;
+  crumb: string;
+  navLabel: string;
+  ogDescription: string;
+  aside: { label: string; value: string }[];
+  sections: { id?: string; heading: string; toc?: string }[];
+  cta: { title: string; text: string };
+  faq: { q: string; a: string }[];
+  howTo?: {
+    name: string;
+    description: string;
+    totalTime: string;
+    steps: { name: string; text: string }[];
+  };
+}
+
+const {
+  title,
+  description,
+  canonical,
+  file,
+  kicker,
+  h1,
+  lede,
+  crumb,
+  navLabel,
+  ogDescription,
+  aside,
+  sections,
+  cta,
+  faq,
+  howTo,
+} = Astro.props;
+
+/** 指南之间按 order 排序，首尾相邻的那两篇就是上一篇 / 下一篇。 */
+const guides = (await getCollection("guides")).sort((a, b) => a.data.order - b.data.order);
+const position = guides.findIndex((entry) => entry.data.file === file);
+const prev = position > 0 ? guides[position - 1] : null;
+const next = position >= 0 && position < guides.length - 1 ? guides[position + 1] : null;
+
+const relatedGroups = related as { title: string; items: { href: string; label: string }[] }[];
+
+/** CTA 埋点：WAN-111 的事件字典只认 location 枚举，label 用来区分到具体页。 */
+const ctaLabel = `指南 · ${navLabel}`;
+
+const jsonLd = guideJsonLd({ crumb, file, faq, howTo });
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  canonical={canonical}
+  jsonLd={jsonLd}
+  ogTitle={title}
+  ogDescription={ogDescription}
+  ogType="article"
+  ctaLabel={ctaLabel}
+>
+  <section class="page-hero">
+    <div class="container">
+      <div class="page-hero__inner">
+        <div>
+          <p class="eyebrow">指南 · {kicker}</p>
+          <h1>{h1}</h1>
+          <p class="lede">{lede}</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:24px">
+            <a class="btn btn--primary" href="/signup.html" data-cta="hero" data-cta-label={ctaLabel}>
+              免费创建公司
+            </a>
+            <a
+              class="btn btn--ghost"
+              href="/pricing.html"
+              data-cta="hero"
+              data-cta-label="指南 · 看价格"
+            >
+              看价格
+            </a>
+          </div>
+        </div>
+        <div class="page-hero__aside">
+          {aside.map((item) => (
+            <p>
+              <b>{item.label}</b>
+              {item.value}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container docs-shell docs-shell--guide">
+    <aside class="docs-side">
+      <nav aria-label="指南目录">
+        <div class="docs-side__group">
+          <h2>指南</h2>
+          <ul>
+            {guides.map((entry) => (
+              <li>
+                <a
+                  href={`/guides/${entry.data.file}`}
+                  aria-current={entry.data.file === file ? "page" : undefined}
+                >
+                  {entry.data.navLabel}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {relatedGroups.map((group) => (
+          <div class="docs-side__group">
+            <h2>{group.title}</h2>
+            <ul>
+              {group.items.map((item) => (
+                <li>
+                  <a href={item.href}>{item.label}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <div class="docs-main">
+      <div class="docs-crumbs">
+        <a href="/index.html">首页</a>
+        <span>/</span>
+        <a href="/docs/index.html">帮助中心</a>
+        <span>/</span>
+        <span>{crumb}</span>
+      </div>
+
+      <slot />
+
+      {faq.length > 0 && <h2 id="faq">常见问题</h2>}
+      {faq.length > 0 && (
+        <div class="faq">
+          {faq.map((item, index) => (
+            <details open={index === 0 ? true : undefined}>
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </div>
+      )}
+
+      <div class="note-box" style="margin:44px 0 8px;padding:22px 24px">
+        <p
+          style="margin:0 0 6px;font-family:var(--font-serif);font-size:18px;font-weight:700;color:var(--color-ink-900)"
+        >
+          {cta.title}
+        </p>
+        <p style="margin:0 0 16px">{cta.text}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <a class="btn btn--primary" href="/signup.html" data-cta="docs" data-cta-label={ctaLabel}>
+            免费创建公司
+          </a>
+          <a
+            class="btn btn--ghost"
+            href="/pricing.html"
+            data-cta="docs"
+            data-cta-label="指南 · 看价格与套餐"
+          >
+            看价格与套餐
+          </a>
+        </div>
+      </div>
+
+      <div class="docs-pager">
+        <a href={prev ? `/guides/${prev.data.file}` : "/docs/index.html"}>
+          <small>{prev ? "上一篇" : "回到"}</small>
+          <span>{prev ? prev.data.navLabel : "帮助中心"}</span>
+        </a>
+        <a href={next ? `/guides/${next.data.file}` : "/pricing.html"}>
+          <small>{next ? "下一篇" : "下一步"}</small>
+          <span>{next ? next.data.navLabel : "价格与套餐"}</span>
+        </a>
+      </div>
+    </div>
+
+    {sections.length > 0 && (
+      <aside class="docs-toc">
+        <h2>本页目录</h2>
+        <ul>
+          {sections.map((section) => (
+            <li>
+              <a href={`#${section.id ?? ""}`}>{section.toc ?? section.heading}</a>
+            </li>
+          ))}
+          {faq.length > 0 && (
+            <li>
+              <a href="#faq">常见问题</a>
+            </li>
+          )}
+        </ul>
+      </aside>
+    )}
+  </div>
+</BaseLayout>

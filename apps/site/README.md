@@ -19,6 +19,7 @@ Astro 5 + Tailwind 4 + MDX 内容集合，构建期产出纯静态 HTML，nginx 
 | `docs/index.html`                                                        | 帮助中心首页：按任务分类 + 搜索 + 十个高频问题                      | `src/pages/docs/index/index.astro` |
 | `docs/quickstart.html`                                                   | 5 分钟上手                                                          | `src/pages/docs/quickstart.astro`  |
 | `docs/{signup,import,approvals,quotes,printing,agent,security,faq}.html` | 七篇操作文档与 FAQ                                                  | `src/content/docs/*.mdx`           |
+| `guides/{textile-erp-selection,fabric-quotation-software,sample-follow-up,textile-reconciliation}.html` | 四篇长尾搜索意图指南：选型、报价、寄样、对账 | `src/content/guides/*.mdx` |
 | `404.html`                                                               | 找不到页面时的四个出口                                              | `src/pages/404.astro`              |
 | `llms.txt`                                                               | 给 AI 助手（ChatGPT / Claude / Perplexity 等）的产品摘要与事实清单  | `public/llms.txt`                  |
 | `robots.txt` / `sitemap.xml`                                             | 抓取规则与站点地图                                                  | `public/robots.txt` + 构建集成     |
@@ -57,16 +58,68 @@ sections: # 本页目录
 ```
 
 新增一篇文章：在 `src/content/docs/` 加一个 `.mdx`，再把它加进 `src/data/docs-nav.json`
-（侧栏）与 `src/data/docs-order.json`（阅读顺序），最后补 `src/integrations/xml-sitemap.mjs`
+（侧栏）与 `src/data/docs-order.json`（阅读顺序），最后补 `src/integrations/xml-sitemap.ts`
 里的地址表 —— `pnpm --filter @weave-order/site test` 会检查这三处是否一致。
+
+## 改长尾指南
+
+`/guides/*.html` 是四篇搜索落地页，回答的是客户在搜索引擎里打的那句话
+（「纺织 ERP 怎么选」「寄样怎么跟进」），和帮助中心「这个按钮在哪」的定位不同。
+
+正文是 MDX（`src/content/guides/*.mdx`），外壳与结构化数据都在
+`src/layouts/GuidesLayout.astro` + `src/pages/guides/[...slug].astro` 里：
+
+```mdx
+---
+title: "寄样跟进 SOP：…… · 织序"      # 浏览器标题
+description: "……"                     # meta description
+h1: "寄样总是漏跟？……"                 # 正文大标题（与 title 不同）
+lede: "……"                            # 第一段，直接回答问题，可被单独摘出引用
+file: "sample-follow-up.html"
+order: 3                              # 侧栏顺序与上一篇 / 下一篇
+kicker: "寄样"                         # eyebrow 里的栏目词
+navLabel: "寄样跟进 SOP"               # 侧栏、上下篇、CTA 埋点用的短名
+crumb: "寄样跟进指南"                   # 面包屑末项
+ogDescription: "……"
+aside:                                 # 页头右侧的三个数字
+  - label: "5 步"
+    value: "每步都有到期时间"
+sections:                              # 右侧本页目录
+  - id: "steps"
+    heading: "五步 SOP：每一步都有到期时间"
+    toc: "五步 SOP"                    # 可选：目录里的短标题
+cta:                                   # 正文末尾的行动区
+  title: "让待办替你记着每一步"
+  text: "……"
+faq:                                   # 既渲染成可见问答块，也生成 FAQPage
+  - q: "寄样后多久跟进一次比较合适？"
+    a: "……"
+howTo:                                 # 可选：流程类指南生成 HowTo
+  name: "寄样跟进的 5 步 SOP"
+  description: "……"
+  totalTime: "P7D"
+  steps:
+    - name: "登记寄样"
+      text: "……"
+---
+
+<h2 id="steps">五步 SOP：每一步都有到期时间</h2>
+
+<p>正文……</p>
+```
+
+结构化数据（BreadcrumbList / FAQPage / HowTo）由 `src/lib/guides.ts` 从 frontmatter 生成，
+不手写 —— 否则改了 FAQ 措辞，结构化数据里还是旧的。新增一篇指南要做三件事：
+加 `.mdx`、在 `src/integrations/xml-sitemap.ts` 补地址、在 `public/llms.txt` 的
+「指南」分组补一条；`pnpm --filter @weave-order/site test` 会检查后两处。
 
 ## SEO 与「大模型搜索」优化
 
 搜索引擎部分：
 
 - 每页都有唯一的 `<title>`、`meta description`、`canonical`、Open Graph 与 Twitter Card；`og:image` 用绝对地址。
-- 结构化数据：首页 `Organization` + `WebSite` + `SoftwareApplication` + `FAQPage`；价格页 `Product` + `Offer`；开通页 `HowTo`；文档页 `BreadcrumbList`；FAQ 页 `FAQPage`。
-- `sitemap.xml` 含全部 15 个可索引页面；`robots.txt` 声明 sitemap，并显式允许 GPTBot / ClaudeBot / PerplexityBot。
+- 结构化数据：首页 `Organization` + `WebSite` + `SoftwareApplication` + `FAQPage`；价格页 `Product` + `Offer`；开通页 `HowTo`；文档页 `BreadcrumbList`；FAQ 页 `FAQPage`；指南页 `BreadcrumbList` + `FAQPage`（寄样与对账两篇另带 `HowTo`）。
+- `sitemap.xml` 含全部 20 个可索引页面；`robots.txt` 声明 sitemap，并显式允许 GPTBot / ClaudeBot / PerplexityBot。
 - 语义结构：每页一个 `h1`，章节用 `h2/h3`，正文用短段落与列表；`alt` 全部填写或显式留空。
 - 登录后的工作台与平台管理端在应用层设置了 `noindex`，不参与索引。
 
@@ -147,6 +200,7 @@ apps/site/
 ├── src/
 │   ├── pages/                  路由 → 页面（.astro）
 │   │   ├── index.astro         首页
+│   │   ├── guides/[...slug].astro  指南页：按 guides 集合渲染 → dist/guides/*.html
 │   │   ├── pricing.astro / signup.astro / download.astro / login.astro / legal.astro
 │   │   ├── 404.astro
 │   │   └── docs/
@@ -154,20 +208,24 @@ apps/site/
 │   │       ├── quickstart.astro    5 分钟上手
 │   │       └── [...slug].astro     其余文章按 MDX 集合渲染
 │   ├── content/docs/*.mdx      帮助中心八篇文章（内容集合）
+│   ├── content/guides/*.mdx    四篇长尾搜索意图指南（内容集合）
 │   ├── content.config.ts       内容集合 schema
-│   ├── layouts/                BaseLayout（SEO/JSON-LD/页头页脚）、DocsLayout（帮助中心外壳）
+│   ├── layouts/                BaseLayout（SEO/JSON-LD/页头页脚）、DocsLayout（帮助中心外壳）、GuidesLayout（指南外壳）
 │   ├── components/             Header.astro、Footer.astro
 │   ├── data/
 │   │   ├── jsonld/*.ts         各页结构化数据
 │   │   ├── docs-nav.json       侧栏目录
-│   │   └── docs-order.json     阅读顺序（上一篇 / 下一篇）
+│   │   ├── docs-order.json     阅读顺序（上一篇 / 下一篇）
+│   │   └── guides-nav.json     指南页侧栏的「相关页面」
 │   ├── integrations/           xml-sitemap.mjs（手写地址表，保持 .html URL）
 │   ├── lib/site.ts             站点配置读取与域名占位符
+│   ├── lib/guides.ts           指南页结构化数据（Breadcrumb / FAQPage / HowTo）
 │   ├── scripts/                main.ts（吸顶、菜单、滚动入场、审批卡）、pages.ts（目录高亮、表单兜底）
 │   ├── styles/
 │   │   ├── theme.css           @theme 变量，由 scripts/sync-tokens.mjs 生成
 │   │   ├── legacy.css          品牌与页面样式（@layer components）
-│   │   └── global.css          基础层 + 引入上面两份
+│   │   ├── guides.css          指南页样式补丁（正文按钮、手机端目录、窄屏表格）
+│   │   └── global.css          基础层 + 引入上面三份
 │   └── site.config.json        部署期默认值（域名、应用地址、支持邮箱）
 ├── public/                     原样拷贝到产物根：assets/、llms.txt、robots.txt
 ├── scripts/
@@ -176,7 +234,7 @@ apps/site/
 ├── docker/
 │   ├── start.sh                官网服务的启动脚本：渲染域名 → 托管静态文件
 │   └── entrypoint.sh           域名渲染（占位符两步替换，避免串扰）
-├── tests/site.test.ts          产物体检：页面齐全、SEO、JSON-LD、站内链接、sitemap
+├── tests/site.test.ts          产物体检：页面齐全、SEO、JSON-LD、站内链接、sitemap、指南页验收
 ├── astro.config.mjs            build.format: "file"（保留 .html 地址）
 └── README.md
 ```

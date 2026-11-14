@@ -8,7 +8,8 @@ import type { AstroIntegration } from "astro";
  * 而这个站的地址一直是 /pricing.html（迁移前就是 .html 结尾）。
  * URL 一变就是换地址，搜索权重会掉，所以这里显式列出与旧站一致的地址表。
  *
- * 地址表来自迁移前的 site/sitemap.xml，一条不多一条不少。
+ * 地址表来自迁移前的 site/sitemap.xml，一条不多一条不少；新增页面要在这里补一条
+ * ——这一份是手写清单，不做目录扫描：扫描会把 404 与草稿也收进去。
  */
 interface SitemapEntry {
   /** 站内路径（根路径写 "/"）。 */
@@ -40,6 +41,11 @@ const ENTRIES: SitemapEntry[] = [
   { path: "/docs/agent.html", changefreq: "monthly", priority: "0.5" },
   { path: "/docs/security.html", changefreq: "monthly", priority: "0.6" },
   { path: "/docs/faq.html", changefreq: "monthly", priority: "0.7" },
+  // 长尾搜索意图指南：四页各回答一个客户会搜的问题，priority 高于帮助中心单篇。
+  { path: "/guides/textile-erp-selection.html", changefreq: "monthly", priority: "0.8" },
+  { path: "/guides/fabric-quotation-software.html", changefreq: "monthly", priority: "0.8" },
+  { path: "/guides/sample-follow-up.html", changefreq: "monthly", priority: "0.8" },
+  { path: "/guides/textile-reconciliation.html", changefreq: "monthly", priority: "0.8" },
 ];
 
 export default function xmlSitemap(siteConfig: SitemapSiteConfig): AstroIntegration {

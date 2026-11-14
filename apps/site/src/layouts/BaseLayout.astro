@@ -28,6 +28,8 @@ interface Props {
   homeAnchors?: boolean;
   /** 当前导航栏目。 */
   navCurrent?: "docs" | null;
+  /** 页头试用按钮的埋点 label（指南页用），不传则不带埋点属性。 */
+  ctaLabel?: string;
   /** 不带页头页脚（404 页）。 */
   bare?: boolean;
 }
@@ -43,6 +45,7 @@ const {
   jsonLd,
   homeAnchors = false,
   navCurrent = null,
+  ctaLabel,
   bare = false,
 } = Astro.props;
 
@@ -87,7 +90,7 @@ const jsonLdText = jsonLd ? renderJsonLd(jsonLd) : null;
     <a class="skip-link" href="#main">
       跳到主要内容
     </a>
-    {!bare && <Header current={navCurrent} homeAnchors={homeAnchors} />}
+    {!bare && <Header current={navCurrent} homeAnchors={homeAnchors} ctaLabel={ctaLabel} />}
     <main id="main">
       <slot />
     </main>

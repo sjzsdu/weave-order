@@ -1,0 +1,12 @@
+[
+  {
+    "title": "相关页面",
+    "items": [
+      { "href": "/index.html#capabilities", "label": "能做什么" },
+      { "href": "/pricing.html", "label": "价格与套餐" },
+      { "href": "/signup.html", "label": "开通与试用" },
+      { "href": "/docs/index.html", "label": "帮助中心" },
+      { "href": "/index.html#faq", "label": "常见问题" }
+    ]
+  }
+]

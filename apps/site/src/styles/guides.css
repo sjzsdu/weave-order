@@ -1,0 +1,55 @@
+/*
+ * 指南页的样式补丁。
+ *
+ * 骨架复用帮助中心的 docs-* 类，这里只补三件在指南页上才成立的事：
+ * 正文里的按钮不要继承文档链接的靛蓝下划线；手机上不展示左侧目录；
+ * 三列表格在窄屏上不再把首列压成一字一行。
+ *
+ * 整份进 components 层，与 legacy.css 同层，覆盖关系由选择器特异性决定
+ * （.docs-main .btn 比 .docs-main a 更具体）。
+ */
+
+@layer components {
+  /* ----------------------------------------------------- 正文里的 CTA 按钮 */
+  /* .docs-main a 给所有链接加了靛蓝与下划线，正文里的按钮要覆盖回来。 */
+  .docs-main .btn,
+  .docs-main .btn:hover {
+    text-decoration: none;
+  }
+  .docs-main .btn--primary {
+    color: var(--color-paper);
+  }
+  .docs-main .btn--ghost {
+    color: var(--color-ink-900);
+  }
+
+  /* ----------------------------------------------------------- 手机端目录 */
+  /* 指南是落地页：窄屏上左侧目录（4 篇指南 + 5 个相关入口）会把正文推到第二屏之后。
+     手机保留正文、结尾 CTA 与上下篇导航即可；桌面仍是三栏。 */
+  @media (max-width: 820px) {
+    .docs-shell--guide {
+      grid-template-columns: minmax(0, 1fr);
+      padding-top: 14px;
+    }
+    .docs-shell--guide .docs-side {
+      display: none;
+    }
+  }
+
+  /* -------------------------------------------------------------- 窄屏表格 */
+  /* 三列表格在 390px 上会把首列压成一字一行；给首列一个下限，
+     放不下时由 .table-wrap 横向滚动，而不是把字挤成竖排。 */
+  @media (max-width: 480px) {
+    .price-table {
+      font-size: 13px;
+    }
+    .price-table th,
+    .price-table td {
+      padding: 10px 10px;
+    }
+    .price-table th:first-child,
+    .price-table td:first-child {
+      min-width: 4.8em;
+    }
+  }
+}
