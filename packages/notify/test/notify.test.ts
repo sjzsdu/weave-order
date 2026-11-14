@@ -18,7 +18,9 @@ describe("出站通知", () => {
   });
 
   it("webhook 网关成功时返回 ok", async () => {
-    const fetchImpl = vi.fn(() => Promise.resolve(new Response("{}", { status: 200 })));
+    const fetchImpl = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve(new Response("{}", { status: 200 })),
+    );
     const notifier = createNotifier({
       provider: "webhook",
       webhookUrl: "https://notify.example/send",
@@ -28,8 +30,8 @@ describe("出站通知", () => {
     const result = await notifier.send({ channel: "sms", to: "13800000000", text: "hi" });
     expect(result).toEqual({ ok: true, provider: "webhook" });
     expect(fetchImpl).toHaveBeenCalledOnce();
-    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer t");
+    const init = fetchImpl.mock.calls[0]?.[1];
+    expect((init?.headers as Record<string, string> | undefined)?.Authorization).toBe("Bearer t");
   });
 
   it("网关 5xx 与网络异常都不抛，返回失败原因", async () => {
