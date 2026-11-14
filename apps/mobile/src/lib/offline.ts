@@ -20,6 +20,20 @@ const QUEUE_KEY = "weave.offline.queue";
 const DB_NAME = "weave-offline";
 const DB_STORE = "kv";
 
+/**
+ * 当前会话的租户。队列是设备级的，但每条操作都要带上自己的租户：
+ * 否则在 A 公司排队的改价草稿，会在切到 B 公司、恢复联网时按 B 的会话提交。
+ */
+let activeTenantId: string | null = null;
+
+export function setActiveTenant(tenantId: string | null): void {
+  activeTenantId = tenantId;
+}
+
+export function getActiveTenant(): string | null {
+  return activeTenantId;
+}
+
 function hasIndexedDb(): boolean {
   return typeof indexedDB !== "undefined";
 }
@@ -238,6 +252,9 @@ export async function flushQueue(queue: OfflineQueue, deps: QueueDeps): Promise<
   const result = await queue.flush({
     submit: (op) => submitQueuedOperation(op, deps),
     isConflict: isVersionConflict,
+    // 没有当前租户时不加过滤（登录前的历史条目仍可提交）；
+    // 有租户时严格只提交该租户的条目。
+    ...(activeTenantId ? { tenantId: activeTenantId } : {}),
   });
   if (result.sent > 0 || result.conflicts > 0 || result.failed > 0) notifyQueueChanged();
   return result;
@@ -250,9 +267,14 @@ export async function enqueueOperation(
     payload: unknown;
     baseVersion?: number;
     opId: string;
+    /** 显式租户优先；缺省用当前会话租户。 */
+    tenantId?: string;
   },
 ): Promise<QueuedOperation> {
-  const created = await queue.enqueue(op);
+  const created = await queue.enqueue({
+    ...op,
+    tenantId: op.tenantId ?? activeTenantId ?? undefined,
+  });
   notifyQueueChanged();
   return created;
 }

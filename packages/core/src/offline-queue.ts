@@ -12,6 +12,13 @@ export type QueueStatus = "pending" | "conflict";
 
 export interface QueuedOperation {
   opId: string;
+  /**
+   * 该操作属于哪个租户。
+   * 队列是设备级的，租户是条目级的：切换公司后旧条目仍留在队列，
+   * 但只会按它自己的租户提交（见 `flush({ tenantId })`）。
+   * 多租户上线前入队的历史条目没有这个字段，视为「归属未知」。
+   */
+  tenantId?: string;
   /** 例如 "revision.request" / "quote.decide" */
   kind: string;
   payload: unknown;
@@ -42,6 +49,12 @@ export interface FlushOptions {
   submit: (op: QueuedOperation) => Promise<void>;
   /** 判断错误是否属于版本冲突。 */
   isConflict?: (error: unknown) => boolean;
+  /**
+   * 当前会话的租户。给了就只提交这个租户的条目：
+   * A 公司的改价草稿绝不能被 B 公司的会话提交（会写错账本或产生无法解释的冲突）。
+   * 归属未知的历史条目在带过滤时不提交，避免猜租户。
+   */
+  tenantId?: string | null;
   now?: () => Date;
 }
 
@@ -88,6 +101,7 @@ export function createOfflineQueue(storage: QueueStorage) {
       }
       const created: QueuedOperation = {
         opId: op.opId,
+        tenantId: op.tenantId,
         kind: op.kind,
         payload: op.payload,
         baseVersion: op.baseVersion,
@@ -102,6 +116,17 @@ export function createOfflineQueue(storage: QueueStorage) {
     async remove(opId: string): Promise<void> {
       const items = await storage.load();
       await storage.save(items.filter((item) => item.opId !== opId));
+    },
+
+    /** 按租户统计待提交条目：选择页 /「更多」页用它提示「A 公司还有 N 条待提交」。 */
+    async pendingCounts(): Promise<Record<string, number>> {
+      const items = await storage.load();
+      const counts: Record<string, number> = {};
+      for (const item of items) {
+        const key = item.tenantId ?? "unknown";
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
+      return counts;
     },
 
     /** 局部更新一条待提交操作（用于记录冲突信息 / 人工确认后的重试）。 */
@@ -149,6 +174,8 @@ export function createOfflineQueue(storage: QueueStorage) {
         const item = items[index];
         if (!item) continue;
         if (item.status === "conflict") continue;
+        // 只提交当前租户的条目；其它租户原样留在队列里，等回到那个租户再提。
+        if (options.tenantId !== undefined && item.tenantId !== options.tenantId) continue;
         try {
           await options.submit(item);
           result.sent += 1;

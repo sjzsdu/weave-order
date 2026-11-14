@@ -152,6 +152,63 @@ export const AuthContextResponse = z
   .strict();
 export type AuthContextResponse = z.infer<typeof AuthContextResponse>;
 
+/**
+ * 租户选择器条目：只暴露该 subject 自己的授权事实。
+ *
+ * 不返回成员数、客户数、其他成员姓名，也不返回内部设置，
+ * 因为「一个账号能列出哪些租户」本身已经是敏感信息。
+ * `available=false` 用于「可见不可进」：membership 被 DISABLED 或租户 CLOSED。
+ */
+export const TenantChoice = z
+  .object({
+    tenantId: EntityId,
+    slug: z
+      .string()
+      .min(2)
+      .max(64)
+      .regex(/^[a-z0-9-]+$/),
+    name: z.string().min(1).max(255),
+    brand: z.string().max(255).nullable(),
+    /** 该 subject 在这个租户的角色；未启用的成员身份不给角色，避免暗示权限。 */
+    role: MemberRole.nullable(),
+    tenantStatus: TenantStatus,
+    membershipStatus: MembershipStatus,
+    /** 只有 ACTIVE membership 且租户未关闭时才可进入。 */
+    available: z.boolean(),
+  })
+  .strict();
+export type TenantChoice = z.infer<typeof TenantChoice>;
+
+/**
+ * 已认证但还没选租户时的响应（`/api/auth/me`、`/api/auth/tenants`）。
+ * 判别键 `status` 让前端不必靠字段缺失来猜状态。
+ */
+export const TenantChoicesResponse = z
+  .object({
+    status: z.literal("MULTI_TENANT"),
+    subject: z.string().min(1).max(128),
+    name: z.string().max(255).nullable(),
+    email: z.string().email().nullable(),
+    tenants: z.array(TenantChoice).min(1),
+  })
+  .strict();
+export type TenantChoicesResponse = z.infer<typeof TenantChoicesResponse>;
+
+/**
+ * `GET /api/auth/me` 的完整响应：已绑定租户（单租户自动进入或已选择）或待选择。
+ * 两个分支互斥：`MULTI_TENANT` 带 `tenants`，绑定态带 `tenant` + `membership`。
+ */
+export const AuthMeResponse = z.union([TenantChoicesResponse, AuthContextResponse]);
+export type AuthMeResponse = z.infer<typeof AuthMeResponse>;
+
+/** 首次选择与运行中切换共用同一输入形状；租户 ID 只出现在这个请求体里。 */
+export const SwitchTenantInput = z
+  .object({
+    tenantId: EntityId,
+  })
+  .strict();
+export type SwitchTenantInput = z.infer<typeof SwitchTenantInput>;
+
 /** 统一 HTTP 错误响应（所有端只解析这一种失败结构）。 */
 export const ApiErrorResponse = z
   .object({
@@ -160,6 +217,14 @@ export const ApiErrorResponse = z
         code: z.enum([
           "UNAUTHENTICATED",
           "FORBIDDEN",
+          /** 该账号没有任何 ACTIVE membership：前端渲染「未加入公司」页，而不是裸 403。 */
+          "NO_MEMBERSHIP",
+          /** 目标租户的 membership 已停用 / 租户已关闭：可解释的拒绝，不区分是否存在。 */
+          "TENANT_UNAVAILABLE",
+          /** 已认证但没有租户作用域（多租户账号还没选）：前端回选择页。 */
+          "TENANT_REQUIRED",
+          /** 凭据作用域不足（例如 PAT 尝试切换租户）。 */
+          "SCOPE_REQUIRED",
           "NOT_FOUND",
           "INVALID_INPUT",
           "CONFLICT",

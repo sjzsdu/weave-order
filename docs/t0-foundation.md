@@ -147,5 +147,8 @@ APP_DATABASE_URL=postgres://weave_app:weave_app@localhost:5433/weave_order pnpm 
 - **负金额语义（billing/退款落地前必须定）**：当前 `Money.amount` 是
   `.int().nonnegative()`，展示层已能格式化负号。退款/折让落地时需决定：
   独立 `refundAmount` 字段，还是放开 `nonnegative` + 方向字段；不要直接放开约束。
-- **多公司顾问**：`resolveMembership` 在一个 sub 有多个 ACTIVE membership 时拒绝登录。
-  后续需要「登录后选择租户」流程（见 product-design §3.6），已记录为 WAN-81。
+- **多公司顾问（WAN-81 已落地）**：一个 sub 有多条 ACTIVE membership 时不再拒绝登录，
+  而是走「登录后选择租户」：`/api/auth/me` 返回 `MULTI_TENANT` 列表，`POST /api/auth/switch`
+  选择后由网关把 `tenantId` 绑定进 Redis 会话（`weave_sid` httpOnly Cookie）。
+  决策与流程见 `docs/multi-tenant-selection.md`；`resolveMembership` 现在是
+  `(subject, tenantId)`，`org` 只在单租户自动绑定路径做纵深校验。

@@ -38,6 +38,13 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /** dev：接受 `Bearer dev:<sub>:<org>`（仅本地）；oidc：Casdoor JWKS 验签。 */
   AUTH_MODE: z.enum(["dev", "oidc"]).default("dev"),
+  /**
+   * 租户会话存储：auto（dev 用进程内，其余用 Redis）/ redis / memory。
+   * 多实例部署必须用 redis，否则同一个人会被不同实例随机判为未登录。
+   */
+  SESSION_STORE: z.enum(["auto", "redis", "memory"]).default("auto"),
+  /** 会话 TTL（秒，滑动续期）；默认 7 天。 */
+  SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(604_800),
   CASDOOR_ISSUER: z.string().url().default("https://sso.wnbgj.com"),
   CASDOOR_AUDIENCE: z.string().min(1).default("weave-order"),
   CASDOOR_JWKS_URI: z.string().url().optional(),

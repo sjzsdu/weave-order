@@ -4,6 +4,7 @@ import {
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
+  AuthMeResponse,
   AuthContextResponse,
   CreatedQuoteShare,
   CreateQuoteShareInput,
@@ -35,6 +36,8 @@ import {
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
+  SwitchTenantInput,
+  TenantChoicesResponse,
   VerifyScanInput,
 } from "@weave-order/schema";
 import type { ApprovalKind, ReprintReason } from "@weave-order/schema";
@@ -141,7 +144,26 @@ export function createApiClient(options: ApiClientOptions) {
     request(path, { method: "POST", body: JSON.stringify(body) });
 
   return {
-    me: async () => AuthContextResponse.parse(await request("/api/auth/me")),
+    /**
+     * 当前登录上下文：已绑定租户（`tenant` + `membership`）或待选择（`MULTI_TENANT`）。
+     * 多租户账号在选公司之前也能登录成功，所以这里不再是单一形状。
+     */
+    me: async () => AuthMeResponse.parse(await request("/api/auth/me")),
+
+    /** 「我的公司」列表：只含该账号自己的成员关系，不含其他成员与业务数据。 */
+    tenants: async () => TenantChoicesResponse.parse(await request("/api/auth/tenants")),
+
+    /**
+     * 选择 / 切换租户。`tenantId` 只出现在这个请求体里，
+     * 服务端校验 membership 后重新绑定会话，前端不保存租户。
+     */
+    switchTenant: async (input: z.input<typeof SwitchTenantInput>) =>
+      AuthContextResponse.parse(await post("/api/auth/switch", SwitchTenantInput.parse(input))),
+
+    /** 登出：吊销服务端会话（幂等），Cookie 由浏览器按响应清除。 */
+    logout: async () => {
+      await request("/api/auth/session", { method: "DELETE" });
+    },
 
     listCustomers: async (limit = 20) =>
       CustomersResponse.parse(await request(`/api/customers?limit=${limit}`)).customers,

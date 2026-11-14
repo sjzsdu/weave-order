@@ -4,10 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useApprovals, useAuthContext } from "@weave-order/core";
+import { useQuery } from "@tanstack/react-query";
+import { useApprovals, useTenantContext } from "@weave-order/core";
+import type { TenantChoice } from "@weave-order/schema";
 import { Badge, CommandBar, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
+import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
 
 const WINDOWS = [
   { href: "/today", label: "工作台", key: "1", hint: "⌘1" },
@@ -23,6 +26,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
     target.tagName === "SELECT" ||
     target.isContentEditable
   );
+}
+
+/** 切换失败的文案：租户不可用给具体原因，其余保持契约里的服务端消息。 */
+function switchErrorText(error: unknown): string | null {
+  if (!error) return null;
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "切换失败，请稍后重试";
 }
 
 /**
@@ -46,10 +58,34 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const api = useApi();
   const router = useRouter();
   const pathname = usePathname();
-  const me = useAuthContext(api);
-  const approvals = useApprovals(api);
+  const tenantContext = useTenantContext(api);
   const [printOpen, setPrintOpen] = useState(false);
+  const [switcherSignal, setSwitcherSignal] = useState(0);
   const [online, setOnline] = useState(true);
+
+  // 只有已进入工作台才需要知道「我还有哪些公司」；单租户账号这里拿到 1 条，
+  // TenantSwitcher 据此不渲染切换入口。
+  const tenantList = useQuery({
+    queryKey: ["auth", "tenants"],
+    queryFn: () => api.tenants(),
+    enabled: tenantContext.status === "READY",
+    staleTime: 60_000,
+  });
+
+  /**
+   * 切租户 = 换一整套上下文。成功即整页重建：不保留旧租户的 query 缓存、
+   * 审批角标或打印抽屉状态，避免「新租户标题 + 旧租户数据」的混搭。
+   */
+  const switchTenant = async (tenantId: string) => {
+    try {
+      await tenantContext.select(tenantId);
+      window.location.replace("/today");
+    } catch {
+      // 失败保持当前页面；错误由 tenantContext.switchError 渲染。
+    }
+  };
+
+  const approvals = useApprovals(api);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -77,6 +113,11 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
         event.preventDefault();
         router.push(target);
       }
+      // ⌘⇧O：打开「当前公司」切换器（与 ⌘1/2/3 不冲突）。
+      if (event.shiftKey && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        setSwitcherSignal((value) => value + 1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -85,8 +126,45 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const pending = approvals.data?.items.length ?? 0;
   const pendingMore = approvals.data?.hasMore === true;
   const pendingLabel = pendingMore ? `${pending}+` : pending;
-  const name = me.data?.name ?? me.data?.subject ?? "当前成员";
-  const tenant = me.data?.tenant.name;
+
+  // 选择页 / 零租户页是登录态的一部分，必须在工作台外壳之前渲染：
+  // 此时还没有租户，顶栏的待办、打印、设置都没有意义。
+  if (tenantContext.status === "LOADING") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-paper text-sm text-ink-400">
+        正在连接织序…
+      </div>
+    );
+  }
+  if (tenantContext.status === "MULTI_TENANT") {
+    return (
+      <TenantChooser
+        tenants={tenantContext.tenants}
+        switching={tenantContext.switching}
+        error={switchErrorText(tenantContext.switchError)}
+        onSelect={(tenantId) => void switchTenant(tenantId)}
+      />
+    );
+  }
+  if (tenantContext.status === "NO_MEMBERSHIP") {
+    return <NoMembershipNotice message={tenantContext.message} />;
+  }
+  if (tenantContext.status === "ERROR") {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-[480px] flex-col justify-center px-5">
+        <h1 className="text-xl font-semibold text-ink-900">登录状态异常</h1>
+        <p className="mt-2 text-sm text-ink-400">{tenantContext.message}</p>
+        <a href="/auth/logout" className="mt-6 text-sm text-indigo-600 underline">
+          重新登录
+        </a>
+      </main>
+    );
+  }
+
+  const tenant = tenantContext.tenant;
+  const membership = tenantContext.membership;
+  const name = membership.subject;
+  const tenants: TenantChoice[] = tenantList.data?.tenants ?? [];
 
   return (
     <div className="min-h-screen bg-paper">
@@ -124,6 +202,27 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           </div>
 
           <div className="ml-auto flex items-center gap-3">
+            <TenantSwitcher
+              tenants={
+                tenants.length > 0
+                  ? tenants
+                  : [
+                      {
+                        tenantId: tenant.id,
+                        slug: tenant.slug,
+                        name: tenant.name,
+                        brand: tenant.brand,
+                        role: membership.role,
+                        tenantStatus: tenant.status,
+                        membershipStatus: membership.status,
+                        available: true,
+                      },
+                    ]
+              }
+              current={{ tenantId: tenant.id, name: tenant.name }}
+              onSelect={(tenantId) => void switchTenant(tenantId)}
+              openSignal={switcherSignal}
+            />
             <button
               type="button"
               onClick={() => setPrintOpen(true)}
@@ -158,7 +257,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </header>
 
       <main className="mx-auto w-full max-w-[1440px] px-5 py-6">
-        {tenant && <p className="mb-3 text-xs text-ink-400">{tenant} · 桌面端</p>}
+        <p className="mb-3 text-xs text-ink-400">{tenant.name} · 桌面端</p>
         {children}
       </main>
 

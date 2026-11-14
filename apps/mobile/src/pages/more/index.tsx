@@ -3,6 +3,7 @@ import Taro from "@tarojs/taro";
 import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { QueuedOperation } from "@weave-order/core";
+import type { TenantChoice } from "@weave-order/schema";
 import { Badge, Button, Card, Page, SectionTitle, Sheet } from "../../components/ui";
 import { useInstallPrompt } from "../../lib/pwa";
 import { useNetworkStatus, useQueueState, useSyncQueue } from "../../lib/hooks";
@@ -10,6 +11,8 @@ import { formatMoneyShort, relativeTime } from "../../lib/format";
 import {
   API_BASE_URL,
   IS_MOCK,
+  api,
+  loadTenantContext,
   mockControls,
   offlineQueue,
   prefs,
@@ -46,16 +49,66 @@ export default function MorePage() {
   );
   const [busy, setBusy] = useState(false);
   const [simulatedOffline, setSimulatedOffline] = useState(mock?.isOffline() ?? false);
+  const [company, setCompany] = useState<{
+    currentName: string;
+    tenants: TenantChoice[];
+    pending: Record<string, number>;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     setItems(await offlineQueue.list());
   }, []);
 
+  const loadCompany = useCallback(async () => {
+    try {
+      const [me, list, pending] = await Promise.all([
+        api.me(),
+        api.tenants(),
+        offlineQueue.pendingCounts(),
+      ]);
+      setCompany({
+        currentName: "tenants" in me ? "" : me.tenant.name,
+        tenants: list.tenants,
+        pending,
+      });
+    } catch {
+      setCompany(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
+    void loadCompany();
     const off = onQueueChanged(() => void refresh());
     return off;
-  }, [refresh]);
+  }, [refresh, loadCompany]);
+
+  /**
+   * 切换公司：服务端换会话后整页数据重拉；离线队列按租户过滤，
+   * 所以切过去不会把上一家的待提交条目一起交上去。
+   */
+  const switchCompany = async () => {
+    const options = (company?.tenants ?? []).filter((entry) => entry.available);
+    if (options.length < 2) return;
+    try {
+      const picked = await Taro.showActionSheet({
+        itemList: options.map((entry) => entry.name),
+      });
+      const target = options[picked.tapIndex ?? -1];
+      if (!target) return;
+      await api.switchTenant({ tenantId: target.tenantId });
+      await loadTenantContext();
+      await queryClient.invalidateQueries();
+      await refresh();
+      await loadCompany();
+      void Taro.showToast({ title: `已切换到 ${target.name}`, icon: "none" });
+    } catch (error) {
+      void Taro.showToast({
+        title: error instanceof Error ? error.message : "切换失败",
+        icon: "none",
+      });
+    }
+  };
 
   const runSync = async () => {
     setBusy(true);
@@ -191,6 +244,44 @@ export default function MorePage() {
             </Button>
           </View>
         </Card>
+      )}
+
+      {company && (
+        <>
+          <SectionTitle title="当前公司" hint="切换后权限与数据整体切换" />
+          <Card>
+            <View className="list-row" onClick={() => void switchCompany()}>
+              <View>
+                <View className="list-title">{company.currentName || "尚未选择公司"}</View>
+                <View className="list-sub">
+                  {company.tenants.filter((entry) => entry.available).length > 1
+                    ? "点击切换公司"
+                    : "你只属于这一家公司"}
+                </View>
+              </View>
+              {company.tenants.filter((entry) => entry.available).length > 1 ? (
+                <Text className="link">切换</Text>
+              ) : (
+                <Badge tone="accent">当前</Badge>
+              )}
+            </View>
+            {Object.entries(company.pending)
+              .filter(([tenantId]) => tenantId !== "unknown")
+              .map(([tenantId, count]) => {
+                const tenant = company.tenants.find((entry) => entry.tenantId === tenantId);
+                if (!tenant) return null;
+                return (
+                  <View key={tenantId} className="list-row">
+                    <View>
+                      <View className="list-title">{tenant.name}</View>
+                      <View className="list-sub">离线改动仍归属这家公司</View>
+                    </View>
+                    <Badge tone="warn">{count} 条待提交</Badge>
+                  </View>
+                );
+              })}
+          </Card>
+        </>
       )}
 
       <SectionTitle title="离线队列" hint="按时间序提交；冲突必须人工确认" />
