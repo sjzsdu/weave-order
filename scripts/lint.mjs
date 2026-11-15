@@ -40,6 +40,8 @@ const CHUNKS = [
     paths: ["apps/cli", "apps/platform-api", "apps/print-agent"],
   },
   { name: "packages", paths: ["packages"] },
+  // 端到端验收（Playwright）：放在仓库根的 e2e/，有独立 tsconfig，单独一片。
+  { name: "e2e", paths: ["e2e"] },
 ];
 
 function fail(message) {

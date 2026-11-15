@@ -1,0 +1,220 @@
+import { createHash } from "node:crypto";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { API_URL, ARTIFACTS_DIR, AUTH } from "./env";
+
+/**
+ * 验收数据种子：只通过 HTTP API 写入（不直连数据库），因此这套种子本身
+ * 也在验证 presign → PUT → confirm → 后台索引这条真实链路。
+ *
+ * 幂等：样品 code 由「fixture 内容哈希」派生，同一次 fixture 重复跑不会长出新样品；
+ * 换了 fixture 才会出现新 code（旧的自测样品留在库里，不影响断言）。
+ */
+
+const FIXTURES_DIR = path.join(ARTIFACTS_DIR, "..", "fixtures");
+const PRIMARY_FILE = path.join(FIXTURES_DIR, "fabric-primary.jpg");
+const ALT_FILE = path.join(FIXTURES_DIR, "fabric-alt.jpg");
+const SEED_FILE = path.join(ARTIFACTS_DIR, "seed.json");
+
+const ALLOWED = "image/jpeg";
+
+interface ApiImage {
+  id: string;
+  url: string;
+  thumbUrl: string | null;
+  isPrimary: boolean;
+  indexStatus: string;
+  indexError?: string | null;
+}
+
+interface ApiSample {
+  id: string;
+  code: string;
+  name: string;
+  costFloor: { amount: number; currency: string } | null;
+  images: ApiImage[];
+}
+
+export interface SeedSample extends ApiSample {
+  /** 这个样品在种子里的角色，specs 用它挑卡片。 */
+  role: "fabric" | "carousel";
+}
+
+export interface SeedManifest {
+  fixture: string;
+  altFixture: string;
+  /** 10 个样品共用同一张图：top-5 断言不依赖真实模型也有 5 条候选，同时撑满 5 列两行。 */
+  fabricSamples: SeedSample[];
+  carouselSample: SeedSample;
+  /** 共用图样品的 code 集合，供「top-5 必须包含它们」断言。 */
+  sharedImageCodes: string[];
+}
+
+async function api<T>(pathname: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_URL}${pathname}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${AUTH.owner}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers ?? {}),
+    },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`${init.method ?? "GET"} ${pathname} → HTTP ${response.status}: ${text}`);
+  }
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+async function findByCode(code: string): Promise<ApiSample | null> {
+  const page = await api<{ samples: ApiSample[] }>(
+    `/api/samples?query=${encodeURIComponent(code)}&status=ALL&limit=50`,
+  );
+  return page.samples.find((sample) => sample.code === code) ?? null;
+}
+
+async function createSample(input: {
+  code: string;
+  name: string;
+  composition: string;
+  weight: string;
+  costFloor?: { amount: number; currency: "CNY" };
+}): Promise<ApiSample> {
+  const created = await api<{ sample: ApiSample }>("/api/samples", {
+    method: "POST",
+    body: JSON.stringify({ ...input, unit: "meter", status: "ACTIVE" }),
+  });
+  return created.sample;
+}
+
+/** 直传一张图并挂到样品上；sortOrder 由调用方指定（用来构造「插入顺序≠展示顺序」）。 */
+async function uploadImage(
+  sampleId: string,
+  bytes: Buffer,
+  options: { sortOrder: number; isPrimary: boolean },
+): Promise<void> {
+  const presign = await api<{
+    uploadUrl: string;
+    headers: Record<string, string>;
+    objectKey: string;
+  }>("/api/media/presign", {
+    method: "POST",
+    body: JSON.stringify({
+      mimeType: ALLOWED,
+      byteSize: bytes.length,
+      sampleId,
+      variant: "primary",
+    }),
+  });
+  const put = await fetch(presign.uploadUrl, {
+    method: "PUT",
+    headers: { ...presign.headers, "Content-Type": ALLOWED },
+    body: new Uint8Array(bytes),
+  });
+  if (!put.ok) throw new Error(`PUT 图片失败：HTTP ${put.status}`);
+  await api("/api/media/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      objectKey: presign.objectKey,
+      sortOrder: options.sortOrder,
+      isPrimary: options.isPrimary,
+    }),
+  });
+}
+
+async function waitIndexed(sampleId: string, timeoutMs = 60_000): Promise<ApiSample> {
+  const deadline = Date.now() + timeoutMs;
+  let last: ApiSample | null = null;
+  while (Date.now() < deadline) {
+    const current = await api<{ sample: ApiSample }>(`/api/samples/${sampleId}`).then(
+      (r) => r.sample,
+    );
+    last = current;
+    const failed = current.images.find((image) => image.indexStatus === "failed");
+    if (failed) {
+      throw new Error(`样品图索引失败：${failed.indexError ?? "unknown"}`);
+    }
+    if (
+      current.images.length > 0 &&
+      current.images.every((image) => image.indexStatus === "ready")
+    ) {
+      return current;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(
+    `等待图片索引超时：${last?.images.map((image) => image.indexStatus).join(",") ?? "no images"}`,
+  );
+}
+
+export async function ensureSeed(): Promise<SeedManifest> {
+  const [primary, alt] = await Promise.all([readFile(PRIMARY_FILE), readFile(ALT_FILE)]);
+  const sha = createHash("sha256").update(primary).digest("hex").slice(0, 8);
+
+  const fabricSamples: SeedSample[] = [];
+  for (let index = 1; index <= 10; index += 1) {
+    const code = `E2E-FAB-${sha}-${String(index).padStart(2, "0")}`;
+    let sample = await findByCode(code);
+    if (!sample) {
+      sample = await createSample({
+        code,
+        name: `E2E 样品 ${String(index).padStart(2, "0")}`,
+        composition: "100% 棉 · E2E",
+        weight: "220g/m2",
+        // 成本底线只给 01，详情页按角色裁剪的断言用它。
+        ...(index === 1 ? { costFloor: { amount: 1200, currency: "CNY" as const } } : {}),
+      });
+    }
+    if (sample.images.length === 0) {
+      await uploadImage(sample.id, primary, { sortOrder: 0, isPrimary: true });
+    }
+    fabricSamples.push({ ...(await waitIndexed(sample.id)), role: "fabric" });
+  }
+
+  // 轮播样品：先传 sortOrder=2 的主图，再传 sortOrder=1 的另一张。
+  // 若按 sortOrder 排序，展示顺序是 [sort1, sort2]；按插入顺序则会相反。
+  // （不能在已有主图时再 confirm isPrimary=true：服务端明确要求先取消原主图。）
+  const carouselCode = `E2E-CAR-${sha}-01`;
+  let carousel = await findByCode(carouselCode);
+  if (!carousel) {
+    carousel = await createSample({
+      code: carouselCode,
+      name: "E2E 双图样品",
+      composition: "55% 麻 45% 棉 · E2E",
+      weight: "180g/m2",
+    });
+  }
+  if (carousel.images.length < 2) {
+    if (carousel.images.length === 0) {
+      await uploadImage(carousel.id, primary, { sortOrder: 2, isPrimary: false });
+      await uploadImage(carousel.id, alt, { sortOrder: 1, isPrimary: false });
+    } else {
+      // 上一轮只传了一张（中断）：补齐另一张，保持「按 sortOrder 排」的语义。
+      await uploadImage(carousel.id, primary, { sortOrder: 2, isPrimary: false });
+    }
+  }
+  const carouselReady = await waitIndexed(carousel.id);
+  if (carouselReady.images.length < 2) {
+    throw new Error("轮播样品应有 2 张图");
+  }
+
+  const manifest: SeedManifest = {
+    fixture: PRIMARY_FILE,
+    altFixture: ALT_FILE,
+    fabricSamples,
+    carouselSample: { ...carouselReady, role: "carousel" },
+    sharedImageCodes: fabricSamples.map((sample) => sample.code),
+  };
+  await mkdir(ARTIFACTS_DIR, { recursive: true });
+  await writeFile(SEED_FILE, JSON.stringify(manifest, null, 2), "utf8");
+  return manifest;
+}
+
+/** 读取 globalSetup 落盘的种子；没有就报清楚的错，而不是让 spec 猜。 */
+export async function readSeed(): Promise<SeedManifest> {
+  if (!existsSync(SEED_FILE)) {
+    throw new Error(`缺少 ${SEED_FILE}：globalSetup 没有跑成功，先修 API / 对象存储`);
+  }
+  return JSON.parse(await readFile(SEED_FILE, "utf8")) as SeedManifest;
+}

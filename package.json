@@ -34,10 +34,14 @@
     "platform:seed": "pnpm platform:migrate && pnpm --filter @weave-order/platform-api seed",
     "dev:platform": "pnpm --filter @weave-order/platform-api dev",
     "dev:admin": "pnpm --filter @weave-order/admin dev",
-    "cli": "pnpm --filter @weave-order/cli dev"
+    "cli": "pnpm --filter @weave-order/cli dev",
+    "e2e": "node scripts/e2e.mjs",
+    "e2e:test": "playwright test --config e2e/playwright.config.ts",
+    "e2e:install": "playwright install chromium"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.20.5",
     "eslint": "^9.39.5",
     "prettier": "^3.9.10",
