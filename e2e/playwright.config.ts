@@ -116,6 +116,12 @@ export default defineConfig({
       testMatch: /desktop\/(gallery-layout|media-status)\.spec\.ts/,
     },
     {
+      // 640~767 是「更多」与桌面入口最容易重叠的缝隙（WAN-131 review P2-1）。
+      name: "desktop-700",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 700, height: 900 } },
+      testMatch: /desktop\/gallery-layout\.spec\.ts/,
+    },
+    {
       name: "mobile-h5",
       use: {
         ...devices["Pixel 7"],

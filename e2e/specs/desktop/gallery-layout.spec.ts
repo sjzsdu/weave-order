@@ -49,6 +49,26 @@ test.describe("样品图墙布局", () => {
       // 必须点抽屉自己的关闭按钮（否则 click 会一直等可点位置直到超时）。
       await printDialog.getByRole("button", { name: "关闭", exact: true }).click();
       await expect(printDialog).toHaveCount(0);
+
+      // 点菜单外面要收起（375 下菜单浮在内容上，只靠再点「更多」太反直觉）。
+      await moreButton.click();
+      await expect(menu).toBeVisible();
+      // 直接在菜单外按下鼠标：不依赖某个具体控件的命中区域（避免点到卡片/链接）。
+      await page.evaluate(() => {
+        document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      });
+      await expect(menu).toHaveCount(0);
+      // Esc 同样能收起，并把焦点还给「更多」。
+      await moreButton.click();
+      await expect(menu).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(moreButton).toBeFocused();
+
+      // 640~767 缝隙：桌面入口不能和「更多」同时出现（review P2-1）。
+      await expect(page.getByLabel("组织与设置（⌘,）")).toBeHidden();
+      await expect(page.getByRole("button", { name: /打印/ })).toHaveCount(0);
+      await expect(page.getByText("退出", { exact: true })).toBeHidden();
     } else {
       await expect(moreButton).toBeHidden();
       await expect(page.getByLabel("组织与设置（⌘,）")).toBeVisible();

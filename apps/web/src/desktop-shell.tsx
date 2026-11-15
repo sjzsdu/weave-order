@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApprovals, useTenantContext } from "@weave-order/core";
@@ -62,10 +62,31 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const [printOpen, setPrintOpen] = useState(false);
   const [switcherSignal, setSwitcherSignal] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const moreRef = useRef<HTMLDivElement | null>(null);
   const [online, setOnline] = useState(true);
 
   // 窄屏「更多」是兜底入口：换页就收起，避免残留菜单盖住新页面。
   useEffect(() => setMoreOpen(false), [pathname]);
+
+  // 点外面 / Esc 也要能收起：375 下菜单浮在内容上，只靠再点一次「更多」太反直觉。
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMoreOpen(false);
+      moreButtonRef.current?.focus();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
   // 只有已进入工作台才需要知道「我还有哪些公司」；单租户账号这里拿到 1 条，
   // TenantSwitcher 据此不渲染切换入口。
@@ -239,7 +260,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setPrintOpen(true)}
-              className="hidden min-h-9 items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-ink-700 hover:border-ink-400 sm:inline-flex"
+              className="hidden min-h-9 items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-ink-700 hover:border-ink-400 md:inline-flex"
             >
               <span aria-hidden>⎙</span>
               打印
@@ -248,7 +269,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
               href="/settings"
               aria-label="组织与设置（⌘,）"
               className={cn(
-                "hidden min-h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm sm:inline-flex",
+                "hidden min-h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm md:inline-flex",
                 pathname.startsWith("/settings")
                   ? "bg-indigo-100 text-indigo-600"
                   : "text-ink-700 hover:bg-surface",
@@ -259,12 +280,13 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             </Link>
             <a
               href="/auth/logout"
-              className="hidden whitespace-nowrap text-xs text-ink-400 underline underline-offset-2 sm:inline"
+              className="hidden whitespace-nowrap text-xs text-ink-400 underline underline-offset-2 md:inline"
             >
               退出
             </a>
-            <div className="relative md:hidden">
+            <div ref={moreRef} className="relative md:hidden">
               <button
+                ref={moreButtonRef}
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={moreOpen}
