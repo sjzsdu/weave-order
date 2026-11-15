@@ -1,0 +1,97 @@
+name: e2e-nightly
+
+# 完整端到端验收（WAN-128）。不进 PR CI 的原因：
+# 需要 MinIO + 126MB Chromium + Taro 构建，会给每个 PR 增加 6~8 分钟。
+# 这里每天跑一次，专门抓「main 改了契约但没人重跑 E2E」这类腐烂（例如 WAN-125 的 thumbUrl）。
+on:
+  schedule:
+    # 02:00 Asia/Shanghai
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave_order
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U weave -d weave_order"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://weave:weave@localhost:5432/weave_order
+      APP_DATABASE_URL: postgres://weave_app:weave_app@localhost:5432/weave_order
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      AUTH_MODE: dev
+      PLATFORM_DATABASE_URL: postgres://weave:weave@localhost:5432/weave_platform
+      PLATFORM_AUTH_MODE: dev
+      # 与 docker-compose.yml 的 media profile 一致（minio-init 会建桶并开放匿名读）
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: weave-media
+      S3_ACCESS_KEY_ID: weave-media
+      S3_SECRET_ACCESS_KEY: weave-media-secret
+      S3_FORCE_PATH_STYLE: "true"
+      MEDIA_BASE_URL: http://127.0.0.1:9000/weave-media
+      E2E_SKIP_STORAGE: "1"
+      E2E_SKIP_BROWSER_INSTALL: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Start MinIO
+        run: docker compose --profile media up -d minio minio-init
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E
+        run: pnpm e2e
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            e2e/.artifacts/screenshots
+            e2e/.artifacts/report
+            e2e/.artifacts/test-results
+          retention-days: 7

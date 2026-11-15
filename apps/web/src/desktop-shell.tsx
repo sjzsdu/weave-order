@@ -169,13 +169,13 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-paper">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-6 px-5">
-          <Link href="/today" className="flex items-baseline gap-2">
+        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-3 md:gap-6 md:px-5">
+          <Link href="/today" className="flex shrink-0 items-baseline gap-2 whitespace-nowrap">
             <span className="text-lg font-semibold tracking-wide text-ink-900">织序</span>
             <span className="hidden text-xs text-ink-400 sm:inline">WeaveOrder</span>
           </Link>
 
-          <nav aria-label="桌面窗口" className="flex items-center gap-1">
+          <nav aria-label="桌面窗口" className="flex shrink-0 items-center gap-0.5 md:gap-1">
             {WINDOWS.map((item) => {
               const active = pathname.startsWith(item.href);
               return (
@@ -184,7 +184,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative inline-flex min-h-9 items-center gap-2 rounded-md px-3 text-sm",
+                    "relative inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-md px-2 text-sm md:gap-2 md:px-3",
                     active
                       ? "bg-indigo-100 font-medium text-indigo-600"
                       : "text-ink-700 hover:bg-surface",
@@ -201,32 +201,36 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             <CommandBar onSubmit={() => router.push("/today")} />
           </div>
 
-          <div className="ml-auto flex items-center gap-3">
-            <TenantSwitcher
-              tenants={
-                tenants.length > 0
-                  ? tenants
-                  : [
-                      {
-                        tenantId: tenant.id,
-                        slug: tenant.slug,
-                        name: tenant.name,
-                        brand: tenant.brand,
-                        role: membership.role,
-                        tenantStatus: tenant.status,
-                        membershipStatus: membership.status,
-                        available: true,
-                      },
-                    ]
-              }
-              current={{ tenantId: tenant.id, name: tenant.name }}
-              onSelect={(tenantId) => void switchTenant(tenantId)}
-              openSignal={switcherSignal}
-            />
+          <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
+            {/* 375 视口只保留「退出」：公司切换 / 打印 / 设置是桌面工作面的动作，
+                挤在手机上只会把顶栏撑出横向滚动。 */}
+            <div className="hidden md:block">
+              <TenantSwitcher
+                tenants={
+                  tenants.length > 0
+                    ? tenants
+                    : [
+                        {
+                          tenantId: tenant.id,
+                          slug: tenant.slug,
+                          name: tenant.name,
+                          brand: tenant.brand,
+                          role: membership.role,
+                          tenantStatus: tenant.status,
+                          membershipStatus: membership.status,
+                          available: true,
+                        },
+                      ]
+                }
+                current={{ tenantId: tenant.id, name: tenant.name }}
+                onSelect={(tenantId) => void switchTenant(tenantId)}
+                openSignal={switcherSignal}
+              />
+            </div>
             <button
               type="button"
               onClick={() => setPrintOpen(true)}
-              className="inline-flex min-h-9 items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-ink-700 hover:border-ink-400"
+              className="hidden min-h-9 items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-ink-700 hover:border-ink-400 sm:inline-flex"
             >
               <span aria-hidden>⎙</span>
               打印
@@ -235,7 +239,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
               href="/settings"
               aria-label="组织与设置（⌘,）"
               className={cn(
-                "inline-flex min-h-9 items-center gap-2 rounded-md px-3 text-sm",
+                "hidden min-h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm sm:inline-flex",
                 pathname.startsWith("/settings")
                   ? "bg-indigo-100 text-indigo-600"
                   : "text-ink-700 hover:bg-surface",
@@ -244,7 +248,10 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
               {name}
               <span className="text-xs text-ink-400">⌘,</span>
             </Link>
-            <a href="/auth/logout" className="text-xs text-ink-400 underline underline-offset-2">
+            <a
+              href="/auth/logout"
+              className="whitespace-nowrap text-xs text-ink-400 underline underline-offset-2"
+            >
               退出
             </a>
           </div>
