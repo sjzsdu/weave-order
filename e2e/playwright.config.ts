@@ -82,12 +82,14 @@ export default defineConfig({
       },
     },
     {
-      command: "node scripts/serve-static.mjs apps/mobile/dist --spa --healthz",
+      // --runtime-config 把 API base 注入 index.html：即使 dist 被其它命令
+      // （pnpm lint / build）用默认 3000 重打包，H5 仍然打 E2E 的 3100。
+      command: "node scripts/serve-static.mjs apps/mobile/dist --spa --healthz --runtime-config",
       cwd: REPO_ROOT,
       url: `${MOBILE_URL}/healthz`,
       reuseExistingServer: process.env.E2E_REUSE_SERVERS === "1",
       timeout: 60_000,
-      env: { PORT: MOBILE_PORT },
+      env: { PORT: MOBILE_PORT, WEAVE_API_BASE: API_URL },
     },
   ],
   projects: [
