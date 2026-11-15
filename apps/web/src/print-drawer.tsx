@@ -91,6 +91,10 @@ export function PrintDrawer({ open, onClose }: { open: boolean; onClose: () => v
     }
   }
 
+  // 关闭时不要留在 DOM 里：`fixed` + `translate-x-full` 仍会撑出横向滚动区域
+  // （375px 桌面视口下实测 document.scrollWidth 多出 66px）。
+  if (!open) return null;
+
   return (
     <div aria-hidden={!open} className={open ? "" : "pointer-events-none"}>
       <button
