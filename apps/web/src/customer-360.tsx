@@ -8,6 +8,7 @@ import type { CustomerTimelineEvent, CustomerTimelineKind } from "@weave-order/s
 import { Badge, Button, CustomerHeader, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SharePanel } from "@/share-panel";
+import { InboundReplyDrawer } from "@/inbound-reply-drawer";
 import { STATUS_LABEL, TIMELINE_KIND_LABEL, actionLabel, relativeTime } from "@/format";
 
 type TimelineFilter = "all" | CustomerTimelineKind;
@@ -19,6 +20,7 @@ const TIMELINE_FILTERS: Array<{ value: TimelineFilter; label: string }> = [
   { value: "order", label: "订单" },
   { value: "receivable", label: "回款" },
   { value: "followup", label: "跟进" },
+  { value: "inbound_reply", label: "客户回复" },
 ];
 
 const SENSITIVITY_LABEL: Record<string, string> = {
@@ -82,6 +84,10 @@ function shortId(value: string | null): string {
 function eventTitle(event: CustomerTimelineEvent): string {
   if (event.kind === "order") return `订单 · ${event.code ?? shortId(event.refId)}`;
   if (event.kind === "followup") return actionLabel(event.code ?? "");
+  if (event.kind === "inbound_reply") {
+    const source = event.code === "screenshot" ? "截图 OCR" : "文本粘贴";
+    return `客户回复 · ${source}`;
+  }
   return `${TIMELINE_KIND_LABEL[event.kind] ?? event.kind} · ${shortId(event.refId)}`;
 }
 
@@ -112,6 +118,7 @@ export function Customer360Panel({
   const detail = useCustomer360(api, customerId);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
+  const [inboundOpen, setInboundOpen] = useState(false);
 
   const kinds: CustomerTimelineKind[] = filter === "all" ? [] : [filter];
   const timeline = useCustomerTimeline(api, customerId, kinds);
@@ -346,6 +353,9 @@ export function Customer360Panel({
         <Link href={`/today?intent=${encodeURIComponent(`给${customer.name}寄样：`)}`}>
           <Button className="min-h-9 px-3 text-xs">建寄样单</Button>
         </Link>
+        <Button className="min-h-9 px-3 text-xs" onClick={() => setInboundOpen(true)}>
+          录入客户回复
+        </Button>
         <Button
           className="min-h-9 px-3 text-xs"
           disabled={!shareableQuoteId}
@@ -467,6 +477,14 @@ export function Customer360Panel({
           onClose={() => setShareTarget(null)}
         />
       )}
+
+      <InboundReplyDrawer
+        open={inboundOpen}
+        customerId={customer.id}
+        customerName={customer.name}
+        onClose={() => setInboundOpen(false)}
+        onDone={() => void timeline.refetch()}
+      />
     </div>
   );
 }

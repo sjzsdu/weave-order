@@ -153,6 +153,11 @@ const EnvSchema = z.object({
   MEDIA_BASE_URL: z.string().url().optional(),
   /** 上传预签名有效期（秒）。 */
   MEDIA_PRESIGN_TTL_SECONDS: z.coerce.number().int().positive().max(604_800).default(600),
+  /**
+   * 手工录入客户回复的原始 payload 保留天数（合规项）。
+   * 到期后由 `pnpm --filter @weave-order/api maintain:inbound` 清空 `raw_payload`。
+   */
+  INBOUND_RAW_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).default(30),
   /** 打印代理 token 的 HS256 密钥；生产必须覆盖为 ≥32 字节随机值。 */
   PRINT_AGENT_SECRET: z.string().min(32).default(DEV_PRINT_AGENT_SECRET),
   /** 服务端 A4 PDF 的中文字体（TTF/OTF；TTC 不受支持）。 */
@@ -253,8 +258,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
         `可选：${DASHSCOPE_MULTIMODAL_DIMENSIONS.join(" / ")}`,
     );
   }
-  if (env.CAPTION_FALLBACK && !(env.IMAGE_EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "").trim()) {
-    throw new Error("CAPTION_FALLBACK=true 需要 IMAGE_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY（caption 走同一个 key）。");
+  if (
+    env.CAPTION_FALLBACK &&
+    !(env.IMAGE_EMBEDDING_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "").trim()
+  ) {
+    throw new Error(
+      "CAPTION_FALLBACK=true 需要 IMAGE_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY（caption 走同一个 key）。",
+    );
   }
   // caption 兜底最终要落到**文本语义检索**上：文本 provider 还是哈希 stub 时，
   // 兜底会返回一组「按描述检索」但没有语义的结果 —— 宁可拒绝启动。

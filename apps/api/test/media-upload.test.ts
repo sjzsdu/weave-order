@@ -211,6 +211,29 @@ describe("POST /api/media/presign 的入参边界", () => {
     expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
+  it("purpose=inbound 签出 inbound/ 前缀的 key，且不能与 sampleId 同时使用", async () => {
+    const { media, storage } = service();
+    const kernel = fakeKernel(TENANT_A, [SAMPLE_A]);
+    const result = await media.presign(kernel, {
+      mimeType: "image/png",
+      byteSize: 4096,
+      purpose: "inbound",
+    });
+    expect(result.objectKey).toMatch(
+      new RegExp(`^tenant/${TENANT_A}/inbound/[0-9a-f-]{36}\\.png$`),
+    );
+    expect(storage.presigned[0]?.objectKey).toBe(result.objectKey);
+
+    await expect(
+      media.presign(kernel, {
+        mimeType: "image/png",
+        byteSize: 4096,
+        purpose: "inbound",
+        sampleId: SAMPLE_A,
+      }),
+    ).rejects.toMatchObject({ code: "KERNEL_REJECTED" });
+  });
+
   it("别的租户的 sampleId 签不出 key（404 语义）", async () => {
     const { media, storage } = service();
     const kernel = fakeKernel(TENANT_A, [SAMPLE_A]);

@@ -374,6 +374,21 @@ export async function loadCustomerTimeline(
       WHERE audit_log.tenant_id = ${tenantId}
         AND audit_log.entity_id = ${customerId}::uuid
         AND audit_log.entity_type IN ('customer', 'customer_context')
+
+      UNION ALL
+
+      SELECT
+        'inbound_reply'::text,
+        inbound_messages.id,
+        inbound_messages.id,
+        inbound_messages.channel::text,
+        'RECEIVED'::text,
+        NULL::bigint,
+        NULL::text,
+        inbound_messages.received_at
+      FROM inbound_messages
+      WHERE inbound_messages.tenant_id = ${tenantId}
+        AND inbound_messages.customer_id = ${customerId}::uuid
     )
     SELECT * FROM events
     WHERE true

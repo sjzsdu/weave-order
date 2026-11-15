@@ -481,7 +481,11 @@ export class LiteLlmProvider implements LlmProvider {
           ? settings.reasoningModel
           : fallbackModel;
     if (!settings.modelAllowlist.includes(model)) {
-      throw new Error(`模型 ${model} 不在租户白名单内`);
+      throw new Error(
+        task === "SCREENSHOT_OCR"
+          ? `截图识别需要视觉模型 ${model}，但当前租户模型白名单未包含它；请在「设置 → 模型白名单」中加入 ${model} 后重试。`
+          : `模型 ${model} 不在租户白名单内`,
+      );
     }
     const requestId = randomUUID();
     const redactedMessages = messages.map((message) => ({

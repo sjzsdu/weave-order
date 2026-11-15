@@ -42,6 +42,11 @@ const PresignInputSchema = z
     /** 回款凭证：为某笔应收签一个只读用途的上传地址。 */
     receivableId: z.string().uuid().optional(),
     /**
+     * 手工录入客户回复的截图：key 落在 `tenant/<tenant>/inbound/`，
+     * 不挂样品、不走 confirm；OCR 由服务端在入库时按 key 换签名 URL。
+     */
+    purpose: z.enum(["inbound"]).optional(),
+    /**
      * 契约兼容字段：真正落库的 variant 由 confirm 决定（presign 是无状态的）。
      * 不带 sampleId 的 key 落在 `uploads/` 下，confirm 会拒绝挂载——预留非样品图片用途。
      */
@@ -91,8 +96,13 @@ export class MediaService {
         reason: "MEDIA_INPUT_INVALID",
       });
     }
-    const { mimeType, byteSize, sampleId, receivableId } = parsed.data;
-    if (sampleId && receivableId) {
+    const { mimeType, byteSize, sampleId, receivableId, purpose } = parsed.data;
+    const purposeCount = [
+      sampleId,
+      receivableId,
+      purpose === "inbound" ? purpose : undefined,
+    ].filter((value) => value !== undefined).length;
+    if (purposeCount > 1) {
       throw new KernelError("KERNEL_REJECTED", "上传地址只能有一个用途", {
         reason: "MEDIA_INPUT_INVALID",
       });
@@ -120,7 +130,9 @@ export class MediaService {
     }
     const objectKey = receivableId
       ? `tenant/${kernel.tenantId}/receipts/${receivableId}/${randomUUID()}.${EXTENSION_BY_MIME[mimeType]}`
-      : this.buildObjectKey(kernel.tenantId, sampleId, mimeType);
+      : purpose === "inbound"
+        ? `tenant/${kernel.tenantId}/inbound/${randomUUID()}.${EXTENSION_BY_MIME[mimeType]}`
+        : this.buildObjectKey(kernel.tenantId, sampleId, mimeType);
     const expiresInSeconds = this.env.MEDIA_PRESIGN_TTL_SECONDS;
     const uploadUrl = await this.storage.presignPut({
       objectKey,

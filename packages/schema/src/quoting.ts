@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Currency, EntityId, FabricSample, Quantity, QuoteStatus } from "./domain";
+import { LlmTask } from "./llm";
 import { ImagePayload } from "./tools/t001-search-fabric-by-image";
 import { QuotePricingBasis } from "./tools/t006-suggest-line-price";
 import { QuoteDraft } from "./tools/t004-generate-quote-draft";
@@ -120,13 +121,7 @@ export type QuoteAgentFailure = z.infer<typeof QuoteAgentFailure>;
 export const LlmCallReceipt = z
   .object({
     requestId: z.string().uuid(),
-    task: z.enum([
-      "QUOTE_INTENT",
-      "QUOTE_DRAFT",
-      "FOLLOWUP_SUGGESTION",
-      "REPLY_CLASSIFICATION",
-      "SCREENSHOT_OCR",
-    ]),
+    task: LlmTask,
     model: z.string(),
     provider: z.string(),
     promptTokens: z.number().int().nonnegative(),

@@ -45,6 +45,12 @@ async function waitForDatabase(handle: DatabaseHandle): Promise<void> {
  */
 export async function createQuoteDemoContext(): Promise<QuoteDemoContext> {
   const env = loadEnv();
+  if (env.LLM_PROVIDER !== "litellm") {
+    console.log(
+      "\n⚠ 【模拟轨迹】LLM_PROVIDER=local-rule：下文槽位解析与候选理由是本地规则产出，" +
+        "不是真实模型调用。",
+    );
+  }
   const handle = connectDatabase(env.DATABASE_URL);
   await waitForDatabase(handle);
 

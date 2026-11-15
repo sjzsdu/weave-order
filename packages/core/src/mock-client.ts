@@ -429,6 +429,10 @@ export function createMockApiClient(): ApiClient {
 
     confirmImage: () => Promise.reject(new Error("演示模式不支持上传图片，请用真实账号")),
 
+    ingestInboundReply: () => Promise.reject(new Error("演示模式不支持录入客户回复，请用真实账号")),
+
+    inboundReplies: () => Promise.resolve([]),
+
     panorama: () =>
       Promise.resolve(
         PanoramaSnapshot.parse({

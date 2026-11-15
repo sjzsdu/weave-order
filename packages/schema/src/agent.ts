@@ -65,12 +65,15 @@ export type FollowupChannel = z.infer<typeof FollowupChannel>;
 /**
  * 来自渠道的原始客户回复（微信 / 邮件 / 电话转写）。
  * 渠道适配器负责把原始报文解析成这个结构；意图判断由 LLM provider 完成。
+ *
+ * `text` 上限与 `inbound_messages.text` 对齐（8000）：手工粘贴的「一大段文本」
+ * 不能因为这里只有 2000 而在图入口被拒（评审 D4）。
  */
 export const RawCustomerReply = z
   .object({
     id: EntityId,
     channel: FollowupChannel,
-    text: z.string().min(1).max(2000),
+    text: z.string().min(1).max(8000),
     receivedAt: Timestamp,
   })
   .strict();
