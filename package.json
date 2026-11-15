@@ -16,7 +16,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run build && node scripts/lint.mjs",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p e2e/tsconfig.json --noEmit",
     "test": "turbo run test",
     "verify:prod-env": "pnpm --filter @weave-order/api verify:prod-env",
     "format": "prettier --write .",

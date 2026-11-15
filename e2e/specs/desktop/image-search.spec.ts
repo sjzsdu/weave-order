@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../support/test";
 import { readSeed } from "../../support/seed";
 import { openGallery, screenshot } from "../../support/ui";
 
@@ -72,8 +72,10 @@ test.describe("以图找样", () => {
       expect(natural.complete).toBe(true);
       expect(natural.width).toBeGreaterThan(0);
     }
-    // local-stub 时必须明确标注「演示模式」，不能让用户误以为是真图搜图。
-    if (!data.semantic) {
+    // 语义状态必须如实标注：local-stub → 演示模式；真实模型 → 真实图向量。
+    if (data.semantic) {
+      await expect(panel.getByTestId("image-search-mode")).toContainText("真实图向量");
+    } else {
       await expect(panel.getByTestId("image-search-mode")).toContainText("演示模式");
     }
 

@@ -88,9 +88,11 @@ async function main() {
     run("bash", ["scripts/dev-storage-up.sh"]);
   }
 
-  log("1/4 数据库迁移（幂等）");
+  log("1/4 数据库迁移（幂等，只迁 E2E 用到的业务库）");
   if (process.env.E2E_SKIP_MIGRATE === "1") console.log("  已跳过（E2E_SKIP_MIGRATE=1）");
-  else run("pnpm", ["db:migrate"]);
+  // 不跑 `pnpm db:migrate`：那会连控制面库（platform-api），E2E 不碰它；
+  // 本地/CI 只准备业务库，失败原因才聚焦在本次要验证的链路上。
+  else run("pnpm", ["--filter", "@weave-order/db", "migrate"]);
 
   log("2/4 构建 web / mobile（Taro 产物关 mock、指向测试 API）");
   if (process.env.E2E_SKIP_BUILD === "1") {

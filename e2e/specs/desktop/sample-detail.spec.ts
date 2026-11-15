@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../support/test";
 import { API_URL, AUTH, WEB_URL } from "../../support/env";
 import { readSeed } from "../../support/seed";
 import { openGallery, openSample, screenshot } from "../../support/ui";
@@ -39,19 +39,22 @@ test.describe("样品详情抽屉", () => {
     await drawer.getByRole("button", { name: "关闭" }).click();
     await openSample(page, sample);
     const first = drawer.locator('img[alt*="第 1 张"]');
-    await expect(first).toHaveAttribute("src", new RegExp(escapeRegExp(sample.images[0]!.url)));
+    // WAN-125：大图优先用派生的 `_640.webp`，未就绪才回退原图。
+    const firstSrc = sample.images[0]!.detailUrl ?? sample.images[0]!.url;
+    await expect(first).toHaveAttribute("src", new RegExp(escapeRegExp(firstSrc)));
     const thumbs = drawer.locator('button:has(img[alt*="缩略图"])');
     await expect(thumbs).toHaveCount(2);
     await thumbs.nth(1).click();
+    const secondSrc = sample.images[1]!.detailUrl ?? sample.images[1]!.url;
     await expect(drawer.locator('img[alt*="第 2 张"]')).toHaveAttribute(
       "src",
-      new RegExp(escapeRegExp(sample.images[1]!.url)),
+      new RegExp(escapeRegExp(secondSrc)),
     );
     await screenshot(page, testInfo, "sample-detail-carousel");
 
     // 同一份数据，SALES 登录看不到成本底线（服务端裁剪，前端只渲染 null）。
     const salesResponse = await request.get(`${API_URL}/api/samples/${priced.id}`, {
-      headers: { Authorization: `Bearer ${AUTH.sales}` },
+      headers: { Authorization: `Bearer ${seed.salesCredential}` },
     });
     expect(salesResponse.ok()).toBe(true);
     const salesSample = (await salesResponse.json()) as { sample: { costFloor: unknown } };
@@ -75,6 +78,20 @@ test.describe("样品详情抽屉", () => {
               secure: false,
               sameSite: "Lax",
             },
+            ...(seed.salesSid
+              ? [
+                  {
+                    name: "weave_sid",
+                    value: seed.salesSid,
+                    domain: "localhost",
+                    path: "/",
+                    expires: -1,
+                    httpOnly: true,
+                    secure: false,
+                    sameSite: "Lax" as const,
+                  },
+                ]
+              : []),
           ],
           origins: [],
         },

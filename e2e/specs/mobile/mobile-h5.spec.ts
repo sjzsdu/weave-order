@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { AUTH, MEDIA_BASE_URL } from "../../support/env";
+import { MEDIA_BASE_URL } from "../../support/env";
+import { readSeed } from "../../support/seed";
 import { screenshot } from "../../support/ui";
 
 /**
@@ -27,9 +28,14 @@ test.describe("移动端 H5 关键路径", () => {
         originalClick.call(this);
       };
     });
-    // 移动端没有 BFF：API 走跨域，测试在请求层补 dev 令牌（页面代码零改动）。
+    // 移动端没有 BFF：API 走跨域，测试在请求层补 dev 令牌与「已选公司」会话
+    // （页面代码零改动）。多租户账号缺 weave_sid 时业务请求会 401。
+    const seed = await readSeed();
     await page.route("**/api/**", async (route) => {
-      const headers = { ...route.request().headers(), authorization: `Bearer ${AUTH.owner}` };
+      const headers = {
+        ...route.request().headers(),
+        authorization: `Bearer ${seed.ownerCredential}`,
+      };
       await route.continue({ headers });
     });
   });
@@ -116,7 +122,10 @@ test.describe("移动端 H5 关键路径", () => {
     };
     expect(body.ok, body.error?.message).toBe(true);
     const matches = body.data?.matches ?? [];
+    // topK=5 的契约：最多 5 条；本轮唯一纹理图在 local-stub 与真实模型下都应命中，
+    // 至少 1 条（真实模型下其余候选取决于相似度阈值，不强行凑满 5）。
     expect(matches.length).toBeGreaterThanOrEqual(1);
+    expect(matches.length).toBeLessThanOrEqual(5);
     for (const match of matches) {
       expect(match.matchedImageUrl, "候选必须带命中的那张图").toBeTruthy();
     }

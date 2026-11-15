@@ -61,7 +61,9 @@ export default defineConfig({
       url: `${API_URL}/api/health`,
       reuseExistingServer: process.env.E2E_REUSE_SERVERS === "1",
       timeout: 120_000,
+      // 显式继承 runner 环境（CI 的 DATABASE_URL / S3_* 等必须传进子进程）。
       env: {
+        ...(process.env as Record<string, string>),
         PORT: API_PORT,
         NODE_ENV: "development",
         AUTH_MODE: "dev",
@@ -76,6 +78,7 @@ export default defineConfig({
       reuseExistingServer: process.env.E2E_REUSE_SERVERS === "1",
       timeout: 120_000,
       env: {
+        ...(process.env as Record<string, string>),
         API_PROXY_TARGET: API_URL,
         WEB_APP_URL: WEB_URL,
         DEV_AUTH_TOKEN: AUTH.owner,
@@ -89,7 +92,11 @@ export default defineConfig({
       url: `${MOBILE_URL}/healthz`,
       reuseExistingServer: process.env.E2E_REUSE_SERVERS === "1",
       timeout: 60_000,
-      env: { PORT: MOBILE_PORT, WEAVE_API_BASE: API_URL },
+      env: {
+        ...(process.env as Record<string, string>),
+        PORT: MOBILE_PORT,
+        WEAVE_API_BASE: API_URL,
+      },
     },
   ],
   projects: [

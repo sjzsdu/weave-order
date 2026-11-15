@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { API_URL, ARTIFACTS_DIR, AUTH } from "./env";
+import { API_URL, ARTIFACTS_DIR, AUTH, REPO_ROOT } from "./env";
 
 /**
  * 验收数据种子：只通过 HTTP API 写入（不直连数据库），因此这套种子本身
@@ -22,7 +23,11 @@ const ALLOWED = "image/jpeg";
 interface ApiImage {
   id: string;
   url: string;
+  /** WAN-125：服务端派生的 `_320.webp`；未就绪时回退原图，必须同时看 thumbStatus。 */
   thumbUrl: string | null;
+  detailUrl?: string | null;
+  thumbStatus: "pending" | "ready" | "failed";
+  thumbError?: string | null;
   isPrimary: boolean;
   indexStatus: string;
   indexError?: string | null;
@@ -30,6 +35,7 @@ interface ApiImage {
 
 interface ApiSample {
   id: string;
+  tenantId: string;
   code: string;
   name: string;
   costFloor: { amount: number; currency: string } | null;
@@ -44,6 +50,13 @@ export interface SeedSample extends ApiSample {
 export interface SeedManifest {
   fixture: string;
   altFixture: string;
+  /** 多租户账号必须先选公司：后续请求带 `Cookie: weave_sid=<sid>`。 */
+  ownerSid: string | null;
+  salesSid: string | null;
+  /** 可直接作为 `Authorization: Bearer <credential>` 的会话令牌（多租户必需）。 */
+  ownerCredential: string;
+  salesCredential: string;
+  tenantId: string;
   /** 10 个样品共用同一张图：top-5 断言不依赖真实模型也有 5 条候选，同时撑满 5 列两行。 */
   fabricSamples: SeedSample[];
   carouselSample: SeedSample;
@@ -51,11 +64,14 @@ export interface SeedManifest {
   sharedImageCodes: string[];
 }
 
+/** 选中的公司会话；多租户账号没有它时所有业务请求都是 401。 */
+let ownerCredential: string = AUTH.owner;
+
 async function api<T>(pathname: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${pathname}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${AUTH.owner}`,
+      Authorization: `Bearer ${ownerCredential}`,
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...(init.headers ?? {}),
     },
@@ -65,6 +81,53 @@ async function api<T>(pathname: string, init: RequestInit = {}): Promise<T> {
     throw new Error(`${init.method ?? "GET"} ${pathname} → HTTP ${response.status}: ${text}`);
   }
   return (text ? JSON.parse(text) : null) as T;
+}
+
+/**
+ * 选公司：本地/共享库里 `dev:demo` 可能属于多个租户（另一套 UI 演示租户），
+ * 此时 Bearer 本身不足以定位租户，必须走一次 `/api/auth/switch` 换 sid。
+ * 优先选 slug=default（种子数据所在租户），否则取第一个 available。
+ */
+async function establishSession(
+  token: string,
+): Promise<{ sid: string | null; credential: string; tenantId: string }> {
+  const headers = { Authorization: `Bearer ${token}` };
+  const listResponse = await fetch(`${API_URL}/api/auth/tenants`, { headers });
+  if (!listResponse.ok) {
+    throw new Error(`GET /api/auth/tenants → HTTP ${listResponse.status}`);
+  }
+  const body = (await listResponse.json()) as {
+    status?: string;
+    tenant?: { id: string };
+    tenants?: {
+      tenantId: string;
+      slug: string;
+      available: boolean;
+      membershipStatus: string;
+    }[];
+  };
+  const choices = (body.tenants ?? []).filter(
+    (choice) => choice.available && choice.membershipStatus === "ACTIVE",
+  );
+  const target = choices.find((choice) => choice.slug === "default") ?? choices[0];
+  const tenantId = target?.tenantId ?? body.tenant?.id;
+  if (!tenantId) throw new Error("账号没有可用公司，无法建立 E2E 会话");
+  if (body.status !== "MULTI_TENANT") return { sid: null, credential: token, tenantId };
+  const switchResponse = await fetch(`${API_URL}/api/auth/switch`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ tenantId }),
+  });
+  if (!switchResponse.ok) {
+    throw new Error(`POST /api/auth/switch → HTTP ${switchResponse.status}`);
+  }
+  const cookie = switchResponse.headers
+    .getSetCookie()
+    .find((value) => value.startsWith("weave_sid="));
+  const sid = cookie?.split(";")[0]?.slice("weave_sid=".length) ?? null;
+  if (!sid) throw new Error("switch 没有返回 weave_sid");
+  // 业务 API 用 `session:<sid>` 作为 Bearer，避免在跨域 H5 里依赖 Cookie。
+  return { sid, credential: `session:${sid}`, tenantId };
 }
 
 async function findByCode(code: string): Promise<ApiSample | null> {
@@ -123,8 +186,38 @@ async function uploadImage(
   });
 }
 
-async function waitIndexed(sampleId: string, timeoutMs = 60_000): Promise<ApiSample> {
-  const deadline = Date.now() + timeoutMs;
+let backfillAttempted = false;
+
+/**
+ * WAN-125（main）之前的存量图没有 `_320.webp`：新分支第一次跑 E2E 时
+ * 那些样品会一直停在 `thumbStatus=pending`。用仓库自带的治理 CLI 补一次，
+ * 而不是改断言把「原图冒充缩略图」当成正常。
+ */
+function backfillLegacyThumbs(tenantId: string): void {
+  if (backfillAttempted) return;
+  backfillAttempted = true;
+  console.log("[e2e] 检测到缩略图未派生（WAN-125 之前的存量图），先补派生一次…");
+  const result = spawnSync(
+    "pnpm",
+    [
+      "--filter",
+      "@weave-order/api",
+      "maintain:media",
+      "--",
+      `--tenant=${tenantId}`,
+      "--skip-compress",
+      "--skip-orphans",
+    ],
+    { cwd: REPO_ROOT, stdio: "inherit", env: process.env },
+  );
+  if (result.status !== 0) {
+    throw new Error(`缩略图补派生失败（exit ${result.status ?? "signal"}）`);
+  }
+}
+
+async function waitIndexed(sampleId: string, timeoutMs = 90_000): Promise<ApiSample> {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
   let last: ApiSample | null = null;
   while (Date.now() < deadline) {
     const current = await api<{ sample: ApiSample }>(`/api/samples/${sampleId}`).then(
@@ -135,20 +228,28 @@ async function waitIndexed(sampleId: string, timeoutMs = 60_000): Promise<ApiSam
     if (failed) {
       throw new Error(`样品图索引失败：${failed.indexError ?? "unknown"}`);
     }
-    if (
+    const indexReady =
+      current.images.length > 0 && current.images.every((image) => image.indexStatus === "ready");
+    const thumbsReady =
       current.images.length > 0 &&
-      current.images.every((image) => image.indexStatus === "ready")
-    ) {
-      return current;
+      current.images.every((image) => image.thumbStatus === "ready" && image.thumbUrl !== null);
+    if (indexReady && thumbsReady) return current;
+    // 存量图不会自己派生：等 5s 仍 pending 就调一次治理 CLI。
+    if (!thumbsReady && Date.now() - startedAt > 5_000) {
+      backfillLegacyThumbs(current.tenantId);
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
   throw new Error(
-    `等待图片索引超时：${last?.images.map((image) => image.indexStatus).join(",") ?? "no images"}`,
+    `等待图片就绪超时：index=${last?.images.map((image) => image.indexStatus).join(",") ?? "none"} ` +
+      `thumb=${last?.images.map((image) => image.thumbStatus).join(",") ?? "none"}`,
   );
 }
 
 export async function ensureSeed(): Promise<SeedManifest> {
+  const owner = await establishSession(AUTH.owner);
+  ownerCredential = owner.credential;
+  const sales = await establishSession(AUTH.sales);
   const [primary, alt] = await Promise.all([readFile(PRIMARY_FILE), readFile(ALT_FILE)]);
   const sha = createHash("sha256").update(primary).digest("hex").slice(0, 8);
 
@@ -202,6 +303,11 @@ export async function ensureSeed(): Promise<SeedManifest> {
   const manifest: SeedManifest = {
     fixture: PRIMARY_FILE,
     altFixture: ALT_FILE,
+    ownerSid: owner.sid,
+    salesSid: sales.sid,
+    ownerCredential: owner.credential,
+    salesCredential: sales.credential,
+    tenantId: owner.tenantId,
     fabricSamples,
     carouselSample: { ...carouselReady, role: "carousel" },
     sharedImageCodes: fabricSamples.map((sample) => sample.code),
