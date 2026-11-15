@@ -311,6 +311,10 @@ ONBOARDING_SECRET=<openssl rand -hex 32>
 # 生产/OIDC 模式必须 https 且非 localhost，否则拒绝启动（WAN-130）。
 PUBLIC_APP_URL=https://<quote-域名>
 WEB_APP_URL=https://<租户端域名>
+# 租户端 Web（apps/web）也要拿到同一个 AUTH_MODE：它决定 Secure cookie、
+# 缺令牌不放行、开发登录入口是否关闭、演示模式是否可用（WAN-135）。
+# 不配时 web 只按 NODE_ENV 判定，staging（NODE_ENV=development + AUTH_MODE=oidc）会漏判。
+# AUTH_MODE=oidc  # web 容器同样注入这一行
 # 控制面：不设 = 自助开通的公司不登记试用订阅（onboarding 只跳过登记，不报错）。
 # 生产/OIDC 模式缺失会拒绝启动（WAN-130）。
 PLATFORM_API_URL=https://<platform-api-domain>
@@ -375,6 +379,7 @@ CAPTION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 | `S3_FORCE_PATH_STYLE`                | `false` / `true`（生产必须显式 `false`）         | 是                 | COS 上设 `true` → 签名主机名/路径错，浏览器 PUT 403，confirm HEAD 当对象不存在；生产漏配/`true` 直接拒绝启动（WAN-130） |
 | `PUBLIC_APP_URL`                     | `https://<quote-域名>` / `http://localhost:5174` | 生产必填           | 漏配/非 https → 客户报价链接指向 localhost，微信打开白屏；生产态直接拒绝启动（WAN-130）                                 |
 | `WEB_APP_URL`                        | `https://<租户端域名>` / `http://localhost:3001` | 生产必填           | 漏配/非 https → 开通链接、CLI 登录确认页指向 localhost；生产态直接拒绝启动（WAN-130）                                   |
+| `AUTH_MODE`（web 也要注入）          | `oidc` / `dev`                                   | 生产必填           | web 容器漏配 → 只按 `NODE_ENV` 判定，staging（`NODE_ENV=development`）会下发非 Secure cookie、放开开发登录入口与演示模式（WAN-135） |
 | `PLATFORM_API_URL`                   | 控制面地址 / 不设                                | 生产必填           | 不设 → 自助开通的公司不会被登记试用订阅；生产态直接拒绝启动（WAN-130）                                                  |
 | `NOTIFY_PROVIDER`                    | `webhook` / `log`                                | 生产必填 `webhook` | 保持 `log` → 邀请、试用到期等提醒只写服务端日志，用户永远收不到；生产态直接拒绝启动（WAN-130）                          |
 | `MEDIA_BASE_URL`                     | 私有桶：不写；CDN：`https://cdn.<域名>`          | 方案②必填          | 私有桶填了 → 图片 403；写空字符串 → 启动失败；末尾多 `/` → 双斜杠/404                                                   |
