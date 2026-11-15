@@ -57,11 +57,23 @@ export interface SeedManifest {
   ownerCredential: string;
   salesCredential: string;
   tenantId: string;
+  /** WAN-136：由 persona 目录驱动的夹具，供角色切换与 TEAM 数据范围断言。 */
+  persona: PersonaFixture;
   /** 10 个样品共用同一张图：top-5 断言不依赖真实模型也有 5 条候选，同时撑满 5 列两行。 */
   fabricSamples: SeedSample[];
   carouselSample: SeedSample;
   /** 共用图样品的 code 集合，供「top-5 必须包含它们」断言。 */
   sharedImageCodes: string[];
+}
+
+export interface PersonaFixture {
+  tenantId: string;
+  customerCode: string;
+  customerName: string;
+  salesSubject: string;
+  managerSubject: string;
+  salesTeamId: string | null;
+  managerTeamId: string | null;
 }
 
 /** 选中的公司会话；多租户账号没有它时所有业务请求都是 401。 */
@@ -246,7 +258,30 @@ async function waitIndexed(sampleId: string, timeoutMs = 90_000): Promise<ApiSam
   );
 }
 
+/**
+ * persona 夹具：7 个成员 + 一条业务员名下客户。
+ *
+ * 走 api workspace 的脚本而不是 HTTP：客户创建没有公开端点（内核是唯一写入口），
+ * 而脚本本身复用 `ensureDemoIdentity` 与 persona 目录，避免 e2e 另抄一份角色清单。
+ */
+function ensurePersonaFixture(): PersonaFixture {
+  const result = spawnSync("pnpm", ["--filter", "@weave-order/api", "seed:persona", "--silent"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `persona 夹具失败（exit ${result.status ?? "signal"}）：${result.stderr || result.stdout}`,
+    );
+  }
+  const line = result.stdout.trim().split("\n").filter(Boolean).pop();
+  if (!line) throw new Error("persona 夹具没有输出 JSON");
+  return JSON.parse(line) as PersonaFixture;
+}
+
 export async function ensureSeed(): Promise<SeedManifest> {
+  const persona = ensurePersonaFixture();
   const owner = await establishSession(AUTH.owner);
   ownerCredential = owner.credential;
   const sales = await establishSession(AUTH.sales);
@@ -308,6 +343,7 @@ export async function ensureSeed(): Promise<SeedManifest> {
     ownerCredential: owner.credential,
     salesCredential: sales.credential,
     tenantId: owner.tenantId,
+    persona,
     fabricSamples,
     carouselSample: { ...carouselReady, role: "carousel" },
     sharedImageCodes: fabricSamples.map((sample) => sample.code),

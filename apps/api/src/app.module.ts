@@ -3,6 +3,7 @@ import type { MiddlewareConsumer, Provider } from "@nestjs/common";
 import { APP_FILTER } from "@nestjs/core";
 import { GatewayModule } from "./gateway/gateway.module";
 import { SessionCredentialMiddleware } from "./gateway/session-credential.middleware";
+import { DevModule, devPersonasEnabled } from "./dev/dev.module";
 import { HttpModule } from "./http/http.module";
 import { ZodExceptionFilter } from "./http/zod-exception.filter";
 import { DatabaseModule } from "./platform/database.module";
@@ -21,7 +22,13 @@ const providers: Provider[] = [
 ];
 
 @Module({
-  imports: [DatabaseModule, HttpModule, GatewayModule],
+  // dev persona 路由按环境条件注册：非 dev 模式下模块根本不进容器，路由是 404。
+  imports: [
+    DatabaseModule,
+    HttpModule,
+    GatewayModule,
+    ...(devPersonasEnabled() ? [DevModule] : []),
+  ],
   providers,
 })
 export class AppModule implements NestModule {

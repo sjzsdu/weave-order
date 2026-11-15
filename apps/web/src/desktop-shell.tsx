@@ -10,6 +10,7 @@ import type { TenantChoice } from "@weave-order/schema";
 import { Badge, CommandBar, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
+import { PersonaBar } from "@/persona-bar";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
 
 const WINDOWS = [
@@ -371,6 +372,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </footer>
 
       <PrintDrawer open={printOpen} onClose={() => setPrintOpen(false)} />
+      {/* 本地 dev 专属：API 有 dev 路由才出现（生产 404 自动隐藏），⌘⇧I 展开 7 个 persona。 */}
+      <PersonaBar />
     </div>
   );
 }

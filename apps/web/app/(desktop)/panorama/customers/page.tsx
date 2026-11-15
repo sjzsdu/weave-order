@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useCustomerList } from "@weave-order/core";
+import { useAuthContext, useCustomerList } from "@weave-order/core";
 import type { CustomerListOptions } from "@weave-order/schema";
 import { Badge, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
@@ -22,6 +22,10 @@ export default function CustomersPage() {
 
 function CustomersPageContent() {
   const api = useApi();
+  const me = useAuthContext(api);
+  // TEAM 范围下「我的」等于本组：后端已按团队过滤，这里把文案对齐。
+  const mineLabel =
+    me.data && !("tenants" in me.data) && me.data.membership.dataScope === "TEAM" ? "本组" : "我的";
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState<"mine" | "all">("mine");
   const [tier, setTier] = useState("");
@@ -112,7 +116,7 @@ function CustomersPageContent() {
             onChange={(event) => setOwner(event.target.value as "mine" | "all")}
             className="min-h-9 rounded-md border border-line bg-surface px-2 text-sm"
           >
-            <option value="mine">我的</option>
+            <option value="mine">{mineLabel}</option>
             <option value="all">全部</option>
           </select>
         </label>

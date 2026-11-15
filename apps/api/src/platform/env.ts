@@ -166,6 +166,10 @@ const EnvSchema = z.object({
   PRINT_CHROME_PATH: z.string().optional(),
   /** 个人访问凭据（CLI / agent）哈希的 pepper；生产必须覆盖为 ≥32 字节随机值。 */
   PERSONAL_TOKEN_PEPPER: z.string().min(16).default(DEV_PERSONAL_TOKEN_PEPPER),
+  /** 演示/seed 落库的租户；缺省为迁移内置的 default 租户。dev persona 端点读同一个值。 */
+  SEED_TENANT_ID: z.string().uuid().optional(),
+  /** 演示成员的 Casdoor org 标记（仅目录查询校验用，不参与授权）。 */
+  SEED_ORG: z.string().min(1).max(128).optional(),
   /** CLI 登录确认页所在的租户端 Web 地址（与 API 分开部署）。 */
   WEB_APP_URL: z.string().url().default("http://localhost:3001"),
   /** 控制面地址：自助开通的公司要登记试用订阅。缺省时不登记（本地/单机模式）。 */

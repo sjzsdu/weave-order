@@ -441,6 +441,37 @@ export class AuthService {
     return { body: context, sid: rebound.sid };
   }
 
+  /**
+   * 仅 dev 模式：把当前浏览器切到指定 subject 的租户会话。
+   *
+   * 只由 `DevPersonasController` 调用（非 dev 模式该控制器不注册）。
+   * 与 `/api/auth/switch` 同一条安全路径：先 `resolveOrThrow` 重查库里
+   * 真实 membership，再换绑一把全新 sid；旧 sid 立即销毁，避免两个标签页
+   * 各自以为是不同角色。客户端只需要 personaKey，tenantId 由服务端注入。
+   */
+  async openPersonaSession(
+    currentSid: string | null,
+    input: { subject: string; tenantId: string },
+  ): Promise<AuthResponse<AuthContextResponse>> {
+    const membership = await this.resolveOrThrow(input.subject, input.tenantId);
+    await this.sessions.destroy(currentSid);
+    const session = await this.sessions.create({
+      sub: input.subject,
+      // 与 dev 令牌验签器保持同样的展示值，切角色后顶栏名字不会跳。
+      name: input.subject,
+      email: `${input.subject}@dev.local`,
+      tenantId: membership.tenantId,
+    });
+    return {
+      body: await this.contextBody({
+        claims: this.claimsForSession(session.record),
+        membership,
+        sid: session.sid,
+      }),
+      sid: session.sid,
+    };
+  }
+
   /** 登出：删 Redis 会话（幂等），Cookie 由控制器清除。 */
   async logout(header: string | undefined, sid: string | null): Promise<void> {
     const candidates = new Set<string>();

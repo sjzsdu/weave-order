@@ -173,7 +173,9 @@ export async function loadCustomerList(
 
   // 「我的」只是收窄。没有成员身份（本地演示 / 系统任务）时不额外限制，
   // 真正的越权由上面的 data-scope 拦，不靠这个筛选兜底。
-  if (options.owner === "mine" && ctx?.ownerId) {
+  // TEAM 范围下「我的」= 本组：再按 owner_id=self 收窄会让经理看到空列表，
+  // 与「经理能看到业务员的客户」的数据范围语义冲突；ALL 范围仍只保留本人。
+  if (options.owner === "mine" && ctx?.ownerId && ctx.dataScope !== "TEAM") {
     conditions.push(sql`customers.owner_id = ${ctx.ownerId}`);
   }
   if (options.tier) conditions.push(sql`customers.tier = ${options.tier}`);

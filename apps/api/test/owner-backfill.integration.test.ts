@@ -186,13 +186,53 @@ describe("无归属客户：可见性语义与回填", () => {
       const second = await ensureDemoIdentity(database);
       expect(second).toEqual(first);
 
-      const membershipsInTenant = await poolInstance.query<{ subject: string; role: string }>(
-        "SELECT subject, role FROM memberships WHERE tenant_id = $1 ORDER BY subject",
+      const membershipsInTenant = await poolInstance.query<{
+        subject: string;
+        role: string;
+        data_scope: string;
+        team_id: string | null;
+      }>(
+        "SELECT subject, role, data_scope, team_id FROM memberships WHERE tenant_id = $1 ORDER BY subject",
         [tenant.id],
       );
       expect(membershipsInTenant.rows).toEqual([
-        { subject: "demo", role: "OWNER" },
-        { subject: "demo-sales", role: "SALES" },
+        { subject: "demo", role: "OWNER", data_scope: "ALL", team_id: null },
+        {
+          subject: "demo-finance",
+          role: "FINANCE",
+          data_scope: "ALL",
+          team_id: null,
+        },
+        {
+          subject: "demo-manager",
+          role: "MANAGER",
+          data_scope: "TEAM",
+          team_id: "00000000-0000-0000-0000-0000000a0001",
+        },
+        {
+          subject: "demo-merchandiser",
+          role: "MERCHANDISER",
+          data_scope: "TEAM",
+          team_id: "00000000-0000-0000-0000-0000000a0002",
+        },
+        {
+          subject: "demo-sales",
+          role: "SALES",
+          data_scope: "OWN",
+          team_id: "00000000-0000-0000-0000-0000000a0001",
+        },
+        {
+          subject: "demo-sample-admin",
+          role: "SAMPLE_ADMIN",
+          data_scope: "TEAM",
+          team_id: "00000000-0000-0000-0000-0000000a0002",
+        },
+        {
+          subject: "demo-viewer",
+          role: "VIEWER",
+          data_scope: "ALL",
+          team_id: null,
+        },
       ]);
     } finally {
       if (previous === undefined) delete process.env.SEED_TENANT_ID;

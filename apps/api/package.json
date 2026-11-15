@@ -15,6 +15,7 @@
     "demo:followup": "tsx scripts/demo-followup.ts",
     "demo:quote": "tsx scripts/demo-quote.ts",
     "seed": "tsx scripts/import-data.ts",
+    "seed:persona": "tsx scripts/seed-persona-fixture.ts",
     "backfill:owner": "tsx scripts/backfill-owner.ts",
     "reindex:samples": "tsx scripts/reindex-samples.ts",
     "reindex:images": "tsx scripts/reindex-images.ts",
