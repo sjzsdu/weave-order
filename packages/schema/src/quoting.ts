@@ -120,7 +120,13 @@ export type QuoteAgentFailure = z.infer<typeof QuoteAgentFailure>;
 export const LlmCallReceipt = z
   .object({
     requestId: z.string().uuid(),
-    task: z.enum(["QUOTE_INTENT", "QUOTE_DRAFT", "FOLLOWUP_SUGGESTION", "REPLY_CLASSIFICATION"]),
+    task: z.enum([
+      "QUOTE_INTENT",
+      "QUOTE_DRAFT",
+      "FOLLOWUP_SUGGESTION",
+      "REPLY_CLASSIFICATION",
+      "SCREENSHOT_OCR",
+    ]),
     model: z.string(),
     provider: z.string(),
     promptTokens: z.number().int().nonnegative(),

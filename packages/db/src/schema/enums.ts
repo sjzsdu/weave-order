@@ -134,6 +134,7 @@ export const llmTaskEnum = pgEnum("llm_task", [
   "QUOTE_DRAFT",
   "FOLLOWUP_SUGGESTION",
   "REPLY_CLASSIFICATION",
+  "SCREENSHOT_OCR",
 ]);
 
 /**

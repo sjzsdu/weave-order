@@ -209,6 +209,69 @@ describe("LiteLLM provider", () => {
   });
 });
 
+describe("截图识别（SCREENSHOT_OCR 多模态）", () => {
+  it("用视觉模型发送 image_url，并计入 SCREENSHOT_OCR 计量", async () => {
+    const { usage, reserve, settle, fail } = sink();
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          id: "chatcmpl-img-1",
+          model: "qwen-vl-plus",
+          choices: [
+            { message: { content: JSON.stringify({ text: "这款 220g 棉的多少钱？" }) } },
+          ],
+          usage: {
+            prompt_tokens: 1500,
+            completion_tokens: 40,
+            prompt_tokens_details: { cached_tokens: 0 },
+          },
+        }),
+    }) as unknown as typeof fetch;
+
+    const provider = new LiteLlmProvider({
+      settings: { ...settings, modelAllowlist: ["deepseek-chat", "deepseek-reasoner", "qwen-vl-plus"] },
+      usage,
+      apiKey: "sk",
+      timeoutMs: 1000,
+      fetchImpl,
+      now: () => new Date("2026-11-12T00:00:00.000Z"),
+    });
+
+    const result = await provider.extractReplyFromImage({
+      imageUrl: "data:image/png;base64,AAAA",
+    });
+
+    expect(result.text).toBe("这款 220g 棉的多少钱？");
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("http://litellm.test:4000/chat/completions");
+    const body = JSON.parse(typeof init.body === "string" ? init.body : "{}") as {
+      model: string;
+      messages: { role: string; content: unknown }[];
+    };
+    expect(body.model).toBe("qwen-vl-plus");
+    const userMsg = body.messages.find((m) => m.role === "user");
+    expect(JSON.stringify(userMsg?.content)).toContain("image_url");
+    expect(JSON.stringify(userMsg?.content)).toContain("data:image/png;base64,AAAA");
+
+    const reserved = reserve.mock.calls[0]?.[0] as { task: string; reservedTokens: number };
+    expect(reserved.task).toBe("SCREENSHOT_OCR");
+    // 图片按固定 token 保守预留（≥ 图片预留 + 输出上限），保证超预算时能被拦截。
+    expect(reserved.reservedTokens).toBeGreaterThanOrEqual(1105 + 1024);
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(fail).not.toHaveBeenCalled();
+    expect(provider.lastUsage?.task).toBe("SCREENSHOT_OCR");
+  });
+
+  it("本地规则实现读不了图，直接拒绝", async () => {
+    const provider = new LocalRuleLlmProvider();
+    await expect(provider.extractReplyFromImage({ imageUrl: "x" })).rejects.toThrow(/视觉模型/);
+  });
+});
+
 describe("本地规则槽位抽取（零 key 降级路径）", () => {
   it("中文原话解析出成分 / 克重 / 数量 / 询价意图", async () => {
     const provider = new LocalRuleLlmProvider();
