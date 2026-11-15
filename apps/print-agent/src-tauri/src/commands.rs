@@ -38,18 +38,26 @@ pub async fn save_config(
 }
 
 /// 发现本机打印队列，并把已保存的网络打印机合并进来，附带失败原因与修复建议。
+/// 发现要起子进程 / 查系统队列，属于阻塞 I/O，放到 blocking 线程池，别占 async worker。
 #[tauri::command]
 pub async fn discovered_printers(state: State<'_, AppState>) -> Result<DiscoveryReport, String> {
     let configured = state.config.read().await.printers.clone();
-    let mut report = printers::discover();
-    report.printers = printers::merge(report.printers, &configured);
-    Ok(report)
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut report = printers::discover();
+        report.printers = printers::merge(report.printers, &configured);
+        report
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// 本地检测：TCP 可达性或系统队列是否存在，不打印、不联网。
+/// DNS 解析和 connect_timeout 都是阻塞调用，同样走 blocking 线程池。
 #[tauri::command]
 pub async fn probe_printer(printer: PrinterProfileConfig) -> Result<ProbeResult, String> {
-    Ok(printers::probe(&printer))
+    tauri::async_runtime::spawn_blocking(move || printers::probe(&printer))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -141,5 +149,8 @@ pub async fn test_print(
             .cloned()
             .ok_or_else(|| "还没有保存打印机配置".to_string())?,
     };
-    crate::printer::test_print(&profile).map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || crate::printer::test_print(&profile))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
 }

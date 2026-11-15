@@ -1,5 +1,8 @@
 const tauri = window.__TAURI__;
 const preview = !tauri;
+// __TAURI_INTERNALS__ 由 Tauri 无条件注入；它存在而 __TAURI__ 不存在，
+// 说明是 WebView 里 withGlobalTauri 配置回归，不能当成「浏览器预览」静默降级。
+const tauriApiMissing = preview && Boolean(window.__TAURI_INTERNALS__);
 
 const invoke = preview
   ? (await import("./preview.js")).createPreviewBridge()
@@ -520,8 +523,16 @@ async function main() {
   switchTab("printers");
   if (preview) {
     document.documentElement.dataset.preview = "true";
-    $("previewBanner").hidden = false;
-    log("界面预览模式：未检测到 Tauri 运行时，数据为演示数据");
+    const banner = $("previewBanner");
+    banner.hidden = false;
+    if (tauriApiMissing) {
+      banner.dataset.kind = "error";
+      banner.textContent =
+        "Tauri API 未注入（withGlobalTauri 配置异常）：当前是演示数据，无法真实打印";
+      log("错误：检测到 Tauri 运行时但 window.__TAURI__ 缺失，已降级为演示模式");
+    } else {
+      log("界面预览模式：未检测到 Tauri 运行时，数据为演示数据");
+    }
   } else {
     log("打印代理已启动");
   }

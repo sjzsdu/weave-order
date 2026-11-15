@@ -138,6 +138,11 @@ h1 {
   text-align: center;
 }
 
+.banner[data-kind="error"] {
+  background: var(--vermilion-soft);
+  color: var(--vermilion);
+}
+
 /* 分页：小窗口一次只显示一件事 */
 .tabs {
   flex: 0 0 auto;

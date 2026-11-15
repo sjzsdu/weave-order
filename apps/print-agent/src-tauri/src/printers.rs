@@ -2,6 +2,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::config::PrinterProfileConfig;
@@ -77,9 +78,22 @@ fn platform_label() -> &'static str {
         "Windows"
     } else if cfg!(target_os = "macos") {
         "macOS"
-    } else {
+    } else if cfg!(target_os = "linux") {
         "Linux"
+    } else {
+        "未知平台"
     }
+}
+
+/// PowerShell 的 `-EncodedCommand` 接收 UTF-16LE + base64。
+/// 用它传脚本，用户输入（打印机名）只出现在编码后的参数里，不会被命令行再解释一次。
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn powershell_encoded(command: &str) -> String {
+    let utf16: Vec<u8> = command
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16)
 }
 
 pub fn guess_kind(name: &str, driver: &str) -> &'static str {
@@ -232,9 +246,10 @@ pub fn discover() -> DiscoveryReport {
 
     // 中文 Windows 的 PowerShell 5.1 走管道时默认用 OEM 编码，不显式设 UTF-8 会解析失败。
     let script = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus | ConvertTo-Json -Compress";
+    let encoded = powershell_encoded(script);
     let output = run(
         "powershell",
-        &["-NoProfile", "-NonInteractive", "-Command", script],
+        &["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded],
     );
     if output.missing {
         errors.push("未找到 PowerShell".to_string());
@@ -440,37 +455,55 @@ fn normalize_raw_target(address: &str) -> Option<String> {
 
 fn probe_tcp(target: &str) -> ProbeResult {
     let started = Instant::now();
-    match target.to_socket_addrs() {
-        Ok(mut addresses) => {
-            let Some(address) = addresses.next() else {
+    let addresses = match target.to_socket_addrs() {
+        Ok(addresses) => addresses.collect::<Vec<_>>(),
+        Err(error) => {
+            return ProbeResult {
+                ok: false,
+                target: target.to_string(),
+                detail: format!("地址解析失败：{error}"),
+            }
+        }
+    };
+    if addresses.is_empty() {
+        return ProbeResult {
+            ok: false,
+            target: target.to_string(),
+            detail: "地址无法解析，请检查 IP 或主机名".to_string(),
+        };
+    }
+
+    // 主机名可能同时有 A / AAAA 记录：逐个试，整体最多等 3 秒。
+    // 只取第一条会在「IPv6 记录在前、打印机只走 IPv4」时给出假阴性。
+    let deadline = started + Duration::from_secs(3);
+    let mut last_error = None;
+    for address in addresses {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match TcpStream::connect_timeout(&address, remaining) {
+            Ok(_) => {
                 return ProbeResult {
-                    ok: false,
-                    target: target.to_string(),
-                    detail: "地址无法解析，请检查 IP 或主机名".to_string(),
-                };
-            };
-            match TcpStream::connect_timeout(&address, Duration::from_secs(3)) {
-                Ok(_) => ProbeResult {
                     ok: true,
                     target: target.to_string(),
                     detail: format!(
                         "可以连通（{} ms），点「测试打印」出纸确认对齐与浓度",
                         started.elapsed().as_millis()
                     ),
-                },
-                Err(error) => ProbeResult {
-                    ok: false,
-                    target: target.to_string(),
-                    detail: format!(
-                        "连不上 9100 端口：{error}。确认打印机电源、网线和 IP，或改用系统驱动"
-                    ),
-                },
+                }
             }
+            Err(error) => last_error = Some(error),
         }
-        Err(error) => ProbeResult {
-            ok: false,
-            target: target.to_string(),
-            detail: format!("地址解析失败：{error}"),
+    }
+    ProbeResult {
+        ok: false,
+        target: target.to_string(),
+        detail: match last_error {
+            Some(error) => {
+                format!("连不上 9100 端口：{error}。确认打印机电源、网线和 IP，或改用系统驱动")
+            }
+            None => "连接超时：3 秒内没有可用地址应答".to_string(),
         },
     }
 }
@@ -519,9 +552,10 @@ fn probe_system_queue(name: &str, connection: &str) -> ProbeResult {
         "$p = Get-Printer -Name '{}' -ErrorAction Stop; if ($p.PrinterStatus -eq 3) {{ 'READY' }} else {{ 'OFFLINE' }}",
         name.replace('\'', "''")
     );
+    let encoded = powershell_encoded(&script);
     let output = run(
         "powershell",
-        &["-NoProfile", "-NonInteractive", "-Command", &script],
+        &["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded],
     );
     let target = format!("系统队列 {name}（{connection}）");
     if output.missing {
@@ -660,6 +694,34 @@ mod tests {
         assert_eq!(normalize_raw_target("  "), None);
         assert_eq!(normalize_raw_target(":9100"), None);
         assert_eq!(normalize_raw_target("host:abc"), None);
+    }
+
+    #[test]
+    fn powershell_encoded_command_is_utf16le_base64() {
+        let encoded = powershell_encoded("Get-Printer");
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .expect("base64");
+        assert_eq!(bytes.len(), "Get-Printer".len() * 2);
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        assert_eq!(String::from_utf16(&units).expect("utf16"), "Get-Printer");
+    }
+
+    #[test]
+    fn powershell_encoded_command_survives_quotes_and_chinese() {
+        let script = "$p = Get-Printer -Name '仓库''热敏'";
+        let encoded = powershell_encoded(script);
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .expect("base64");
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        assert_eq!(String::from_utf16(&units).expect("utf16"), script);
     }
 
     #[cfg(target_os = "windows")]
