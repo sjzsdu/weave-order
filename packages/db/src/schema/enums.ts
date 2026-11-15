@@ -137,6 +137,9 @@ export const llmTaskEnum = pgEnum("llm_task", [
   "SCREENSHOT_OCR",
 ]);
 
+/** 客户回复的录入方式：手工粘贴文本 / 上传截图。 */
+export const inboundChannelEnum = pgEnum("inbound_channel", ["manual", "screenshot"]);
+
 /**
  * 用量记录生命周期：RESERVED（调用前占预算）/ SETTLED（按实际结算）/ FAILED（上游失败仍计量）。
  * 预算按「已用 + 预留」汇总，见 apps/api/src/kernel/usage.service.ts。

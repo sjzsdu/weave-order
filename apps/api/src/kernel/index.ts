@@ -17,6 +17,7 @@ import { QuotePricingService } from "./quote-pricing.service";
 import { UsageService } from "./usage.service";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
+import { InboundRepliesService } from "./inbound-replies.service";
 import { OrderService } from "./orders.service";
 import { OrderShipmentService } from "./order-shipments.service";
 import { PricingService } from "./pricing.service";
@@ -133,6 +134,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
+  const inboundReplies = new InboundRepliesService(db, tenantId);
   const shares = new ShareService(db, tenantId, {
     secret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
@@ -163,6 +165,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     quotePricing,
     llmSettings,
     usage,
+    inboundReplies,
     shares,
     print,
     audit: {
