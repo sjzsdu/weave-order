@@ -13,6 +13,9 @@ pnpm --filter @weave-order/core build
 # 演示模式：契约端点本地 mock，无需后端（H5 dev server: http://localhost:10086）
 pnpm --filter @weave-order/mobile dev
 
+# 或从仓库根一条命令起全部端（含移动端，最后统一打印地址清单）
+pnpm dev
+
 # 连真后端（默认 http://localhost:3000）
 TARO_APP_MOCK=0 TARO_APP_API_BASE=http://localhost:3000 pnpm --filter @weave-order/mobile dev:live
 

@@ -14,7 +14,11 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:list": "node scripts/dev.mjs --list",
+    "dev:cli": "pnpm --filter @weave-order/cli dev",
+    "dev:desktop": "pnpm --filter @weave-order/print-agent dev",
+    "test:scripts": "node --test scripts/dev.test.mjs",
     "lint": "turbo run build && node scripts/lint.mjs",
     "typecheck": "turbo run typecheck && tsc -p e2e/tsconfig.json --noEmit",
     "test": "turbo run test",

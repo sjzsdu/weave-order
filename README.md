@@ -67,32 +67,35 @@ weave-order/
 corepack enable
 pnpm install
 
-# 2. 起本地 PG + Redis（端口 5433 / 6380，避免与本机已有服务冲突）
-docker compose up -d
+# 2. 一条命令起全部 URL 端
+#    自动：docker compose 的 postgres/redis → 迁移 → 构建共享包 → 并行起各端 → 打印地址清单
+pnpm dev
 
-# 2b. 可选：图片链路需要 S3 兼容对象存储。Docker Hub 不可达时用官方二进制脚本
+# 3. 样例数据（可选；pnpm dev 已含迁移）
+pnpm seed          # 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
+pnpm demo          # 可选：内核演示 + 寄样跟进智能体（另造演示数据）
+
+# 3b. 可选：图片链路需要 S3 兼容对象存储。Docker Hub 不可达时用官方二进制脚本
 #     （端口/凭据/bucket 与 compose 的 minio 一致，API 无需额外配置）
 scripts/dev-storage-up.sh
-
-# 3. 应用迁移 + 冷启动导入样例数据（Excel/CSV），或直接跑内核演示
-pnpm seed          # 迁移 + 导入 data/seed/*.csv 的客户/样品；详见「数据导入与冷启动」
-pnpm demo          # 可选：迁移 + 内核演示 + 寄样跟进智能体（另造演示数据）
-
-# 4. 打开桌面三窗口（API 3000 + Next 3001）
-pnpm dev
-# → http://localhost:3001/today
-
-# 5. 客户报价页（Next.js，端口 5174；路由 /s/[token]）
-pnpm --filter @weave-order/quote dev
-# → http://localhost:5174/s/<token>（审批通过后自动生成，或在全景窗口重新生成）
-
-# 6. 平台总管理端（E4，控制面独立库 + 独立进程）
-pnpm platform:migrate   # 自动创建 weave_platform + control schema
-pnpm platform:seed      # 平台人员 / 套餐 / 价格表 v1 / 演示租户
-pnpm --filter @weave-order/platform-api dev   # :3002（只连 PLATFORM_DATABASE_URL）
-pnpm --filter @weave-order/admin dev          # :3003 控制台
-# → http://localhost:3003（本地可选 owner / owner2 / finance / ops / support / readonly）
 ```
+
+`pnpm dev` 最后统一打印一张清单（全部返回 200 才算就绪）：
+
+| 端               | 地址                              | health / 首页          |
+| ---------------- | --------------------------------- | ---------------------- |
+| API 内核         | http://localhost:3000             | `/api/health`          |
+| 工作台 web       | http://localhost:3001             | `/login`               |
+| 客户报价 quote   | `http://localhost:5174/s/<token>` | `/s/dev-readiness`     |
+| 平台控制台 admin | http://localhost:3003             | `/login`               |
+| 官网 site        | http://localhost:4321             | `/`                    |
+| 平台控制面 API   | http://localhost:3002             | `/platform/api/health` |
+| 移动端 H5        | http://localhost:10086            | `/`                    |
+
+常用开关：`pnpm dev web api`（只起指定端）、`--no-mobile`（跳过 Taro watch）、
+`--no-infra` / `--no-migrate` / `--no-build`（跳过对应预备步骤）、`--list`（只看清单）。
+`cli`（交互式终端）与 `print-agent`（Tauri，需 Rust 工具链）不是 URL 服务，各有独立入口：
+`pnpm dev:cli` / `pnpm dev:desktop`。端口被占用时脚本会直接报出冲突端并退出，不会假就绪。
 
 桌面端是**三个业务窗口 + 一个管理面**：工作台（⌘1）、审批（⌘2）、全景只读（⌘3）、
 组织设置（⌘,）。打印是全局抽屉，不是第四个窗口。智能体只出 `DRAFT` / 建议；
@@ -147,7 +150,10 @@ PAT 绑定 membership，仍然走同一租户与 RLS；默认作用域 `read,wri
 
 ```bash
 pnpm build        # 构建
-pnpm dev          # api(3000) + web(3001)
+pnpm dev          # 全部 URL 端（api/web/quote/admin/site/platform-api/mobile）
+pnpm dev:cli      # 只起交互式 CLI（非 URL 服务）
+pnpm dev:desktop  # 只起打印代理 Tauri（需 Rust 工具链）
+pnpm test:scripts # dev 统一入口的单元用例（端口/表格渲染）
 pnpm lint         # 先构建契约包，再按 workspace 分片跑类型感知 ESLint（含目录边界规则）
 pnpm typecheck    # 全仓类型检查
 pnpm test         # 单元 + 边界；有本地 PG 时内核/HTTP 集成测试自动启用
