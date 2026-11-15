@@ -108,12 +108,12 @@ export default defineConfig({
     {
       name: "desktop-1440",
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
-      testMatch: /desktop\/gallery-layout\.spec\.ts/,
+      testMatch: /desktop\/(gallery-layout|media-status)\.spec\.ts/,
     },
     {
       name: "desktop-375",
       use: { ...devices["Desktop Chrome"], viewport: { width: 375, height: 812 } },
-      testMatch: /desktop\/gallery-layout\.spec\.ts/,
+      testMatch: /desktop\/(gallery-layout|media-status)\.spec\.ts/,
     },
     {
       name: "mobile-h5",

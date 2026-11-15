@@ -61,7 +61,11 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const tenantContext = useTenantContext(api);
   const [printOpen, setPrintOpen] = useState(false);
   const [switcherSignal, setSwitcherSignal] = useState(0);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [online, setOnline] = useState(true);
+
+  // 窄屏「更多」是兜底入口：换页就收起，避免残留菜单盖住新页面。
+  useEffect(() => setMoreOpen(false), [pathname]);
 
   // 只有已进入工作台才需要知道「我还有哪些公司」；单租户账号这里拿到 1 条，
   // TenantSwitcher 据此不渲染切换入口。
@@ -165,6 +169,11 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const membership = tenantContext.membership;
   const name = membership.subject;
   const tenants: TenantChoice[] = tenantList.data?.tenants ?? [];
+  // 窄屏没有顶栏的 TenantSwitcher：把可切换的公司直接列进「更多」，
+  // 否则 375 宽度下「功能存在但入口消失」。
+  const switchableTenants = tenants.filter(
+    (choice) => choice.available && choice.tenantId !== tenant.id,
+  );
 
   return (
     <div className="min-h-screen bg-paper">
@@ -250,10 +259,76 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             </Link>
             <a
               href="/auth/logout"
-              className="whitespace-nowrap text-xs text-ink-400 underline underline-offset-2"
+              className="hidden whitespace-nowrap text-xs text-ink-400 underline underline-offset-2 sm:inline"
             >
               退出
             </a>
+            <div className="relative md:hidden">
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                aria-label="更多入口"
+                onClick={() => setMoreOpen((open) => !open)}
+                className="inline-flex min-h-9 items-center rounded-md border border-line bg-surface px-2 text-xs text-ink-700 hover:border-ink-400"
+              >
+                更多
+              </button>
+              {moreOpen && (
+                <div
+                  role="menu"
+                  aria-label="更多入口"
+                  className="absolute right-0 z-40 mt-2 w-56 rounded-lg border border-line bg-surface p-1 shadow-card"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setPrintOpen(true);
+                    }}
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper"
+                  >
+                    打印
+                  </button>
+                  <Link
+                    role="menuitem"
+                    href="/settings"
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper"
+                  >
+                    组织与设置
+                  </Link>
+                  <a
+                    role="menuitem"
+                    href="/auth/logout"
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-400 hover:bg-paper"
+                  >
+                    退出登录
+                  </a>
+                  {switchableTenants.length > 0 && (
+                    <div className="mt-1 border-t border-line pt-1">
+                      <p className="px-3 py-1 text-[10px] text-ink-400">
+                        切换公司（当前：{tenant.name}）
+                      </p>
+                      {switchableTenants.map((choice) => (
+                        <button
+                          key={choice.tenantId}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            void switchTenant(choice.tenantId);
+                          }}
+                          className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper"
+                        >
+                          {choice.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         {!online && (

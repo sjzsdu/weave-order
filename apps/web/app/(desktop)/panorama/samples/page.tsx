@@ -10,6 +10,7 @@ import { useMounted } from "@/use-mounted";
 import { SampleEditor } from "@/sample-editor";
 import { SampleDrawer } from "@/sample-drawer";
 import { SampleImageSearch } from "@/sample-image-search";
+import { thumbBadge } from "@/sample-image-status";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
 
@@ -212,6 +213,7 @@ function SampleCard({
 }) {
   const primary = sample.images?.find((image) => image.isPrimary) ?? sample.images?.[0] ?? null;
   const thumb = primary?.thumbUrl ?? primary?.url ?? sample.primaryImageUrl ?? null;
+  const badge = thumbBadge(primary?.thumbStatus, primary?.thumbError);
 
   return (
     <li className="overflow-hidden rounded-lg border border-line bg-surface">
@@ -225,13 +227,18 @@ function SampleCard({
               decoding="async"
               className="aspect-square w-full bg-paper object-cover"
             />
-            {primary?.thumbStatus === "failed" && (
-              // 派生失败时接口回退的是原图：必须显式标注，不能让用户以为这是缩略图。
+            {badge && (
+              // 只有主图缩略图没就绪时才加角标：失败时接口回退的是原图，
+              // 不能让用户以为「这张大图就是图墙用的缩略图」。
               <span
-                title={primary.thumbError ?? "缩略图派生失败，当前显示原图"}
-                className="absolute bottom-1 left-1 rounded bg-rose-700/85 px-1.5 py-0.5 text-[10px] text-white"
+                data-testid="sample-thumb-badge"
+                title={badge.reason ?? (badge.tone === "danger" ? "当前显示原图" : "缩略图派生中")}
+                className={cn(
+                  "absolute bottom-1 left-1 rounded px-1.5 py-0.5 text-[10px] text-white",
+                  badge.tone === "danger" ? "bg-rose-700/85" : "bg-amber-600/90",
+                )}
               >
-                缩略图失败
+                {badge.label}
               </span>
             )}
           </span>

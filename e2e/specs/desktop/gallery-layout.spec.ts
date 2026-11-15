@@ -27,6 +27,34 @@ test.describe("样品图墙布局", () => {
     const { filterAppliedAt } = await openGallery(page, prefix, 10);
     await noHorizontalScroll(page);
 
+    /*
+     * 入口可见性（WAN-131）：<768 的三个桌面动作收进「更多」折叠菜单，
+     * 而不是直接消失。桌面视口保持直接入口，且不出现多余的「更多」。
+     */
+    const moreButton = page.getByRole("button", { name: "更多入口" });
+    if (viewport.width < 768) {
+      await expect(moreButton).toBeVisible();
+      await expect(page.getByLabel("组织与设置（⌘,）")).toBeHidden();
+      await moreButton.click();
+      const menu = page.getByRole("menu", { name: "更多入口" });
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "打印", exact: true })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "组织与设置" })).toBeVisible();
+      await screenshot(page, testInfo, "gallery-small-screen-menu");
+      // 点进去必须真的打开抽屉，而不是只有一个看起来像入口的按钮。
+      await menu.getByRole("menuitem", { name: "打印", exact: true }).click();
+      const printDialog = page.getByRole("dialog", { name: "打印中心" });
+      await expect(printDialog).toBeVisible();
+      // 375 宽度下抽屉铺满视口，背后的全屏「关闭打印中心」按钮被盖住，
+      // 必须点抽屉自己的关闭按钮（否则 click 会一直等可点位置直到超时）。
+      await printDialog.getByRole("button", { name: "关闭", exact: true }).click();
+      await expect(printDialog).toHaveCount(0);
+    } else {
+      await expect(moreButton).toBeHidden();
+      await expect(page.getByLabel("组织与设置（⌘,）")).toBeVisible();
+      await expect(page.getByRole("button", { name: /打印/ }).first()).toBeVisible();
+    }
+
     const boxes = await page.locator(GALLERY_CARDS).evaluateAll((elements) =>
       elements.slice(0, 12).map((element) => {
         const rect = element.getBoundingClientRect();
