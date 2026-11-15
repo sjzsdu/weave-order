@@ -11,6 +11,7 @@ export * from "./shares";
 export * from "./agent";
 export * from "./quoting";
 export * from "./llm";
+export * from "./inbound";
 export * from "./kernel";
 export * from "./approval";
 export * from "./import";

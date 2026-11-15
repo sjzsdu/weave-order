@@ -109,7 +109,7 @@ export class LlmSettingsService {
     const allowlistFromRow = tenant?.modelAllowlist ?? global?.modelAllowlist ?? null;
     const modelAllowlist =
       allowlistFromRow === null
-        ? ["deepseek-chat", "deepseek-reasoner"]
+        ? ["deepseek-chat", "deepseek-reasoner", "qwen-vl-plus"]
         : asStringArray(allowlistFromRow);
 
     const resolved = ResolvedLlmSettings.parse({
@@ -151,7 +151,7 @@ export class LlmSettingsService {
       defaultModel: parsed.defaultModel ?? before?.defaultModel ?? "deepseek-chat",
       reasoningModel: parsed.reasoningModel ?? before?.reasoningModel ?? "deepseek-reasoner",
       modelAllowlist: parsed.modelAllowlist ??
-        before?.modelAllowlist ?? ["deepseek-chat", "deepseek-reasoner"],
+        before?.modelAllowlist ?? ["deepseek-chat", "deepseek-reasoner", "qwen-vl-plus"],
       dailyTokenBudget:
         parsed.dailyTokenBudget === undefined
           ? (before?.dailyTokenBudget ?? null)

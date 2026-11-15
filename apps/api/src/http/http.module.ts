@@ -35,6 +35,8 @@ import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
+import { InboundController } from "./inbound.controllers";
+import { InboundIntakeService } from "./inbound-intake.service";
 import { SampleController } from "./samples.controllers";
 import {
   AGENT_ACTOR,
@@ -67,6 +69,7 @@ const providers: Provider[] = [
     useExisting: AgentActorService,
   },
   QuoteAgentService,
+  InboundIntakeService,
   PrintAgentAuthService,
   PrintAgentHub,
   {
@@ -113,6 +116,7 @@ const providers: Provider[] = [
     PrintController,
     PrintAgentController,
     MediaController,
+    InboundController,
     SampleController,
     OnboardingController,
     TeamController,

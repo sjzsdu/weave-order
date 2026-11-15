@@ -10,13 +10,16 @@ import { loadEnv } from "../platform/env";
 import { createPrintCenter } from "../print";
 import { createObjectStorageFromEnv } from "../platform/storage";
 import type { ObjectStorage } from "../platform/storage";
+import { objectUrl } from "../platform/thumbnail";
 import { AccessService } from "./access.service";
 import { listAuditLog } from "./audit";
+import { KernelError } from "./errors";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
 import { UsageService } from "./usage.service";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
+import { InboundRepliesService } from "./inbound-replies.service";
 import { OrderService } from "./orders.service";
 import { OrderShipmentService } from "./order-shipments.service";
 import { PricingService } from "./pricing.service";
@@ -133,6 +136,18 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
+  const inboundReplies = new InboundRepliesService(db, tenantId, {
+    retentionDays: env.INBOUND_RAW_RETENTION_DAYS,
+    resolveImageUrl: async (objectKey) => {
+      const url = await objectUrl(env, storage, objectKey);
+      if (!url) {
+        throw new KernelError("KERNEL_REJECTED", "对象存储未配置，无法读取截图", {
+          reason: "MEDIA_STORAGE_UNAVAILABLE",
+        });
+      }
+      return url;
+    },
+  });
   const shares = new ShareService(db, tenantId, {
     secret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
@@ -163,6 +178,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     quotePricing,
     llmSettings,
     usage,
+    inboundReplies,
     shares,
     print,
     audit: {
