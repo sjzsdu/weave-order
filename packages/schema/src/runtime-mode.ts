@@ -14,8 +14,38 @@
 export interface RuntimeModeInput {
   NODE_ENV?: string;
   AUTH_MODE?: string;
+  /** 部署形态标记：`dev` / `test` / `production`。与 `NODE_ENV` 分开，见下。 */
+  WEAVE_ENV?: string;
 }
 
 export function isProductionLike(env: RuntimeModeInput = process.env): boolean {
   return env.NODE_ENV === "production" || env.AUTH_MODE === "oidc";
+}
+
+/**
+ * 「这是一个可重置的测试环境」判定。
+ *
+ * 为什么不用 `NODE_ENV=test`：测试环境的硬要求是与生产同构
+ * （`NODE_ENV=production + AUTH_MODE=oidc`），`NODE_ENV=test` 只属于单元测试进程。
+ * 所以需要第四个部署维度 `WEAVE_ENV`，由部署侧显式注入：
+ *
+ * - 本地 dev：不设或 `WEAVE_ENV=dev`
+ * - 测试环境：`WEAVE_ENV=test`（必须同时是生产态，否则配置错误）
+ * - 生产环境：不设或 `WEAVE_ENV=production`
+ *
+ * 只有显式 `test` 才为真。任何拼错的/缺失的值都按生产处理，这是安全默认。
+ */
+export function isTestEnv(env: RuntimeModeInput = process.env): boolean {
+  return env.WEAVE_ENV === "test";
+}
+
+/**
+ * `demo:reset` 的唯一准入判定。
+ *
+ * 允许：本地 dev（非生产态）与显式标记的测试环境（生产态 + WEAVE_ENV=test）。
+ * 拒绝：生产态且未标记 test —— 生产库永远不能被一键清空。
+ * 错误由调用方抛出（脚本 / 启动门控共用同一个布尔判定）。
+ */
+export function canResetDemoData(env: RuntimeModeInput = process.env): boolean {
+  return !isProductionLike(env) || isTestEnv(env);
 }

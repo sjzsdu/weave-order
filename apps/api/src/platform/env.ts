@@ -119,6 +119,12 @@ const EnvSchema = z.object({
   REPLY_SOURCE: z.string().min(1).default("local-scripted"),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /**
+   * 部署形态（dev / test / production），与 `NODE_ENV` 分开：
+   * 测试环境必须与生产同构（`NODE_ENV=production + AUTH_MODE=oidc`），
+   * 只有它能把 `demo:reset` 与剧本接口标记为「可重置」。
+   */
+  WEAVE_ENV: z.enum(["dev", "test", "production"]).optional(),
   /** dev：接受 `Bearer dev:<sub>:<org>`（仅本地）；oidc：Casdoor JWKS 验签。 */
   AUTH_MODE: z.enum(["dev", "oidc"]).default("dev"),
   /**
@@ -189,6 +195,14 @@ export type Env = z.infer<typeof EnvSchema>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const env = EnvSchema.parse(source);
+  // 测试环境的硬要求是与生产同构；`WEAVE_ENV=test + AUTH_MODE=dev` 会让
+  // 「重置脚本可跑」与「生产态门控」同时成立两种互相矛盾的前提，必须启动期拒绝。
+  if (env.WEAVE_ENV === "test" && !isProductionLike(env)) {
+    throw new Error(
+      "WEAVE_ENV=test 必须与生产同构（NODE_ENV=production + AUTH_MODE=oidc）；" +
+        "否则测试环境会绕过 Secure Cookie / fail-closed 401 等生产门控。",
+    );
+  }
   // 与 APP_DATABASE_URL 的生产硬校验同一原则：生产/OIDC 模式不允许静默使用公开占位密钥。
   // 默认 secret 已知时，IP/UA 加盐哈希可被反查，「IP 只存哈希」的隐私承诺会被削弱。
   if (isProductionLike(env) && env.QUOTE_SHARE_SECRET === DEV_QUOTE_SHARE_SECRET) {

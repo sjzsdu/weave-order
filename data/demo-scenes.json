@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "scenes": [
+    {
+      "key": "approval-pending",
+      "title": "有一张报价草稿等你拍板",
+      "description": "演示客户「演示纺织 · 剧本」名下有一张 3 天前生成的报价草稿，金额需要经理审批。",
+      "href": "/today?scene=approval-pending",
+      "anchor": { "kind": "quote", "customerCode": "DEMO-SCENE-001" },
+      "highlight": "approval"
+    },
+    {
+      "key": "sample-shipment-pending",
+      "title": "有一张寄样单等确认",
+      "description": "同一客户的寄样单停在 DRAFT：智能体只能建草稿，确认必须由人类在审批窗口完成。",
+      "href": "/today?scene=sample-shipment-pending",
+      "anchor": { "kind": "sample_shipment", "customerCode": "DEMO-SCENE-001" },
+      "highlight": "approval"
+    }
+  ]
+}

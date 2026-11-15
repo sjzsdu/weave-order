@@ -22,6 +22,8 @@ export const queryKeys = {
     ["customers", id, "timeline", kinds.join(",")] as const,
   panorama: ["panorama"] as const,
   approvals: ["approvals"] as const,
+  demoScenes: ["demo", "scenes"] as const,
+  demoScene: (key: string) => ["demo", "scene", key] as const,
   approvalQueue: (limit: number) => ["approvals", "queue", limit] as const,
   approvalDetail: (id: string, kind: ApprovalKind) => ["approvals", id, kind] as const,
   audit: (limit: number) => ["audit", limit] as const,
@@ -101,6 +103,21 @@ export function usePanorama(client: ApiClient) {
 
 export function useApprovals(client: ApiClient) {
   return useQuery({ queryKey: queryKeys.approvals, queryFn: () => client.approvals() });
+}
+
+/**
+ * 剧本深链（`/today?scene=<key>`）。
+ *
+ * 生产环境接口不存在（404），`enabled` 只在 URL 带 scene 时才发请求，
+ * 页面其余部分零影响。返回的 `entityId` 用于高亮列表项。
+ */
+export function useDemoScene(client: ApiClient, key: string | null) {
+  return useQuery({
+    queryKey: queryKeys.demoScene(key ?? "none"),
+    queryFn: () => client.demoScene(key as string),
+    enabled: key !== null,
+    retry: false,
+  });
 }
 
 /**

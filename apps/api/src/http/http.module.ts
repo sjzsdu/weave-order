@@ -36,6 +36,8 @@ import { PublicQuoteController, QuoteSharesController } from "./shares.controlle
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
 import { InboundController } from "./inbound.controllers";
+import { DemoScenesController } from "../demo/scenes.controller";
+import { demoScenesEnabled } from "../demo/scene-catalog";
 import { InboundIntakeService } from "./inbound-intake.service";
 import { SampleController } from "./samples.controllers";
 import {
@@ -121,6 +123,8 @@ const providers: Provider[] = [
     OnboardingController,
     TeamController,
     CreditsController,
+    // 剧本接口按部署形态条件注册：生产镜像里不存在这个路由。
+    ...(demoScenesEnabled() ? [DemoScenesController] : []),
   ],
   providers,
 })

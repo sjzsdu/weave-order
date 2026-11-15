@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProductionLike } from "../src/runtime-mode";
+import { canResetDemoData, isProductionLike, isTestEnv } from "../src/runtime-mode";
 
 /**
  * 生产态判定是所有 fail-fast 门控的唯一入口（api 与 web 共用这一份）。
@@ -65,4 +65,55 @@ describe("isProductionLike：api/web 共用的生产态判定", () => {
       process.env.AUTH_MODE = original.AUTH_MODE;
     }
   });
+});
+
+/**
+ * `WEAVE_ENV` 是部署维度，不是 `NODE_ENV` 的别名。
+ * 测试环境必须与生产同构（仍判为生产态），同时允许重置演示数据。
+ */
+describe("isTestEnv / canResetDemoData：测试环境与 demo:reset 门控", () => {
+  const cases: Array<{
+    label: string;
+    env: { NODE_ENV?: string; AUTH_MODE?: string; WEAVE_ENV?: string };
+    test: boolean;
+    reset: boolean;
+  }> = [
+    {
+      label: "本地 dev（无 WEAVE_ENV）",
+      env: { NODE_ENV: "development", AUTH_MODE: "dev" },
+      test: false,
+      reset: true,
+    },
+    {
+      label: "测试环境：生产同构 + WEAVE_ENV=test",
+      env: { NODE_ENV: "production", AUTH_MODE: "oidc", WEAVE_ENV: "test" },
+      test: true,
+      reset: true,
+    },
+    {
+      label: "生产环境：生产同构、无 WEAVE_ENV",
+      env: { NODE_ENV: "production", AUTH_MODE: "oidc" },
+      test: false,
+      reset: false,
+    },
+    {
+      label: "生产环境：显式 WEAVE_ENV=production",
+      env: { NODE_ENV: "production", AUTH_MODE: "oidc", WEAVE_ENV: "production" },
+      test: false,
+      reset: false,
+    },
+    {
+      label: "拼错的 WEAVE_ENV 按生产处理",
+      env: { NODE_ENV: "production", AUTH_MODE: "oidc", WEAVE_ENV: "tset" },
+      test: false,
+      reset: false,
+    },
+  ];
+
+  for (const { label, env, test, reset } of cases) {
+    it(`${label} → isTestEnv=${test} / canResetDemoData=${reset}`, () => {
+      expect(isTestEnv(env)).toBe(test);
+      expect(canResetDemoData(env)).toBe(reset);
+    });
+  }
 });

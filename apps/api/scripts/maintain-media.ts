@@ -9,6 +9,7 @@
  *   pnpm --filter @weave-order/api maintain:media -- --force   # 缩略图强制重派（换尺寸/质量后）
  *   pnpm --filter @weave-order/api maintain:media -- --max-original-bytes=2097152 --grace-hours=24
  *   pnpm --filter @weave-order/api maintain:media -- --uploads-retention-days=7
+ *   pnpm --filter @weave-order/api maintain:media -- --purge-tenant --tenant=<uuid>  # 清空 tenant/<id>/（测试环境重置）
  *
  * 四个动作都可重复执行（幂等）：
  * - 补派生只看 `thumb_status != ready`；
@@ -72,6 +73,9 @@ async function main(): Promise<void> {
   const skipCompress = hasFlag("skip-compress");
   const skipOrphans = hasFlag("skip-orphans");
   const skipUploads = hasFlag("skip-uploads");
+  // 只给测试环境重置用：清空整租户对象前缀。生产由 demo:reset 的入口门控挡住，
+  // 这里仍要求显式 --tenant，避免「不带参数就把所有租户的桶清空」。
+  const purgeTenant = hasFlag("purge-tenant");
   const forceThumbs = hasFlag("force");
   const limit = numberArg("limit") ?? 500;
   const maxOriginalBytes = numberArg("max-original-bytes");
@@ -119,6 +123,7 @@ async function main(): Promise<void> {
         const maintenance = new MediaMaintenanceService(db, tenantId, storage, thumbs);
         return runTenant(maintenance, thumbs, tenantId, {
           dryRun,
+          purgeTenant,
           skipThumbs,
           skipCompress,
           skipOrphans,
@@ -146,6 +151,7 @@ async function main(): Promise<void> {
 
 interface TenantRunOptions {
   dryRun: boolean;
+  purgeTenant: boolean;
   skipThumbs: boolean;
   skipCompress: boolean;
   skipOrphans: boolean;
@@ -166,6 +172,7 @@ async function runTenant(
 ): Promise<number> {
   const {
     dryRun,
+    purgeTenant,
     skipThumbs,
     skipCompress,
     skipOrphans,
@@ -178,6 +185,17 @@ async function runTenant(
   } = options;
   let failed = 0;
   console.log(`\n== 租户 ${tenantId}`);
+  if (purgeTenant) {
+    const report = await maintenance.purgeTenantObjects({ dryRun });
+    console.log(
+      `   清空前缀 ${report.prefix}：${report.listed} 个对象 / ${formatBytes(report.listedBytes)}` +
+        `，删除 ${report.deleted} 个 / ${formatBytes(report.deletedBytes)}`,
+    );
+    for (const failure of report.failures.slice(0, 5)) {
+      console.log(`     ! ${failure.key}：${failure.message.slice(0, 200)}`);
+    }
+    return report.failures.length;
+  }
   const counts = await maintenance.counts();
   console.log(
     `   图片 ${counts.images} 张；缩略图待派生 ${counts.thumbsPending}；` +
