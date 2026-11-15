@@ -285,5 +285,104 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
         "否则图片会以公开的 dev 凭据写入桶。",
     );
   }
+  // 以下五项的共同点：配错时**进程能起来、接口也返回 200**，只有客户看到的东西是坏的
+  // （链接指向 localhost、签名主机名错、通知不发、试用订阅不登记）。所以必须在启动期拒绝。
+  assertProductionSiteUrl(
+    env,
+    "PUBLIC_APP_URL",
+    "客户报价分享链接",
+    "https://<quote-域名>（例如 https://quote.weaveorder.cn）",
+  );
+  assertProductionSiteUrl(
+    env,
+    "WEB_APP_URL",
+    "开通链接 / CLI 登录确认页",
+    "https://<租户端域名>（例如 https://weave.wnbgj.com）",
+  );
+  // MinIO 的 path-style 在 COS 上会让签名主机名变成 <endpoint>/<bucket>/<key>，
+  // 浏览器 PUT 403、confirm HEAD 当对象不存在；默认值恰好是 true，漏注入即静默踩中。
+  if (isProductionLike(env) && env.S3_FORCE_PATH_STYLE) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 S3_FORCE_PATH_STYLE=false（腾讯云 COS 只支持虚拟主机风格签名）；" +
+        "漏配会回落到本地 MinIO 的 path-style 默认值，导致预签名 URL 的主机名错误、上传与确认全部失败。",
+    );
+  }
+  // 不配 = 自助开通只建公司、不登记试用订阅，账单视图少一条且没有任何报错。
+  if (isProductionLike(env) && !env.PLATFORM_API_URL) {
+    throw new Error(
+      "生产/OIDC 模式必须显式配置 PLATFORM_API_URL（控制面地址，例如 https://platform.<你的域名>）；" +
+        "不配时自助开通的公司不会被登记试用订阅，且不会有任何报错。",
+    );
+  }
+  if (isProductionLike(env) && env.PLATFORM_API_URL && isLoopbackUrl(env.PLATFORM_API_URL)) {
+    throw new Error(
+      `生产/OIDC 模式的 PLATFORM_API_URL 不能指向本机（当前 ${env.PLATFORM_API_URL}）；` +
+        "请改成控制面的正式地址，例如 https://platform.<你的域名>。",
+    );
+  }
+  // 默认 log 只写服务端日志：邀请、试用到期提醒用户永远收不到，且发送方会拿到 ok:false 也无人看。
+  if (isProductionLike(env) && env.NOTIFY_PROVIDER !== "webhook") {
+    throw new Error(
+      "生产/OIDC 模式必须配置 NOTIFY_PROVIDER=webhook；默认的 log 只写服务端日志，" +
+        "邀请链接与试用到期提醒不会真正发给用户。",
+    );
+  }
+  if (isProductionLike(env) && env.NOTIFY_PROVIDER === "webhook" && !env.NOTIFY_WEBHOOK_URL) {
+    throw new Error(
+      "NOTIFY_PROVIDER=webhook 必须同时配置 NOTIFY_WEBHOOK_URL（通知网关地址，例如 https://notify.<你的域名>/send）；" +
+        "否则发送通道仍然不存在。",
+    );
+  }
+  if (isProductionLike(env) && env.NOTIFY_WEBHOOK_URL && isLoopbackUrl(env.NOTIFY_WEBHOOK_URL)) {
+    throw new Error(
+      `生产/OIDC 模式的 NOTIFY_WEBHOOK_URL 不能指向本机（当前 ${env.NOTIFY_WEBHOOK_URL}）；` +
+        "请改成通知网关的正式地址。",
+    );
+  }
   return env;
+}
+
+/** 回环/本机域名：这些地址在客户手机上打开就是白屏，生产态一律拒绝。 */
+const LOOPBACK_HOSTNAMES = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+  "[::1]",
+  "host.docker.internal",
+]);
+
+function isLoopbackUrl(raw: string): boolean {
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return LOOPBACK_HOSTNAMES.has(host) || host.endsWith(".localhost");
+  } catch {
+    // zod 已经保证是 URL；解析失败按「不可信」处理，交给对应门禁报错。
+    return true;
+  }
+}
+
+/**
+ * 站点根地址（发给客户的链接前缀）的生产态校验：
+ * 拒绝 localhost / 非 https，错误信息必须写清变量名与正确形态。
+ */
+function assertProductionSiteUrl(
+  env: Env,
+  key: "PUBLIC_APP_URL" | "WEB_APP_URL",
+  usage: string,
+  correctForm: string,
+): void {
+  if (!isProductionLike(env)) return;
+  const value = env[key];
+  if (isLoopbackUrl(value)) {
+    throw new Error(
+      `生产/OIDC 模式必须显式配置 ${key}（${usage} 的站点根地址，正确形态：${correctForm}）；` +
+        `当前是 ${value}，生成的链接客户打开会白屏，而接口仍返回 200。`,
+    );
+  }
+  if (!/^https:\/\//i.test(value)) {
+    throw new Error(
+      `生产/OIDC 模式的 ${key} 必须是 https（当前 ${value}）；${usage} 会在微信/浏览器里被拦截。`,
+    );
+  }
 }

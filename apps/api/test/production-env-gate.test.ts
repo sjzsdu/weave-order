@@ -6,6 +6,7 @@ import {
   createImageEmbeddingProviderFromEnv,
 } from "../src/platform/embedding";
 import { loadEnv } from "../src/platform/env";
+import { buildShareUrl, createShareToken } from "../src/kernel/share-token";
 
 /**
  * 生产 env 组合的启动门禁（WAN-129）。
@@ -33,7 +34,19 @@ const productionBase = {
   ONBOARDING_SECRET: RANDOM_SECRET,
   S3_ACCESS_KEY_ID: "AKIDprod-not-the-dev-placeholder",
   S3_SECRET_ACCESS_KEY: "prod-secret-not-the-dev-placeholder",
+  // 以下五项配错不会让进程起不来，只会让客户看到坏结果（WAN-130）：
+  // 链接指向 localhost / 签名主机名错 / 通知不发 / 试用订阅不登记。
+  PUBLIC_APP_URL: "https://quote.example.com",
+  WEB_APP_URL: "https://app.example.com",
+  S3_FORCE_PATH_STYLE: "false",
+  PLATFORM_API_URL: "https://platform.example.com",
+  NOTIFY_PROVIDER: "webhook",
+  NOTIFY_WEBHOOK_URL: "https://notify.example.com/send",
 } as const;
+
+/** 假的租户/分享 id：只用于拼装链接，不碰数据库。 */
+const FAKE_TENANT_ID = "11111111-1111-4111-8111-111111111111";
+const FAKE_SHARE_ID = "22222222-2222-4222-8222-222222222222";
 
 /**
  * 复刻 apps/api/src/main.ts 的启动顺序中与配置相关的部分：
@@ -226,6 +239,84 @@ describe("生产 env 启动门禁（fail-fast）", () => {
     expect(() => bootstrap({ ...productionBase, EMBEDDING_API_KEY: "" })).toThrow(
       /EMBEDDING_API_KEY/,
     );
+  });
+
+  it("生产未设置 PUBLIC_APP_URL（回落 localhost:5174）→ 拒绝启动", () => {
+    const { PUBLIC_APP_URL: _omit, ...withoutPublicUrl } = productionBase;
+    expect(() => bootstrap(withoutPublicUrl)).toThrow(/PUBLIC_APP_URL/);
+    expect(() =>
+      bootstrap({ ...withoutPublicUrl, PUBLIC_APP_URL: "http://localhost:5174" }),
+    ).toThrow(/PUBLIC_APP_URL/);
+  });
+
+  it("生产 PUBLIC_APP_URL 不是 https → 拒绝启动", () => {
+    expect(() =>
+      bootstrap({ ...productionBase, PUBLIC_APP_URL: "http://quote.example.com" }),
+    ).toThrow(/PUBLIC_APP_URL/);
+  });
+
+  it("生产 PUBLIC_APP_URL=https://localhost:5174 → 回环判定独立生效，拒绝启动", () => {
+    // 只靠 https 校验兜不住：写成 https://localhost 时协议合法、主机仍是本机。
+    expect(() =>
+      bootstrap({ ...productionBase, PUBLIC_APP_URL: "https://localhost:5174" }),
+    ).toThrow(/PUBLIC_APP_URL/);
+  });
+
+  it("生产未设置 WEB_APP_URL（回落 localhost:3001）→ 拒绝启动", () => {
+    const { WEB_APP_URL: _omit, ...withoutWebUrl } = productionBase;
+    expect(() => bootstrap(withoutWebUrl)).toThrow(/WEB_APP_URL/);
+    expect(() => bootstrap({ ...withoutWebUrl, WEB_APP_URL: "http://localhost:3001" })).toThrow(
+      /WEB_APP_URL/,
+    );
+  });
+
+  it("生产 WEB_APP_URL 不是 https → 拒绝启动", () => {
+    expect(() => bootstrap({ ...productionBase, WEB_APP_URL: "http://app.example.com" })).toThrow(
+      /WEB_APP_URL/,
+    );
+  });
+
+  it("生产漏注入 S3_FORCE_PATH_STYLE（回落 true）→ 拒绝启动，不静默走 path-style", () => {
+    const { S3_FORCE_PATH_STYLE: _omit, ...withoutPathStyle } = productionBase;
+    expect(() => bootstrap(withoutPathStyle)).toThrow(/S3_FORCE_PATH_STYLE/);
+    expect(() => bootstrap({ ...productionBase, S3_FORCE_PATH_STYLE: "true" })).toThrow(
+      /S3_FORCE_PATH_STYLE/,
+    );
+  });
+
+  it("生产未设置 PLATFORM_API_URL → 拒绝启动，不静默跳过试用订阅登记", () => {
+    const { PLATFORM_API_URL: _omit, ...withoutPlatform } = productionBase;
+    expect(() => bootstrap(withoutPlatform)).toThrow(/PLATFORM_API_URL/);
+    expect(() =>
+      bootstrap({ ...productionBase, PLATFORM_API_URL: "http://localhost:3002" }),
+    ).toThrow(/PLATFORM_API_URL/);
+  });
+
+  it("生产 NOTIFY_PROVIDER 保持 log → 拒绝启动，通知不会静默丢弃", () => {
+    const { NOTIFY_PROVIDER: _omit, ...withoutProvider } = productionBase;
+    expect(() => bootstrap(withoutProvider)).toThrow(/NOTIFY_PROVIDER/);
+    expect(() => bootstrap({ ...productionBase, NOTIFY_PROVIDER: "log" })).toThrow(
+      /NOTIFY_PROVIDER/,
+    );
+  });
+
+  it("生产 NOTIFY_PROVIDER=webhook 但缺 NOTIFY_WEBHOOK_URL → 拒绝启动", () => {
+    const { NOTIFY_WEBHOOK_URL: _omit, ...withoutWebhook } = productionBase;
+    expect(() => bootstrap(withoutWebhook)).toThrow(/NOTIFY_WEBHOOK_URL/);
+  });
+
+  it("生产配置生成一条报价分享链接：host 不是 localhost，且走正式域名", () => {
+    const { env } = bootstrap(productionBase);
+    const { token } = createShareToken(
+      { t: FAKE_TENANT_ID, s: FAKE_SHARE_ID },
+      env.QUOTE_SHARE_SECRET,
+    );
+    const url = buildShareUrl(env.PUBLIC_APP_URL, token);
+    const parsed = new URL(url);
+    expect(parsed.hostname).not.toBe("localhost");
+    expect(parsed.hostname).not.toBe("127.0.0.1");
+    expect(parsed.origin).toBe("https://quote.example.com");
+    expect(parsed.pathname.startsWith("/s/")).toBe(true);
   });
 
   it("本地默认组合仍可零 key 启动（不误伤开发体验）", () => {

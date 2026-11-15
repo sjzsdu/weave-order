@@ -33,7 +33,13 @@ import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
 import { milliToQuantity } from "./money";
 import { currencyOf, toIso } from "./mappers";
-import { createShareToken, hashAnonymous, hashToken, tokenHashMatches } from "./share-token";
+import {
+  buildShareUrl,
+  createShareToken,
+  hashAnonymous,
+  hashToken,
+  tokenHashMatches,
+} from "./share-token";
 
 type ShareRow = typeof quoteShares.$inferSelect;
 type EventRow = typeof quoteShareEvents.$inferSelect;
@@ -149,7 +155,8 @@ export class ShareService {
   ) {}
 
   private urlFor(token: string): string {
-    return `${this.options.publicAppUrl.replace(/\/+$/, "")}/s/${token}`;
+    // 与生产门禁共用同一个拼装函数（见 share-token.ts），避免两处各写一套斜杠规则。
+    return buildShareUrl(this.options.publicAppUrl, token);
   }
 
   private async getQuoteRow(quoteId: string) {

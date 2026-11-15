@@ -50,7 +50,8 @@ const TENANT_KEY_PATTERN =
  * 样品图片内核服务：`sample_images` 的唯一写入入口。
  *
  * 不在这里拼 URL、不碰对象存储——那是 platform/storage 与 media 层的事。
- * 删除样品时由数据库外键级联清行；桶里的对象回收是 P1 的后台任务（见 storage.ts TODO）。
+ * 删除样品时由数据库外键级联清行；桶里的对象由 `maintain:media` 的孤儿回收按引用反查删除
+ * （`MediaMaintenanceService.cleanupOrphanedObjects`，保护期内不删，避免误删刚 PUT 未 confirm 的对象）。
  */
 export class SampleImageService {
   constructor(
