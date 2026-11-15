@@ -43,6 +43,10 @@ async function bootstrap(): Promise<void> {
       void worker.stop();
     });
   }
+  // 这一行是进程存活的唯一原因：少了它 bootstrap 会以 0 退出，
+  // 日志照常打印「API → http://localhost:PORT」，但没有任何 socket 被监听。
+  // （WAN-119 收拾 S4 时误删过，WAN-128 的 E2E 会在第一步就暴露它。）
+  await app.listen(env.PORT);
   console.log(
     `✔ WeaveOrder API → http://localhost:${env.PORT}/api/health（auth=${env.AUTH_MODE}）`,
   );

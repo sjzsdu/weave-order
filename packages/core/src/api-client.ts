@@ -95,6 +95,8 @@ export interface PresignImageInput {
 
 export interface PresignImageResult {
   uploadUrl: string;
+  /** 上传后可读地址：CDN 直链，或未配 CDN 时的短期签名 URL。 */
+  publicUrl: string;
   method: "PUT";
   headers: Record<string, string>;
   objectKey: string;
@@ -153,6 +155,7 @@ function listParams(values: Record<string, string | number | null | undefined>):
 const PresignImageResponse = z
   .object({
     uploadUrl: z.string().url(),
+    publicUrl: z.string().url(),
     method: z.literal("PUT"),
     headers: z.record(z.string()),
     objectKey: z.string(),
