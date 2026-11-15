@@ -1,7 +1,8 @@
 # 本地对象存储（MinIO）不依赖 Docker Hub 的起停方式
 
 > 适用：S1 图片链路（presign → PUT → confirm → 样品带图）的本地联调与验收。
-> 生产侧清单见 [`media-production-checklist.md`](./media-production-checklist.md)。
+> 生产侧可执行 runbook（pgvector / COS / 权限 / CORS / env / 回填 / 回滚）见
+> [`media-production-checklist.md`](./media-production-checklist.md)。
 
 ## 为什么需要这个脚本
 
