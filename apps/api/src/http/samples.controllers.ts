@@ -148,6 +148,36 @@ export class SampleController {
     }
   }
 
+  /**
+   * 单张图重试（缩略图派生 / 图像向量索引）。
+   *
+   * 返回整份样品读模型：客户端点一次「重试」就拿到最新状态徽标，
+   * 不需要再猜是「重试成功但界面没刷新」还是「还在跑」。
+   */
+  @Post("samples/:id/images/:imageId/retry")
+  @HttpCode(200)
+  async retryImage(
+    @Param("id") id: string,
+    @Param("imageId") imageId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => {
+          await kernel.samples.retryImage(id, imageId, ctx);
+          const sample = await kernel.samples.getById(id, ctx.actor.role);
+          const rows = await kernel.sampleImages.listForSample(sample.id);
+          return { sample: await this.withImages(sample, rows) };
+        },
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
   /** 归档是软删：`status=ARCHIVED`，图片行与审计都保留。 */
   @Post("samples/:id/archive")
   @HttpCode(200)

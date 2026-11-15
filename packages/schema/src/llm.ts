@@ -16,6 +16,7 @@ export const LlmTask = z.enum([
   "QUOTE_DRAFT",
   "FOLLOWUP_SUGGESTION",
   "REPLY_CLASSIFICATION",
+  "SCREENSHOT_OCR",
 ]);
 export type LlmTask = z.infer<typeof LlmTask>;
 

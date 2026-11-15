@@ -53,6 +53,7 @@ export const STATUS_LABEL: Record<string, string> = {
   PAID: "已收清",
   OVERDUE: "已逾期",
   COMPLETED: "已完成",
+  RECEIVED: "已录入",
 };
 
 export const TIER_LABEL: Record<string, string> = {
@@ -68,6 +69,7 @@ export const TIMELINE_KIND_LABEL: Record<string, string> = {
   order: "订单",
   receivable: "回款",
   followup: "跟进",
+  inbound_reply: "客户回复",
 };
 
 /** 订单状态（合同链路），与 schema 的 OrderStatus 一一对应。 */

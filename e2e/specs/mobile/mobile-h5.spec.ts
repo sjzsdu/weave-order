@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { MEDIA_BASE_URL } from "../../support/env";
+import { API_URL, MEDIA_BASE_URL } from "../../support/env";
 import { readSeed } from "../../support/seed";
 import { screenshot } from "../../support/ui";
 
@@ -142,6 +142,48 @@ test.describe("移动端 H5 关键路径", () => {
       await expect(page.getByText("演示模式", { exact: true })).toBeVisible();
     }
     await screenshot(page, testInfo, "mobile-image-search");
+  });
+
+  /**
+   * 移动端鉴权注入（已知盲区收尾）：H5 没有 BFF，令牌由请求层补上。
+   * 这里不改页面代码，直接断言这条注入真的生效：
+   * - 页面里不带任何 Authorization 的 fetch 仍能拿到 200（说明注入层在工作）；
+   * - 本次运行中所有 `/api/**` 请求都带了令牌；
+   * - 同一地址绕过注入（APIRequestContext 不经过 page.route）则是 401。
+   * 真实 OIDC 令牌获取仍需部署环境验证，见 docs/e2e-acceptance.md。
+   */
+  test("鉴权注入生效：页面请求带令牌，无令牌的直连被拒", async ({ page }) => {
+    const seed = await readSeed();
+
+    await page.goto("/");
+    await expect(page.locator(".weui-tabbar__label").first()).toBeVisible();
+
+    // 令牌本身对应的身份（直接带令牌请求，不经过注入层）。
+    const direct = await page.request.get(`${API_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${seed.ownerCredential}` },
+    });
+    expect(direct.ok()).toBe(true);
+    const directIdentity = (await direct.json()) as { subject: string };
+    expect(directIdentity.subject).toBeTruthy();
+
+    /*
+     * 页面里主动发一次「没有头」的请求：能拿到同一个 subject，
+     * 说明 `page.route` 的注入层确实把令牌加上了（否则会落到 dev 匿名上下文）。
+     * 不看 `request.headers()`：那里是 route.continue 改写前的原始头，
+     * 拿它判断会得到假阴性（WAN-131 实测）。
+     */
+    const injected = await page.evaluate(async (apiUrl) => {
+      const response = await fetch(`${apiUrl}/api/auth/me`);
+      return { status: response.status, body: (await response.json()) as { subject?: string } };
+    }, API_URL);
+    expect(injected.status).toBe(200);
+    expect(injected.body.subject).toBe(directIdentity.subject);
+
+    // 认证链路本身是开的：伪造令牌不会被 dev 兜底吞掉，必须 401。
+    const forged = await page.request.get(`${API_URL}/api/samples?limit=1`, {
+      headers: { Authorization: "Bearer definitely-not-a-session" },
+    });
+    expect(forged.status()).toBe(401);
   });
 });
 

@@ -425,9 +425,15 @@ export function createMockApiClient(): ApiClient {
 
     archiveSample: () => Promise.resolve({ ...sample, status: "ARCHIVED" as const }),
 
+    retrySampleImage: () => Promise.resolve(sample),
+
     presignImage: () => Promise.reject(new Error("演示模式不支持上传图片，请用真实账号")),
 
     confirmImage: () => Promise.reject(new Error("演示模式不支持上传图片，请用真实账号")),
+
+    ingestInboundReply: () => Promise.reject(new Error("演示模式不支持录入客户回复，请用真实账号")),
+
+    inboundReplies: () => Promise.resolve([]),
 
     panorama: () =>
       Promise.resolve(

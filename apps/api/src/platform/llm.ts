@@ -76,9 +76,27 @@ export interface LlmProvider {
   classifyReply(input: { text: string }): Promise<ReplyClassification>;
   /** 报价 agent 的槽位抽取。 */
   extractQuoteIntent(input: { text: string }): Promise<QuoteIntentExtraction>;
+  /**
+   * 截图识别：用多模态模型抽取对话文本（一次调用完成 OCR + 理解）。
+   * 只返回抽取出的文本，意图判断仍走 classifyReply，避免把两个任务混在一个 prompt。
+   */
+  extractReplyFromImage(input: { imageUrl: string }): Promise<{ text: string }>;
   /** 最近一次真实模型调用的用量回执；本地规则实现为 null。 */
   readonly lastUsage: LlmCallReceipt | null;
 }
+
+/** 视觉模型：截图识别专用，走同一 LiteLLM 通道，token 计入 SCREENSHOT_OCR 任务。 */
+export const SCREENSHOT_VISION_MODEL = "qwen-vl-plus";
+
+/** 多模态消息内容：文本或图片（OpenAI 兼容 image_url 协议）。 */
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export type ChatMessage = {
+  role: "system" | "user";
+  content: string | ChatContentPart[];
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -264,6 +282,12 @@ export class LocalRuleLlmProvider implements LlmProvider {
   extractQuoteIntent(input: { text: string }): Promise<QuoteIntentExtraction> {
     return Promise.resolve(QuoteIntentExtraction.parse(localIntent(input.text)));
   }
+
+  extractReplyFromImage(_input: { imageUrl: string }): Promise<{ text: string }> {
+    return Promise.reject(
+      new Error("截图识别需要真实视觉模型：请设置 LLM_PROVIDER=litellm 并配置视觉模型后重试。"),
+    );
+  }
 }
 
 interface ChatUsage {
@@ -421,28 +445,59 @@ export class LiteLlmProvider implements LlmProvider {
     });
   }
 
+  async extractReplyFromImage(input: { imageUrl: string }): Promise<{ text: string }> {
+    const content = await this.chat(
+      "SCREENSHOT_OCR",
+      [
+        {
+          role: "system",
+          content:
+            "你是纺织贸易客户回复的截图识别助手。从聊天截图里抽取「客户本人发出的消息原文」，只输出 JSON：{text: string}。多段消息用换行连接；不要编造截图里没有的内容，也不要加入你自己的评论。",
+        },
+        {
+          role: "user",
+          content: [{ type: "image_url", image_url: { url: input.imageUrl } }],
+        },
+      ],
+      SCREENSHOT_VISION_MODEL,
+    );
+    const parsed = parseJsonObject(content);
+    const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
+    return { text };
+  }
+
   private async chat(
     task: LlmTask,
-    messages: { role: "system" | "user"; content: string }[],
+    messages: ChatMessage[],
     fallbackModel: string,
   ): Promise<string> {
     const settings = this.options.settings;
-    // 按任务路由：复杂报价/对账用 reasoner；超长意图（客户原话很长）也升到 reasoner。
-    const promptChars = messages.reduce((sum, message) => sum + message.content.length, 0);
+    // 按任务路由：截图识别走视觉模型；复杂报价/对账用 reasoner；超长意图也升到 reasoner。
+    const promptChars = messageText(messages).length;
     const model =
-      task === "QUOTE_DRAFT" || (task === "QUOTE_INTENT" && promptChars > 1200)
-        ? settings.reasoningModel
-        : fallbackModel;
+      task === "SCREENSHOT_OCR"
+        ? SCREENSHOT_VISION_MODEL
+        : task === "QUOTE_DRAFT" || (task === "QUOTE_INTENT" && promptChars > 1200)
+          ? settings.reasoningModel
+          : fallbackModel;
     if (!settings.modelAllowlist.includes(model)) {
-      throw new Error(`模型 ${model} 不在租户白名单内`);
+      throw new Error(
+        task === "SCREENSHOT_OCR"
+          ? `截图识别需要视觉模型 ${model}，但当前租户模型白名单未包含它；请在「设置 → 模型白名单」中加入 ${model} 后重试。`
+          : `模型 ${model} 不在租户白名单内`,
+      );
     }
     const requestId = randomUUID();
     const redactedMessages = messages.map((message) => ({
       ...message,
-      content: redactSensitiveText(message.content),
+      content: redactMessageContent(message.content),
     }));
     const promptHash = createHash("sha256")
-      .update(redactedMessages.map((message) => `${message.role}:${message.content}`).join("\n"))
+      .update(
+        redactedMessages
+          .map((message) => `${message.role}:${serializeContent(message.content)}`)
+          .join("\n"),
+      )
       .digest("hex");
 
     // 预留—结算：先原子占预算，再发请求。占不到额度的请求不出网（否则无法回收成本）。
@@ -552,15 +607,56 @@ export class LiteLlmProvider implements LlmProvider {
 /** 输出上限：协议未下发 max_tokens，按常见 JSON 回复上限保守预留。 */
 const COMPLETION_TOKEN_ALLOWANCE = 1024;
 
+/** 每张图保守预留（预算占额，非计费值）：取一张中等分辨率图的 token 上限。 */
+const IMAGE_TOKEN_ALLOWANCE = 1105;
+
+/** 拼接所有文本内容，用于字数估算与超长判断。 */
+function messageText(messages: ChatMessage[]): string {
+  return messages
+    .map((message) => {
+      if (typeof message.content === "string") return message.content;
+      return message.content
+        .filter((part): part is { type: "text"; text: string } => part.type === "text")
+        .map((part) => part.text)
+        .join("");
+    })
+    .join("\n");
+}
+
+function imageCount(messages: ChatMessage[]): number {
+  return messages.reduce((count, message) => {
+    if (typeof message.content === "string") return count;
+    return count + message.content.filter((part) => part.type === "image_url").length;
+  }, 0);
+}
+
+/** 出网前脱敏：文本替换敏感字段；图片无法脱敏，原样保留（OCR 抽取后再对文本脱敏）。 */
+function redactMessageContent(content: string | ChatContentPart[]): string | ChatContentPart[] {
+  if (typeof content === "string") return redactSensitiveText(content);
+  return content.map((part) =>
+    part.type === "text" ? { ...part, text: redactSensitiveText(part.text) } : part,
+  );
+}
+
+/** 归一化序列化，用于 promptHash（图片以 url 内容参与散列，保证同图同 hash）。 */
+function serializeContent(content: string | ChatContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((part) =>
+      part.type === "text" ? `text:${part.text}` : `image_url:${part.image_url.url}`,
+    )
+    .join("\n");
+}
+
 /**
  * 调用前的 token 上限估算（预算占额，不是计费值）。
- * CJK 约 1 字符 1 token、英文约 4 字符 1 token；按 1 字符 1 token 取高不取低。
+ * CJK 约 1 字符 1 token、英文约 4 字符 1 token；按 1 字符 1 token 取高不取低；
+ * 图片按每张固定 token 保守预留。
  */
-export function estimateChatTokens(
-  messages: { role: "system" | "user"; content: string }[],
-): number {
-  const chars = messages.reduce((sum, message) => sum + message.content.length, 0);
-  return chars + COMPLETION_TOKEN_ALLOWANCE;
+export function estimateChatTokens(messages: ChatMessage[]): number {
+  const chars = messageText(messages).length;
+  const images = imageCount(messages) * IMAGE_TOKEN_ALLOWANCE;
+  return chars + images + COMPLETION_TOKEN_ALLOWANCE;
 }
 
 function asText(value: unknown, fallback: string): string {

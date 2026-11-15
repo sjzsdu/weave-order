@@ -19,6 +19,9 @@ import {
   CustomerTimelineKind,
   CustomerTimelinePage,
   FabricSample,
+  InboundIntakeInput,
+  InboundReplyList,
+  InboundReplyResult,
   InviteMemberInput,
   InvitePreview,
   Order,
@@ -91,6 +94,8 @@ export interface PresignImageInput {
   byteSize: number;
   /** 绑定到已有样品；不传时 key 落在 `uploads/`，需随样品创建一起提交。 */
   sampleId?: string;
+  /** 手工录入客户回复的截图：key 落在 `inbound/`，不走 confirm。 */
+  purpose?: "inbound";
 }
 
 export interface PresignImageResult {
@@ -402,6 +407,18 @@ export function createApiClient(options: ApiClientOptions) {
     archiveSample: async (id: string) =>
       SampleResponse.parse(await post(`/api/samples/${encodeURIComponent(id)}/archive`, {})).sample,
 
+    /**
+     * 单张图重试：服务端同步重跑缩略图 / 向量索引，返回刷新后的整份样品。
+     * 失败不会变成 HTTP 错误（图仍挂在样品上），失败原因在 `thumbError` / `indexError`。
+     */
+    retrySampleImage: async (sampleId: string, imageId: string) =>
+      SampleResponse.parse(
+        await post(
+          `/api/samples/${encodeURIComponent(sampleId)}/images/${encodeURIComponent(imageId)}/retry`,
+          {},
+        ),
+      ).sample,
+
     /** 图片直传第 1 步：拿预签名 URL（key 由服务端生成）。 */
     presignImage: async (input: PresignImageInput) =>
       PresignImageResponse.parse(await post("/api/media/presign", input)),
@@ -409,6 +426,21 @@ export function createApiClient(options: ApiClientOptions) {
     /** 图片直传第 3 步：HEAD 校验后写入 `sample_images`。 */
     confirmImage: async (input: ConfirmImageInput) =>
       ConfirmImageResponse.parse(await post("/api/media/confirm", input)).image,
+
+    /**
+     * 手工录入客户回复：文本直接提交，截图先 presign(purpose=inbound) 直传再提交 objectKey。
+     * 返回入库行 + 识别结论 + 可能生成的报价草稿 id。
+     */
+    ingestInboundReply: async (input: z.input<typeof InboundIntakeInput>) =>
+      InboundReplyResult.parse(await post("/api/inbound/replies", input)),
+
+    /** 某客户最近录入的回复。 */
+    inboundReplies: async (customerId: string, limit = 20) =>
+      InboundReplyList.parse(
+        await request(
+          `/api/inbound/replies?customerId=${encodeURIComponent(customerId)}&limit=${limit}`,
+        ),
+      ).messages,
 
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 

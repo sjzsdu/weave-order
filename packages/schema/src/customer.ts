@@ -75,13 +75,18 @@ export const Customer360 = z
   .strict();
 export type Customer360 = z.infer<typeof Customer360>;
 
-/** 时间线条目类型。跟进来目前没有独立业务表，取自客户审计流水。 */
+/**
+ * 时间线条目类型。
+ * 「跟进」仍取自客户审计流水；「客户回复」是手工录入的 `inbound_messages`
+ * （粘贴文本 / 截图 OCR 后的文本），2026-11-14 拍板移除真实渠道接入后新增。
+ */
 export const CustomerTimelineKind = z.enum([
   "quote",
   "sample_shipment",
   "order",
   "receivable",
   "followup",
+  "inbound_reply",
 ]);
 export type CustomerTimelineKind = z.infer<typeof CustomerTimelineKind>;
 

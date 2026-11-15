@@ -13,6 +13,10 @@ model_list:
     litellm_params:
       model: dashscope/qwen-plus
       api_key: os.environ/DASHSCOPE_API_KEY
+  - model_name: qwen-vl-plus
+    litellm_params:
+      model: dashscope/qwen-vl-plus
+      api_key: os.environ/DASHSCOPE_API_KEY
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

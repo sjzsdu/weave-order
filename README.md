@@ -12,20 +12,20 @@
 
 ## 技术栈
 
-| 层            | 选型                                                                 |
-| ------------- | -------------------------------------------------------------------- |
-| 后端          | NestJS + TypeScript                                                  |
-| 数据库        | PostgreSQL 16 + pgvector                                             |
-| ORM / 查询层  | Drizzle ORM（TypeScript 优先）                                       |
-| 缓存与队列    | Redis 7                                                              |
+| 层            | 选型                                                                  |
+| ------------- | --------------------------------------------------------------------- |
+| 后端          | NestJS + TypeScript                                                   |
+| 数据库        | PostgreSQL 16 + pgvector                                              |
+| ORM / 查询层  | Drizzle ORM（TypeScript 优先）                                        |
+| 缓存与队列    | Redis 7                                                               |
 | 向量检索      | 文本：pgvector `vector(1024)` + HNSW；`local-stub` 仍走 `real[]` 兼容 |
-| 智能体编排    | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）      |
-| 前端·桌面     | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统  |
-| 前端·客户报价 | Next.js 15 独立应用 `apps/quote`（`/s/[token]`，SSR、无鉴权 Cookie） |
-| 移动端        | Taro（H5/PWA + 小程序 + RN App）                                     |
-| 校验          | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）            |
-| CLI / agent   | Node 20 + 零运行时依赖（`apps/cli`，bin `weave`）                    |
-| 测试          | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）          |
+| 智能体编排    | LangGraph.js（状态机 + PostgreSQL 检查点，工具调用走 Zod 校验）       |
+| 前端·桌面     | Next.js 15（App Router）+ React 19 + Tailwind + shadcn 风格设计系统   |
+| 前端·客户报价 | Next.js 15 独立应用 `apps/quote`（`/s/[token]`，SSR、无鉴权 Cookie）  |
+| 移动端        | Taro（H5/PWA + 小程序 + RN App）                                      |
+| 校验          | Zod（工具输入输出、API 请求响应、环境变量的唯一契约来源）             |
+| CLI / agent   | Node 20 + 零运行时依赖（`apps/cli`，bin `weave`）                     |
+| 测试          | Vitest（单元 + 内核/HTTP 集成）+ Playwright（端到端，后续）           |
 
 ## 目录结构（Monorepo，pnpm workspace + Turborepo）
 
@@ -206,44 +206,44 @@ pnpm format       # Prettier
 
 ### 最小 HTTP 面
 
-| 方法   | 路径                                  | 身份 / 状态                   | 说明                                            |
-| ------ | ------------------------------------- | ----------------------------- | ----------------------------------------------- |
-| GET    | `/api/health`                         | 只读                          | 服务 + 数据库可用性                             |
-| GET    | `/api/customers`                      | 只读                          | 客户列表 + 聚合（未决报价 / 在途寄样 / 应收）   |
-| GET    | `/api/customers/:id`                  | 只读                          | 客户 360：档案 + 上下文 + 汇总                  |
-| GET    | `/api/customers/:id/timeline`         | 只读                          | 客户时间线（游标分页，可按单据类型筛选）        |
+| 方法   | 路径                                  | 身份 / 状态                   | 说明                                             |
+| ------ | ------------------------------------- | ----------------------------- | ------------------------------------------------ |
+| GET    | `/api/health`                         | 只读                          | 服务 + 数据库可用性                              |
+| GET    | `/api/customers`                      | 只读                          | 客户列表 + 聚合（未决报价 / 在途寄样 / 应收）    |
+| GET    | `/api/customers/:id`                  | 只读                          | 客户 360：档案 + 上下文 + 汇总                   |
+| GET    | `/api/customers/:id/timeline`         | 只读                          | 客户时间线（游标分页，可按单据类型筛选）         |
 | GET    | `/api/samples`                        | 只读                          | 样品图墙（`query`/`category`/`status`/游标分页） |
-| POST   | `/api/samples`                        | HUMAN（样品管理员/经理/老板） | 新建样品（可带已上传的 `imageKeys`）            |
-| GET    | `/api/samples/:id`                    | 只读                          | 样品详情（图片按 `sortOrder`，成本按角色裁剪）  |
-| PATCH  | `/api/samples/:id`                    | HUMAN（样品管理员/经理/老板） | 编辑规格 / 图片顺序 / 主图                      |
-| POST   | `/api/samples/:id/archive`            | HUMAN（样品管理员/经理/老板） | 归档（软删，`status=ARCHIVED`）                 |
-| GET    | `/api/audit`                          | OIDC / `read` PAT             | 审计流水（只看本租户）                          |
-| POST   | `/api/tools/search-by-spec`           | agent                         | T-002 参数匹配                                  |
-| POST   | `/api/tools/search-by-image`          | agent                         | T-001 以图搜图（base64 / imageUrl）             |
-| POST   | `/api/tools/generate-quote-draft`     | agent → `DRAFT`               | T-004 生成报价草稿                              |
-| POST   | `/api/agents/quote`                   | agent                         | 粘贴客户原话 → 候选 + 定价依据 + DRAFT + 缺失项 |
-| POST   | `/api/tools/create-sample-shipment`   | agent → `DRAFT`               | T-005 创建寄样单草稿                            |
-| POST   | `/api/approvals/decide`               | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject             |
-| GET    | `/api/approvals`                      | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）            |
-| GET    | `/api/approvals/:id?kind=quote`       | 只读                          | 审批卡详情：出处 / diff / 草稿态                |
-| GET    | `/api/panorama`                       | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）          |
-| POST   | `/api/import`                         | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品         |
-| POST   | `/api/auth/device/start`              | 无                            | CLI 设备登录：申请一次性确认码                  |
-| POST   | `/api/auth/device/poll`               | 无                            | CLI 轮询；批准后一次性换 token                  |
-| POST   | `/api/auth/device/decide`             | OIDC / `approve` PAT          | 人类确认 CLI 登录（`/cli-login` 页面调用）      |
-| GET    | `/api/auth/whoami`                    | OIDC / PAT                    | 凭据 + 成员身份 + 租户                          |
-| GET    | `/api/auth/tokens`                    | OIDC / PAT                    | 列出自己的个人凭据                              |
-| POST   | `/api/auth/tokens`                    | OIDC / `write` PAT            | 签发个人凭据（明文只返回一次）                  |
-| DELETE | `/api/auth/tokens/:id`                | OIDC / PAT                    | 撤销个人凭据（立即失效）                        |
-| POST   | `/api/quotes/:id/shares`              | HUMAN（仅 SENT 报价）         | 生成客户报价链接（明文 token 只返回一次）       |
-| GET    | `/api/quotes/:id/shares`              | 只读                          | 分享列表 + 访问/接受/提问聚合数据               |
-| POST   | `/api/shares/:id/revoke`              | HUMAN                         | 撤回链接，立即 410                              |
-| GET    | `/api/public/quotes/:token`           | 公开（无登录）                | 客户视图；`?track=0` 用于打印不重复计数         |
-| POST   | `/api/public/quotes/:token/accept`    | 公开（可选手机尾号）          | 记录成交意向（不改账本）                        |
-| POST   | `/api/public/quotes/:token/questions` | 公开                          | 客户留言提问                                    |
-| POST   | `/api/public/quotes/:token/pdf`       | 公开                          | 记录 PDF 下载事件                               |
-| POST   | `/api/quote-shares`                   | HUMAN（仅 SENT 报价）         | 移动端契约：quoteId 在 body，返回裸对象         |
-| GET    | `/api/quote-shares?quoteId=`          | 只读                          | 移动端契约：链接访问时间线                      |
+| POST   | `/api/samples`                        | HUMAN（样品管理员/经理/老板） | 新建样品（可带已上传的 `imageKeys`）             |
+| GET    | `/api/samples/:id`                    | 只读                          | 样品详情（图片按 `sortOrder`，成本按角色裁剪）   |
+| PATCH  | `/api/samples/:id`                    | HUMAN（样品管理员/经理/老板） | 编辑规格 / 图片顺序 / 主图                       |
+| POST   | `/api/samples/:id/archive`            | HUMAN（样品管理员/经理/老板） | 归档（软删，`status=ARCHIVED`）                  |
+| GET    | `/api/audit`                          | OIDC / `read` PAT             | 审计流水（只看本租户）                           |
+| POST   | `/api/tools/search-by-spec`           | agent                         | T-002 参数匹配                                   |
+| POST   | `/api/tools/search-by-image`          | agent                         | T-001 以图搜图（base64 / imageUrl）              |
+| POST   | `/api/tools/generate-quote-draft`     | agent → `DRAFT`               | T-004 生成报价草稿                               |
+| POST   | `/api/agents/quote`                   | agent                         | 粘贴客户原话 → 候选 + 定价依据 + DRAFT + 缺失项  |
+| POST   | `/api/tools/create-sample-shipment`   | agent → `DRAFT`               | T-005 创建寄样单草稿                             |
+| POST   | `/api/approvals/decide`               | HUMAN（审批窗口唯一决策入口） | 批准 / 拒绝 → 内核 confirm / reject              |
+| GET    | `/api/approvals`                      | 只读                          | 审批队列（仅 pending 的 DRAFT 单据）             |
+| GET    | `/api/approvals/:id?kind=quote`       | 只读                          | 审批卡详情：出处 / diff / 草稿态                 |
+| GET    | `/api/panorama`                       | 只读                          | 业务全景聚合快照（单据 / 统计 / 审计）           |
+| POST   | `/api/import`                         | HUMAN                         | Excel/CSV 冷启动：整批原子导入客户/样品          |
+| POST   | `/api/auth/device/start`              | 无                            | CLI 设备登录：申请一次性确认码                   |
+| POST   | `/api/auth/device/poll`               | 无                            | CLI 轮询；批准后一次性换 token                   |
+| POST   | `/api/auth/device/decide`             | OIDC / `approve` PAT          | 人类确认 CLI 登录（`/cli-login` 页面调用）       |
+| GET    | `/api/auth/whoami`                    | OIDC / PAT                    | 凭据 + 成员身份 + 租户                           |
+| GET    | `/api/auth/tokens`                    | OIDC / PAT                    | 列出自己的个人凭据                               |
+| POST   | `/api/auth/tokens`                    | OIDC / `write` PAT            | 签发个人凭据（明文只返回一次）                   |
+| DELETE | `/api/auth/tokens/:id`                | OIDC / PAT                    | 撤销个人凭据（立即失效）                         |
+| POST   | `/api/quotes/:id/shares`              | HUMAN（仅 SENT 报价）         | 生成客户报价链接（明文 token 只返回一次）        |
+| GET    | `/api/quotes/:id/shares`              | 只读                          | 分享列表 + 访问/接受/提问聚合数据                |
+| POST   | `/api/shares/:id/revoke`              | HUMAN                         | 撤回链接，立即 410                               |
+| GET    | `/api/public/quotes/:token`           | 公开（无登录）                | 客户视图；`?track=0` 用于打印不重复计数          |
+| POST   | `/api/public/quotes/:token/accept`    | 公开（可选手机尾号）          | 记录成交意向（不改账本）                         |
+| POST   | `/api/public/quotes/:token/questions` | 公开                          | 客户留言提问                                     |
+| POST   | `/api/public/quotes/:token/pdf`       | 公开                          | 记录 PDF 下载事件                                |
+| POST   | `/api/quote-shares`                   | HUMAN（仅 SENT 报价）         | 移动端契约：quoteId 在 body，返回裸对象          |
+| GET    | `/api/quote-shares?quoteId=`          | 只读                          | 移动端契约：链接访问时间线                       |
 
 > 带 `Authorization` 时，工具面（`/api/tools/*`、`/api/agents/quote`）与 `/api/audit` 都在
 > 为该成员打开的租户会话内核里执行（铁律 G4）：读写与审计落库的 `tenant_id` 由这条会话决定，
@@ -495,3 +495,23 @@ pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
 - **验收**：`pnpm demo:quote` 与 `apps/api/test/{quote-agent,llm-litellm,quote.integration}.test.ts`。
 
 详见 `docs/track-b-agents.md`。
+
+## 手工录入客户回复（WAN-122）
+
+真实渠道（企微 / WhatsApp / 邮件 IMAP / 物流 API）需要企业主体资质，已拍板暂缓。
+生产路径只有两路手工录入：**粘贴文本** 或 **上传聊天截图**。
+
+- **入口**：客户 360 的「录入客户回复」（`apps/web/src/inbound-reply-drawer.tsx`），
+  截图先压缩、`POST /api/media/presign`（`purpose=inbound`）直传对象存储，再提交 `objectKey`。
+- **落库**：`POST /api/inbound/replies` → `inbound_messages`（幂等键
+  `(tenant_id, channel, external_id)`），入库前脱敏；同一 `externalId` 重复提交返回首次识别结果，
+  不会重复生成报价草稿。
+- **识别**：与跟进图同一个 LLM provider（`classifyReply`）；截图走 `qwen-vl-plus`
+  多模态模型（`SCREENSHOT_OCR`，token 进同一 reserve/settle 计量）。
+- **报价**：识别为询价且选择了面料时，复用 T-006 定价 + T-004 草稿，停在 `DRAFT` 等人类审批；
+  草稿备注写明来源消息 id，审批卡可溯源。
+- **时间线**：`inbound_messages` 合并进客户 360 时间线（`kind=inbound_reply`）。
+- **合规**：原始 payload 默认保留 30 天（`INBOUND_RAW_RETENTION_DAYS`），
+  定时执行 `pnpm --filter @weave-order/api maintain:inbound` 清空过期 `raw_payload`（业务行保留）。
+- **截图前置依赖**：截图识别必须启用 LiteLLM + DashScope key；`local-rule` 会明确报错，
+  不会假装识别。已有租户若自定义过模型白名单，迁移 0018 会把 `qwen-vl-plus` 补进白名单。

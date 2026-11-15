@@ -44,6 +44,15 @@ export async function waitForDatabase(handle: DatabaseHandle): Promise<void> {
 
 export async function createDemoContext(): Promise<DemoContext> {
   const env = loadEnv();
+  if (env.LLM_PROVIDER !== "litellm") {
+    console.log(
+      "\n⚠ 【模拟轨迹】LLM_PROVIDER=local-rule：下文跟进建议与意图识别均为本地规则产出，" +
+        "不是真实模型调用，不得当作真实现场数据。",
+    );
+  }
+  if (env.LOGISTICS_PROVIDER !== "real") {
+    console.log("⚠ 【模拟轨迹】LOGISTICS_PROVIDER 为本地确定性实现：物流状态是模拟数据。");
+  }
   const handle = connectDatabase(env.DATABASE_URL);
   await waitForDatabase(handle);
 
@@ -62,7 +71,16 @@ export async function createDemoContext(): Promise<DemoContext> {
     tools,
     llm: createLlmProvider(env.LLM_PROVIDER),
     logistics: createLogisticsProvider(env.LOGISTICS_PROVIDER),
-    replySource: createReplySource(env.REPLY_SOURCE),
+    replySource: createReplySource(env.REPLY_SOURCE, {
+      // REPLY_SOURCE=manual 时，图从 inbound_messages 取一条未消费的回复，
+      // 并原子标记 consumed（一条回复只驱动一次）。
+      fetchManualReply: async ({ customerId, shipmentId }) => {
+        const message = await kernel.inboundReplies.claimLatest({ customerId, shipmentId });
+        return message
+          ? { id: message.id, text: message.text, receivedAt: message.receivedAt }
+          : null;
+      },
+    }),
     checkpointer,
   });
 

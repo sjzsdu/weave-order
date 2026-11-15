@@ -289,6 +289,35 @@ describe("服务端缩略图派生（WAN-125）", () => {
     expect((await rowOf(imageId)).thumbStatus).toBe("ready");
   }, 30_000);
 
+  it("单图重试：上游修好后同步重跑派生，状态从 failed 回到 ready（WAN-131）", async (ctx) => {
+    if (!available) ctx.skip();
+    const h = await harness();
+    // 先放不可解码的字节：confirm 通过（只校验体积），派生失败并落库。
+    const { imageId, objectKey } = await h.createImage(Buffer.from("definitely-not-an-image"));
+    expect((await rowOf(imageId)).thumbStatus).toBe("failed");
+
+    // 用户/运维把正确原图放回同一个 key（换图重传会换 key，这里模拟上游修复）。
+    h.storage.seed(objectKey, await jpeg(), "image/jpeg");
+    const outcome = await h.kernel.samples.retryImage(h.sampleId, imageId, HUMAN);
+    expect(outcome.thumbRetried).toBe(true);
+
+    const repaired = await rowOf(imageId);
+    expect(repaired.thumbStatus).toBe("ready");
+    expect(repaired.thumbError).toBeNull();
+    expect(repaired.thumb320Key).not.toBeNull();
+    expect(repaired.thumb640Key).not.toBeNull();
+    // 索引本来就已经算过：重试不应该把它弄回 pending。
+    expect(repaired.indexStatus).toBe("ready");
+  }, 30_000);
+
+  it("单图重试：图片不属于该样品时按 404 语义拒绝（WAN-131）", async (ctx) => {
+    if (!available) ctx.skip();
+    const h = await harness();
+    await expect(
+      h.kernel.samples.retryImage(h.sampleId, randomUUID(), HUMAN),
+    ).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
+  }, 30_000);
+
   it("存量补派生：干跑不写，执行后幂等（再跑 0 条）", async (ctx) => {
     if (!available) ctx.skip();
     if (!db) throw new Error("数据库不可用");

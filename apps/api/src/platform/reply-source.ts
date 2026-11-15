@@ -4,13 +4,44 @@ import type { RawCustomerReply as RawReply } from "@weave-order/schema";
 /**
  * 客户回复信号来源。
  *
- * 渠道适配器（微信 / 企业微信 / 邮件 / 电话转写）负责把原始报文解析成
- * `RawCustomerReply`；意图识别由 LLM provider 完成，节点只做编排。
- * 以后接真实渠道时，实现本接口并替换配置即可。
+ * 渠道适配器负责把原始报文解析成 `RawCustomerReply`；意图识别由 LLM provider 完成，
+ * 节点只做编排。2026-11-14 拍板后，生产路径只有「手工录入」一个来源：
+ * `ManualReplySource` 从 `inbound_messages` 取一条未被消费的回复。
  */
 export interface ReplySource {
   readonly name: string;
   fetchLatest(input: { customerId: string; shipmentId: string }): Promise<RawReply | null>;
+}
+
+/** 取一条未消费的手工回复；实现方负责把它标记为 consumed，保证只驱动一次。 */
+export type FetchManualReply = (input: { customerId: string; shipmentId: string }) => Promise<{
+  id: string;
+  text: string;
+  receivedAt: string;
+} | null>;
+
+/**
+ * 手工录入来源（粘贴文本 / 截图 OCR）。
+ *
+ * 契约映射（评审 D4）：`RawCustomerReply.channel` 是「触达渠道」，而
+ * `inbound_messages.channel` 是「录入方式」（manual / screenshot），两者不是一回事。
+ * 业务上这些回复都来自客户微信，所以统一映射为 WECHAT，录入方式不向下游泄漏。
+ */
+export class ManualReplySource implements ReplySource {
+  readonly name = "manual-v1";
+
+  constructor(private readonly fetch: FetchManualReply) {}
+
+  async fetchLatest(input: { customerId: string; shipmentId: string }): Promise<RawReply | null> {
+    const row = await this.fetch(input);
+    if (!row) return null;
+    return RawCustomerReply.parse({
+      id: row.id,
+      channel: "WECHAT",
+      text: row.text,
+      receivedAt: row.receivedAt,
+    });
+  }
 }
 
 /**
@@ -30,9 +61,18 @@ export class LocalScriptedReplySource implements ReplySource {
   }
 }
 
-export function createReplySource(provider = "local-scripted"): ReplySource {
+export function createReplySource(
+  provider = "local-scripted",
+  deps: { fetchManualReply?: FetchManualReply } = {},
+): ReplySource {
   if (provider === "local-scripted") return new LocalScriptedReplySource();
+  if (provider === "manual") {
+    if (!deps.fetchManualReply) {
+      throw new Error("REPLY_SOURCE=manual 需要绑定 inbound_messages 取数（fetchManualReply）");
+    }
+    return new ManualReplySource(deps.fetchManualReply);
+  }
   throw new Error(
-    `REPLY_SOURCE=${provider} 尚未接入；当前支持：local-scripted。真实渠道请实现 ReplySource 后在此注册。`,
+    `REPLY_SOURCE=${provider} 尚未接入；当前支持：local-scripted / manual。真实渠道请实现 ReplySource 后在此注册。`,
   );
 }
