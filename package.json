@@ -18,6 +18,7 @@
     "lint": "turbo run build && node scripts/lint.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "verify:prod-env": "pnpm --filter @weave-order/api verify:prod-env",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @weave-order/db generate",
