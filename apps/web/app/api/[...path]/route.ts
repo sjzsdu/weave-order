@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isProductionLike } from "@/runtime-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,8 +31,8 @@ function targetBase(): string {
 function tokenFromRequest(request: NextRequest): string | null {
   const cookie = request.cookies.get("weave_token")?.value;
   if (cookie) return cookie;
-  // 本地无 Casdoor 时的开发兜底；生产构建绝不回退。
-  if (process.env.NODE_ENV !== "production") {
+  // 本地无 Casdoor 时的开发兜底；生产态绝不回退。
+  if (!isProductionLike()) {
     return process.env.DEV_AUTH_TOKEN ?? "dev:demo:demo";
   }
   return null;

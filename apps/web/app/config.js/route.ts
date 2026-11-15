@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isProductionLike } from "@/runtime-mode";
 
 /**
  * 部署期配置（浏览器侧读取）。
@@ -8,8 +9,9 @@ import { NextResponse } from "next/server";
  * 这里每次请求都读容器的环境变量，客户端从 window.__WEAVE_CONFIG__ 取
  * （见 src/analytics.ts 的 syncAnalyticsConfig）。
  *
- * 目前只下发访问统计。内容都是公开信息（统计域名、project key）；
- * PostHog 的 project key 本来就是公开标识，不是密钥；Plausible 不需要 key。
+ * 下发内容都是公开信息：统计域名 / project key（PostHog 的 project key 本来就是
+ * 公开标识，不是密钥），以及 `productionLike`（api 与 web 共用的生产态判定）。
+ * 客户端不能自己读 AUTH_MODE，所以生产态必须由服务端现算后下发。
  */
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,7 @@ export function GET() {
       host: (process.env.ANALYTICS_HOST ?? "").trim(),
       key: (process.env.ANALYTICS_KEY ?? "").trim(),
     },
+    productionLike: isProductionLike(),
   };
   const body = [
     `window.__WEAVE_CONFIG__=${JSON.stringify(config).replace(/</g, "\\u003c")};`,

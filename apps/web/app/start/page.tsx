@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { StartClient } from "./start-client";
+import { isProductionLike } from "@/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const metadata = {
 export default async function StartPage() {
   const store = await cookies();
   const token = store.get("weave_token")?.value;
-  if (!token && process.env.NODE_ENV === "production") {
+  if (!token && isProductionLike()) {
     redirect(`/auth/login?next=${encodeURIComponent("/start")}`);
   }
   return <StartClient />;

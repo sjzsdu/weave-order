@@ -2,6 +2,7 @@ import Link from "next/link";
 import { safeNext } from "@/public-origin";
 import { SupportMailto } from "@/support";
 import { TrackedLink } from "@/tracked-link";
+import { isProductionLike } from "@/runtime-mode";
 
 // MARKETING_URL 是部署时注入的运行时变量，优先读它。
 // NEXT_PUBLIC_* 会在构建期被内联，只靠它的话改 .env 换官网域名不会生效。
@@ -94,7 +95,7 @@ export default async function LoginPage({
         </p>
       </details>
 
-      {process.env.NODE_ENV !== "production" && (
+      {!isProductionLike() && (
         <div className="mt-6 grid gap-2 rounded-md border border-dashed border-line px-4 py-3">
           <p className="text-[11px] uppercase tracking-[0.14em] text-ink-400">仅本地开发</p>
           <a

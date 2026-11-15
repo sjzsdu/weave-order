@@ -25,3 +25,4 @@ export * from "./tools/t006-suggest-line-price";
 export * from "./print";
 export * from "./platform";
 export * from "./onboarding";
+export * from "./runtime-mode";

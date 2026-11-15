@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { publicOrigin } from "@/public-origin";
+import { isProductionLike } from "@/runtime-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  *
  * 与 `/api/[...path]` BFF 同一套取 token 规则：
  * - 有 `weave_token` Cookie → 用它；
- * - 本地无 Casdoor → 回退 DEV_AUTH_TOKEN（生产绝不回退）；
+ * - 本地无 Casdoor → 回退 DEV_AUTH_TOKEN（生产态绝不回退）；
  * - 都没有 → 跳登录页，登录后回到本页。
  */
 
@@ -35,7 +36,7 @@ function apiBase(): string {
 function tokenFromRequest(request: NextRequest): string | null {
   const cookie = request.cookies.get(TOKEN_COOKIE)?.value;
   if (cookie) return cookie;
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProductionLike()) {
     return process.env.DEV_AUTH_TOKEN ?? "dev:demo:demo";
   }
   return null;
@@ -134,7 +135,9 @@ export function GET(request: NextRequest): NextResponse {
   const userCode = request.nextUrl.searchParams.get("user_code") ?? "";
   if (!tokenFromRequest(request)) {
     const next = encodeURIComponent(`/cli-login?user_code=${userCode}`);
-    return NextResponse.redirect(new URL(`/auth/login?next=${next}`, publicOrigin(request.nextUrl.origin)));
+    return NextResponse.redirect(
+      new URL(`/auth/login?next=${next}`, publicOrigin(request.nextUrl.origin)),
+    );
   }
   return html(page({ userCode }));
 }
@@ -149,7 +152,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const token = tokenFromRequest(request);
   if (!token) {
     const next = encodeURIComponent(`/cli-login?user_code=${userCode}`);
-    return NextResponse.redirect(new URL(`/auth/login?next=${next}`, publicOrigin(request.nextUrl.origin)));
+    return NextResponse.redirect(
+      new URL(`/auth/login?next=${next}`, publicOrigin(request.nextUrl.origin)),
+    );
   }
 
   let upstream: Response;

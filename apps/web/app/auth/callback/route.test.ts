@@ -109,12 +109,55 @@ describe("租户端 OIDC 回调", () => {
   it("开发环境没注入域名时回退到当前请求 origin", async () => {
     vi.stubEnv("WEB_APP_URL", undefined);
     vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_MODE", "dev");
 
     const response = await GET(callbackRequest());
     const location = new URL(response.headers.get("location")!);
 
     expect(location.origin).toBe("http://localhost:3001");
     expect(location.pathname).toBe("/login");
+  });
+
+  it("staging（NODE_ENV=development + AUTH_MODE=oidc）会话 cookie 仍是 Secure，与生产一致", async () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_MODE", "oidc");
+    vi.stubEnv("CASDOOR_ISSUER", "https://sso.wnbgj.com");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ id_token: "test-id-token" }), { status: 200 }),
+        ),
+      ),
+    );
+
+    const response = await GET(
+      callbackRequest("weave_oidc_state=test-state; weave_oidc_verifier=test-verifier"),
+    );
+
+    expect(response.cookies.get("weave_token")?.secure).toBe(true);
+  });
+
+  it("本地 dev 会话 cookie 不带 Secure，http://localhost 可写", async () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_MODE", "dev");
+    vi.stubEnv("CASDOOR_ISSUER", "https://sso.wnbgj.com");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ id_token: "test-id-token" }), { status: 200 }),
+        ),
+      ),
+    );
+
+    const response = await GET(
+      callbackRequest("weave_oidc_state=test-state; weave_oidc_verifier=test-verifier"),
+    );
+
+    expect(response.cookies.get("weave_token")?.secure).toBe(false);
   });
 
   it("生产环境没注入域名时直接报错，不静默回退到容器地址", async () => {
