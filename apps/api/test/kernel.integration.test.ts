@@ -75,8 +75,13 @@ async function isolatedTenant(id: string) {
 class FakeStorage implements ObjectStorage {
   private readonly objects = new Map<string, { contentType: string; bytes: Buffer }>();
 
-  put(objectKey: string, bytes: Buffer, contentType = "image/jpeg"): void {
+  seed(objectKey: string, bytes: Buffer, contentType = "image/jpeg"): void {
     this.objects.set(objectKey, { contentType, bytes });
+  }
+
+  put(objectKey: string, bytes: Buffer, contentType: string): Promise<void> {
+    this.seed(objectKey, bytes, contentType);
+    return Promise.resolve();
   }
 
   presignPut(): Promise<string> {
@@ -291,7 +296,7 @@ describe("确定性内核（集成）", () => {
       for (let index = 0; index < count; index += 1) {
         const key = `tenant/${tenant.id}/samples/${randomUUID()}/${randomUUID()}.jpg`;
         const bytes = Buffer.from(`image-${batch}-${index}-${"x".repeat(64)}`);
-        storage.put(key, bytes);
+        storage.seed(key, bytes);
         imageBytes.set(key, bytes);
         const sample = await kernel.samples.create(
           {

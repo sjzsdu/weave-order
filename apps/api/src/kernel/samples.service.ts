@@ -12,6 +12,7 @@ import { SampleImageService } from "./sample-images.service";
 import type { EmbeddingProvider } from "../platform/embedding";
 import { SampleIndexService } from "./sample-index.service";
 import type { ImageIndexService } from "./image-index.service";
+import type { SampleThumbService } from "./sample-thumbs.service";
 import { escapeLikePattern } from "./like";
 
 type SampleRow = typeof samples.$inferSelect;
@@ -127,6 +128,8 @@ export class SampleService {
     private readonly index: SampleIndexService = new SampleIndexService(db, embedder, tenantId),
     /** 图像向量索引；未注入时（老单测）跳过图片索引，不静默假装已索引。 */
     private readonly imageIndex?: ImageIndexService,
+    /** 持久化缩略图；未注入时（老单测）跳过派生，图墙按 `thumb_status` 标注。 */
+    private readonly thumbs?: SampleThumbService,
   ) {}
 
   /**
@@ -138,6 +141,16 @@ export class SampleService {
     if (!this.imageIndex) return;
     // 有后台 worker 时只入队（HTTP 响应不等模型）；CLI/单测退回同步，行为确定。
     await this.imageIndex.requestSampleIndex(sampleId);
+  }
+
+  /**
+   * 图片写完（提交后）派生图墙缩略图。
+   * 失败只落在 `thumb_status` 上：建样品不该因为一张图解码失败而回滚，
+   * 客户端会看到「缩略图失败」并回退原图。
+   */
+  private async deriveThumbs(sampleId: string): Promise<void> {
+    if (!this.thumbs) return;
+    await this.thumbs.deriveForSample(sampleId);
   }
 
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
@@ -215,6 +228,7 @@ export class SampleService {
       });
       // 事务外补图向量：模型调用不该拽着数据库事务。
       if (imageKeys.length > 0) await this.indexImages(row.id);
+      if (imageKeys.length > 0) await this.deriveThumbs(row.id);
       return mapSample(row);
     } catch (error) {
       if (isUniqueViolation(error) && isSampleCodeConflict(error)) throw sampleCodeExists();
@@ -349,6 +363,7 @@ export class SampleService {
         return updated;
       });
       if (resolvedImages && resolvedImages.length > 0) await this.indexImages(sampleId);
+      if (resolvedImages && resolvedImages.length > 0) await this.deriveThumbs(sampleId);
       return mapSample(row);
     } catch (error) {
       if (isUniqueViolation(error) && isSampleCodeConflict(error)) throw sampleCodeExists();
