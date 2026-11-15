@@ -43,6 +43,16 @@ export function hashAnonymous(value: string, secret: string): string {
   return createHmac("sha256", secret).update(value).digest("hex");
 }
 
+/**
+ * 客户报价链接的唯一拼装点。
+ *
+ * 生产门禁（`production-env-gate.test.ts`）与真实分享接口必须走同一个函数，
+ * 否则「测试里断言的不是线上生成的那条链接」，localhost 回落在测试里就看不出来。
+ */
+export function buildShareUrl(publicAppUrl: string, token: string): string {
+  return `${publicAppUrl.replace(/\/+$/, "")}/s/${token}`;
+}
+
 export function createShareToken(
   payload: Omit<ShareTokenPayload, "n">,
   secret: string,

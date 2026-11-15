@@ -9,6 +9,15 @@ import type { SampleThumbService } from "./sample-thumbs.service";
 export const DEFAULT_MAX_ORIGINAL_BYTES = 2 * 1024 * 1024;
 /** 未被 DB 引用的对象至少放这么久才回收，避免删掉「刚 PUT、还没 confirm」的对象。 */
 export const DEFAULT_ORPHAN_GRACE_HOURS = 24;
+/**
+ * 移动端「以图找样」上传的查询图（`tenant/<tid>/uploads/`）保留期，默认 7 天。
+ *
+ * 为什么不立刻删：查询图是**一次性**对象（不入库、不回显给客户），但一次找样可能
+ * 在页面里反复重试、用户在拍照页停留数分钟、或在弱网下延迟续传；按天级保留期回收，
+ * 既能控住桶体积，也不会在用户还没挑完候选时把图删掉导致「重试就失败」。
+ * 另外这个值保守，是因为误删的代价（客户投诉「找样一直失败」）远大于多存几天几十 MB。
+ */
+export const DEFAULT_QUERY_UPLOAD_RETENTION_HOURS = 7 * 24;
 
 export interface ThumbBackfillReport {
   tenantId: string;
@@ -35,12 +44,35 @@ export interface OrphanCleanupReport {
   tenantId: string;
   dryRun: boolean;
   listed: number;
+  /** 列举到的对象总占用（字节）：先量化再删，避免「清理逻辑写错就批量删库」。 */
+  listedBytes: number;
   referenced: number;
   candidates: number;
+  /** 本轮可删对象的占用（字节）。 */
+  candidateBytes: number;
   deleted: number;
+  deletedBytes: number;
   /** 还在保护期内（可能正在上传/确认）而保留的数量。 */
   skippedWithinGrace: number;
   /** 存储没给 lastModified，无法判断年龄：保守保留。 */
+  skippedUnknownAge: number;
+  failures: { key: string; message: string }[];
+}
+
+/** 查询图（`uploads/`）回收报告：口径与孤儿对象一致，先给条数与字节再动手。 */
+export interface QueryUploadCleanupReport {
+  tenantId: string;
+  dryRun: boolean;
+  retentionHours: number;
+  listed: number;
+  listedBytes: number;
+  candidates: number;
+  candidateBytes: number;
+  deleted: number;
+  deletedBytes: number;
+  /** 未超过保留期：可能是正在进行的找样，保留。 */
+  skippedWithinRetention: number;
+  /** 存储没给 lastModified：无法判断年龄，保守保留。 */
   skippedUnknownAge: number;
   failures: { key: string; message: string }[];
 }
@@ -212,9 +244,12 @@ export class MediaMaintenanceService {
       tenantId: this.tenantId,
       dryRun,
       listed: listed.length,
+      listedBytes: listed.reduce((sum, object) => sum + object.size, 0),
       referenced: referenced.size,
       candidates: 0,
+      candidateBytes: 0,
       deleted: 0,
+      deletedBytes: 0,
       skippedWithinGrace: 0,
       skippedUnknownAge: 0,
       failures: [],
@@ -231,10 +266,78 @@ export class MediaMaintenanceService {
         continue;
       }
       report.candidates += 1;
+      report.candidateBytes += object.size;
       if (dryRun) continue;
       try {
         await this.storage.delete(object.key);
         report.deleted += 1;
+        report.deletedBytes += object.size;
+      } catch (error) {
+        report.failures.push({
+          key: object.key,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return report;
+  }
+
+  /**
+   * 回收「以图找样」上传的查询图（`tenant/<tid>/uploads/`）。
+   *
+   * 这些对象从来不入库：presign 不带 `sampleId` 时 key 落在 `uploads/` 下，
+   * 客户端把图交给 T-001 `imageUrl` 变体后就算用完，没有任何 DB 行能证明它还被引用。
+   * 所以回收判据只能是「对象年龄 > 保留期」，不能用引用反查。
+   *
+   * 安全边界：
+   * - 只扫本租户 `uploads/` 前缀，`samples/` 由孤儿回收负责、`receipts/` 是回款凭证绝不碰；
+   * - 默认 7 天保留期，`--dry-run` 只统计不删；
+   * - 报告里先给条数与字节（`listed*` / `candidate*`），再给实际删除数；
+   * - 幂等：删掉的对象不会出现在下一次列举里，剩下的就是「还不够老」的。
+   */
+  async cleanupQueryUploads(
+    options: { dryRun?: boolean; retentionHours?: number } = {},
+  ): Promise<QueryUploadCleanupReport> {
+    const dryRun = options.dryRun ?? false;
+    const retentionHours = options.retentionHours ?? DEFAULT_QUERY_UPLOAD_RETENTION_HOURS;
+    if (!this.storage) throw new Error("对象存储未配置，无法回收查询图");
+    if (!this.storage.list) {
+      throw new Error("当前对象存储实现不支持列举（ObjectStorage.list），无法回收查询图");
+    }
+    const prefix = `tenant/${this.tenantId}/uploads/`;
+    const listed = await this.storage.list(prefix);
+    const cutoff = Date.now() - retentionHours * 3600_000;
+    const report: QueryUploadCleanupReport = {
+      tenantId: this.tenantId,
+      dryRun,
+      retentionHours,
+      listed: listed.length,
+      listedBytes: listed.reduce((sum, object) => sum + object.size, 0),
+      candidates: 0,
+      candidateBytes: 0,
+      deleted: 0,
+      deletedBytes: 0,
+      skippedWithinRetention: 0,
+      skippedUnknownAge: 0,
+      failures: [],
+    };
+
+    for (const object of listed) {
+      if (!object.lastModified) {
+        report.skippedUnknownAge += 1;
+        continue;
+      }
+      if (object.lastModified.getTime() > cutoff) {
+        report.skippedWithinRetention += 1;
+        continue;
+      }
+      report.candidates += 1;
+      report.candidateBytes += object.size;
+      if (dryRun) continue;
+      try {
+        await this.storage.delete(object.key);
+        report.deleted += 1;
+        report.deletedBytes += object.size;
       } catch (error) {
         report.failures.push({
           key: object.key,

@@ -95,8 +95,9 @@ WAN-125 之前的存量库上跑时，脚本会自动调用一次
 - **相机权限 / 真实快门**：只能人工（见上面清单）。
 - **top-5 并列**：local-stub 下 10 个共用图样品都是 1.0，top-5 只能保证「全部来自这组种子」，
   成员顺序不保证稳定；真实模型仍有相同问题，但同图仍必在其中。
-- **孤儿查询图**：桌面以图找样的 presign 不带 `sampleId`，对象落在 `uploads/`，
-  目前没有回收任务（WAN-125 的 `maintain:media` 只扫 `tenant/<tid>/samples/`）。
+- **孤儿查询图**：桌面以图找样的 presign 不带 `sampleId`，对象落在 `uploads/`。
+  WAN-130 起纳入 `maintain:media` 回收（默认保留 7 天，`--uploads-retention-days` 可调，`--dry-run` 只统计），
+  但这些对象不入库，自动化测试只覆盖「按年龄删除」的逻辑，不覆盖真实桶。
 - **窄屏桌面壳**：<640px 隐藏公司切换 / 打印 / 设置入口，375 桌面视口用户会失去这三个入口，
   需要产品确认（移动端本身有对应入口）。
 - **完整 E2E 不在 PR CI**：只跑 nightly（`.github/workflows/e2e-nightly.yml`），

@@ -9,6 +9,13 @@ const base = {
   ONBOARDING_SECRET: RANDOM_SECRET,
   S3_ACCESS_KEY_ID: "prod-s3-key",
   S3_SECRET_ACCESS_KEY: "prod-s3-secret",
+  // WAN-130：生产态另外五个必需项（站点域名 / path-style / 控制面 / 通知通道）。
+  PUBLIC_APP_URL: "https://quote.example.com",
+  WEB_APP_URL: "https://app.example.com",
+  S3_FORCE_PATH_STYLE: "false",
+  PLATFORM_API_URL: "https://platform.example.com",
+  NOTIFY_PROVIDER: "webhook",
+  NOTIFY_WEBHOOK_URL: "https://notify.example.com/send",
 } as const;
 
 describe("LiteLLM key 的生产门控（与 QUOTE_SHARE_SECRET 同一处）", () => {

@@ -27,22 +27,30 @@
 # 干跑：读对象、算收益，但不写库、不写桶、不删对象
 pnpm --filter @weave-order/api maintain:media -- --dry-run
 
-# 全量：补派生 + 超大原图重编码（>2MB）+ 孤儿对象回收
+# 全量：补派生 + 超大原图重编码（>2MB）+ 孤儿对象回收 + 查询图回收
 pnpm --filter @weave-order/api maintain:media
 
 # 只补缩略图 / 指定租户 / 调整阈值与保护期
-pnpm --filter @weave-order/api maintain:media -- --skip-compress --skip-orphans
+pnpm --filter @weave-order/api maintain:media -- --skip-compress --skip-orphans --skip-uploads
 pnpm --filter @weave-order/api maintain:media -- --tenant=<uuid>
 pnpm --filter @weave-order/api maintain:media -- --max-original-bytes=2097152 --grace-hours=24
+# 查询图（以图找样上传的 uploads/）默认保留 7 天；要调整就改这个参数（必须 > 0）
+pnpm --filter @weave-order/api maintain:media -- --uploads-retention-days=7
 ```
 
-三个动作都幂等：
+四个动作都幂等：
 
 - 补派生只处理 `thumb_status != ready`；
 - 重编码只处理 `byte_size > 阈值 AND reencoded_at IS NULL`，写 `original_byte_size` 记录压缩前体积；
   **原 key 不变、覆盖写**（本任务不做图片版本管理），重编码后格式与扩展名保持一致；
-- 孤儿只删 `tenant/<tid>/samples/` 下、未被 `object_key` / 两档缩略图引用、且超过保护期的对象。
-  保护期内的对象视为「刚 PUT、还没 confirm」，不删；`receipts/` 与 `uploads/` 不在扫描范围。
+- 孤儿只删 `tenant/<tid>/samples/` 下、未被 `object_key` / 两档缩略图引用、且超过保护期（默认 24h）的对象。
+  保护期内的对象视为「刚 PUT、还没 confirm」，不删；`receipts/` 与 `uploads/` 不在孤儿扫描范围；
+- 查询图只删 `tenant/<tid>/uploads/` 下、超过保留期（默认 7 天）的对象。这些对象不入库，
+  判据只能是年龄：保留期内的可能是用户正在找样的查询图，删掉会让重试直接失败。
+  `receipts/`（回款凭证）明确不回收。
+
+每项都会先打印**条数与字节**再打印实际删除数，`--dry-run` 只统计不删；
+所以「清理逻辑写错」在干跑输出里就能看出来，不需要靠事后排查。
 
 注意：重编码只降字节、视觉近似，不会自动重派缩略图（`_320/_640` 本身很小，重编码收益可忽略）。
 如果以后改了缩略图 `quality` / 尺寸 / 压缩策略，用 `maintain:media -- --force --skip-compress --skip-orphans`
@@ -69,3 +77,7 @@ pnpm --filter @weave-order/api verify:thumbnails -- --count=50
 用例覆盖（`apps/api/test/thumbnails.test.ts`、`thumbnails.integration.test.ts`）：
 key 规则、成功派生两档、失败回退标注、幂等重跑 / 强制重算、存量补派生干跑、
 孤儿回收（保护期 / 引用保留 / 前缀隔离）、超大原图重编码幂等。
+
+查询图回收的用例在 `apps/api/test/media-cleanup.test.ts`（零数据库）：
+默认 7 天保留期、干跑只统计条数/字节、只删过期对象、保留期可配置、
+`lastModified` 未知时保留、幂等且不碰 `samples/` 与 `receipts/`。

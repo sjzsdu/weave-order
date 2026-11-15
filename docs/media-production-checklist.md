@@ -57,7 +57,7 @@ command -v psql aws curl node openssl   # 任一缺失先补
 5. **云平台：CORS**：来源填正式 Web/移动端 H5 域名；方法 `PUT, GET, HEAD`；头 `Content-Type`；`Max-Age=600`。
    按 3.3 节的 `curl` 或浏览器 Network 面板验一次 `OPTIONS` 预检，必须返回 204/200 且带 `Access-Control-Allow-Origin`。
 6. **部署：注入 env**：按第 4 节整段复制；`MEDIA_BASE_URL` 私有桶模式**整行不写**（不是写空值）。
-   本地先跑 `pnpm verify:prod-env`（零网络、18 个用例），失败就不要发布。
+   本地先跑 `pnpm verify:prod-env`（零网络、26 个用例），失败就不要发布。
 7. **发布应用**：打 `v*` tag → `images` workflow → deploy 侧把 `WEAVE_TAG` 锁到该 tag（不要 `latest`）。
    通过标准：`GET https://<api-domain>/api/health` 200；迁移日志无 pgvector 提示；容器无重启循环；
    **用真实租户生成一条报价分享链接，手机浏览器打开**（不是 curl API），必须落到正式域名而不是 `localhost`。
@@ -307,14 +307,16 @@ PRINT_AGENT_SECRET=<openssl rand -hex 32>
 PERSONAL_TOKEN_PEPPER=<openssl rand -hex 32>
 ONBOARDING_SECRET=<openssl rand -hex 32>
 # 客户报价页 / 开通链接 / CLI 登录确认页的站点根地址。
-# 不设 = 回落 localhost，生成给客户的链接在微信里白屏，API 日志却全是 200（当前无 fail-fast）。
+# 不设或写 localhost = 生成的链接客户在微信里白屏，API 日志却全是 200；
+# 生产/OIDC 模式必须 https 且非 localhost，否则拒绝启动（WAN-130）。
 PUBLIC_APP_URL=https://<quote-域名>
 WEB_APP_URL=https://<租户端域名>
 # 控制面：不设 = 自助开通的公司不登记试用订阅（onboarding 只跳过登记，不报错）。
-# PLATFORM_API_URL=https://<platform-api-domain>
-# 出站通知：默认 log 只写日志，用户收不到任何提醒；要真发必须 webhook。
-# NOTIFY_PROVIDER=webhook
-# NOTIFY_WEBHOOK_URL=https://<notify-gateway>/send
+# 生产/OIDC 模式缺失会拒绝启动（WAN-130）。
+PLATFORM_API_URL=https://<platform-api-domain>
+# 出站通知：默认 log 只写日志，用户收不到任何提醒；生产必须 webhook。
+NOTIFY_PROVIDER=webhook
+NOTIFY_WEBHOOK_URL=https://<notify-gateway>/send
 
 # ---------- 对象存储（腾讯云 COS，S3 兼容） ----------
 S3_ENDPOINT=https://cos.ap-guangzhou.myqcloud.com
@@ -363,42 +365,42 @@ CAPTION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 ### 4.2 逐项默认值、必填性与配错症状
 
-| 变量                                 | 生产值 / 默认值                                  | 必填               | 配错会长什么样                                                                                           |
-| ------------------------------------ | ------------------------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------- |
-| `S3_ENDPOINT`                        | COS 地域端点 / `http://localhost:9000`           | 是                 | 指向 MinIO 或错地域 → presign 域名不对，PUT 超时/403；provider 端 5xx                                    |
-| `S3_REGION`                          | `ap-guangzhou` / `us-east-1`                     | 是                 | SigV4 签名地域不符 → `AuthorizationHeaderMalformed` / `SignatureDoesNotMatch`                            |
-| `S3_BUCKET`                          | 带 APPID 的桶名 / `weave-media`                  | 是                 | 不带 APPID → `NoSuchBucket`；桶名写错 → 上传/confirm 5xx                                                 |
-| `S3_ACCESS_KEY_ID`                   | 子账号 SecretId / `weave-media`                  | 是                 | 缺省回落 dev 占位值，生产态启动即抛「必须显式配置 S3_ACCESS_KEY_ID」                                     |
-| `S3_SECRET_ACCESS_KEY`               | 子账号 SecretKey / `weave-media-secret`          | 是                 | 密钥与 ID 不匹配 → presign 能出 URL 但 PUT 403 `SignatureDoesNotMatch`                                   |
-| `S3_FORCE_PATH_STYLE`                | `false` / `true`                                 | 是                 | COS 上设 `true` → 签名主机名/路径错，浏览器 PUT 403，confirm HEAD 当对象不存在                           |
-| `PUBLIC_APP_URL`                     | `https://<quote-域名>` / `http://localhost:5174` | 是                 | 漏配 → 客户报价链接指向 localhost，微信打开白屏；API 仍返回 200，无启动报错                              |
-| `WEB_APP_URL`                        | `https://<租户端域名>` / `http://localhost:3001` | 是                 | 漏配 → 开通链接、CLI 登录确认页指向 localhost；用户点开打不开，无启动报错                                |
-| `PLATFORM_API_URL`                   | 控制面地址 / 不设                                | 按需               | 不设 → 自助开通的公司不会被登记试用订阅（静默跳过）                                                      |
-| `NOTIFY_PROVIDER`                    | `webhook` / `log`                                | 按需               | 保持 `log` → 邀请、试用到期等提醒只写服务端日志，用户永远收不到                                          |
-| `MEDIA_BASE_URL`                     | 私有桶：不写；CDN：`https://cdn.<域名>`          | 方案②必填          | 私有桶填了 → 图片 403；写空字符串 → 启动失败；末尾多 `/` → 双斜杠/404                                    |
-| `MEDIA_PRESIGN_TTL_SECONDS`          | `600`                                            | 否                 | 过小（<60）→ 慢网上传/看图大面积过期；过大 → URL 泄漏窗口变长                                            |
-| `MEDIA_MAX_BYTES`                    | `10485760`                                       | 否                 | 超过 10MB 上限会被 zod `.max` 拒绝启动；调小 → 正常手机图被 `图片超过体积上限`                           |
-| `MEDIA_ALLOWED_HOSTS`                | 空 / 额外 CDN 域名，逗号分隔                     | 否                 | 用 `imageUrl` 找样但主机未在白名单 → `UPSTREAM_UNAVAILABLE: 主机不在白名单`；只写主机名，不带 `https://` |
-| `EMBEDDING_PROVIDER`                 | `dashscope-text-v3` / `local-stub`               | 是                 | 名字拼错（如 `text-embedding-v3`）→ 首个请求 5xx「尚未接入」；`local-stub` → 不做语义检索                |
-| `EMBEDDING_MODEL`                    | `text-embedding-v3`                              | 否                 | 改成模型不支持的维度 → 上游 400；模型名错 → 上游 404，接口 5xx                                           |
-| `EMBEDDING_DIMENSION`                | `1024`                                           | 是                 | ≠1024 且真实 provider → 启动即抛「与 vector(1024) 不一致」                                               |
-| `EMBEDDING_BASE_URL`                 | 通义兼容端点                                     | 否                 | 指到 LiteLLM 但网关未收录模型 → 404/400，语义检索 5xx                                                    |
-| `EMBEDDING_API_KEY`                  | DashScope key                                    | 真实 provider 必填 | 缺 key → 启动即抛「需要 EMBEDDING_API_KEY」（不静默回退哈希）                                            |
-| `EMBEDDING_TIMEOUT_MS`               | `20000`                                          | 否                 | 过小 → 高峰期 embedding 超时、接口 5xx；重试掩盖不了，先看上游延迟                                       |
-| `EMBEDDING_MAX_ATTEMPTS`             | `3`                                              | 否                 | 设为 1 → 瞬时 429/5xx 直接暴露；过大 → 故障时请求堆积                                                    |
-| `SEARCH_SEMANTIC_MIN_SCORE`          | `0.5`                                            | 否                 | 调太低 → 无关结果混入；调太高 → 语义补足永远为空（ILIKE 仍可用）                                         |
-| `IMAGE_EMBEDDING_PROVIDER`           | `dashscope-qwen3-vl` / `local-stub`              | 是                 | 拼错 → 启动即抛「尚未接入」（bootstrap 里 eager 创建）；`local-stub` → 演示模式，分数无意义              |
-| `IMAGE_EMBEDDING_MODEL`              | `qwen3-vl-embedding`                             | 否                 | 换模型不换维度 → 启动维度校验或回填时「已存在索引维度不一致」                                            |
-| `IMAGE_EMBEDDING_DIMENSION`          | `1024`                                           | 是                 | 不在 `256/512/768/1024/1536/2048/2560` → 启动即抛                                                        |
-| `IMAGE_EMBEDDING_BASE_URL`           | `https://dashscope.aliyuncs.com/api/v1`          | 否                 | 误填 OpenAI 兼容端点（`/compatible-mode/v1`）→ 405/404，图像向量不可用                                   |
-| `IMAGE_EMBEDDING_API_KEY`            | DashScope key                                    | 真实 provider 必填 | 缺 key → 启动即抛「需要 IMAGE_EMBEDDING_API_KEY」                                                        |
-| `IMAGE_EMBEDDING_TIMEOUT_MS`         | `20000`                                          | 否                 | 过小 → 大图/冷启动超时；回填出现大量 `failed`                                                            |
-| `IMAGE_EMBEDDING_MAX_ATTEMPTS`       | `3`                                              | 否                 | 同文本                                                                                                   |
-| `IMAGE_EMBEDDING_MAX_EDGE`           | `512`                                            | 否                 | 调大 → 成本上升、分离度基本不变；设为 0 → 原图直送，token 顶到 1225 封顶                                 |
-| `SEARCH_IMAGE_MIN_SIMILARITY`        | `0.75`                                           | 否                 | 旧值 0.55 → 浅蓝牛仔 vs 灰针织被当同款；>0.9 → 同款异角度也筛掉                                          |
-| `SEARCH_IMAGE_TEXT_MIN_SIMILARITY`   | `0.35`                                           | 否                 | 套用 0.75 → caption 兜底永远返回空                                                                       |
-| `CAPTION_FALLBACK`                   | `false`                                          | 否                 | 开着 + 文本仍 `local-stub` → 启动即抛；上游故障时静默换链路会掩盖模型不可用                              |
-| `CAPTION_MODEL` / `CAPTION_BASE_URL` | `qwen3-vl-plus` / 兼容端点                       | 仅兜底开时         | 模型名错 → `mode=caption` 的请求 5xx                                                                     |
+| 变量                                 | 生产值 / 默认值                                  | 必填               | 配错会长什么样                                                                                                          |
+| ------------------------------------ | ------------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `S3_ENDPOINT`                        | COS 地域端点 / `http://localhost:9000`           | 是                 | 指向 MinIO 或错地域 → presign 域名不对，PUT 超时/403；provider 端 5xx                                                   |
+| `S3_REGION`                          | `ap-guangzhou` / `us-east-1`                     | 是                 | SigV4 签名地域不符 → `AuthorizationHeaderMalformed` / `SignatureDoesNotMatch`                                           |
+| `S3_BUCKET`                          | 带 APPID 的桶名 / `weave-media`                  | 是                 | 不带 APPID → `NoSuchBucket`；桶名写错 → 上传/confirm 5xx                                                                |
+| `S3_ACCESS_KEY_ID`                   | 子账号 SecretId / `weave-media`                  | 是                 | 缺省回落 dev 占位值，生产态启动即抛「必须显式配置 S3_ACCESS_KEY_ID」                                                    |
+| `S3_SECRET_ACCESS_KEY`               | 子账号 SecretKey / `weave-media-secret`          | 是                 | 密钥与 ID 不匹配 → presign 能出 URL 但 PUT 403 `SignatureDoesNotMatch`                                                  |
+| `S3_FORCE_PATH_STYLE`                | `false` / `true`（生产必须显式 `false`）         | 是                 | COS 上设 `true` → 签名主机名/路径错，浏览器 PUT 403，confirm HEAD 当对象不存在；生产漏配/`true` 直接拒绝启动（WAN-130） |
+| `PUBLIC_APP_URL`                     | `https://<quote-域名>` / `http://localhost:5174` | 生产必填           | 漏配/非 https → 客户报价链接指向 localhost，微信打开白屏；生产态直接拒绝启动（WAN-130）                                 |
+| `WEB_APP_URL`                        | `https://<租户端域名>` / `http://localhost:3001` | 生产必填           | 漏配/非 https → 开通链接、CLI 登录确认页指向 localhost；生产态直接拒绝启动（WAN-130）                                   |
+| `PLATFORM_API_URL`                   | 控制面地址 / 不设                                | 生产必填           | 不设 → 自助开通的公司不会被登记试用订阅；生产态直接拒绝启动（WAN-130）                                                  |
+| `NOTIFY_PROVIDER`                    | `webhook` / `log`                                | 生产必填 `webhook` | 保持 `log` → 邀请、试用到期等提醒只写服务端日志，用户永远收不到；生产态直接拒绝启动（WAN-130）                          |
+| `MEDIA_BASE_URL`                     | 私有桶：不写；CDN：`https://cdn.<域名>`          | 方案②必填          | 私有桶填了 → 图片 403；写空字符串 → 启动失败；末尾多 `/` → 双斜杠/404                                                   |
+| `MEDIA_PRESIGN_TTL_SECONDS`          | `600`                                            | 否                 | 过小（<60）→ 慢网上传/看图大面积过期；过大 → URL 泄漏窗口变长                                                           |
+| `MEDIA_MAX_BYTES`                    | `10485760`                                       | 否                 | 超过 10MB 上限会被 zod `.max` 拒绝启动；调小 → 正常手机图被 `图片超过体积上限`                                          |
+| `MEDIA_ALLOWED_HOSTS`                | 空 / 额外 CDN 域名，逗号分隔                     | 否                 | 用 `imageUrl` 找样但主机未在白名单 → `UPSTREAM_UNAVAILABLE: 主机不在白名单`；只写主机名，不带 `https://`                |
+| `EMBEDDING_PROVIDER`                 | `dashscope-text-v3` / `local-stub`               | 是                 | 名字拼错（如 `text-embedding-v3`）→ 首个请求 5xx「尚未接入」；`local-stub` → 不做语义检索                               |
+| `EMBEDDING_MODEL`                    | `text-embedding-v3`                              | 否                 | 改成模型不支持的维度 → 上游 400；模型名错 → 上游 404，接口 5xx                                                          |
+| `EMBEDDING_DIMENSION`                | `1024`                                           | 是                 | ≠1024 且真实 provider → 启动即抛「与 vector(1024) 不一致」                                                              |
+| `EMBEDDING_BASE_URL`                 | 通义兼容端点                                     | 否                 | 指到 LiteLLM 但网关未收录模型 → 404/400，语义检索 5xx                                                                   |
+| `EMBEDDING_API_KEY`                  | DashScope key                                    | 真实 provider 必填 | 缺 key → 启动即抛「需要 EMBEDDING_API_KEY」（不静默回退哈希）                                                           |
+| `EMBEDDING_TIMEOUT_MS`               | `20000`                                          | 否                 | 过小 → 高峰期 embedding 超时、接口 5xx；重试掩盖不了，先看上游延迟                                                      |
+| `EMBEDDING_MAX_ATTEMPTS`             | `3`                                              | 否                 | 设为 1 → 瞬时 429/5xx 直接暴露；过大 → 故障时请求堆积                                                                   |
+| `SEARCH_SEMANTIC_MIN_SCORE`          | `0.5`                                            | 否                 | 调太低 → 无关结果混入；调太高 → 语义补足永远为空（ILIKE 仍可用）                                                        |
+| `IMAGE_EMBEDDING_PROVIDER`           | `dashscope-qwen3-vl` / `local-stub`              | 是                 | 拼错 → 启动即抛「尚未接入」（bootstrap 里 eager 创建）；`local-stub` → 演示模式，分数无意义                             |
+| `IMAGE_EMBEDDING_MODEL`              | `qwen3-vl-embedding`                             | 否                 | 换模型不换维度 → 启动维度校验或回填时「已存在索引维度不一致」                                                           |
+| `IMAGE_EMBEDDING_DIMENSION`          | `1024`                                           | 是                 | 不在 `256/512/768/1024/1536/2048/2560` → 启动即抛                                                                       |
+| `IMAGE_EMBEDDING_BASE_URL`           | `https://dashscope.aliyuncs.com/api/v1`          | 否                 | 误填 OpenAI 兼容端点（`/compatible-mode/v1`）→ 405/404，图像向量不可用                                                  |
+| `IMAGE_EMBEDDING_API_KEY`            | DashScope key                                    | 真实 provider 必填 | 缺 key → 启动即抛「需要 IMAGE_EMBEDDING_API_KEY」                                                                       |
+| `IMAGE_EMBEDDING_TIMEOUT_MS`         | `20000`                                          | 否                 | 过小 → 大图/冷启动超时；回填出现大量 `failed`                                                                           |
+| `IMAGE_EMBEDDING_MAX_ATTEMPTS`       | `3`                                              | 否                 | 同文本                                                                                                                  |
+| `IMAGE_EMBEDDING_MAX_EDGE`           | `512`                                            | 否                 | 调大 → 成本上升、分离度基本不变；设为 0 → 原图直送，token 顶到 1225 封顶                                                |
+| `SEARCH_IMAGE_MIN_SIMILARITY`        | `0.75`                                           | 否                 | 旧值 0.55 → 浅蓝牛仔 vs 灰针织被当同款；>0.9 → 同款异角度也筛掉                                                         |
+| `SEARCH_IMAGE_TEXT_MIN_SIMILARITY`   | `0.35`                                           | 否                 | 套用 0.75 → caption 兜底永远返回空                                                                                      |
+| `CAPTION_FALLBACK`                   | `false`                                          | 否                 | 开着 + 文本仍 `local-stub` → 启动即抛；上游故障时静默换链路会掩盖模型不可用                                             |
+| `CAPTION_MODEL` / `CAPTION_BASE_URL` | `qwen3-vl-plus` / 兼容端点                       | 仅兜底开时         | 模型名错 → `mode=caption` 的请求 5xx                                                                                    |
 
 > **私有桶 + `imageUrl` 找样的白名单陷阱**：`MEDIA_BASE_URL` 为空时，服务端只把
 > `S3_ENDPOINT` 的主机名（`cos.ap-guangzhou.myqcloud.com`）当默认白名单；而 COS 的签名 URL
@@ -449,8 +451,8 @@ pnpm --filter @weave-order/api reindex:images --ensure-index
 如果本次发布同时包含缩略图 / 媒体治理（`docs/media-thumbnails.md`），再补一轮派生与孤儿回收：
 
 ```bash
-pnpm --filter @weave-order/api maintain:media -- --dry-run   # 只读：看收益，不写库不写桶
-pnpm --filter @weave-order/api maintain:media                # 补派生 + 压原图 + 清孤儿（有保护期）
+pnpm --filter @weave-order/api maintain:media -- --dry-run   # 只读：看收益与孤儿/查询图占用，不写库不写桶
+pnpm --filter @weave-order/api maintain:media                # 补派生 + 压原图 + 清孤儿 + 清查询图（各有保护期）
 ```
 
 耗时公式（命令是串行的，量级估算，现场以实际日志为准）：
@@ -560,39 +562,57 @@ pnpm verify:prod-env
 ```
 
 它复刻启动期会执行的部分：`loadEnv → 图像 provider（main.ts eager） → 文本 provider（生产上首个请求才建，这里提前断言）`，
-并直接读取 §4.1 的 dotenv 块喂给 `loadEnv`，所以文档与门禁不会各写一份。覆盖 18 个用例
+并直接读取 §4.1 的 dotenv 块喂给 `loadEnv`，所以文档与门禁不会各写一份。覆盖 **26 个用例**
 （下表按类归并；CI 的 `pnpm test` 也会跑，不需要改 workflow）：
 
-| 组合                                              | 期望                                 |
-| ------------------------------------------------- | ------------------------------------ |
-| 生产 + 完整真实配置                               | 能启动                               |
-| 缺 `S3_ACCESS_KEY_ID`（回落 dev 占位）            | 拒绝启动                             |
-| 生产用 dev 占位 S3 凭据                           | 拒绝启动                             |
-| 真实图像 provider 缺 key                          | 拒绝启动                             |
-| 图像维度 `999` 不受支持                           | 拒绝启动                             |
-| 文本维度 `512` 与 `vector(1024)` 不符             | 拒绝启动                             |
-| 未知文本 provider（名字拼错）                     | 门禁提前抛；**生产实际首个请求才抛** |
-| 未知图像 provider（名字拼错）                     | 拒绝启动（main.ts eager 创建）       |
-| `CAPTION_FALLBACK=true` + 文本 `local-stub`       | 拒绝启动                             |
-| `MEDIA_BASE_URL=` / `EMBEDDING_API_KEY=` 空字符串 | 拒绝启动（可选变量要整行删）         |
-| 四个 HMAC secret 回落 dev 占位值                  | 拒绝启动                             |
-| §4.1 整段 dotenv（私有桶 / CDN 两种）             | 都能启动                             |
-| 本地默认组合（零 key）                            | 能启动，不误伤开发                   |
+| 组合                                                  | 期望                                 |
+| ----------------------------------------------------- | ------------------------------------ |
+| 生产 + 完整真实配置                                   | 能启动                               |
+| 缺 `S3_ACCESS_KEY_ID`（回落 dev 占位）                | 拒绝启动                             |
+| 生产用 dev 占位 S3 凭据                               | 拒绝启动                             |
+| 真实图像 provider 缺 key                              | 拒绝启动                             |
+| 图像维度 `999` 不受支持                               | 拒绝启动                             |
+| 文本维度 `512` 与 `vector(1024)` 不符                 | 拒绝启动                             |
+| 未知文本 provider（名字拼错）                         | 门禁提前抛；**生产实际首个请求才抛** |
+| 未知图像 provider（名字拼错）                         | 拒绝启动（main.ts eager 创建）       |
+| `CAPTION_FALLBACK=true` + 文本 `local-stub`           | 拒绝启动                             |
+| `MEDIA_BASE_URL=` / `EMBEDDING_API_KEY=` 空字符串     | 拒绝启动（可选变量要整行删）         |
+| 四个 HMAC secret 回落 dev 占位值                      | 拒绝启动                             |
+| 未设 `PUBLIC_APP_URL`（回落 `http://localhost:5174`） | 拒绝启动（WAN-130）                  |
+| `PUBLIC_APP_URL` 不是 https                           | 拒绝启动（WAN-130）                  |
+| 未设 `WEB_APP_URL`（回落 `http://localhost:3001`）    | 拒绝启动（WAN-130）                  |
+| 未设 / 写了 `S3_FORCE_PATH_STYLE=true`                | 拒绝启动（WAN-130）                  |
+| 未设 `PLATFORM_API_URL` / 指向本机                    | 拒绝启动（WAN-130）                  |
+| `NOTIFY_PROVIDER=log`（含未设置）                     | 拒绝启动（WAN-130）                  |
+| `NOTIFY_PROVIDER=webhook` 但缺 `NOTIFY_WEBHOOK_URL`   | 拒绝启动（WAN-130）                  |
+| 按生产配置生成一条分享链接                            | host 不是 localhost，落到正式域名    |
+| §4.1 整段 dotenv（私有桶 / CDN 两种）                 | 都能启动                             |
+| 本地默认组合（零 key）                                | 能启动，不误伤开发                   |
 
-**已知缺口（不改业务逻辑，只列建议）**：
+`PUBLIC_APP_URL` / `WEB_APP_URL` 的校验规则（生产/OIDC 模式）：必须是 https，且 host 不是
+`localhost` / `127.0.0.1` / `*.localhost` / `0.0.0.0` / `host.docker.internal`。
+分享链接的拼装点只有一处（`buildShareUrl`），门禁与真实接口走同一个函数，所以「测试断言的不是线上那条链接」不会发生。
 
-1. 未知的 `EMBEDDING_PROVIDER` 在**首个请求**装配内核时才抛错，不是进程启动时；
-   `IMAGE_EMBEDDING_PROVIDER` 是 `main.ts` eager 创建，启动即失败。
-   建议后续在 `main.ts` 里像图像 provider 一样提前创建一次文本 provider，把这类错提前到启动。
-2. `NODE_ENV=production` + `AUTH_MODE=dev` 的拦截在 `main.ts`，不在 `loadEnv`；测试没有覆盖这一条，
-   部署检查里必须人工确认 `AUTH_MODE=oidc`。
-3. `MEDIA_BASE_URL` 目前不强制 https；服务端按 URL 取图会拒绝 http（localhost 除外），但 URL 生成不拦。
-   若要更严格，可在 `loadEnv` 加生产态 https 校验（属于代码改动，另开 issue）。
-4. `PUBLIC_APP_URL` / `WEB_APP_URL` 漏配会静默回落 localhost，当前**没有 fail-fast**；
-   门禁用 §4.1 断言它们不是 localhost，但运行时仍需部署检查。建议 `loadEnv` 在生产态拒绝 localhost。
-5. `S3_FORCE_PATH_STYLE` 生产默认是 `true`，漏注入会静默走 path-style；当前靠 §4.1 显式写
-   `false`（门禁有断言，但 `loadEnv` 不校验）。建议后续加生产态拒绝 `true`。
-6. 回填耗时是估算，没有生产实测；首次回填请在租户维度记录实际速度，回填到本文公式里。
+### 9.1 缺口表：逐条状态（WAN-130 复核）
+
+原评审发现的问题在这里逐条落状态，不留「未处理也未记录」。状态只有三种：
+**已修**（代码或门禁已兜住）、**待产品决定**（需要业务口径）、**接受风险**（明确不修，写清后果与补偿手段）。
+
+| #   | 缺口                                                                | 状态         | 处置与证据                                                                                                                     |
+| --- | ------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 未知 `EMBEDDING_PROVIDER` 生产要等首个请求才抛                      | 接受风险     | 门禁在发布前提前断言（§9 表）；不改 `main.ts` 装配顺序，避免动业务启动路径。                                                   |
+| 2   | `NODE_ENV=production` + `AUTH_MODE=dev` 的拦截在 `main.ts` 不在 env | 已修         | `main.ts` 已有拦截；门禁全部生产用例以 `AUTH_MODE=oidc` 组合运行，§4.1 也写死 `AUTH_MODE=oidc`。                               |
+| 3   | `MEDIA_BASE_URL` 不强制 https                                       | 待产品决定   | 服务端按 URL 取图已拒绝 http（localhost 除外）；是否在生产禁止 http 的 CDN 需确认是否存在内网 http 场景。                      |
+| 4   | `PUBLIC_APP_URL` / `WEB_APP_URL` 漏配静默回落 localhost             | 已修         | `loadEnv` 生产态拒绝 localhost/非 https；三段负向用例 + 一条「分享链接 host 不是 localhost」正向用例。                         |
+| 5   | `S3_FORCE_PATH_STYLE` 漏注入静默 true                               | 已修         | `loadEnv` 生产态拒绝 `true`（含默认回落），门禁覆盖「未设置」与「显式 true」。                                                 |
+| 6   | `PLATFORM_API_URL` 不设时自助开通静默跳过试用订阅                   | 已修         | `loadEnv` 生产态强制必填且拒绝本机地址；§4.1 已改为未注释的生产值。                                                            |
+| 7   | `NOTIFY_PROVIDER` 默认 log，邀请/到期提醒静默不发                   | 已修         | `loadEnv` 生产态强制 `webhook` 且要求 `NOTIFY_WEBHOOK_URL`（拒绝本机地址）。                                                   |
+| 8   | `sample_images` 删除后桶里对象未删                                  | 已修         | `maintain:media` 的 `cleanupOrphanedObjects` 按 DB 引用反查、24h 保护期；`sample-images.service.ts` 的 TODO 已改为指向该实现。 |
+| 9   | 移动端以图找样的查询图（`uploads/`）无清理策略                      | 已修         | `maintain:media -- --uploads-retention-days=7`（默认 7 天，`--skip-uploads` 可跳过）；`media-cleanup.test.ts` 6 条用例。       |
+| 10  | 孤儿/查询图「占用多少」没有实测                                     | 已修（口径） | CLI 每项先打印条数与字节（`listed*` / `candidate*` / `deleted*`）；首次真实运行的数字需在生产执行后回填本文。                  |
+| 11  | `receipts/` 回款凭证没有回收策略                                    | 接受风险     | 凭证是财务凭据，需长期留存；明确不纳入自动回收，容量成本由业务接受。                                                           |
+| 12  | 回填耗时只是估算                                                    | 接受风险     | 首次回填按租户记录实际速度并回填第 10 节公式，不做无实测的容量承诺。                                                           |
+| 13  | 控制面 `apps/platform-api` 的 `NOTIFY_PROVIDER` 默认也是 `log`      | 待产品决定   | 试用到期提醒由控制面发送；控制面独立部署、独立 env 契约，不在本文档的注入清单内，需在控制面部署清单单独加同样的门禁。          |
 
 ## 10. 上线检查单（打印出来逐项打勾）
 
@@ -602,7 +622,9 @@ pnpm verify:prod-env
 - [ ] CORS 预检 204/200，`Access-Control-Allow-Origin` 命中正式域名
 - [ ] 生产 env 由 secret 注入；`pnpm verify:prod-env` 通过；`MEDIA_BASE_URL` 按方案取舍
 - [ ] `PUBLIC_APP_URL` / `WEB_APP_URL` 指向正式域名；报价分享链接手机打开不是 localhost
-- [ ] `S3_FORCE_PATH_STYLE=false` 显式注入（生产默认是 true，漏了会静默 path-style）
+- [ ] `S3_FORCE_PATH_STYLE=false` 显式注入（生产默认是 true，漏了会静默 path-style，门禁会拒绝启动）
+- [ ] `PLATFORM_API_URL` 指向控制面正式地址；`NOTIFY_PROVIDER=webhook` 且 `NOTIFY_WEBHOOK_URL` 可发送（WAN-130）
+- [ ] `maintain:media --dry-run` 看过孤儿对象与查询图的条数/字节；再执行一次（保留期默认 7 天，不删新对象）
 - [ ] `v*` tag 的 ci 全绿；`WEAVE_TAG` 锁定到具体 tag；迁移已执行
 - [ ] `/api/health` 200；日志无 S3/pgvector/embedding 配置错误
 - [ ] `reindex:samples` 与 `reindex:images --ensure-index` 均退出 0

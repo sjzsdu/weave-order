@@ -2,19 +2,22 @@
  * 存量媒体治理 CLI（WAN-125）。
  *
  * 用法：
- *   pnpm --filter @weave-order/api maintain:media -- --dry-run         # 三件事全干跑
- *   pnpm --filter @weave-order/api maintain:media                      # 补派生 + 压原图 + 清孤儿
+ *   pnpm --filter @weave-order/api maintain:media -- --dry-run         # 四件事全干跑
+ *   pnpm --filter @weave-order/api maintain:media                      # 补派生 + 压原图 + 清孤儿 + 清查询图
  *   pnpm --filter @weave-order/api maintain:media -- --tenant=<uuid>
- *   pnpm --filter @weave-order/api maintain:media -- --skip-compress --skip-orphans
+ *   pnpm --filter @weave-order/api maintain:media -- --skip-compress --skip-orphans --skip-uploads
  *   pnpm --filter @weave-order/api maintain:media -- --force   # 缩略图强制重派（换尺寸/质量后）
  *   pnpm --filter @weave-order/api maintain:media -- --max-original-bytes=2097152 --grace-hours=24
+ *   pnpm --filter @weave-order/api maintain:media -- --uploads-retention-days=7
  *
- * 三个动作都可重复执行（幂等）：
+ * 四个动作都可重复执行（幂等）：
  * - 补派生只看 `thumb_status != ready`；
  * - 重编码只看 `byte_size > 阈值`，原 key 不变（覆盖写，不做版本管理）；
- * - 孤儿只删「桶里有、DB 里没有、且超过保护期」的样品对象。
+ * - 孤儿只删「桶里有、DB 里没有、且超过保护期」的样品对象；
+ * - 查询图（`uploads/`）只删「超过保留期」的对象（默认 7 天，不入库、无法按引用反查）。
  *
- * 干跑会真实读对象并计算压缩收益，但不写库、不写桶、不删对象。
+ * 干跑会真实读对象并计算压缩收益，但不写库、不写桶、不删对象；
+ * 每项都会先打印「条数与字节」，再打印实际删除数/字节。
  */
 import path from "node:path";
 import { Pool } from "pg";
@@ -48,6 +51,14 @@ function numberArg(name: string): number | undefined {
   return value;
 }
 
+/** 报告里的字节数统一按 MB 展示，避免「删了 1.2 亿字节」这种看不出量级的输出。 */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 async function main(): Promise<void> {
   const env = loadEnv();
   const storage = createObjectStorageFromEnv(env);
@@ -60,10 +71,16 @@ async function main(): Promise<void> {
   const skipThumbs = hasFlag("skip-thumbs");
   const skipCompress = hasFlag("skip-compress");
   const skipOrphans = hasFlag("skip-orphans");
+  const skipUploads = hasFlag("skip-uploads");
   const forceThumbs = hasFlag("force");
   const limit = numberArg("limit") ?? 500;
   const maxOriginalBytes = numberArg("max-original-bytes");
   const graceHours = numberArg("grace-hours");
+  const uploadsRetentionDays = numberArg("uploads-retention-days") ?? 7;
+  // 显式传 0 等于「删当天上传的查询图」，正在找样的用户会直接失败；保留期必须是正数。
+  if (uploadsRetentionDays <= 0) {
+    throw new Error("--uploads-retention-days 必须大于 0（默认 7 天）");
+  }
 
   try {
     const tenantArg = argValue("tenant");
@@ -135,10 +152,30 @@ async function main(): Promise<void> {
         const report = await maintenance.cleanupOrphanedObjects({ dryRun, graceHours });
         failed += report.failures.length;
         console.log(
-          `   孤儿对象：列举 ${report.listed}，DB 引用 ${report.referenced}，` +
-            `${dryRun ? "可删除" : "已删除"} ${dryRun ? report.candidates : report.deleted}，` +
+          `   孤儿对象：列举 ${report.listed} 个 / ${formatBytes(report.listedBytes)}，` +
+            `DB 引用 ${report.referenced}，` +
+            `${dryRun ? "可删除" : "已删除"} ${dryRun ? report.candidates : report.deleted} 个 / ` +
+            `${formatBytes(dryRun ? report.candidateBytes : report.deletedBytes)}，` +
             `保护期内 ${report.skippedWithinGrace}，年龄未知 ${report.skippedUnknownAge}` +
             `，失败 ${report.failures.length}`,
+        );
+        for (const failure of report.failures.slice(0, 5)) {
+          console.log(`     ! 对象 ${failure.key}：${failure.message.slice(0, 200)}`);
+        }
+      }
+
+      if (!skipUploads) {
+        const report = await maintenance.cleanupQueryUploads({
+          dryRun,
+          retentionHours: uploadsRetentionDays * 24,
+        });
+        failed += report.failures.length;
+        console.log(
+          `   查询图（uploads/）：列举 ${report.listed} 个 / ${formatBytes(report.listedBytes)}，` +
+            `${dryRun ? "可删除" : "已删除"} ${dryRun ? report.candidates : report.deleted} 个 / ` +
+            `${formatBytes(dryRun ? report.candidateBytes : report.deletedBytes)}，` +
+            `保留期（${uploadsRetentionDays} 天）内 ${report.skippedWithinRetention}，` +
+            `年龄未知 ${report.skippedUnknownAge}，失败 ${report.failures.length}`,
         );
         for (const failure of report.failures.slice(0, 5)) {
           console.log(`     ! 对象 ${failure.key}：${failure.message.slice(0, 200)}`);
