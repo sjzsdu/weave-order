@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Capability } from "./capabilities";
 import { Currency, EntityId, JsonValueSchema, Timestamp } from "./domain";
 
 /**
@@ -155,6 +156,11 @@ export const AuthContextResponse = z
     email: z.string().email().nullable(),
     tenant: Tenant,
     membership: Membership,
+    /**
+     * 服务端按 `capabilities.ts` 算好的能力清单：前端只按它显隐，
+     * 不再自己从 `membership.role` 推导，避免出现第二份角色规则。
+     */
+    capabilities: z.array(Capability),
   })
   .strict();
 export type AuthContextResponse = z.infer<typeof AuthContextResponse>;

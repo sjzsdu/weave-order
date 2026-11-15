@@ -1,6 +1,7 @@
 export * from "./common";
 export * from "./domain";
 export * from "./tenancy";
+export * from "./capabilities";
 export * from "./entities";
 export * from "./customer";
 export * from "./workspace";

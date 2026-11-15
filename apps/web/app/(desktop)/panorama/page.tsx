@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { usePanorama, useTenantContext } from "@weave-order/core";
+import { usePanorama } from "@weave-order/core";
 import {
   AuditTrail,
   Badge,
@@ -14,6 +14,7 @@ import {
   cn,
 } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { Can } from "@/can";
 import { useMounted } from "@/use-mounted";
 import { SharePanel } from "@/share-panel";
 import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL } from "@/format";
@@ -39,7 +40,6 @@ export default function PanoramaPage() {
 function PanoramaPageContent() {
   const api = useApi();
   const panorama = usePanorama(api);
-  const tenantContext = useTenantContext(api);
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
 
   if (panorama.isLoading) return <Spinner label="正在汇总业务全景…" />;
@@ -53,9 +53,6 @@ function PanoramaPageContent() {
   }
 
   const data = panorama.data;
-  // 财务的默认工作面是应收：订单不在一级入口出现，避免把成本链路当日常视图。
-  const role = tenantContext.status === "READY" ? tenantContext.membership.role : null;
-  const showOrders = role !== "FINANCE";
 
   return (
     <div className="grid gap-6">
@@ -71,7 +68,8 @@ function PanoramaPageContent() {
       </header>
 
       <section className="grid gap-3 md:grid-cols-2">
-        {showOrders && (
+        {/* 财务的默认工作面是应收：订单不在一级入口出现。能力表 `panorama.orders.view`。 */}
+        <Can cap="panorama.orders.view">
           <Link
             href="/panorama/orders"
             className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
@@ -82,7 +80,7 @@ function PanoramaPageContent() {
               草稿/待确认 → 成交 → 生产中 → 已发货；逾期单排在最前，点进来就是那张单。
             </p>
           </Link>
-        )}
+        </Can>
         <Link
           href="/panorama/receivables"
           className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"

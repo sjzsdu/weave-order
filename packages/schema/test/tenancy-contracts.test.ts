@@ -18,6 +18,7 @@ import {
   SwitchTenantInput,
   Tenant,
   TenantChoice,
+  roleCapabilities,
 } from "../src";
 
 const ID = "123e4567-e89b-12d3-a456-426614174000";
@@ -294,14 +295,27 @@ describe("WAN-81 契约：租户选择", () => {
       updatedAt: TS,
     };
 
+    const capabilities = roleCapabilities(membership);
+
     const bound = AuthMeResponse.parse({
       subject: "sub-1",
       name: null,
       email: null,
       tenant,
       membership,
+      capabilities,
     });
     expect("tenants" in bound).toBe(false);
+    // 能力清单是绑定态上下文的必填项：前端只认它，缺失即契约错误。
+    expect(() =>
+      AuthMeResponse.parse({
+        subject: "sub-1",
+        name: null,
+        email: null,
+        tenant,
+        membership,
+      }),
+    ).toThrow();
 
     const chooser = AuthMeResponse.parse({
       status: "MULTI_TENANT",

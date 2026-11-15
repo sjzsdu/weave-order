@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { approvalLevelForRole, hasCapability } from "./capabilities";
 import { EntityId, JsonValueSchema, Timestamp } from "./domain";
 import { MemberRole } from "./tenancy";
 
@@ -275,31 +276,31 @@ export const ApprovalRequirement = z
 export type ApprovalRequirement = z.infer<typeof ApprovalRequirement>;
 
 /**
- * 具备报价审批能力的角色白名单（对齐 product-design §3.3：
+ * 具备报价审批能力的角色（对齐 product-design §3.3：
  * 批准报价只有 owner / manager / sales）。
  * 能力与「等级」是两回事：能力回答「这个角色能不能批」，等级回答「能批到哪一档」。
+ *
+ * 角色清单的唯一事实源是 `capabilities.ts` 的 `quote.approve`；这里保留函数名，
+ * 只为不打断既有调用点。
  */
-export const APPROVAL_CAPABLE_ROLES = ["OWNER", "MANAGER", "SALES"] as const;
-export type ApprovalCapableRole = (typeof APPROVAL_CAPABLE_ROLES)[number];
+export type ApprovalCapableRole = "OWNER" | "MANAGER" | "SALES";
 
 export function hasApprovalCapability(role: MemberRole): role is ApprovalCapableRole {
-  return (APPROVAL_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
+  return hasCapability(role, "quote.approve");
 }
 
 /**
- * 具备「生成/编辑报价」能力的角色白名单（对齐 product-design §3.3：
+ * 具备「生成/编辑报价」能力的角色（对齐 product-design §3.3：
  * 「生成报价草稿」只有 owner / manager / sales）。
  *
- * 取舍：当前与 APPROVAL_CAPABLE_ROLES 的集合完全相同，但仍然单独声明。
- * 两行能力在产品矩阵里是两条独立规则（例如未来允许 merchandiser 预填草稿、
- * 或把改价交给专门的核价岗），共用常量会在那天迫使一次语义含混的拆分。
- * 判定逻辑复用同一套 fail-closed 约定：不在白名单 = 没有能力。
+ * 与 `hasApprovalCapability` 共用一张角色表，但读的是两条独立能力键
+ * （`quote.write` / `quote.approve`）：未来允许 merchandiser 预填草稿或
+ * 把改价交给专门核价岗时，只改 `capabilities.ts` 一行，不动这里。
  */
-export const QUOTE_EDIT_CAPABLE_ROLES = ["OWNER", "MANAGER", "SALES"] as const;
-export type QuoteEditCapableRole = (typeof QUOTE_EDIT_CAPABLE_ROLES)[number];
+export type QuoteEditCapableRole = ApprovalCapableRole;
 
 export function hasQuoteEditCapability(role: MemberRole): role is QuoteEditCapableRole {
-  return (QUOTE_EDIT_CAPABLE_ROLES as readonly MemberRole[]).includes(role);
+  return hasCapability(role, "quote.write");
 }
 
 /**
@@ -308,10 +309,7 @@ export function hasQuoteEditCapability(role: MemberRole): role is QuoteEditCapab
  * 而不是给它们落一个「看起来能批」的等级。
  */
 export function roleApprovalLevel(role: MemberRole): ApprovalLevel | null {
-  if (role === "OWNER") return "OWNER";
-  if (role === "MANAGER") return "MANAGER";
-  if (role === "SALES") return "SALES";
-  return null;
+  return approvalLevelForRole(role);
 }
 
 export function approvalLevelRank(level: ApprovalLevel): number {

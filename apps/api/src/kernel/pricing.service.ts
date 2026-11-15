@@ -8,6 +8,7 @@ import {
   ResolvedPricingValue,
   UpdatePricingPolicyInput,
   controlDirection,
+  hasCapability,
 } from "@weave-order/schema";
 import type {
   JsonValue,
@@ -552,10 +553,13 @@ export class PricingService {
   /** 定价政策是管控面：公司/系统层只有 OWNER 能改，其余至少 MANAGER。 */
   private assertCanManage(scopeType: PricingScopeType, ctx: KernelContext): void {
     const role = ctx.actor.role;
-    if (role !== "OWNER" && role !== "MANAGER") {
+    if (!role || !hasCapability(role, "pricing.policy.edit")) {
       throw new KernelError("PERMISSION_DENIED", "只有 OWNER / MANAGER 可以维护定价策略");
     }
-    if ((scopeType === "SYSTEM" || scopeType === "COMPANY") && role !== "OWNER") {
+    if (
+      (scopeType === "SYSTEM" || scopeType === "COMPANY") &&
+      !hasCapability(role, "pricing.policy.edit.company")
+    ) {
       throw new KernelError("PERMISSION_DENIED", "公司/系统层定价策略只有 OWNER 可以维护");
     }
   }

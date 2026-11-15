@@ -1,9 +1,7 @@
 import type { PricingContext } from "@weave-order/schema";
+import { hasCapability } from "@weave-order/schema";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
-
-/** 可以替他人解析个人定价 / 审批额度的角色（管理视角，用于复核下属额度）。 */
-const CROSS_PERSON_ROLES: ReadonlySet<string> = new Set(["OWNER", "MANAGER"]);
 
 export interface PricingQueryScope {
   customerId?: string;
@@ -37,7 +35,8 @@ export function narrowPricingContext(
 
   const self = ctx.ownerId ?? null;
   const role = ctx.actor.role;
-  const mayCrossPerson = role !== undefined && CROSS_PERSON_ROLES.has(role);
+  // 能否替他人解析个人定价 / 审批额度：能力表 `pricing.cross_person.read`。
+  const mayCrossPerson = role !== undefined && hasCapability(role, "pricing.cross_person.read");
 
   let personId: string | undefined;
   if (query.personId) {

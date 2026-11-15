@@ -1,6 +1,10 @@
 import { printTemplateVersions, printTemplates } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { PublishPrintTemplateInput, PublishPrintTemplateVersionInput } from "@weave-order/schema";
+import {
+  PublishPrintTemplateInput,
+  PublishPrintTemplateVersionInput,
+  hasCapability,
+} from "@weave-order/schema";
 import type {
   PrintDocumentKind,
   PrintTemplate,
@@ -50,7 +54,14 @@ export function assertTemplatePublishAllowed(
   ctx: KernelContext,
 ): void {
   if (format !== "HTML") return;
-  if (ctx.actor.type === "HUMAN" && ctx.actor.role === "OWNER") return;
+  // 能力表 `print.template.publish.html`：HTML 模板会进渲染宿主机，只有 OWNER 能发布。
+  if (
+    ctx.actor.type === "HUMAN" &&
+    ctx.actor.role &&
+    hasCapability(ctx.actor.role, "print.template.publish.html")
+  ) {
+    return;
+  }
   throw new KernelError("PERMISSION_DENIED", "HTML 打印模板只能由 OWNER 发布", {
     reason: "PRINT_TEMPLATE_FORBIDDEN",
   });

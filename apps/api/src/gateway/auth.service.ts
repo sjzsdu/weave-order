@@ -1,6 +1,11 @@
 import { openTenantSession } from "@weave-order/db";
 import type { Pool } from "pg";
-import { AuthClaims, AuthContextResponse, SwitchTenantInput } from "@weave-order/schema";
+import {
+  AuthClaims,
+  AuthContextResponse,
+  SwitchTenantInput,
+  roleCapabilities,
+} from "@weave-order/schema";
 import type {
   ApiToken,
   AuthMeResponse,
@@ -308,6 +313,8 @@ export class AuthService {
       email: identity.claims.email,
       tenant,
       membership: identity.membership,
+      // 能力在服务端一次算好：前端只按数组显隐，避免第二份角色规则。
+      capabilities: roleCapabilities(identity.membership),
     });
   }
 
