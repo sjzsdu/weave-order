@@ -34,8 +34,13 @@ const VIEWER: KernelContext = {
 class FakeStorage implements ObjectStorage {
   readonly heads = new Map<string, ObjectHead>();
 
-  put(objectKey: string, byteSize = 2048, contentType = "image/jpeg"): void {
+  seed(objectKey: string, byteSize = 2048, contentType = "image/jpeg"): void {
     this.heads.set(objectKey, { contentType, contentLength: byteSize });
+  }
+
+  put(objectKey: string, bytes: Buffer, contentType: string): Promise<void> {
+    this.seed(objectKey, bytes.length, contentType);
+    return Promise.resolve();
   }
 
   presignPut(): Promise<string> {
@@ -53,7 +58,10 @@ class FakeStorage implements ObjectStorage {
   get(objectKey: string): Promise<ObjectBytes | null> {
     const head = this.heads.get(objectKey);
     if (!head) return Promise.resolve(null);
-    return Promise.resolve({ contentType: head.contentType ?? "image/jpeg", bytes: Buffer.from([0xff, 0xd8, 0xff]) });
+    return Promise.resolve({
+      contentType: head.contentType ?? "image/jpeg",
+      bytes: Buffer.from([0xff, 0xd8, 0xff]),
+    });
   }
 
   delete(): Promise<void> {
@@ -297,7 +305,7 @@ describe("样品 CRUD 与图墙", () => {
         imageKey(tenantId, "samples", sample.id),
         imageKey(tenantId, "samples", sample.id),
       ];
-      for (const key of keys) storage.put(key);
+      for (const key of keys) storage.seed(key);
 
       await kernel.samples.update(sample.id, { imageKeys: keys, primaryImageKey: keys[0] }, OWNER);
       let rows = await kernel.sampleImages.listForSample(sample.id);
@@ -331,7 +339,7 @@ describe("样品 CRUD 与图墙", () => {
         OWNER,
       );
       const firstKey = imageKey(tenantId, "samples", fresh.id);
-      storage.put(firstKey);
+      storage.seed(firstKey);
       const attached = await kernel.sampleImages.attach(
         {
           sampleId: fresh.id,
@@ -355,7 +363,7 @@ describe("样品 CRUD 与图墙", () => {
     const { session, kernel } = await tenantKernel(tenantId);
     try {
       const foreign = `tenant/${randomUUID()}/uploads/${randomUUID()}.jpg`;
-      storage.put(foreign);
+      storage.seed(foreign);
       await expect(
         kernel.samples.create(
           { code: `KEY-${suffix()}`, name: "跨租户 key", unit: "meter", imageKeys: [foreign] },

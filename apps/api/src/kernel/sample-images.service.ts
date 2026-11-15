@@ -7,8 +7,8 @@ import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation, uniqueViolationConstraint } from "./errors";
 import { loadEnv } from "../platform/env";
 import type { Env } from "../platform/env";
-import { mediaBaseUrl } from "../platform/storage";
 import type { ObjectStorage } from "../platform/storage";
+import { objectUrl } from "../platform/thumbnail";
 
 export type SampleImageRow = typeof sampleImages.$inferSelect;
 
@@ -299,9 +299,7 @@ export class SampleImageService {
 
   /** 读模型里的图片 URL：优先 CDN，未配时退回签名 URL；无存储时返回 null。 */
   async urlFor(objectKey: string): Promise<string | null> {
-    if (this.env.MEDIA_BASE_URL) return `${mediaBaseUrl(this.env)}/${objectKey}`;
-    if (!this.storage) return null;
-    return this.storage.signGet(objectKey, this.env.MEDIA_PRESIGN_TTL_SECONDS);
+    return objectUrl(this.env, this.storage, objectKey);
   }
 
   /** 批量取每个样品的主图 URL（工具结果 / 找样候选需要真缩略图）。 */
@@ -311,7 +309,12 @@ export class SampleImageService {
     for (const [sampleId, images] of rows) {
       const primary = images.find((row) => row.isPrimary) ?? images[0];
       if (!primary) continue;
-      const url = await this.urlFor(primary.objectKey);
+      // 候选卡片用派生缩略图（有就优先），没有才回退原图 —— 与图墙同一口径。
+      const thumbKey =
+        primary.thumbStatus === "ready" && primary.thumb320Key
+          ? primary.thumb320Key
+          : primary.objectKey;
+      const url = await this.urlFor(thumbKey);
       if (url) urls.set(sampleId, url);
     }
     return urls;

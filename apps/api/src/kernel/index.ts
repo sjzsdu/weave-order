@@ -24,8 +24,10 @@ import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
 import { RevisionService } from "./revisions.service";
 import { ImageIndexService } from "./image-index.service";
+import { MediaMaintenanceService } from "./media-maintenance.service";
 import { SampleImageService } from "./sample-images.service";
 import { SampleIndexService } from "./sample-index.service";
+import { SampleThumbService } from "./sample-thumbs.service";
 import { SampleService } from "./samples.service";
 import { SearchService } from "./search.service";
 import { ShareService } from "./shares.service";
@@ -68,10 +70,13 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     embedder ?? createEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
   // 图像向量与文本向量是两套模型：不同空间、不同表、不同阈值。
   const activeImageEmbedder =
-    options.imageEmbedder ?? createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
+    options.imageEmbedder ??
+    createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
   const customers = new CustomerService(db, tenantId);
   const storage = options.storage ?? createObjectStorageFromEnv(env);
   const sampleImages = new SampleImageService(db, tenantId, storage, env);
+  const thumbs = new SampleThumbService(db, tenantId, storage);
+  const mediaMaintenance = new MediaMaintenanceService(db, tenantId, storage, thumbs);
   const sampleIndex = new SampleIndexService(db, activeEmbedder, tenantId);
   const imageMaxEdge = options.imageEmbeddingMaxEdge ?? env.IMAGE_EMBEDDING_MAX_EDGE;
   const imageIndex = new ImageIndexService(db, activeImageEmbedder, tenantId, storage, {
@@ -84,6 +89,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     sampleImages,
     sampleIndex,
     imageIndex,
+    thumbs,
   );
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
@@ -140,6 +146,8 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     samples,
     sampleIndex,
     sampleImages,
+    thumbs,
+    mediaMaintenance,
     imageIndex,
     pricing,
     shipments,
