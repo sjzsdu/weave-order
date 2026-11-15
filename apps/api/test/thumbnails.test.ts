@@ -78,4 +78,10 @@ describe("超大原图重编码", () => {
     expect(reencoded.contentType).toBe("image/png");
     expect((await sharp(reencoded.bytes).metadata()).format).toBe("png");
   });
+
+  it("不支持的格式显式报错，而不是默认产出 jpeg 字节", async () => {
+    const source = await jpeg(100, 100);
+    await expect(reencodeOversizedOriginal(source, "image/gif")).rejects.toThrow("不支持重编码");
+    await expect(reencodeOversizedOriginal(source, "image/avif")).rejects.toThrow("不支持重编码");
+  });
 });

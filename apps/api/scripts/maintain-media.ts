@@ -6,6 +6,7 @@
  *   pnpm --filter @weave-order/api maintain:media                      # 补派生 + 压原图 + 清孤儿
  *   pnpm --filter @weave-order/api maintain:media -- --tenant=<uuid>
  *   pnpm --filter @weave-order/api maintain:media -- --skip-compress --skip-orphans
+ *   pnpm --filter @weave-order/api maintain:media -- --force   # 缩略图强制重派（换尺寸/质量后）
  *   pnpm --filter @weave-order/api maintain:media -- --max-original-bytes=2097152 --grace-hours=24
  *
  * 三个动作都可重复执行（幂等）：
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
   const skipThumbs = hasFlag("skip-thumbs");
   const skipCompress = hasFlag("skip-compress");
   const skipOrphans = hasFlag("skip-orphans");
+  const forceThumbs = hasFlag("force");
   const limit = numberArg("limit") ?? 500;
   const maxOriginalBytes = numberArg("max-original-bytes");
   const graceHours = numberArg("grace-hours");
@@ -94,7 +96,7 @@ async function main(): Promise<void> {
       );
 
       if (!skipThumbs) {
-        const report = await maintenance.backfillThumbs({ dryRun, limit });
+        const report = await maintenance.backfillThumbs({ dryRun, limit, force: forceThumbs });
         failed += report.failed.length;
         console.log(
           `   缩略图：待派生 ${report.pending}，本次派生 ${report.derived}` +

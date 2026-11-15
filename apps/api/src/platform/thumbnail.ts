@@ -73,19 +73,29 @@ export async function reencodeOversizedOriginal(
   quality = 82,
 ): Promise<ReencodedImage> {
   if (source.length === 0) throw new Error("图像内容为空，无法重编码");
+  // 上传口目前只放行这三种；显式报错而不是默认走 jpeg，
+  // 避免将来放行 gif/avif 时产出「扩展名 gif、字节是 jpeg」的坏对象。
+  const normalizedMime = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+  if (
+    normalizedMime !== "image/jpeg" &&
+    normalizedMime !== "image/png" &&
+    normalizedMime !== "image/webp"
+  ) {
+    throw new Error(`不支持重编码的图片类型：${mimeType}`);
+  }
   try {
     const base = sharp(source).rotate();
     const meta = await base.metadata();
     const pipeline =
-      mimeType === "image/png"
+      normalizedMime === "image/png"
         ? base.png({ compressionLevel: 9, palette: true })
-        : mimeType === "image/webp"
+        : normalizedMime === "image/webp"
           ? base.webp({ quality })
           : base.jpeg({ quality, mozjpeg: true });
     const { data, info } = await pipeline.toBuffer({ resolveWithObject: true });
     return {
       bytes: data,
-      contentType: mimeType,
+      contentType: normalizedMime,
       width: info.width ?? meta.width ?? null,
       height: info.height ?? meta.height ?? null,
     };

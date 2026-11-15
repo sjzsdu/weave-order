@@ -76,27 +76,23 @@ export class MediaMaintenanceService {
     };
     if (dryRun || pending === 0) return report;
 
-    // 分页处理：成功的行会从 pending 里消失，所以每页都重新查「还缺哪些」。
-    // 失败行仍留在 pending，靠 processed 上限终止，避免死循环。
-    let processed = 0;
-    while (processed < limit) {
-      const pageSize = Math.min(200, limit - processed);
-      const ids = await this.thumbs.pendingImageIds(pageSize);
-      if (ids.length === 0) break;
-      processed += ids.length;
-      for (const imageId of ids) {
-        try {
-          const outcome = await this.thumbs.derive(imageId, { force: options.force });
-          if (outcome === "ready") report.derived += 1;
-        } catch (error) {
-          report.failed.push({
-            imageId,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
+    // 先取一份待办快照，每张图本轮只处理一次。
+    //
+    // 为什么不再「每页重查 pending」：派生失败的行仍然是 pending，
+    // 重查会把同一批损坏图反复捞回来（重复读原图 + 跑两遍 sharp），
+    // 报告里也会为同一张图刷出大量重复失败。一次快照 + 逐条处理，
+    // 既能保证幂等（下轮再处理剩下的），也不会放大失败成本。
+    const ids = await this.thumbs.pendingImageIds(limit);
+    for (const imageId of ids) {
+      try {
+        const outcome = await this.thumbs.derive(imageId, { force: options.force });
+        if (outcome === "ready") report.derived += 1;
+      } catch (error) {
+        report.failed.push({
+          imageId,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
-      // 全页都失败时 pending 不会缩小，不要原地打转。
-      if (report.failed.length === ids.length && report.derived === 0) break;
     }
     return report;
   }

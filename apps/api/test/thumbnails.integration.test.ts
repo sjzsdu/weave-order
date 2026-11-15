@@ -362,6 +362,50 @@ describe("服务端缩略图派生（WAN-125）", () => {
     expect(again.deleted).toBe(0);
   }, 30_000);
 
+  it("补派生每张图本轮只处理一次：损坏图不会在后续页反复刷失败", async (ctx) => {
+    if (!available) ctx.skip();
+    if (!db) throw new Error("数据库不可用");
+    const database = db;
+    const h = await harness();
+    const insertPending = async (bytes: Buffer) => {
+      const objectKey = `tenant/${h.tenantId}/samples/${h.sampleId}/${randomUUID()}.jpg`;
+      h.storage.seed(objectKey, bytes, "image/jpeg");
+      const imageId = randomUUID();
+      await database.insert(sampleImages).values({
+        id: imageId,
+        tenantId: h.tenantId,
+        sampleId: h.sampleId,
+        objectKey,
+        variant: "primary",
+        isPrimary: false,
+        mimeType: "image/jpeg",
+        byteSize: bytes.length,
+        sortOrder: 1,
+      });
+      return imageId;
+    };
+    const good = await insertPending(await jpeg());
+    const badOne = await insertPending(Buffer.from("broken-one"));
+    const badTwo = await insertPending(Buffer.from("broken-two"));
+
+    const maintenance = new MediaMaintenanceService(db, h.tenantId, h.storage, h.kernel.thumbs);
+    const report = await maintenance.backfillThumbs({ limit: 10 });
+
+    expect(report.derived).toBe(1);
+    // 关键：每张损坏图只出现一次。旧实现会跨页重查 pending，同一张图被反复 derive。
+    expect(report.failed).toHaveLength(2);
+    expect(new Set(report.failed.map((entry) => entry.imageId))).toEqual(new Set([badOne, badTwo]));
+    const putsPerImage = h.storage.putCalls;
+    expect((await rowOf(good)).thumbStatus).toBe("ready");
+    expect((await rowOf(badOne)).thumbStatus).toBe("failed");
+    expect((await rowOf(badTwo)).thumbStatus).toBe("failed");
+    // 再跑一轮才会重试失败行（幂等，不是同一轮内打转）。
+    const retry = await maintenance.backfillThumbs({ limit: 10 });
+    expect(retry.derived).toBe(0);
+    expect(retry.failed).toHaveLength(2);
+    expect(h.storage.putCalls).toBe(putsPerImage);
+  }, 30_000);
+
   it("超大原图重编码：干跑不写；执行后体积下降、mime 不变、再跑不重复处理", async (ctx) => {
     if (!available) ctx.skip();
     const h = await harness();
