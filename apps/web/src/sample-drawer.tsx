@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FabricSample, Unit } from "@weave-order/schema";
+import type { FabricSample, SampleImage, Unit } from "@weave-order/schema";
 import { Badge, Button, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { canRetryImage, imageStatusBadges, thumbnailNote } from "@/sample-image-status";
 
 const UNIT_LABEL: Record<Unit, string> = {
   meter: "米",
@@ -34,6 +35,7 @@ export function SampleDrawer({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [matches, setMatches] = useState<{ code: string; name: string; score: number }[]>([]);
   const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["sample", sampleId],
@@ -46,6 +48,7 @@ export function SampleDrawer({
     setMatches([]);
     setSearchError(null);
     setShipmentOpen(false);
+    setRetryError(null);
   }, [sampleId]);
 
   const archive = useMutation({
@@ -54,6 +57,20 @@ export function SampleDrawer({
       await queryClient.invalidateQueries({ queryKey: ["samples"] });
       await queryClient.invalidateQueries({ queryKey: ["sample", sampleId] });
       onClose();
+    },
+  });
+
+  // 重试是同步动作：服务端跑完缩略图派生 / 向量索引才返回整份样品，
+  // 因此这里直接把新读模型写回缓存，徽标立即反映真实结果。
+  const retry = useMutation({
+    mutationFn: (imageId: string) => api.retrySampleImage(sampleId, imageId),
+    onMutate: () => setRetryError(null),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["sample", sampleId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["samples"] });
+    },
+    onError: (error) => {
+      setRetryError(error instanceof Error ? error.message : "重试失败");
     },
   });
 
@@ -138,34 +155,56 @@ export function SampleDrawer({
                     alt={`${sample.name} 第 ${index + 1} 张`}
                     className="aspect-square w-full rounded-lg border border-line bg-paper object-contain"
                   />
-                  {current.thumbStatus === "failed" && (
-                    <p className="text-xs text-rose-700">
-                      缩略图派生失败，列表与详情均显示原图
-                      {current.thumbError ? `（${current.thumbError}）` : ""}
-                    </p>
-                  )}
+                  <ImageStatusPanel
+                    image={current}
+                    retrying={retry.isPending}
+                    retryError={retryError}
+                    onRetry={() => retry.mutate(current.id)}
+                  />
                   {images.length > 1 && (
                     <div className="flex gap-2 overflow-x-auto pb-1">
-                      {images.map((image, position) => (
-                        <button
-                          key={image.id}
-                          type="button"
-                          onClick={() => setIndex(position)}
-                          className={cn(
-                            "h-16 w-16 shrink-0 overflow-hidden rounded-md border",
-                            position === index
-                              ? "border-indigo-600 ring-1 ring-indigo-600/30"
-                              : "border-line",
-                          )}
-                        >
-                          <img
-                            src={image.thumbUrl ?? image.url}
-                            alt={`${sample.name} 缩略图 ${position + 1}`}
-                            loading="lazy"
-                            className="h-full w-full object-cover"
-                          />
-                        </button>
-                      ))}
+                      {images.map((image, position) => {
+                        const note = thumbnailNote(image);
+                        return (
+                          <button
+                            key={image.id}
+                            type="button"
+                            onClick={() => setIndex(position)}
+                            className={cn(
+                              "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border",
+                              position === index
+                                ? "border-indigo-600 ring-1 ring-indigo-600/30"
+                                : "border-line",
+                            )}
+                          >
+                            <img
+                              src={image.thumbUrl ?? image.url}
+                              alt={`${sample.name} 缩略图 ${position + 1}`}
+                              loading="lazy"
+                              className="h-full w-full object-cover"
+                            />
+                            {note && (
+                              <span
+                                title={
+                                  note.tone === "danger"
+                                    ? ((image.indexStatus === "failed"
+                                        ? image.indexError
+                                        : image.thumbError) ?? note.label)
+                                    : note.label
+                                }
+                                className={cn(
+                                  "absolute inset-x-0 bottom-0 truncate text-center text-[9px] leading-4 text-white",
+                                  note.tone === "danger"
+                                    ? "bg-vermilion-600/90"
+                                    : "bg-amber-600/90",
+                                )}
+                              >
+                                {note.label}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </>
@@ -264,6 +303,56 @@ export function SampleDrawer({
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+/**
+ * 当前大图的处理状态：只说事实（索引中 / 索引失败 / 缩略图失败），
+ * 失败时把服务端落库的原因原样显示，并给一个真正会重跑的「重试」。
+ */
+function ImageStatusPanel({
+  image,
+  retrying,
+  retryError,
+  onRetry,
+}: {
+  image: SampleImage;
+  retrying: boolean;
+  retryError: string | null;
+  onRetry: () => void;
+}) {
+  const badges = imageStatusBadges(image);
+  return (
+    <div data-testid="image-status" className="flex flex-wrap items-center gap-2">
+      {badges.length === 0 ? (
+        <span className="text-xs text-ink-400">索引与缩略图都已就绪</span>
+      ) : (
+        badges.map((badge) => (
+          <Badge key={badge.key} tone={badge.tone}>
+            {badge.label}
+          </Badge>
+        ))
+      )}
+      {canRetryImage(image) && (
+        <Button
+          data-testid="image-retry"
+          variant="secondary"
+          className="min-h-8 px-3 text-xs"
+          onClick={onRetry}
+          disabled={retrying}
+        >
+          {retrying ? "重试中…" : "重试"}
+        </Button>
+      )}
+      {badges
+        .filter((badge) => badge.reason)
+        .map((badge) => (
+          <p key={badge.key} className="w-full text-xs text-rose-700">
+            {badge.label}：{badge.reason}
+          </p>
+        ))}
+      {retryError && <p className="w-full text-xs text-rose-700">{retryError}</p>}
     </div>
   );
 }

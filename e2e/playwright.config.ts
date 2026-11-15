@@ -108,11 +108,17 @@ export default defineConfig({
     {
       name: "desktop-1440",
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
-      testMatch: /desktop\/gallery-layout\.spec\.ts/,
+      testMatch: /desktop\/(gallery-layout|media-status)\.spec\.ts/,
     },
     {
       name: "desktop-375",
       use: { ...devices["Desktop Chrome"], viewport: { width: 375, height: 812 } },
+      testMatch: /desktop\/(gallery-layout|media-status)\.spec\.ts/,
+    },
+    {
+      // 640~767 是「更多」与桌面入口最容易重叠的缝隙（WAN-131 review P2-1）。
+      name: "desktop-700",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 700, height: 900 } },
       testMatch: /desktop\/gallery-layout\.spec\.ts/,
     },
     {

@@ -407,6 +407,18 @@ export function createApiClient(options: ApiClientOptions) {
     archiveSample: async (id: string) =>
       SampleResponse.parse(await post(`/api/samples/${encodeURIComponent(id)}/archive`, {})).sample,
 
+    /**
+     * 单张图重试：服务端同步重跑缩略图 / 向量索引，返回刷新后的整份样品。
+     * 失败不会变成 HTTP 错误（图仍挂在样品上），失败原因在 `thumbError` / `indexError`。
+     */
+    retrySampleImage: async (sampleId: string, imageId: string) =>
+      SampleResponse.parse(
+        await post(
+          `/api/samples/${encodeURIComponent(sampleId)}/images/${encodeURIComponent(imageId)}/retry`,
+          {},
+        ),
+      ).sample,
+
     /** 图片直传第 1 步：拿预签名 URL（key 由服务端生成）。 */
     presignImage: async (input: PresignImageInput) =>
       PresignImageResponse.parse(await post("/api/media/presign", input)),

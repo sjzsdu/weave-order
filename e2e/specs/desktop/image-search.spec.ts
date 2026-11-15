@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "../../support/test";
+import { API_URL } from "../../support/env";
 import { readSeed } from "../../support/seed";
 import { openGallery, screenshot } from "../../support/ui";
 
@@ -80,5 +82,58 @@ test.describe("以图找样", () => {
     }
 
     await screenshot(page, testInfo, "image-search");
+  });
+
+  /**
+   * 孤儿查询图（已知盲区收尾）：桌面找样的 presign 不带 sampleId，
+   * 查询图落在 `tenant/<tid>/uploads/`，而回收任务只扫 `samples/`。
+   * 自动化能断言的部分：上传不报错、不产生半挂载样品、连续多张孤儿图之后找样仍然可用。
+   * 「对象最终被谁回收」需要对象存储生命周期策略，见 docs/e2e-acceptance.md。
+   */
+  test("查询图落在 uploads/ 的孤儿不报错、不阻塞找样", async ({ request }) => {
+    const seed = await readSeed();
+    const authorization = `Bearer ${seed.ownerCredential}`;
+    const bytes = await readFile(seed.fixture);
+    const uploadsPrefix = new RegExp(`^tenant/${seed.tenantId}/uploads/[0-9a-fA-F-]{36}\\.jpg$`);
+
+    // 连续传两张（模拟用户反复试不同照片），每张都走一次真实找样。
+    for (let round = 0; round < 2; round += 1) {
+      const presign = await request.post(`${API_URL}/api/media/presign`, {
+        headers: { Authorization: authorization },
+        data: { mimeType: "image/jpeg", byteSize: bytes.length },
+      });
+      expect(presign.ok()).toBe(true);
+      const presigned = (await presign.json()) as {
+        objectKey: string;
+        uploadUrl: string;
+        publicUrl: string;
+        headers: Record<string, string>;
+      };
+      // 没有 sampleId → key 必须落在 uploads/，而不是被悄悄塞进某个样品。
+      expect(presigned.objectKey).toMatch(uploadsPrefix);
+
+      const put = await request.put(presigned.uploadUrl, {
+        headers: { ...presigned.headers, "Content-Type": "image/jpeg" },
+        data: bytes,
+      });
+      expect(put.ok()).toBe(true);
+
+      const search = await request.post(`${API_URL}/api/tools/search-by-image`, {
+        headers: { Authorization: authorization },
+        data: { imageUrl: presigned.publicUrl },
+      });
+      expect(search.ok()).toBe(true);
+      const body = (await search.json()) as {
+        ok: boolean;
+        data?: { matches: { sample: { code: string } }[] };
+        error?: { message: string };
+      };
+      expect(body.ok, body.error?.message).toBe(true);
+      // 找样结果不受孤儿图影响：仍然能命中种子样品。
+      expect(body.data?.matches.length ?? 0).toBeGreaterThan(0);
+      expect(body.data?.matches.map((match) => match.sample.code)).toContain(
+        seed.sharedImageCodes[0],
+      );
+    }
   });
 });

@@ -412,6 +412,45 @@ export class SampleService {
     return presentSample(row, role);
   }
 
+  /**
+   * 单张图的重试：同步重跑缩略图派生与图像向量索引。
+   *
+   * 与建样品时的 `requestIndex` 刻意不同 —— 用户点了「重试」，必须等到真实结果
+   * 再刷新界面，而不是再入队一次让他猜。失败原因已由各 service 落库到
+   * `thumb_error` / `index_error`，这里只把「这次是否重跑过」告诉调用方。
+   */
+  async retryImage(
+    sampleId: string,
+    imageId: string,
+    ctx: KernelContext,
+  ): Promise<{ thumbRetried: boolean; indexRetried: boolean }> {
+    assertCanWriteSamples(ctx);
+    await this.findRow(sampleId);
+    const row = (await this.images.listForSample(sampleId)).find((image) => image.id === imageId);
+    if (!row) {
+      throw new KernelError("RESOURCE_NOT_FOUND", `图片不属于该样品：${imageId}`, {
+        resourceType: "sample_image",
+        resourceId: imageId,
+      });
+    }
+
+    let thumbRetried = false;
+    if (this.thumbs && (row.thumbStatus !== "ready" || !row.thumb320Key || !row.thumb640Key)) {
+      thumbRetried = true;
+      // 失败会重新落 `thumb_status=failed`；抛错不阻断索引重试。
+      await this.thumbs
+        .derive(imageId, { force: row.thumbStatus !== "ready" })
+        .catch(() => undefined);
+    }
+
+    let indexRetried = false;
+    if (this.imageIndex && row.indexStatus !== "ready") {
+      indexRetried = true;
+      await this.imageIndex.indexImage(imageId).catch(() => undefined);
+    }
+    return { thumbRetried, indexRetried };
+  }
+
   /** 游标分页的样品图墙查询；不做 `limit 100` 硬截断。 */
   async listPage(filters: SampleListFilters = {}, ctx?: KernelContext): Promise<SamplePage> {
     const limit = clampLimit(filters.limit, 24, 100);
