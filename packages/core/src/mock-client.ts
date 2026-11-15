@@ -19,6 +19,7 @@ import {
   ShipmentView,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
+  roleCapabilities,
 } from "@weave-order/schema";
 import type { ApprovalDecisionInput } from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
@@ -330,6 +331,11 @@ export function createMockApiClient(): ApiClient {
         createdAt: NOW,
         updatedAt: NOW,
       },
+      capabilities: roleCapabilities({
+        role: "OWNER",
+        dataScope: "ALL",
+        approvalLimitAmount: null,
+      }),
     });
 
   return {

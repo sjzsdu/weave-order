@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { roleCapabilities } from "@weave-order/schema";
 import { ApiError, createApiClient } from "../src/api-client";
 
 const CUSTOMER = {
@@ -182,6 +183,7 @@ describe("API client（租户选择）", () => {
             createdAt: "2026-01-01T00:00:00.000Z",
             updatedAt: "2026-01-01T00:00:00.000Z",
           },
+          capabilities: roleCapabilities({ role: "SALES" }),
         }),
       ),
     );

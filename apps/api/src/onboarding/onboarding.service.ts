@@ -7,7 +7,7 @@ import {
   OnboardingResult,
   StartTenantInput,
 } from "@weave-order/schema";
-import { TeamInvite, TeamInviteList } from "@weave-order/schema";
+import { TeamInvite, TeamInviteList, hasCapability } from "@weave-order/schema";
 import type { AuthClaims, Membership } from "@weave-order/schema";
 import { createNotifier, inviteMessage } from "@weave-order/notify";
 import { createKernel } from "../kernel";
@@ -280,7 +280,8 @@ export class OnboardingService {
    * 生成链接后立即尝试发送（邮件默认、短信需手机号）；没配置发送通道时如实返回 ok:false。
    */
   async invite(actor: Membership, raw: unknown, inviterName = "公司管理员"): Promise<TeamInvite> {
-    if (actor.role !== "OWNER" && actor.role !== "MANAGER") {
+    // 能力表 `member.invite`：老板/主管才可邀请。
+    if (!hasCapability(actor, "member.invite")) {
       throw new TeamActionError("只有老板或主管可以邀请同事", 403);
     }
     const input = InviteMemberInput.parse(raw);

@@ -5,6 +5,7 @@ import {
   DecideRevisionRequestInput,
   T002SearchFabricBySpecInput,
   T004GenerateQuoteDraftInput,
+  roleCapabilities,
   statusForToolFailure,
 } from "@weave-order/schema";
 import type {
@@ -28,6 +29,13 @@ import {
   initialQuotes,
 } from "./seed";
 import type { MockShareRecord, MockState, MockStorage, QuoteRecord } from "./types";
+
+/** mock 只有 OWNER 一个身份：能力清单也走同一张表，避免 mock 里手抄一份角色规则。 */
+const MOCK_CAPABILITIES = roleCapabilities({
+  role: "OWNER",
+  dataScope: "ALL",
+  approvalLimitAmount: null,
+});
 
 /**
  * 本地 mock 服务端：实现移动端 P0 会用到的契约端点。
@@ -613,6 +621,7 @@ export function createMockServer(options: MockServerOptions): MockServer {
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
+        capabilities: MOCK_CAPABILITIES,
       });
     }
 
@@ -676,6 +685,7 @@ export function createMockServer(options: MockServerOptions): MockServer {
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
+        capabilities: MOCK_CAPABILITIES,
       });
     }
 

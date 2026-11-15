@@ -3,6 +3,7 @@ import type {
   ApprovalDecisionInput,
   ApprovalKind,
   AuthContextResponse,
+  Capability,
   CustomerListOptions,
   CustomerTimelineKind,
   TenantChoice,
@@ -431,6 +432,8 @@ export type TenantContextState =
       status: "READY";
       tenant: AuthContextResponse["tenant"];
       membership: AuthContextResponse["membership"];
+      /** 服务端算好的能力清单；前端显隐只读它，不再从 role 推导。 */
+      capabilities: AuthContextResponse["capabilities"];
     }
   | { status: "MULTI_TENANT"; tenants: TenantChoice[] }
   | { status: "NO_MEMBERSHIP"; message: string }
@@ -459,7 +462,12 @@ export function useTenantContext(client: ApiClient) {
     const data = me.data;
     if (!data) return { status: "LOADING" };
     if ("tenants" in data) return { status: "MULTI_TENANT", tenants: data.tenants };
-    return { status: "READY", tenant: data.tenant, membership: data.membership };
+    return {
+      status: "READY",
+      tenant: data.tenant,
+      membership: data.membership,
+      capabilities: data.capabilities,
+    };
   })();
 
   const switchMutation = useMutation({
@@ -479,4 +487,15 @@ export function useTenantContext(client: ApiClient) {
     switchError: switchMutation.error,
     refetch: me.refetch,
   };
+}
+
+/**
+ * 当前成员是否具备某能力。
+ *
+ * 只读 `/api/auth/me` 返回的 `capabilities`，不在前端重算角色：
+ * 未就绪（加载中 / 待选租户 / 无成员）一律 false，宁可先不显示也不误显示。
+ */
+export function useCapability(client: ApiClient, capability: Capability): boolean {
+  const context = useTenantContext(client);
+  return context.status === "READY" && context.capabilities.includes(capability);
 }

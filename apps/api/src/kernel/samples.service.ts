@@ -1,6 +1,6 @@
 import { samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { CreateSampleInput, UpdateSampleInput } from "@weave-order/schema";
+import { CreateSampleInput, UpdateSampleInput, hasCapability } from "@weave-order/schema";
 import type { FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
 import { and, asc, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
@@ -17,13 +17,14 @@ import { escapeLikePattern } from "./like";
 
 type SampleRow = typeof samples.$inferSelect;
 
-/** 样品写权限：sales / viewer / 财务 / 跟单只读。 */
-const SAMPLE_WRITE_ROLES: ReadonlySet<MemberRole> = new Set(["OWNER", "MANAGER", "SAMPLE_ADMIN"]);
-
-/** 无角色（系统任务 / 智能体内核路径）视为可写；角色裁剪只发生在人类请求上。 */
+/**
+ * 样品写权限（sales / viewer / 财务 / 跟单只读）。
+ * 规则本身在 `@weave-order/schema` 的 `sample.write`，这里只保留调用形状。
+ * 无角色（系统任务 / 智能体内核路径）视为可写；角色裁剪只发生在人类请求上。
+ */
 export function mayWriteSamples(role?: MemberRole): boolean {
   if (!role) return true;
-  return SAMPLE_WRITE_ROLES.has(role);
+  return hasCapability(role, "sample.write");
 }
 
 function assertCanWriteSamples(ctx: KernelContext): void {

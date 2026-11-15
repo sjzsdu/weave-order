@@ -151,10 +151,22 @@ describe("网关（dev 令牌 + 租户上下文）", () => {
       subject: string;
       tenant: { id: string };
       membership: { role: string; dataScope: string };
+      capabilities: string[];
     };
     expect(body.subject).toBe(subjectA);
     expect(body.tenant.id).toBe(tenantA);
     expect(body.membership.role).toBe("OWNER");
+    // 能力由服务端按 packages/schema 的权限表算好，OWNER 拥有全部能力。
+    expect(body.capabilities).toEqual(
+      expect.arrayContaining([
+        "sample.write",
+        "sample.cost.view",
+        "quote.approve",
+        "panorama.orders.view",
+        "member.invite",
+        "settings.edit",
+      ]),
+    );
   });
 
   it("org 与本地 membership 不一致 → 403", async (ctx) => {
