@@ -11,5 +11,4 @@ CREATE TABLE "inbound_messages" (
 	"raw_payload" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
-CREATE UNIQUE INDEX "inbound_messages_tenant_channel_external_idx" ON "inbound_messages" USING btree ("tenant_id","channel","external_id");--> statement-breakpoint
-CREATE INDEX "inbound_messages_tenant_customer_received_idx" ON "inbound_messages" USING btree ("tenant_id","customer_ref","received_at");
+CREATE UNIQUE INDEX "inbound_messages_tenant_channel_external_idx" ON "inbound_messages" USING btree ("tenant_id","channel","external_id");

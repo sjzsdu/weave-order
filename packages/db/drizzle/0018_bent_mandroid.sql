@@ -1,4 +1,3 @@
-DROP INDEX "inbound_messages_tenant_customer_received_idx";--> statement-breakpoint
 ALTER TABLE "inbound_messages" ADD COLUMN "customer_id" uuid;--> statement-breakpoint
 ALTER TABLE "inbound_messages" ADD COLUMN "shipment_id" uuid;--> statement-breakpoint
 ALTER TABLE "inbound_messages" ADD COLUMN "raw_payload_expires_at" timestamp with time zone;--> statement-breakpoint
