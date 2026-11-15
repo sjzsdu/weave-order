@@ -18,7 +18,12 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import Redis from "ioredis";
-import { canResetDemoData, isProductionLike, isTestEnv } from "@weave-order/schema";
+import {
+  canResetDemoData,
+  isProductionLike,
+  isTestEnv,
+  needsDemoResetConfirmation,
+} from "@weave-order/schema";
 import { createDb } from "@weave-order/db";
 import { loadEnv } from "../src/platform/env";
 import { createObjectStorageFromEnv } from "../src/platform/storage";
@@ -50,16 +55,33 @@ function assertAllowed(): void {
     AUTH_MODE: process.env.AUTH_MODE,
     WEAVE_ENV: process.env.WEAVE_ENV,
   };
-  if (canResetDemoData(env)) return;
-  const detail = isTestEnv(env)
-    ? "WEAVE_ENV=test 已设置，但生产态判定仍为 true（这不应发生）"
-    : "当前是生产环境（NODE_ENV=production 或 AUTH_MODE=oidc），且未设置 WEAVE_ENV=test";
-  console.error("✖ 拒绝执行 demo:reset：" + detail + "。");
-  console.error(
-    "  生产库不允许被一键清空。测试环境请显式设置 WEAVE_ENV=test；本地请用 NODE_ENV=development + AUTH_MODE=dev。",
-  );
-  process.exitCode = 1;
-  throw new Error("DEMO_RESET_FORBIDDEN");
+  if (!canResetDemoData(env)) {
+    const detail = isTestEnv(env)
+      ? "WEAVE_ENV=test 已设置，但生产态判定仍为 true（这不应发生）"
+      : "当前是生产环境（NODE_ENV=production 或 AUTH_MODE=oidc），且未设置 WEAVE_ENV=test";
+    console.error("✖ 拒绝执行 demo:reset：" + detail + "。");
+    console.error(
+      "  生产库不允许被一键清空。测试环境请显式设置 WEAVE_ENV=test；本地请用 NODE_ENV=development + AUTH_MODE=dev。",
+    );
+    process.exitCode = 1;
+    throw new Error("DEMO_RESET_FORBIDDEN");
+  }
+
+  // 第二道门：测试环境与生产只差 WEAVE_ENV=test 一个变量，误拷 .env.test 就能清库。
+  // 生产态下必须再显式确认一次，并把目标库打在屏幕上，避免「我以为连的是测试库」。
+  if (needsDemoResetConfirmation({ ...env, DEMO_RESET_CONFIRM: process.env.DEMO_RESET_CONFIRM })) {
+    console.error("✖ 拒绝执行 demo:reset：当前是生产态（测试环境），需要显式确认。");
+    console.error(`  目标库：${redactDatabaseUrl(process.env.DATABASE_URL)}`);
+    console.error("  确认无误后重跑：DEMO_RESET_CONFIRM=1 pnpm demo:reset");
+    process.exitCode = 1;
+    throw new Error("DEMO_RESET_FORBIDDEN");
+  }
+}
+
+/** 只保留 host:port/db，密码不进日志。 */
+function redactDatabaseUrl(url: string | undefined): string {
+  if (!url) return "（未设置 DATABASE_URL）";
+  return url.replace(/:\/\/[^@]*@/, "://***@");
 }
 
 function run(command: string, args: string[], label: string): void {
@@ -190,7 +212,7 @@ async function reportCounts(databaseUrl: string): Promise<void> {
 async function main(): Promise<void> {
   assertAllowed();
   const env = loadEnv();
-  console.log(`目标数据库：${env.DATABASE_URL.replace(/:\/\/[^@]*@/, "://***@")}`);
+  console.log(`目标数据库：${redactDatabaseUrl(env.DATABASE_URL)}`);
 
   await purgeObjects();
   await dropSchemas(env.DATABASE_URL);

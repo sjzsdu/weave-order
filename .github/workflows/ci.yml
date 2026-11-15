@@ -64,6 +64,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # 根 `test:scripts` 不在 turbo 里，`pnpm test` 覆盖不到。
+      # WAN-137 教训：`infra/test-env/.env.test.example` 只在本地存在（被 .gitignore 的
+      # `.env.*` 规则吞掉），干净检出读文件即 ENOENT，而 CI 全绿。这里显式跑一次。
+      - name: Script tests (dev 入口 / 测试环境编排 / 示例文件存在性)
+        run: pnpm test:scripts
+
       - name: Build (contracts → db → api → web → mobile)
         run: pnpm build
 

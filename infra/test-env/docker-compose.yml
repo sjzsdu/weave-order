@@ -58,10 +58,16 @@ services:
 
   # 演示数据重置：手动执行，不在 up 时自动跑。
   #   docker compose -f infra/test-env/docker-compose.yml run --rm demo-reset
+  # 测试环境是生产态，脚本要求第二道确认（避免 .env.test 拷错环境就清库），
+  # 执行时必须显式带上（透传，不写进 .env.test）：
+  #   DEMO_RESET_CONFIRM=1 docker compose ... run --rm demo-reset
   demo-reset:
     <<: *app
     profiles: ["tools"]
     restart: "no"
+    environment:
+      <<: *app-env
+      DEMO_RESET_CONFIRM: ${DEMO_RESET_CONFIRM:-}
     command: ["pnpm", "demo:reset"]
 
   api:

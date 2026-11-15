@@ -49,3 +49,19 @@ export function isTestEnv(env: RuntimeModeInput = process.env): boolean {
 export function canResetDemoData(env: RuntimeModeInput = process.env): boolean {
   return !isProductionLike(env) || isTestEnv(env);
 }
+
+/**
+ * `demo:reset` 的第二道门。
+ *
+ * 测试环境是「生产态 + WEAVE_ENV=test」，与生产只差一个环境变量。一旦 `.env.test`
+ * 被拷到生产机器上，`WEAVE_ENV=test` 这一个值就同时放行 `/api/demo/*` 和「一键清库」。
+ * 所以生产态下的重置必须再显式确认一次（`DEMO_RESET_CONFIRM=1`），本地 dev 不需要。
+ *
+ * 判定与 `canResetDemoData` 分开：后者是 api 启动门控（测试环境要能启动），
+ * 这里只约束「清库」这个动作。
+ */
+export function needsDemoResetConfirmation(
+  env: RuntimeModeInput & { DEMO_RESET_CONFIRM?: string } = process.env,
+): boolean {
+  return isProductionLike(env) && isTestEnv(env) && env.DEMO_RESET_CONFIRM !== "1";
+}

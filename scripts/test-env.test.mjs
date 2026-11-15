@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const compose = readFileSync(path.join(root, "infra/test-env/docker-compose.yml"), "utf8");
 const envExample = readFileSync(path.join(root, "infra/test-env/.env.test.example"), "utf8");
+const readme = readFileSync(path.join(root, "infra/test-env/README.md"), "utf8");
 
 test("测试环境与生产同镜像：所有应用服务都引用同一个 WEAVE_IMAGE", () => {
   const imageLines = compose.split("\n").filter((line) => /^\s+image:/.test(line));
@@ -36,4 +37,15 @@ test("测试环境使用独立库 / Redis / 对象存储变量，不引用生产
 test("demo-reset 用同一个镜像，且不在 up 时自动执行", () => {
   assert.match(compose, /demo-reset:[\s\S]*?profiles:\s*\["tools"\]/);
   assert.match(compose, /command:\s*\["pnpm",\s*"demo:reset"\]/);
+});
+
+test("测试环境的重置要第二道确认：DEMO_RESET_CONFIRM 由命令行透传，不写进 .env.test", () => {
+  // 只有 WEAVE_ENV=test 一个开关时，.env.test 拷错机器就等于给了清库权限。
+  assert.match(compose, /demo-reset:[\s\S]*?DEMO_RESET_CONFIRM:\s*\$\{DEMO_RESET_CONFIRM:-\}/);
+  assert.doesNotMatch(envExample, /^DEMO_RESET_CONFIRM=/m);
+  assert.match(readme, /DEMO_RESET_CONFIRM=1/);
+});
+
+test("重置前必须停应用：DROP SCHEMA 会被长事务卡住", () => {
+  assert.match(readme, /先停掉 api \/ web \/ quote/);
 });

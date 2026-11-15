@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   demoScenesEnabled,
@@ -37,7 +39,10 @@ function approval(overrides: Partial<ApprovalItem>): ApprovalItem {
 describe("剧本目录", () => {
   it("从仓库任意深度都能找到 data/demo-scenes.json", () => {
     const root = findRepoRoot();
-    expect(root.endsWith("weave-order")).toBe(true);
+    // 不要断言目录名叫 weave-order：检出目录可以随意命名（评审机、CI 缓存目录都会变）。
+    // 断言「仓库根的特征文件」而不是路径字符串。
+    expect(existsSync(path.join(root, "pnpm-workspace.yaml"))).toBe(true);
+    expect(existsSync(path.join(root, "data/demo-scenes.json"))).toBe(true);
     expect(loadDemoScenes().length).toBeGreaterThanOrEqual(2);
   });
 
