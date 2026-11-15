@@ -79,6 +79,25 @@ jobs:
       - name: Test (含跨租户 RLS 常驻用例)
         run: pnpm test
 
+      # WAN-128：S4 合并时误删过 main.ts 的 app.listen()，进程会打印
+      # 「API → http://localhost:3000」然后以 0 退出。其它步骤都直接 import
+      # 模块，所以整条 CI 一直是绿的。这里用真实监听做一次最小冒烟。
+      - name: API 启动冒烟（app.listen 回归守卫）
+        run: |
+          node apps/api/dist/main.js &
+          API_PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health > /dev/null; then
+              echo "API 已监听（${i}s）"
+              kill "$API_PID" || true
+              exit 0
+            fi
+            sleep 1
+          done
+          kill "$API_PID" || true
+          echo "API 30s 内没有监听 3000：检查 apps/api/src/main.ts 是否还在 app.listen()"
+          exit 1
+
       # WAN-102：打印用例不允许静默 skip，执行数为 0 即构红。
       - name: 打印用例执行数守卫
         run: pnpm --filter @weave-order/api test:print:guard

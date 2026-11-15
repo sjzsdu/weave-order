@@ -211,6 +211,18 @@ describe("POST /api/media/presign 的入参边界", () => {
     expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 
+  it("返回上传后可直接 GET 的 publicUrl（移动端找样靠它把图交给 T-001）", async () => {
+    const { media } = service();
+    const kernel = fakeKernel(TENANT_A, [SAMPLE_A]);
+    const result = await media.presign(kernel, {
+      mimeType: "image/jpeg",
+      byteSize: 2048,
+    });
+    // 未配 MEDIA_BASE_URL 时是短期签名 URL；客户端只需原样回传，不需要拼地址。
+    expect(result.publicUrl).toContain(result.objectKey);
+    expect(result.publicUrl).toMatch(/^https?:\/\//);
+  });
+
   it("别的租户的 sampleId 签不出 key（404 语义）", async () => {
     const { media, storage } = service();
     const kernel = fakeKernel(TENANT_A, [SAMPLE_A]);

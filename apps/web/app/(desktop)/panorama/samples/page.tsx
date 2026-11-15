@@ -9,6 +9,7 @@ import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { SampleEditor } from "@/sample-editor";
 import { SampleDrawer } from "@/sample-drawer";
+import { SampleImageSearch } from "@/sample-image-search";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
 
@@ -35,6 +36,7 @@ function SamplesWall() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSample, setEditorSample] = useState<FabricSample | null>(null);
   const [openSampleId, setOpenSampleId] = useState<string | null>(null);
+  const [imageSearchOpen, setImageSearchOpen] = useState(false);
 
   // 搜索防抖：输入停下来再打后端，避免每个按键一次 ILIKE。
   useEffect(() => {
@@ -88,8 +90,19 @@ function SamplesWall() {
             一面图墙：点开看大图与规格；没有图的样品会明确标「待补图」。
           </p>
         </div>
-        <Button onClick={openCreate}>新建样品</Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            data-testid="open-image-search"
+            onClick={() => setImageSearchOpen((open) => !open)}
+          >
+            以图找样
+          </Button>
+          <Button onClick={openCreate}>新建样品</Button>
+        </div>
       </header>
+
+      {imageSearchOpen && <SampleImageSearch onClose={() => setImageSearchOpen(false)} />}
 
       <section className="grid gap-2 rounded-lg border border-line bg-surface px-3 py-3 md:grid-cols-[1fr_auto_auto]">
         <input

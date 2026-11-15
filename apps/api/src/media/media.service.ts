@@ -63,6 +63,15 @@ const ConfirmInputSchema = z
 
 export interface PresignResult {
   uploadUrl: string;
+  /**
+   * 上传完成后可直接 GET 的读地址（CDN 直链；未配 CDN 时为短期签名 URL）。
+   *
+   * 为什么随 presign 一起返回：移动端「拍照找样」先把查询图直传对象存储，
+   * 再把 URL 交给 T-001 的 `imageUrl` 变体。客户端只有 objectKey 是拼不出
+   * 「当前环境可读」的地址的（本地 MinIO 是签名 URL、生产是 CDN），
+   * 让客户端猜会让真实后端链路必然失败。
+   */
+  publicUrl: string;
   method: "PUT";
   headers: Record<string, string>;
   objectKey: string;
@@ -129,6 +138,7 @@ export class MediaService {
     });
     return {
       uploadUrl,
+      publicUrl: await this.imageUrl(objectKey),
       method: "PUT",
       headers: { "Content-Type": mimeType },
       objectKey,
