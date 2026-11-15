@@ -95,6 +95,26 @@ pub fn config_path(dir: &Path) -> PathBuf {
     dir.join("agent-config.json")
 }
 
+/// 云端配置校验：地址与 token 都可以留空（仅本地模式）；
+/// 一旦填了就必须能真正连上，避免「看着配好了其实连不上」。
+pub fn validate_cloud_config(server_url: &str, token: &str) -> Result<(String, String), String> {
+    let server_url = server_url.trim().to_string();
+    let token = token.trim().to_string();
+    if !server_url.is_empty()
+        && !server_url.starts_with("http://")
+        && !server_url.starts_with("https://")
+    {
+        return Err("云端地址必须以 http:// 或 https:// 开头".to_string());
+    }
+    if !token.is_empty() && token.len() < 20 {
+        return Err("token 不完整：请从打印中心重新复制，或留空以仅本地使用".to_string());
+    }
+    if !server_url.is_empty() && token.is_empty() {
+        return Err("已填云端地址但缺少 token；如需仅本地使用，请把地址也留空".to_string());
+    }
+    Ok((server_url, token))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,7 +130,9 @@ mod tests {
     #[test]
     fn ws_url_maps_http_schemes_and_trims_trailing_slash() {
         assert_eq!(
-            agent("https://api.example.com/", "token").ws_url().as_deref(),
+            agent("https://api.example.com/", "token")
+                .ws_url()
+                .as_deref(),
             Some("wss://api.example.com/api/print/agent/ws?token=token")
         );
         assert_eq!(
@@ -144,7 +166,10 @@ mod tests {
         let loaded = AgentConfig::load(&path);
         assert_eq!(loaded.agent_name, "一号机");
         assert_eq!(loaded.printers.len(), 1);
-        assert_eq!(loaded.printers[0].address.as_deref(), Some("192.168.1.20:9100"));
+        assert_eq!(
+            loaded.printers[0].address.as_deref(),
+            Some("192.168.1.20:9100")
+        );
         assert_eq!(loaded.printers[0].calibration.density, 8);
     }
 
@@ -154,5 +179,31 @@ mod tests {
         let loaded = AgentConfig::load(&config_path(dir.path()));
         assert!(loaded.server_url.is_empty());
         assert!(loaded.printers.is_empty());
+    }
+
+    #[test]
+    fn empty_cloud_config_means_local_mode() {
+        assert_eq!(
+            validate_cloud_config("", ""),
+            Ok(("".to_string(), "".to_string()))
+        );
+        assert_eq!(
+            validate_cloud_config("  ", "  "),
+            Ok(("".to_string(), "".to_string()))
+        );
+    }
+
+    #[test]
+    fn filled_cloud_config_must_be_complete() {
+        assert!(validate_cloud_config("https://api.weaveorder.cn", "").is_err());
+        assert!(validate_cloud_config("https://api.weaveorder.cn", "short").is_err());
+        assert!(validate_cloud_config("api.weaveorder.cn", "x".repeat(32).as_str()).is_err());
+        assert_eq!(
+            validate_cloud_config(" https://api.weaveorder.cn ", " token-token-token-token "),
+            Ok((
+                "https://api.weaveorder.cn".to_string(),
+                "token-token-token-token".to_string()
+            ))
+        );
     }
 }

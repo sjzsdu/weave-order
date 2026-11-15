@@ -59,12 +59,24 @@ pub fn run() {
             app.manage(state);
             agent::spawn(app.handle().clone());
             setup_tray(app.handle())?;
+
+            // 打印代理是常驻程序：关窗只收进托盘，任务来了照常出纸；退出走托盘菜单。
+            if let Some(window) = app.get_webview_window("main") {
+                let handle = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = handle.hide();
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
             commands::discovered_printers,
+            commands::probe_printer,
             commands::save_printers,
             commands::spool_status,
             commands::clear_local_data,
