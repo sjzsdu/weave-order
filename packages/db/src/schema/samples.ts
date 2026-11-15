@@ -71,6 +71,22 @@ export const sampleImages = pgTable(
     indexStatus: varchar("index_status", { length: 16 }).notNull().default("pending"),
     /** 最近一次索引失败的原因（截断到 255），成功时清空。 */
     indexError: varchar("index_error", { length: 255 }),
+    /**
+     * 服务端派生的持久化缩略图 key（webp）：`.../thumbs/<imageId>_320.webp`
+     * 与 `..._640.webp`。DB 只存 key，读 URL 时才拼 CDN/签名地址。
+     * 为什么落盘而不是 CDN 参数：本地 MinIO 没有图片处理，参数化签名会坏；
+     * 落盘后「图墙只拉缩略图」在本地与生产都是无条件成立的。
+     */
+    thumb320Key: varchar("thumb_320_key", { length: 512 }),
+    thumb640Key: varchar("thumb_640_key", { length: 512 }),
+    /** 缩略图派生状态：pending | ready | failed（迁移里带 check 约束）。 */
+    thumbStatus: varchar("thumb_status", { length: 16 }).notNull().default("pending"),
+    /** 最近一次缩略图派生失败的原因（截断到 255），成功时清空。 */
+    thumbError: varchar("thumb_error", { length: 255 }),
+    /** 重编码前的原始体积（只在第一次重编码时写入，便于报告真实节省）。 */
+    originalByteSize: integer("original_byte_size"),
+    /** 重编码完成时间；非空即「已治理」，保证批处理幂等（不会反复压同一张）。 */
+    reencodedAt: timestamp("reencoded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -85,5 +101,7 @@ export const sampleImages = pgTable(
     ),
     // 索引任务按状态扫「待办」：失败的行要能被后台重试捞到。
     index("sample_images_tenant_index_status_idx").on(table.tenantId, table.indexStatus),
+    // 缩略图补派生同样按状态扫「待办」（pending / 上次 failed）。
+    index("sample_images_tenant_thumb_status_idx").on(table.tenantId, table.thumbStatus),
   ],
 );

@@ -9,7 +9,7 @@ import type { SampleImageRow } from "../kernel/sample-images.service";
 import type { Env } from "../platform/env";
 import { loadEnv } from "../platform/env";
 import type { ObjectStorage } from "../platform/storage";
-import { mediaBaseUrl } from "../platform/storage";
+import { objectUrl } from "../platform/thumbnail";
 
 /**
  * 图片上传编排层：把「客户端要传图」拆成三次可信交互。
@@ -195,6 +195,10 @@ export class MediaService {
     // 失败不阻塞上传，但会把 `sample_images.index_status` 标成 failed，
     // 图墙据此显示「索引失败」，不会假装「搜不到」。
     await kernel.imageIndex.requestIndex(row.id);
+    // 缩略图是持久化展示资源，和向量索引不同：它是图墙可用的前提，
+    // 所以在 confirm 里同步派生（sharp 本地 CPU，约 100~300ms），返回即可看图。
+    // 失败不阻塞上传：状态落 `thumbStatus=failed`，读模型会回退原图并标注原因。
+    await kernel.thumbs.derive(row.id).catch(() => undefined);
     // 回读一次：状态可能是 pending（后台还没算完），前端据此显示「检索中」。
     const fresh = (await kernel.sampleImages.findById(row.id)) ?? row;
     return { image: await this.present(fresh) };
@@ -203,10 +207,24 @@ export class MediaService {
   /** 把 DB 行转成读模型；桶非公开时退回签名 URL。 */
   async present(row: SampleImageRow): Promise<SampleImage> {
     const url = await this.imageUrl(row.objectKey);
+    const thumbsReady =
+      row.thumbStatus === "ready" && row.thumb320Key !== null && row.thumb320Key !== undefined;
+    // 未就绪时回退原图：图墙不会 404，但客户端必须看 `thumbStatus` 标注，
+    // 不允许把「原图冒充缩略图」当成正常状态。
+    const thumbUrl = thumbsReady
+      ? ((await objectUrl(this.env, this.storage, row.thumb320Key!)) ?? url)
+      : url;
+    const detailUrl =
+      row.thumbStatus === "ready" && row.thumb640Key
+        ? await objectUrl(this.env, this.storage, row.thumb640Key)
+        : null;
     return {
       id: row.id,
       url,
-      thumbUrl: await this.thumbUrl(row.objectKey),
+      thumbUrl,
+      detailUrl,
+      thumbStatus: (row.thumbStatus as SampleImage["thumbStatus"]) ?? "pending",
+      thumbError: row.thumbError ?? null,
       variant: row.variant,
       isPrimary: row.isPrimary,
       width: row.width,
@@ -221,22 +239,14 @@ export class MediaService {
   }
 
   async imageUrl(objectKey: string): Promise<string> {
-    if (this.env.MEDIA_BASE_URL) {
-      return `${mediaBaseUrl(this.env)}/${objectKey}`;
-    }
     // 未配公开读域名 => 桶不公开，发一串短期签名 URL。
-    return this.storage.signGet(objectKey, this.env.MEDIA_PRESIGN_TTL_SECONDS);
-  }
-
-  /**
-   * 图墙缩略图：CDN 支持按查询参数出图时带 `?w=320`，避免 50 张卡片拉原图。
-   * 本地 MinIO 没有图片处理，退回原图签名 URL（前端仍按固定尺寸渲染 + lazy）。
-   */
-  async thumbUrl(objectKey: string, width = 320): Promise<string> {
-    if (this.env.MEDIA_BASE_URL) {
-      return `${mediaBaseUrl(this.env)}/${objectKey}?w=${width}&q=70`;
+    const url = await objectUrl(this.env, this.storage, objectKey);
+    if (!url) {
+      throw new KernelError("KERNEL_REJECTED", "对象存储未配置，无法生成图片地址", {
+        reason: "MEDIA_STORAGE_UNAVAILABLE",
+      });
     }
-    return this.storage.signGet(objectKey, this.env.MEDIA_PRESIGN_TTL_SECONDS);
+    return url;
   }
 
   buildObjectKey(

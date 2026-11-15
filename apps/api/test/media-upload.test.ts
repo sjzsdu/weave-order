@@ -37,9 +37,18 @@ class FakeStorage implements ObjectStorage {
     return Promise.resolve(this.objects.get(objectKey) ?? null);
   }
 
+  put(objectKey: string, bytes: Buffer): Promise<void> {
+    this.objects.set(objectKey, { contentType: "image/webp", contentLength: bytes.length });
+    return Promise.resolve();
+  }
+
   get(objectKey: string): Promise<ObjectBytes | null> {
     // 这个文件只测 presign/confirm 的安全边界，不读字节。
-    return Promise.resolve(this.objects.has(objectKey) ? { contentType: "image/jpeg", bytes: Buffer.from([0xff, 0xd8]) } : null);
+    return Promise.resolve(
+      this.objects.has(objectKey)
+        ? { contentType: "image/jpeg", bytes: Buffer.from([0xff, 0xd8]) }
+        : null,
+    );
   }
 
   delete(objectKey: string): Promise<void> {
@@ -64,6 +73,10 @@ function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
     sortOrder: number;
     indexStatus: string;
     indexError: string | null;
+    thumbStatus: string;
+    thumbError: string | null;
+    thumb320Key: string | null;
+    thumb640Key: string | null;
     createdAt: Date;
   }[] = [];
   const kernel = {
@@ -96,6 +109,10 @@ function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
           sortOrder: input.sortOrder ?? 0,
           indexStatus: "pending",
           indexError: null,
+          thumbStatus: "pending",
+          thumbError: null,
+          thumb320Key: null,
+          thumb640Key: null,
           createdAt: new Date(),
         };
         rows.push(row);
@@ -110,6 +127,10 @@ function fakeKernel(tenantId: string, ownedSampleIds: string[]): Kernel {
     // 这个文件不测索引本身：索引失败/成功的行为由 s4-image-search 集成测试覆盖。
     imageIndex: {
       requestIndex: () => Promise.resolve(),
+    },
+    // confirm 会尝试派生缩略图；这个文件不测派生本身（由 thumbnails 用例覆盖）。
+    thumbs: {
+      derive: () => Promise.resolve("missing"),
     },
   };
   (kernel as unknown as { attached: typeof attached }).attached = attached;

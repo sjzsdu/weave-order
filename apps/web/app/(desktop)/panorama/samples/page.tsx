@@ -14,7 +14,9 @@ type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
 
 /**
  * 样品图墙：桌面 4~5 列、移动 2 列。
- * 缩略图走 `thumbUrl`（CDN `?w=320`），无图卡片显示「待补图」并提供补图入口。
+ * 缩略图走服务端派生的 `thumbUrl`（`_320.webp`，本地 MinIO 同样成立）；
+ * 派生失败时接口回退原图并带 `thumbStatus=failed`，卡片必须显式标注。
+ * 无图卡片显示「待补图」并提供补图入口。
  */
 export default function SamplesPage() {
   const mounted = useMounted();
@@ -202,13 +204,24 @@ function SampleCard({
     <li className="overflow-hidden rounded-lg border border-line bg-surface">
       <button type="button" onClick={onOpen} className="block w-full text-left">
         {thumb ? (
-          <img
-            src={thumb}
-            alt={`${sample.name} 主图`}
-            loading="lazy"
-            decoding="async"
-            className="aspect-square w-full bg-paper object-cover"
-          />
+          <span className="relative block">
+            <img
+              src={thumb}
+              alt={`${sample.name} 主图`}
+              loading="lazy"
+              decoding="async"
+              className="aspect-square w-full bg-paper object-cover"
+            />
+            {primary?.thumbStatus === "failed" && (
+              // 派生失败时接口回退的是原图：必须显式标注，不能让用户以为这是缩略图。
+              <span
+                title={primary.thumbError ?? "缩略图派生失败，当前显示原图"}
+                className="absolute bottom-1 left-1 rounded bg-rose-700/85 px-1.5 py-0.5 text-[10px] text-white"
+              >
+                缩略图失败
+              </span>
+            )}
+          </span>
         ) : (
           <span className="flex aspect-square w-full flex-col items-center justify-center gap-1 bg-paper text-xs text-ink-400">
             <span>待补图</span>

@@ -40,7 +40,8 @@ function parseSamples(): SampleArg[] {
   const args = process.argv.slice(2);
   const out: SampleArg[] = [];
   for (const [index, arg] of args.entries()) {
-    const value = arg === "--sample" ? args[index + 1] : arg.startsWith("--sample=") ? arg.slice(9) : undefined;
+    const value =
+      arg === "--sample" ? args[index + 1] : arg.startsWith("--sample=") ? arg.slice(9) : undefined;
     if (!value || !value.includes("=")) continue;
     const [name, file] = value.split("=");
     if (name && file) out.push({ name, file });
@@ -71,6 +72,10 @@ class FileStorage implements ObjectStorage {
     const file = this.files.get(objectKey);
     if (!file) return null;
     return { contentType: "image/jpeg", bytes: await readFile(file) };
+  }
+
+  put(): Promise<void> {
+    return Promise.reject(new Error("验收脚本不支持写对象"));
   }
 
   delete(): Promise<void> {
@@ -135,10 +140,7 @@ async function main(): Promise<void> {
       created.push({ id: sample.id, name: sampleArg.name, key });
     }
 
-    const images = await db
-      .select()
-      .from(sampleImages)
-      .where(eq(sampleImages.tenantId, tenantId));
+    const images = await db.select().from(sampleImages).where(eq(sampleImages.tenantId, tenantId));
     const failed = images.filter((image) => image.indexStatus === "failed");
     if (failed.length > 0) {
       console.error(`✖ ${failed.length} 张图索引失败：${failed[0]?.indexError ?? ""}`);

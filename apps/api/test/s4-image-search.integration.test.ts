@@ -68,8 +68,13 @@ afterAll(async () => {
 class FakeStorage implements ObjectStorage {
   private readonly objects = new Map<string, { contentType: string; bytes: Buffer }>();
 
-  put(objectKey: string, bytes: Buffer, contentType = "image/jpeg"): void {
+  seed(objectKey: string, bytes: Buffer, contentType = "image/jpeg"): void {
     this.objects.set(objectKey, { contentType, bytes });
+  }
+
+  put(objectKey: string, bytes: Buffer, contentType: string): Promise<void> {
+    this.seed(objectKey, bytes, contentType);
+    return Promise.resolve();
   }
 
   presignPut(): Promise<string> {
@@ -219,7 +224,10 @@ interface Harness {
   tenantId: string;
   captioner: FakeCaptioner;
   /** 建一个样品并挂一张图，返回样品 id 与图片 objectKey。 */
-  createSampleWithImage(tag: string, name?: string): Promise<{ sampleId: string; objectKey: string }>;
+  createSampleWithImage(
+    tag: string,
+    name?: string,
+  ): Promise<{ sampleId: string; objectKey: string }>;
 }
 
 async function harness(options: { captionFallback?: boolean } = {}): Promise<Harness> {
@@ -238,7 +246,7 @@ async function harness(options: { captionFallback?: boolean } = {}): Promise<Har
 
   const createSampleWithImage = async (tag: string, name?: string) => {
     const objectKey = `tenant/${tenant.id}/samples/${randomUUID()}/${randomUUID()}.jpg`;
-    storage.put(objectKey, Buffer.from(`${tag}-${randomUUID()}`), "image/jpeg");
+    storage.seed(objectKey, Buffer.from(`${tag}-${randomUUID()}`), "image/jpeg");
     const sample = await kernel.samples.create(
       {
         code: `S4-${suffix()}`,
@@ -324,11 +332,14 @@ describe("S4 图像向量与以图找样", () => {
     const target = await h.createSampleWithImage("same");
     const close = await h.createSampleWithImage("close");
 
-    const query = { mimeType: "image/jpeg", base64: await imageBase64Of(h.storage, target.objectKey) };
+    const query = {
+      mimeType: "image/jpeg",
+      base64: await imageBase64Of(h.storage, target.objectKey),
+    };
 
     // 用「同款异角度」那张图查询：命中目标（0.95），不返回 0.70 的「有点像」。
     const angleKey = `tenant/${h.tenantId}/samples/${randomUUID()}/${randomUUID()}.jpg`;
-    h.storage.put(angleKey, Buffer.from("same-angle-2"), "image/jpeg");
+    h.storage.seed(angleKey, Buffer.from("same-angle-2"), "image/jpeg");
     await h.kernel.samples.update(
       target.sampleId,
       { imageKeys: [target.objectKey, angleKey] },
@@ -357,7 +368,7 @@ describe("S4 图像向量与以图找样", () => {
     const h = await harness();
     const { sampleId, objectKey } = await h.createSampleWithImage("same");
     const secondKey = `tenant/${h.tenantId}/samples/${randomUUID()}/${randomUUID()}.jpg`;
-    h.storage.put(secondKey, Buffer.from("same-angle-second"), "image/jpeg");
+    h.storage.seed(secondKey, Buffer.from("same-angle-second"), "image/jpeg");
     await h.kernel.samples.update(sampleId, { imageKeys: [objectKey, secondKey] }, HUMAN);
 
     const result = await h.kernel.search.searchByImage(
@@ -453,9 +464,7 @@ describe("S4 图像向量与以图找样", () => {
     const name = await index.ensureHnswIndex();
     expect(name).toBe("sample_image_embeddings_hnsw_controlled_image_v1_4");
 
-    const found = await db!.execute(
-      sql`select indexdef from pg_indexes where indexname = ${name}`,
-    );
+    const found = await db!.execute(sql`select indexdef from pg_indexes where indexname = ${name}`);
     const rows = found.rows as { indexdef: string }[];
     expect(rows[0]?.indexdef).toContain("hnsw");
     expect(rows[0]?.indexdef).toContain("controlled-image-v1");
@@ -502,9 +511,7 @@ describe("S4 图像向量与以图找样", () => {
       await tx.execute(sql`set local enable_seqscan = off`);
       const plan = await tx.execute(sql`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`);
       const planText = JSON.stringify(plan.rows);
-      expect(planText).toContain(
-        "sample_image_embeddings_hnsw_dashscope_qwen3_vl_embedding_1024",
-      );
+      expect(planText).toContain("sample_image_embeddings_hnsw_dashscope_qwen3_vl_embedding_1024");
       for (let run = 0; run < 5; run += 1) await tx.execute(query);
       const timings: number[] = [];
       for (let run = 0; run < 30; run += 1) {
@@ -571,7 +578,7 @@ describe("S4 图像向量与以图找样", () => {
     });
 
     const objectKey = `tenant/${tenant.id}/samples/${randomUUID()}/${randomUUID()}.jpg`;
-    storage.put(objectKey, await realJpeg(1600, 1200), "image/jpeg");
+    storage.seed(objectKey, await realJpeg(1600, 1200), "image/jpeg");
     await kernel.samples.create(
       { code: `S4-RSZ-${suffix()}`, name: "缩图样品", unit: "meter", imageKeys: [objectKey] },
       HUMAN,
@@ -607,7 +614,7 @@ describe("S4 图像向量与以图找样", () => {
     setImageIndexWorker(worker);
     try {
       const objectKey = `tenant/${tenant.id}/samples/${randomUUID()}/${randomUUID()}.jpg`;
-      storage.put(objectKey, Buffer.from("same-worker"), "image/jpeg");
+      storage.seed(objectKey, Buffer.from("same-worker"), "image/jpeg");
       const sample = await kernel.samples.create(
         { code: `S4-WRK-${suffix()}`, name: "异步索引样品", unit: "meter", imageKeys: [objectKey] },
         HUMAN,
@@ -708,7 +715,7 @@ describe("S4 图像向量与以图找样", () => {
     search.image = { ...(search.image ?? {}), captioner };
 
     const objectKey = `tenant/${tenant.id}/samples/${randomUUID()}/${randomUUID()}.jpg`;
-    storage.put(objectKey, Buffer.from("same-caption"), "image/jpeg");
+    storage.seed(objectKey, Buffer.from("same-caption"), "image/jpeg");
     await kernel.samples.create(
       {
         code: `S4-CAP-${suffix()}`,

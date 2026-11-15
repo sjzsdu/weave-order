@@ -41,8 +41,17 @@ async fn ws_loop(app: AppHandle) {
         let state = app.state::<AppState>().inner().clone();
         let config = state.snapshot().await;
         let Some(url) = config.ws_url() else {
-            state.emit_status("offline", "未配置云端地址或 token");
-            tokio::time::sleep(Duration::from_secs(15)).await;
+            // 没有云端配置不是故障：本地发现 / 检测 / 测试打印都照常可用。
+            let message = if config.server_url.trim().is_empty() && config.token.trim().is_empty() {
+                "本地模式：未连接云端，打印机照常可用"
+            } else {
+                "云端配置不完整，请在「云端」页补齐地址与 token"
+            };
+            state.emit_status("local", message);
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(15)) => {}
+                _ = state.config_notify.notified() => {}
+            }
             continue;
         };
 
@@ -119,10 +128,9 @@ where
                 .await;
         }
         Some("jobs") => {
-            let jobs: Vec<SpoolJob> = serde_json::from_value(
-                value.get("jobs").cloned().unwrap_or_else(|| json!([])),
-            )
-            .unwrap_or_default();
+            let jobs: Vec<SpoolJob> =
+                serde_json::from_value(value.get("jobs").cloned().unwrap_or_else(|| json!([])))
+                    .unwrap_or_default();
             let mut added = 0;
             for job in jobs {
                 if state.spool.enqueue(&job).unwrap_or(false) {
@@ -182,9 +190,7 @@ async fn worker_loop(app: AppHandle) {
                     }
                 },
                 None => {
-                    let _ = state
-                        .spool
-                        .mark_failed(&job.id, "没有匹配的打印机 profile");
+                    let _ = state.spool.mark_failed(&job.id, "没有匹配的打印机 profile");
                 }
             }
         }
