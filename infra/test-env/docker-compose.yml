@@ -1,0 +1,98 @@
+# 测试环境（*.wnbgj.com）参考编排。
+#
+# 与生产的关键约束：**同一个镜像**（`${WEAVE_IMAGE}`），只换 env / 库 / 密钥 /
+# Casdoor 实例与用户池。不要为测试环境单独构建镜像；`WEAVE_TAG` 必须与生产一致，
+# 测试通过后发布生产 = 同一 tag 换 env 换库。
+#
+# 三个必须显式注入的变量：
+#   NODE_ENV=production   AUTH_MODE=oidc   WEAVE_ENV=test
+# 前两个保证与生产同构（Secure Cookie / fail-closed 401 / 无匿名 OWNER）；
+# WEAVE_ENV=test 是唯一允许 `demo:reset` 的开关，生产不设它。
+#
+# 库/缓存/存储是独立实例：测试重置永远不会碰生产数据。
+name: weave-order-test
+
+x-app-env: &app-env
+  NODE_ENV: production
+  AUTH_MODE: oidc
+  WEAVE_ENV: test
+  DATABASE_URL: ${TEST_DATABASE_URL:?需要独立测试库连接串}
+  APP_DATABASE_URL: ${TEST_APP_DATABASE_URL:?需要独立的 weave_app 连接串}
+  REDIS_URL: ${TEST_REDIS_URL:?需要独立测试 Redis}
+  SESSION_STORE: redis
+  CASDOOR_ISSUER: ${TEST_CASDOOR_ISSUER:?测试 Casdoor 实例}
+  CASDOOR_AUDIENCE: ${TEST_CASDOOR_AUDIENCE:-weave-order}
+  CASDOOR_JWKS_URI: ${TEST_CASDOOR_JWKS_URI:-}
+  PUBLIC_APP_URL: ${TEST_PUBLIC_APP_URL:?例如 https://quote-test.wnbgj.com}
+  WEB_APP_URL: ${TEST_WEB_APP_URL:?例如 https://weave-test.wnbgj.com}
+  PLATFORM_API_URL: ${TEST_PLATFORM_API_URL:?控制面地址}
+  # 独立对象存储桶（COS / S3 兼容），不要与生产共用 bucket
+  S3_ENDPOINT: ${TEST_S3_ENDPOINT:?}
+  S3_REGION: ${TEST_S3_REGION:-ap-guangzhou}
+  S3_BUCKET: ${TEST_S3_BUCKET:?}
+  S3_ACCESS_KEY_ID: ${TEST_S3_ACCESS_KEY_ID:?}
+  S3_SECRET_ACCESS_KEY: ${TEST_S3_SECRET_ACCESS_KEY:?}
+  S3_FORCE_PATH_STYLE: "false"
+  # 通知走真实链路，但收件人都是内部同事
+  NOTIFY_PROVIDER: webhook
+  NOTIFY_WEBHOOK_URL: ${TEST_NOTIFY_WEBHOOK_URL:?}
+  NOTIFY_TOKEN: ${TEST_NOTIFY_TOKEN:-}
+  QUOTE_SHARE_SECRET: ${TEST_QUOTE_SHARE_SECRET:?openssl rand -hex 32}
+  PERSONAL_TOKEN_PEPPER: ${TEST_PERSONAL_TOKEN_PEPPER:?openssl rand -hex 32}
+  PRINT_AGENT_SECRET: ${TEST_PRINT_AGENT_SECRET:?openssl rand -hex 32}
+  ONBOARDING_SECRET: ${TEST_ONBOARDING_SECRET:?openssl rand -hex 32}
+  SEED_TENANT_ID: ${TEST_SEED_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+  SEED_ORG: ${TEST_SEED_ORG:-weave-test}
+
+x-app: &app
+  image: ${WEAVE_IMAGE:?与生产同 tag 的镜像，例如 sjzsdu/weave-order:v0.1.3}
+  restart: unless-stopped
+  environment: *app-env
+
+services:
+  # 迁移用同一个镜像。首次启动/升级前跑一次，幂等。
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["pnpm", "--filter", "@weave-order/db", "migrate"]
+
+  # 演示数据重置：手动执行，不在 up 时自动跑。
+  #   docker compose -f infra/test-env/docker-compose.yml run --rm demo-reset
+  # 测试环境是生产态，脚本要求第二道确认（避免 .env.test 拷错环境就清库），
+  # 执行时必须显式带上（透传，不写进 .env.test）：
+  #   DEMO_RESET_CONFIRM=1 docker compose ... run --rm demo-reset
+  demo-reset:
+    <<: *app
+    profiles: ["tools"]
+    restart: "no"
+    environment:
+      <<: *app-env
+      DEMO_RESET_CONFIRM: ${DEMO_RESET_CONFIRM:-}
+    command: ["pnpm", "demo:reset"]
+
+  api:
+    <<: *app
+    command: ["pnpm", "--filter", "@weave-order/api", "start"]
+    ports:
+      - "127.0.0.1:3300:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    <<: *app
+    command: ["pnpm", "--filter", "@weave-order/web", "start"]
+    ports:
+      - "127.0.0.1:3301:3001"
+    depends_on:
+      api:
+        condition: service_started
+
+  quote:
+    <<: *app
+    command: ["pnpm", "--filter", "@weave-order/quote", "start"]
+    ports:
+      - "127.0.0.1:3302:5174"
+    depends_on:
+      api:
+        condition: service_started

@@ -8,6 +8,7 @@ import {
   Customer360,
   CustomerListItem,
   CustomerTimelinePage,
+  DemoSceneResponse,
   PrintCenterSnapshot,
   PrintDevices,
   PrintJobList,
@@ -469,6 +470,40 @@ export function createMockApiClient(): ApiClient {
 
     approvals: () =>
       Promise.resolve(ApprovalQueue.parse({ items: current.item.pending ? [current.item] : [] })),
+
+    demoScenes: () =>
+      Promise.resolve([
+        DemoSceneResponse.parse({
+          scene: {
+            key: "approval-pending",
+            title: "有一张报价草稿等你拍板",
+            description: "演示模式：这张草稿来自本地 mock。",
+            href: "/today?scene=approval-pending",
+            anchor: { kind: "quote", customerCode: "KH-018" },
+            highlight: "approval",
+            entityId: null,
+            resolved: false,
+          },
+        }).scene,
+      ]),
+
+    demoScene: (key) => {
+      if (key !== "approval-pending") return Promise.reject(new Error("NOT_FOUND"));
+      return Promise.resolve(
+        DemoSceneResponse.parse({
+          scene: {
+            key,
+            title: "有一张报价草稿等你拍板",
+            description: "演示模式：这张草稿来自本地 mock。",
+            href: "/today?scene=approval-pending",
+            anchor: { kind: "quote", customerCode: "KH-018" },
+            highlight: "approval",
+            entityId: null,
+            resolved: false,
+          },
+        }).scene,
+      );
+    },
 
     approvalDetail: (id) => {
       if (id !== QUOTE_ID) {

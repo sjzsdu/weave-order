@@ -163,6 +163,7 @@ pnpm demo         # 迁移 + 内核演示 + 寄样跟进智能体（含检查点
 pnpm demo:followup # 只跑寄样跟进智能体演示
 pnpm --filter @weave-order/cli build   # 构建 weave CLI（bin: apps/cli/bin/weave.js）
 pnpm demo:quote    # 客户原话 → 候选样品 → 定价依据 → 报价 DRAFT（+ token 计量）
+pnpm demo:reset    # 清库 + 重迁移 + seed + 剧本锚点 + 刷会话（生产拒绝执行）
 pnpm seed         # 迁移 + 导入样例客户/样品（Excel/CSV，冷启动）
 pnpm format       # Prettier
 ```

@@ -40,6 +40,17 @@ export interface OriginalCompressReport {
   failures: { imageId: string; message: string }[];
 }
 
+export interface TenantPurgeReport {
+  tenantId: string;
+  dryRun: boolean;
+  prefix: string;
+  listed: number;
+  listedBytes: number;
+  deleted: number;
+  deletedBytes: number;
+  failures: { key: string; message: string }[];
+}
+
 export interface OrphanCleanupReport {
   tenantId: string;
   dryRun: boolean;
@@ -206,6 +217,49 @@ export class MediaMaintenanceService {
       } catch (error) {
         report.failures.push({
           imageId: row.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return report;
+  }
+
+  /**
+   * 清空本租户的对象前缀 `tenant/<tenantId>/`。
+   *
+   * 只给 `demo:reset` / 测试环境治理用：库被 DROP 之后所有对象都失去引用，
+   * 按引用反查的孤儿回收（有 24h 保护期）无法在重置当次清干净。
+   * 生产不会调用：调用入口先过 `canResetDemoData()` 门控。
+   *
+   * 先列举再删、先报条数字节再删，失败逐条记录；不做「删一半静默成功」。
+   */
+  async purgeTenantObjects(options: { dryRun?: boolean } = {}): Promise<TenantPurgeReport> {
+    const dryRun = options.dryRun ?? false;
+    if (!this.storage) throw new Error("对象存储未配置，无法清理租户对象");
+    if (!this.storage.list) {
+      throw new Error("当前对象存储实现不支持列举（ObjectStorage.list），无法清理租户对象");
+    }
+    const prefix = `tenant/${this.tenantId}/`;
+    const listed = await this.storage.list(prefix);
+    const report: TenantPurgeReport = {
+      tenantId: this.tenantId,
+      dryRun,
+      prefix,
+      listed: listed.length,
+      listedBytes: listed.reduce((sum, object) => sum + object.size, 0),
+      deleted: 0,
+      deletedBytes: 0,
+      failures: [],
+    };
+    if (dryRun) return report;
+    for (const object of listed) {
+      try {
+        await this.storage.delete(object.key);
+        report.deleted += 1;
+        report.deletedBytes += object.size;
+      } catch (error) {
+        report.failures.push({
+          key: object.key,
           message: error instanceof Error ? error.message : String(error),
         });
       }

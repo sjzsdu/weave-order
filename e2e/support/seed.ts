@@ -280,8 +280,26 @@ function ensurePersonaFixture(): PersonaFixture {
   return JSON.parse(line) as PersonaFixture;
 }
 
+/**
+ * 演示剧本锚点：`data/demo-scenes.json` 里的每份剧本都需要当前库里的真实单据。
+ * 与 `demo:reset` 调用同一个脚本，e2e 不另造一套演示数据。
+ */
+function ensureDemoScenes(): void {
+  const result = spawnSync("pnpm", ["--filter", "@weave-order/api", "demo:scenes", "--silent"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `剧本锚点失败（exit ${result.status ?? "signal"}）：${result.stderr || result.stdout}`,
+    );
+  }
+}
+
 export async function ensureSeed(): Promise<SeedManifest> {
   const persona = ensurePersonaFixture();
+  ensureDemoScenes();
   const owner = await establishSession(AUTH.owner);
   ownerCredential = owner.credential;
   const sales = await establishSession(AUTH.sales);

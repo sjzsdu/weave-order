@@ -14,6 +14,8 @@
     "demo": "tsx scripts/demo-kernel.ts",
     "demo:followup": "tsx scripts/demo-followup.ts",
     "demo:quote": "tsx scripts/demo-quote.ts",
+    "demo:scenes": "tsx scripts/demo-scenes.ts",
+    "demo:reset": "tsx scripts/demo-reset.ts",
     "seed": "tsx scripts/import-data.ts",
     "seed:persona": "tsx scripts/seed-persona-fixture.ts",
     "backfill:owner": "tsx scripts/backfill-owner.ts",

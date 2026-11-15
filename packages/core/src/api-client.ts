@@ -20,6 +20,8 @@ import {
   CustomerTimelinePage,
   DevPersonaListResponse,
   DevSessionInput,
+  DemoSceneListResponse,
+  DemoSceneResponse,
   FabricSample,
   InboundIntakeInput,
   InboundReplyList,
@@ -297,6 +299,15 @@ export function createApiClient(options: ApiClientOptions) {
       AuthContextResponse.parse(
         await post("/api/dev/session", DevSessionInput.parse({ personaKey })),
       ),
+
+    /**
+     * 演示剧本（`data/demo-scenes.json`）：生产环境路由不存在。
+     * 深链 `/today?scene=<key>` 只取单条，避免每页多拉一份清单。
+     */
+    demoScenes: async () => DemoSceneListResponse.parse(await request("/api/demo/scenes")).scenes,
+
+    demoScene: async (key: string) =>
+      DemoSceneResponse.parse(await request(`/api/demo/scenes/${encodeURIComponent(key)}`)).scene,
 
     /** 登出：吊销服务端会话（幂等），Cookie 由浏览器按响应清除。 */
     logout: async () => {

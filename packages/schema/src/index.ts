@@ -28,3 +28,4 @@ export * from "./print";
 export * from "./platform";
 export * from "./onboarding";
 export * from "./runtime-mode";
+export * from "./demo";

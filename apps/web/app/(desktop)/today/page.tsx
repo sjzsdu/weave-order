@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useApprovals,
   useDecideApproval,
+  useDemoScene,
   usePanorama,
   useShippingPending,
 } from "@weave-order/core";
@@ -47,6 +48,12 @@ function TodayPageContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [intents, setIntents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // 演示剧本深链：`/today?scene=approval-pending`。生产环境接口 404，这里只是静默失败。
+  const [sceneKey] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("scene");
+  });
+  const scene = useDemoScene(api, sceneKey);
   // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
   const [initialIntent] = useState(() => {
     if (typeof window === "undefined") return undefined;
@@ -74,6 +81,14 @@ function TodayPageContent() {
   const pending = approvals.data?.items ?? [];
   const stats = panorama.data?.stats;
   const loading = panorama.isLoading || approvals.isLoading;
+
+  useEffect(() => {
+    if (!scene.data?.entityId) return;
+    // 剧本解析到真实 id 后滚到高亮卡片；找不到就保持页面原位，不打断演示。
+    document
+      .querySelector('[data-scene-highlight="true"]')
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [scene.data?.entityId]);
 
   async function approve(id: string, kind: "quote" | "sample_shipment") {
     setError(null);
@@ -133,6 +148,20 @@ function TodayPageContent() {
             {error}
           </p>
         )}
+        {scene.data && (
+          <div
+            data-demo-scene={scene.data.key}
+            className="mt-3 rounded-md border border-indigo-600/30 bg-indigo-600/5 px-3 py-2 text-sm text-ink-700"
+          >
+            <span className="font-medium">{scene.data.title}</span>
+            <span className="ml-2 text-ink-400">{scene.data.description}</span>
+            {!scene.data.resolved && (
+              <span className="ml-2 text-vermilion-600">
+                剧本单据不在当前库，先运行 <code>pnpm demo:reset</code>。
+              </span>
+            )}
+          </div>
+        )}
       </section>
 
       {(shipping.data?.length ?? 0) > 0 && (
@@ -189,48 +218,56 @@ function TodayPageContent() {
               }
             />
           )}
-          {pending.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-lg border border-dashed border-line bg-surface px-4 py-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="info">{KIND_LABEL[item.kind] ?? item.kind}</Badge>
-                    <h3 className="truncate text-sm font-medium text-ink-900">{item.title}</h3>
+          {pending.map((item) => {
+            const highlighted =
+              scene.data?.highlight === "approval" && scene.data.entityId === item.id;
+            return (
+              <article
+                key={item.id}
+                data-scene-highlight={highlighted ? "true" : undefined}
+                className={cn(
+                  "rounded-lg border border-dashed border-line bg-surface px-4 py-3",
+                  highlighted && "border-indigo-600 bg-indigo-600/5 ring-2 ring-indigo-600/20",
+                )}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="info">{KIND_LABEL[item.kind] ?? item.kind}</Badge>
+                      <h3 className="truncate text-sm font-medium text-ink-900">{item.title}</h3>
+                    </div>
+                    <p className="mt-1 text-sm text-ink-400">{item.summary}</p>
                   </div>
-                  <p className="mt-1 text-sm text-ink-400">{item.summary}</p>
+                  <MoneyText
+                    money={
+                      item.amountCents !== null && item.currency
+                        ? { amount: item.amountCents, currency: item.currency }
+                        : null
+                    }
+                  />
                 </div>
-                <MoneyText
-                  money={
-                    item.amountCents !== null && item.currency
-                      ? { amount: item.amountCents, currency: item.currency }
-                      : null
-                  }
-                />
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <span className="text-xs text-ink-400">{relativeTime(item.createdAt)}</span>
-                <div className="flex gap-2">
-                  <Link
-                    href={`/approvals?id=${item.id}&kind=${item.kind}`}
-                    className="inline-flex min-h-9 items-center rounded-md border border-line px-3 text-sm text-ink-700 hover:border-ink-400"
-                  >
-                    看详情
-                  </Link>
-                  <Button
-                    variant="primary"
-                    className="min-h-9"
-                    disabled={decide.isPending}
-                    onClick={() => void approve(item.id, item.kind)}
-                  >
-                    批准
-                  </Button>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs text-ink-400">{relativeTime(item.createdAt)}</span>
+                  <div className="flex gap-2">
+                    <Link
+                      href={`/approvals?id=${item.id}&kind=${item.kind}`}
+                      className="inline-flex min-h-9 items-center rounded-md border border-line px-3 text-sm text-ink-700 hover:border-ink-400"
+                    >
+                      看详情
+                    </Link>
+                    <Button
+                      variant="primary"
+                      className="min-h-9"
+                      disabled={decide.isPending}
+                      onClick={() => void approve(item.id, item.kind)}
+                    >
+                      批准
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </section>
 
         <section className="grid content-start gap-3">

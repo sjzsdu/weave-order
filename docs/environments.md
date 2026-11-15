@@ -46,6 +46,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `AUTH_MODE` | `dev` | `oidc` | `oidc` |
 | `NODE_ENV` | `development` | `production` | `production` |
+| `WEAVE_ENV` | 不设 / `dev` | **`test`** | 不设 / `production` |
 | 身份源 | persona 目录（`memberships` 行） | Casdoor（内部用户） | Casdoor（真实客户） |
 | 免登录 / 切角色 | ✅ `⌘⇧I` persona 切换 | ❌ | ❌ |
 | 会话存储 | 进程内（`SESSION_STORE=memory`） | Redis | Redis |
@@ -78,7 +79,9 @@ flowchart LR
 
 ### ADR-5：重置脚本化 + 生产禁用；不引入 `tenant_kind`、不引入快照运维
 
-测试环境重置用脚本（`DROP SCHEMA public CASCADE` → migrate → seed），本地/CI/测试都能跑；脚本入口断言 `isProductionLike() && !isTestEnv()` 时拒绝执行，生产永不误触。因为测试环境是独立库，不存在「演示数据污染生产口径」问题，故 **`tenant_kind` / `billable_tenants` 视图暂不做**，等真正出现共享控制面跨环境统计的需求再上。
+测试环境重置用脚本（`DROP SCHEMA public, drizzle` → migrate → seed），本地/CI/测试都能跑；脚本入口用共享的 `canResetDemoData()` 断言（`isProductionLike() && !isTestEnv()`）时拒绝执行，生产永不误触。因为测试环境是独立库，不存在「演示数据污染生产口径」问题，故 **`tenant_kind` / `billable_tenants` 视图暂不做**，等真正出现共享控制面跨环境统计的需求再上。
+
+`WEAVE_ENV` 不是 `NODE_ENV` 的别名：测试环境仍 `NODE_ENV=production + AUTH_MODE=oidc`（同构），只是额外标记 `WEAVE_ENV=test`。只有这个值会放行重置与剧本接口；拼错/缺失一律按生产处理。`WEAVE_ENV=test + AUTH_MODE=dev` 会在 api 启动期拒绝。
 
 ## 5. 身份模型（代码落点）
 
@@ -94,11 +97,12 @@ flowchart LR
 
 ## 6. 数据与重置
 
-- `pnpm demo:reset` = 断连 → `DROP SCHEMA public CASCADE; CREATE SCHEMA` → migrate → seed；十秒级，可进 CI、可本地复现。
-- seed 用相对时间（`now - 3 days`），不存绝对时间戳，重置后「逾期 3 天」永远成立。
-- 剧本做深链 `/today?scene=approval-pending`，服务端解析到固定单据 id，前端高亮；一份 `data/demo-scenes.json` 同时给销售与 e2e。
-- 对象存储按 `tenant/<id>/` 前缀删，复用 `maintain:media` 已有逻辑。
+- `pnpm demo:reset` = 入口门控 → 清对象存储 → `DROP SCHEMA public, drizzle` → migrate（含 RLS）→ seed → `demo:scenes` → 清 Redis 会话；十秒级，可进 CI、可本地复现。连跑两次结果一致（uuid 会变，剧本按业务锚点解析）。
+- seed 用相对时间（SQL `now() - interval '3 days'`），代码里不出现绝对时间戳，重置后「3 天前的待审批」永远成立。
+- 剧本做深链 `/today?scene=approval-pending`：`data/demo-scenes.json` 是唯一事实源，服务端按「客户编号 + 单据类型」从审批队列解析当前真实 id，前端高亮；同一份文件同时给销售与 e2e。
+- 对象存储按 `tenant/<id>/` 前缀删，复用 `MediaMaintenanceService.purgeTenantObjects`（`maintain:media -- --purge-tenant --tenant=<id>` 也可单独执行）。
 - **重置连 Redis 会话一起刷**（`weave:session:*`），否则重置后浏览器旧 sid 指向不存在的 membership，`resolveMembership` 抛 `PERMISSION_DENIED` 表现为「重置完白屏」。
+- 剧本接口 `GET /api/demo/scenes[/:key]` 只在本地 dev 与 `WEAVE_ENV=test` 装配；生产镜像里路由不存在（404）。
 
 ## 7. 明确不做（KISS）
 
