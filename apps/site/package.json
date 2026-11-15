@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/sync-tokens.mjs && astro build && node scripts/build-search-index.mjs",
-    "dev": "astro dev",
+    "dev": "astro dev --host 127.0.0.1",
     "preview": "astro preview",
     "typecheck": "astro check",
     "test": "astro build && node scripts/build-search-index.mjs && vitest run"
