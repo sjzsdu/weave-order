@@ -383,6 +383,10 @@ export function createMockApiClient(): ApiClient {
 
     switchTenant: () => Promise.resolve(mockMe()),
 
+    /** 演示模式没有后端 dev 路由：返回空目录，身份条据此不渲染。 */
+    devPersonas: () => Promise.resolve([]),
+    devSwitchPersona: () => Promise.reject(new Error("演示模式不支持切换身份，请用本地 dev 后端")),
+
     logout: () => Promise.resolve(),
 
     listCustomers: () => Promise.resolve([customer]),

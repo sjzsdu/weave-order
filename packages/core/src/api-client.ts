@@ -18,6 +18,8 @@ import {
   CustomerListItem,
   CustomerTimelineKind,
   CustomerTimelinePage,
+  DevPersonaListResponse,
+  DevSessionInput,
   FabricSample,
   InboundIntakeInput,
   InboundReplyList,
@@ -67,7 +69,7 @@ import {
   UpdateSampleInput,
   VerifyScanInput,
 } from "@weave-order/schema";
-import type { ApprovalKind, ReprintReason, SampleStatus } from "@weave-order/schema";
+import type { ApprovalKind, PersonaKey, ReprintReason, SampleStatus } from "@weave-order/schema";
 
 /**
  * 前端唯一 API 入口。
@@ -281,6 +283,20 @@ export function createApiClient(options: ApiClientOptions) {
      */
     switchTenant: async (input: z.input<typeof SwitchTenantInput>) =>
       AuthContextResponse.parse(await post("/api/auth/switch", SwitchTenantInput.parse(input))),
+
+    /**
+     * 本地 dev 的 persona 目录 / 切换（WAN-136）。
+     *
+     * 这两个路由只在 AUTH_MODE=dev 存在；生产态调用会得到 404，身份条据此隐藏。
+     * 请求体只有 personaKey：角色、范围、租户都由服务端按目录和 membership 决定。
+     */
+    devPersonas: async () =>
+      DevPersonaListResponse.parse(await request("/api/dev/personas")).personas,
+
+    devSwitchPersona: async (personaKey: PersonaKey) =>
+      AuthContextResponse.parse(
+        await post("/api/dev/session", DevSessionInput.parse({ personaKey })),
+      ),
 
     /** 登出：吊销服务端会话（幂等），Cookie 由浏览器按响应清除。 */
     logout: async () => {

@@ -113,3 +113,16 @@ export async function screenshot(page: Page, testInfo: TestInfo, name: string): 
     fullPage: true,
   });
 }
+
+/** 只截首屏视口：看浮层（身份条 / 下拉菜单）时，整页截图会把细节压成一条。 */
+export async function screenshotViewport(
+  page: Page,
+  testInfo: TestInfo,
+  name: string,
+): Promise<void> {
+  await mkdir(SCREENSHOTS_DIR, { recursive: true });
+  await page.screenshot({
+    path: path.join(SCREENSHOTS_DIR, `${testInfo.project.name}-${name}.png`),
+    fullPage: false,
+  });
+}

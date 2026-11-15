@@ -46,19 +46,29 @@ pnpm db:backfill-owner -- --tenant=<uuid> [--apply]  # 只处理一个租户
 ## 4. seed / demo 数据
 
 `pnpm seed` 与 `pnpm demo` 通过 `apps/api/scripts/demo-identity.ts` 幂等确保演示租户里
-存在两个成员，并把演示数据挂到**演示业务员**：
+存在 7 个角色成员，并把演示数据挂到**演示业务员**：
 
-| 成员 subject（默认） | 角色  | dataScope | 用途                                   |
-| -------------------- | ----- | --------- | -------------------------------------- |
-| `demo`               | OWNER | `ALL`     | 看全量；`dev:demo:demo`                |
-| `demo-sales`         | SALES | `OWN`     | seed 数据负责人；`dev:demo-sales:demo` |
+| 成员 subject（默认） | 角色         | dataScope | 用途 / 本地 dev 令牌                   |
+| -------------------- | ------------ | --------- | -------------------------------------- |
+| `demo`               | OWNER        | `ALL`     | 全量；`dev:demo:demo`                  |
+| `demo-manager`       | MANAGER      | `TEAM`    | 与 `demo-sales` 同 team，看本组        |
+| `demo-sales`         | SALES        | `OWN`     | seed 数据负责人；`dev:demo-sales:demo` |
+| `demo-merchandiser`  | MERCHANDISER | `TEAM`    | 跟单执行岗                             |
+| `demo-sample-admin`  | SAMPLE_ADMIN | `TEAM`    | 样品维护（含成本底线）                 |
+| `demo-finance`       | FINANCE      | `ALL`     | 应收工作面，全景不显示订单入口         |
+| `demo-viewer`        | VIEWER       | `ALL`     | 只读席位                               |
+
+这份清单的唯一事实源是 `packages/schema/src/personas.ts`：seed、dev 切换端点
+（`/api/dev/personas`、`/api/dev/session`）、前端身份条（⌘⇧I）与 e2e 夹具都读它，
+不另抄角色表。经理与业务员必须同一个 `teamId`，否则 `TEAM` 范围退化为「本人」，
+切到经理会看到空列表。
 
 为什么挂 SALES 而不是 OWNER：验收要求「`dataScope=OWN` 的 SALES 能看到 seed 客户」，
 只有负责人就是该 SALES 成员才成立；OWNER 用 `ALL` 照样看全量。
 
-可用环境变量覆盖：`SEED_TENANT_ID`（默认内置演示租户）、`SEED_ORG`（默认 `demo`）、
-`SEED_OWNER_SUBJECT`、`SEED_SALES_SUBJECT`。生产演示请让 Casdoor 用户的 `sub` 与
-对应 subject 一致，或建号后用 `memberships` 同步。
+可用环境变量覆盖：`SEED_TENANT_ID`（默认内置演示租户）、`SEED_ORG`（默认 `demo`）。
+persona 的 subject / 角色 / 范围由目录固定；dev 身份不走 Casdoor，生产/OIDC 镜像里
+`/api/dev/*` 路由不存在（404，不是 403）。
 
 > 在已有数据的库上重跑 seed 仍受 `DUPLICATE_IN_DB` 保护；要用新归属覆盖旧行请
 > `SEED_RESET=1 pnpm seed`（同事务重置 seed 行）。

@@ -179,6 +179,11 @@ describe("数据范围 OWN / TEAM / ALL", () => {
     const listB = await scoped.customers.list(100, asB);
     expect(listB.map((row) => row.id).sort()).toEqual([customerA.id, customerB.id].sort());
 
+    // 「我的」在 TEAM 范围下必须是本组：UI 默认筛选就是 mine，
+    // 若收窄成 owner=self，经理切过来会看到空列表（WAN-136）。
+    const mineAsManager = await scoped.customers.list({ owner: "mine", limit: 100 }, asManager);
+    expect(mineAsManager.map((row) => row.id).sort()).toEqual([customerA.id, customerB.id].sort());
+
     const listAll = await scoped.customers.list(100, asC);
     expect(listAll.map((row) => row.id).sort()).toEqual(
       [customerA.id, customerB.id, customerC.id].sort(),

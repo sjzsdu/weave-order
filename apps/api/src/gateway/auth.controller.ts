@@ -35,8 +35,8 @@ function fail(status: number, code: string, message: string): HttpException {
   return new HttpException(body, status);
 }
 
-/** 统一把鉴权 / 内核错误映射成契约里的 ApiErrorResponse。 */
-function toHttpError(error: unknown): HttpException {
+/** 统一把鉴权 / 内核错误映射成契约里的 ApiErrorResponse。dev 控制器复用同一映射。 */
+export function toHttpError(error: unknown): HttpException {
   if (error instanceof HttpException) return error;
   if (error instanceof AuthError) {
     // 凭据类错误统一折成 UNAUTHENTICATED（CLI 侧另有 AuthErrorFilter 保留细码），
