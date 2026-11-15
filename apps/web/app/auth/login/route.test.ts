@@ -41,6 +41,36 @@ describe("租户端登录跳转", () => {
     expect(() => GET(new NextRequest("http://localhost:3001/auth/login"))).toThrow(/WEB_APP_URL/);
   });
 
+  it("staging（NODE_ENV=development + AUTH_MODE=oidc）缺域名同样报错，与生产一致", () => {
+    vi.stubEnv("WEB_APP_URL", undefined);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_MODE", "oidc");
+
+    expect(() => GET(new NextRequest("http://localhost:3001/auth/login"))).toThrow(/WEB_APP_URL/);
+  });
+
+  it("staging（NODE_ENV=development + AUTH_MODE=oidc）下发 Secure cookie，与生产一致", () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_MODE", "oidc");
+
+    const response = GET(new NextRequest("http://localhost:3001/auth/login?next=/today"));
+
+    for (const name of ["weave_oidc_state", "weave_oidc_verifier", "weave_oidc_next"]) {
+      expect(response.cookies.get(name)?.secure, name).toBe(true);
+    }
+  });
+
+  it("本地 dev 不下发 Secure cookie，http://localhost 联调可写", () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("AUTH_MODE", "dev");
+
+    const response = GET(new NextRequest("http://localhost:3001/auth/login?next=/today"));
+
+    expect(response.cookies.get("weave_oidc_state")?.secure).toBe(false);
+  });
+
   it("回跳参数只接受站内路径：外站地址与官网静态页一律回工作台首页", () => {
     vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
 

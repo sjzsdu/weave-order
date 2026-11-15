@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { publicOrigin, safeNext } from "@/public-origin";
+import { isProductionLike } from "@/runtime-mode";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ export function GET(request: NextRequest) {
   authorize.searchParams.set("code_challenge_method", "S256");
 
   const response = NextResponse.redirect(authorize);
-  const secure = process.env.NODE_ENV === "production";
+  const secure = isProductionLike();
   response.cookies.set("weave_oidc_state", state, {
     httpOnly: true,
     sameSite: "lax",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { publicOrigin, safeNext } from "@/public-origin";
+import { isProductionLike } from "@/runtime-mode";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
   if (!token) return fail("身份服务未返回令牌");
 
   const response = NextResponse.redirect(new URL(next, origin));
-  const secure = process.env.NODE_ENV === "production";
+  const secure = isProductionLike();
   response.cookies.set("weave_token", token, {
     // 只走同源 BFF 转发；浏览器脚本永远读不到原始 OIDC token。
     httpOnly: true,

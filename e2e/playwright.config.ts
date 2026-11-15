@@ -82,6 +82,9 @@ export default defineConfig({
         API_PROXY_TARGET: API_URL,
         WEB_APP_URL: WEB_URL,
         DEV_AUTH_TOKEN: AUTH.owner,
+        // web 与 api 共用 isProductionLike()：显式给 dev，避免 CI 的 NODE_ENV=test
+        // 被误当成生产态（那样连 dev 兜底和 /auth/dev 都会被关掉）。
+        AUTH_MODE: "dev",
       },
     },
     {

@@ -1,9 +1,15 @@
 "use client";
 
-import { QueryClientProvider, createApiClient, createMockApiClient, createQueryClient } from "@weave-order/core";
+import {
+  QueryClientProvider,
+  createApiClient,
+  createMockApiClient,
+  createQueryClient,
+} from "@weave-order/core";
 import type { ApiClient } from "@weave-order/core";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { isProductionLikeInBrowser } from "@/runtime-mode";
 
 const DEMO_STORAGE_KEY = "weave.demo";
 const ApiContext = createContext<ApiClient | null>(null);
@@ -15,11 +21,10 @@ export function useApi(): ApiClient {
   return client;
 }
 
-const DEMO_ALLOWED = process.env.NODE_ENV !== "production";
-
 export function AppProviders({ children }: { children: ReactNode }) {
   const [demo, setDemo] = useState(() => {
-    if (!DEMO_ALLOWED) return false;
+    // 生产态（含 staging 的 NODE_ENV=development + AUTH_MODE=oidc）不提供 mock 数据。
+    if (isProductionLikeInBrowser()) return false;
     if (typeof window === "undefined") return process.env.NEXT_PUBLIC_DEMO_MODE === "1";
     const params = new URLSearchParams(window.location.search);
     if (params.get("demo") === "1") return true;
@@ -33,7 +38,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setMounted(true);
-    if (!DEMO_ALLOWED) return;
+    if (isProductionLikeInBrowser()) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("demo") === "1") {
       window.localStorage.setItem(DEMO_STORAGE_KEY, "1");
@@ -46,6 +51,19 @@ export function AppProviders({ children }: { children: ReactNode }) {
     } else if (window.localStorage.getItem(DEMO_STORAGE_KEY) === "1") {
       setDemo(true);
     }
+  }, []);
+
+  /*
+   * `/config.js` 是运行时下发的，可能比首帧晚到。判定一变就重新收敛：
+   * 一旦确认是生产态，立即退出演示模式，不再用 mock client 发请求。
+   */
+  useEffect(() => {
+    const sync = () => {
+      if (isProductionLikeInBrowser()) setDemo(false);
+    };
+    sync();
+    window.addEventListener("weave:config", sync);
+    return () => window.removeEventListener("weave:config", sync);
   }, []);
 
   // 所有 hooks 必须在下面的 mounted 早退之前调用，否则首帧与后续帧的 hook 数量

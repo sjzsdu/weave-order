@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { JoinClient } from "./join-client";
+import { isProductionLike } from "@/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function JoinPage({
   const { code } = await searchParams;
   const store = await cookies();
   const token = store.get("weave_token")?.value;
-  if (!token && process.env.NODE_ENV === "production") {
+  if (!token && isProductionLike()) {
     const next = `/join?code=${encodeURIComponent(code ?? "")}`;
     redirect(`/auth/login?next=${encodeURIComponent(next)}`);
   }

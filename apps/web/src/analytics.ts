@@ -149,7 +149,11 @@ interface PostHogLike {
 declare global {
   interface Window {
     /** 部署期配置，由 /config.js（运行时路由）挂上来。 */
-    __WEAVE_CONFIG__?: { analytics?: RawAnalyticsConfig };
+    __WEAVE_CONFIG__?: {
+      analytics?: RawAnalyticsConfig;
+      /** 服务端 isProductionLike() 的现算结果，见 src/runtime-mode.ts。 */
+      productionLike?: boolean;
+    };
     plausible?: (...args: unknown[]) => void;
     posthog?: PostHogLike;
   }
