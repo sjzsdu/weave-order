@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { isProductionLike as sharedIsProductionLike } from "@weave-order/schema";
 import { isProductionLike } from "../src/platform/runtime-mode";
 
-describe("生产态判定（所有 fail-fast 门控的唯一入口）", () => {
-  it("NODE_ENV=production 或 AUTH_MODE=oidc 任一命中即为生产态", () => {
-    expect(isProductionLike({ NODE_ENV: "production", AUTH_MODE: "dev" })).toBe(true);
-    expect(isProductionLike({ NODE_ENV: "development", AUTH_MODE: "oidc" })).toBe(true);
-    expect(isProductionLike({ NODE_ENV: "production", AUTH_MODE: "oidc" })).toBe(true);
-  });
-
-  it("本地 dev / test 不算生产态（允许占位值）", () => {
-    expect(isProductionLike({ NODE_ENV: "development", AUTH_MODE: "dev" })).toBe(false);
-    expect(isProductionLike({ NODE_ENV: "test", AUTH_MODE: "dev" })).toBe(false);
-    expect(isProductionLike({})).toBe(false);
+/**
+ * 行为表在 `packages/schema/test/runtime-mode.test.ts`（唯一事实源的测试）。
+ * 这里只守一件事：api 的 `isProductionLike` 必须是 schema 那一个函数本身，
+ * 而不是某个模块里重新写的一份「看起来一样」的 OR 条件。
+ */
+describe("api 生产态判定直接复用 @weave-order/schema", () => {
+  it("api 导出与共享实现是同一个函数引用", () => {
+    expect(isProductionLike).toBe(sharedIsProductionLike);
   });
 });
