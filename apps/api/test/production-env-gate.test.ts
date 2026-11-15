@@ -255,10 +255,23 @@ describe("生产 env 启动门禁（fail-fast）", () => {
     ).toThrow(/PUBLIC_APP_URL/);
   });
 
+  it("生产 PUBLIC_APP_URL=https://localhost:5174 → 回环判定独立生效，拒绝启动", () => {
+    // 只靠 https 校验兜不住：写成 https://localhost 时协议合法、主机仍是本机。
+    expect(() =>
+      bootstrap({ ...productionBase, PUBLIC_APP_URL: "https://localhost:5174" }),
+    ).toThrow(/PUBLIC_APP_URL/);
+  });
+
   it("生产未设置 WEB_APP_URL（回落 localhost:3001）→ 拒绝启动", () => {
     const { WEB_APP_URL: _omit, ...withoutWebUrl } = productionBase;
     expect(() => bootstrap(withoutWebUrl)).toThrow(/WEB_APP_URL/);
     expect(() => bootstrap({ ...withoutWebUrl, WEB_APP_URL: "http://localhost:3001" })).toThrow(
+      /WEB_APP_URL/,
+    );
+  });
+
+  it("生产 WEB_APP_URL 不是 https → 拒绝启动", () => {
+    expect(() => bootstrap({ ...productionBase, WEB_APP_URL: "http://app.example.com" })).toThrow(
       /WEB_APP_URL/,
     );
   });

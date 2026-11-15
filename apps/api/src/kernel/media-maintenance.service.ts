@@ -70,6 +70,9 @@ export interface QueryUploadCleanupReport {
   candidateBytes: number;
   deleted: number;
   deletedBytes: number;
+  /** 仍被 `sample_images` 引用（`imageKeys` 允许 `uploads/`）而保留的数量。 */
+  skippedReferenced: number;
+  skippedReferencedBytes: number;
   /** 未超过保留期：可能是正在进行的找样，保留。 */
   skippedWithinRetention: number;
   /** 存储没给 lastModified：无法判断年龄，保守保留。 */
@@ -219,25 +222,15 @@ export class MediaMaintenanceService {
     if (!this.storage.list) {
       throw new Error("当前对象存储实现不支持列举（ObjectStorage.list），无法回收孤儿对象");
     }
-    // 只扫样品图片前缀：`uploads/` 是未确认的临时直传、`receipts/` 属于回款凭证，
-    // 两者的生命周期不归这里管，误删会造成凭证丢失。
+    // 先证明「引用集合是完整的」，再谈删除。RLS 让业务角色看不到未设置
+    // `app.tenant_id` 的行，引用集合会恒为空，一执行就是删光整租户原图。
+    await this.assertCleanupScope();
+    // 只扫样品图片前缀：`uploads/` 由 cleanupQueryUploads 处理（带引用白名单），
+    // `receipts/` 属于回款凭证、明确不回收，误删会造成凭证丢失。
     const prefix = `tenant/${this.tenantId}/samples/`;
     const listed = await this.storage.list(prefix);
 
-    const referencedRows = await this.db
-      .select({
-        objectKey: sampleImages.objectKey,
-        thumb320Key: sampleImages.thumb320Key,
-        thumb640Key: sampleImages.thumb640Key,
-      })
-      .from(sampleImages)
-      .where(eq(sampleImages.tenantId, this.tenantId));
-    const referenced = new Set<string>();
-    for (const row of referencedRows) {
-      referenced.add(row.objectKey);
-      if (row.thumb320Key) referenced.add(row.thumb320Key);
-      if (row.thumb640Key) referenced.add(row.thumb640Key);
-    }
+    const referenced = await this.referencedImageKeys();
 
     const cutoff = Date.now() - graceHours * 3600_000;
     const report: OrphanCleanupReport = {
@@ -304,8 +297,14 @@ export class MediaMaintenanceService {
     if (!this.storage.list) {
       throw new Error("当前对象存储实现不支持列举（ObjectStorage.list），无法回收查询图");
     }
+    // 与孤儿回收同一道自检：引用集合不完整时，下一行「跳过被引用对象」就是空的。
+    await this.assertCleanupScope();
     const prefix = `tenant/${this.tenantId}/uploads/`;
     const listed = await this.storage.list(prefix);
+    // `uploads/` 不是「从不入库」：`POST /api/samples` 的 `imageKeys` 明确接受
+    // `tenant/<tid>/uploads/<uuid>.<ext>`（先直传、再随建样品提交）。按年龄直接删
+    // 会让第 8 天的图墙裂图，所以必须用本租户 `sample_images` 的引用做白名单。
+    const referenced = await this.referencedImageKeys();
     const cutoff = Date.now() - retentionHours * 3600_000;
     const report: QueryUploadCleanupReport = {
       tenantId: this.tenantId,
@@ -317,12 +316,19 @@ export class MediaMaintenanceService {
       candidateBytes: 0,
       deleted: 0,
       deletedBytes: 0,
+      skippedReferenced: 0,
+      skippedReferencedBytes: 0,
       skippedWithinRetention: 0,
       skippedUnknownAge: 0,
       failures: [],
     };
 
     for (const object of listed) {
+      if (referenced.has(object.key)) {
+        report.skippedReferenced += 1;
+        report.skippedReferencedBytes += object.size;
+        continue;
+      }
       if (!object.lastModified) {
         report.skippedUnknownAge += 1;
         continue;
@@ -346,6 +352,57 @@ export class MediaMaintenanceService {
       }
     }
     return report;
+  }
+
+  /**
+   * 破坏性清理前的租户上下文自检。
+   *
+   * `sample_images` 与 `tenants` 都是 FORCE RLS：业务角色（`weave_app`，NOBYPASSRLS）
+   * 没有设置 `app.tenant_id` 时查不到任何行。此时「未被引用」会把**所有**对象都判成孤儿。
+   * 所以两条路只允许一条：
+   * - 当前角色 BYPASSRLS / SUPERUSER（能看全量引用，是高权限运维连接）；
+   * - 或会话已把 `app.tenant_id` 设成本租户（`withTenantSession` / `set_config`）。
+   * 都不满足就拒绝执行，绝不带着空引用集合删数据。
+   */
+  private async assertCleanupScope(): Promise<void> {
+    const result = (await this.db.execute(sql`
+      SELECT current_setting('app.tenant_id', true) AS tenant_id,
+             (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypasses_rls
+    `)) as unknown as {
+      rows?: { tenant_id: string | null; bypasses_rls: boolean | null }[];
+    };
+    const row = result.rows?.[0];
+    if (!row) {
+      throw new Error("无法确认数据库租户上下文（current_setting 查询无结果），拒绝执行清理");
+    }
+    if (row.bypasses_rls === true) return;
+    if (row.tenant_id !== this.tenantId) {
+      throw new Error(
+        "拒绝执行清理：当前连接没有设置 app.tenant_id，而数据库角色受 RLS 约束，" +
+          "引用集合会为空并导致误删整租户对象。请用 CLI（按租户自动开启 withTenantSession），" +
+          `或手工执行 SELECT set_config('app.tenant_id', '${this.tenantId}', false) 后再跑；` +
+          "不要用业务角色直连后直接调用清理。",
+      );
+    }
+  }
+
+  /** 本租户 `sample_images` 引用的所有对象 key（原图 + 两档缩略图）。 */
+  private async referencedImageKeys(): Promise<Set<string>> {
+    const rows = await this.db
+      .select({
+        objectKey: sampleImages.objectKey,
+        thumb320Key: sampleImages.thumb320Key,
+        thumb640Key: sampleImages.thumb640Key,
+      })
+      .from(sampleImages)
+      .where(eq(sampleImages.tenantId, this.tenantId));
+    const referenced = new Set<string>();
+    for (const row of rows) {
+      referenced.add(row.objectKey);
+      if (row.thumb320Key) referenced.add(row.thumb320Key);
+      if (row.thumb640Key) referenced.add(row.thumb640Key);
+    }
+    return referenced;
   }
 
   /** 统计信息（CLI 报告用）。 */

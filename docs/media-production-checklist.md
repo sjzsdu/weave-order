@@ -57,7 +57,7 @@ command -v psql aws curl node openssl   # 任一缺失先补
 5. **云平台：CORS**：来源填正式 Web/移动端 H5 域名；方法 `PUT, GET, HEAD`；头 `Content-Type`；`Max-Age=600`。
    按 3.3 节的 `curl` 或浏览器 Network 面板验一次 `OPTIONS` 预检，必须返回 204/200 且带 `Access-Control-Allow-Origin`。
 6. **部署：注入 env**：按第 4 节整段复制；`MEDIA_BASE_URL` 私有桶模式**整行不写**（不是写空值）。
-   本地先跑 `pnpm verify:prod-env`（零网络、26 个用例），失败就不要发布。
+   本地先跑 `pnpm verify:prod-env`（零网络、28 个用例），失败就不要发布。
 7. **发布应用**：打 `v*` tag → `images` workflow → deploy 侧把 `WEAVE_TAG` 锁到该 tag（不要 `latest`）。
    通过标准：`GET https://<api-domain>/api/health` 200；迁移日志无 pgvector 提示；容器无重启循环；
    **用真实租户生成一条报价分享链接，手机浏览器打开**（不是 curl API），必须落到正式域名而不是 `localhost`。
@@ -455,6 +455,13 @@ pnpm --filter @weave-order/api maintain:media -- --dry-run   # 只读：看收�
 pnpm --filter @weave-order/api maintain:media                # 补派生 + 压原图 + 清孤儿 + 清查询图（各有保护期）
 ```
 
+> **连接要求（阻断级）**：`sample_images` 是 FORCE RLS。CLI 会为每个租户开启
+> `withTenantSession`（`SET app.tenant_id`）再清理，所以**必须按租户执行**：
+> 用业务角色 `weave_app` 时无法列举租户（RLS 返回空），命令会显式失败，
+> 此时加 `-- --tenant=<uuid>` 逐个执行；不要为了「省事」换成高权限连接后直接用旧版脚本。
+> 清理方法内还有一道自检：角色受 RLS 约束且没有租户上下文时直接拒绝，不会带着空引用集合删除。
+> 查询图回收会把仍被 `sample_images` 引用的 `uploads/` 对象计入白名单（先直传、再随建样品提交是合法契约）。
+
 耗时公式（命令是串行的，量级估算，现场以实际日志为准）：
 
 | 任务              | 公式（N=样品数，M=图片数）                         | 1 万条/张的估算 | 成本参考                          |
@@ -562,7 +569,7 @@ pnpm verify:prod-env
 ```
 
 它复刻启动期会执行的部分：`loadEnv → 图像 provider（main.ts eager） → 文本 provider（生产上首个请求才建，这里提前断言）`，
-并直接读取 §4.1 的 dotenv 块喂给 `loadEnv`，所以文档与门禁不会各写一份。覆盖 **26 个用例**
+并直接读取 §4.1 的 dotenv 块喂给 `loadEnv`，所以文档与门禁不会各写一份。覆盖 **28 个用例**
 （下表按类归并；CI 的 `pnpm test` 也会跑，不需要改 workflow）：
 
 | 组合                                                  | 期望                                 |
@@ -598,21 +605,22 @@ pnpm verify:prod-env
 原评审发现的问题在这里逐条落状态，不留「未处理也未记录」。状态只有三种：
 **已修**（代码或门禁已兜住）、**待产品决定**（需要业务口径）、**接受风险**（明确不修，写清后果与补偿手段）。
 
-| #   | 缺口                                                                | 状态         | 处置与证据                                                                                                                     |
-| --- | ------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | 未知 `EMBEDDING_PROVIDER` 生产要等首个请求才抛                      | 接受风险     | 门禁在发布前提前断言（§9 表）；不改 `main.ts` 装配顺序，避免动业务启动路径。                                                   |
-| 2   | `NODE_ENV=production` + `AUTH_MODE=dev` 的拦截在 `main.ts` 不在 env | 已修         | `main.ts` 已有拦截；门禁全部生产用例以 `AUTH_MODE=oidc` 组合运行，§4.1 也写死 `AUTH_MODE=oidc`。                               |
-| 3   | `MEDIA_BASE_URL` 不强制 https                                       | 待产品决定   | 服务端按 URL 取图已拒绝 http（localhost 除外）；是否在生产禁止 http 的 CDN 需确认是否存在内网 http 场景。                      |
-| 4   | `PUBLIC_APP_URL` / `WEB_APP_URL` 漏配静默回落 localhost             | 已修         | `loadEnv` 生产态拒绝 localhost/非 https；三段负向用例 + 一条「分享链接 host 不是 localhost」正向用例。                         |
-| 5   | `S3_FORCE_PATH_STYLE` 漏注入静默 true                               | 已修         | `loadEnv` 生产态拒绝 `true`（含默认回落），门禁覆盖「未设置」与「显式 true」。                                                 |
-| 6   | `PLATFORM_API_URL` 不设时自助开通静默跳过试用订阅                   | 已修         | `loadEnv` 生产态强制必填且拒绝本机地址；§4.1 已改为未注释的生产值。                                                            |
-| 7   | `NOTIFY_PROVIDER` 默认 log，邀请/到期提醒静默不发                   | 已修         | `loadEnv` 生产态强制 `webhook` 且要求 `NOTIFY_WEBHOOK_URL`（拒绝本机地址）。                                                   |
-| 8   | `sample_images` 删除后桶里对象未删                                  | 已修         | `maintain:media` 的 `cleanupOrphanedObjects` 按 DB 引用反查、24h 保护期；`sample-images.service.ts` 的 TODO 已改为指向该实现。 |
-| 9   | 移动端以图找样的查询图（`uploads/`）无清理策略                      | 已修         | `maintain:media -- --uploads-retention-days=7`（默认 7 天，`--skip-uploads` 可跳过）；`media-cleanup.test.ts` 6 条用例。       |
-| 10  | 孤儿/查询图「占用多少」没有实测                                     | 已修（口径） | CLI 每项先打印条数与字节（`listed*` / `candidate*` / `deleted*`）；首次真实运行的数字需在生产执行后回填本文。                  |
-| 11  | `receipts/` 回款凭证没有回收策略                                    | 接受风险     | 凭证是财务凭据，需长期留存；明确不纳入自动回收，容量成本由业务接受。                                                           |
-| 12  | 回填耗时只是估算                                                    | 接受风险     | 首次回填按租户记录实际速度并回填第 10 节公式，不做无实测的容量承诺。                                                           |
-| 13  | 控制面 `apps/platform-api` 的 `NOTIFY_PROVIDER` 默认也是 `log`      | 待产品决定   | 试用到期提醒由控制面发送；控制面独立部署、独立 env 契约，不在本文档的注入清单内，需在控制面部署清单单独加同样的门禁。          |
+| #   | 缺口                                                                | 状态         | 处置与证据                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 未知 `EMBEDDING_PROVIDER` 生产要等首个请求才抛                      | 接受风险     | 门禁在发布前提前断言（§9 表）；不改 `main.ts` 装配顺序，避免动业务启动路径。                                                                                                                                                  |
+| 2   | `NODE_ENV=production` + `AUTH_MODE=dev` 的拦截在 `main.ts` 不在 env | 已修         | `main.ts` 已有拦截；门禁全部生产用例以 `AUTH_MODE=oidc` 组合运行，§4.1 也写死 `AUTH_MODE=oidc`。                                                                                                                              |
+| 3   | `MEDIA_BASE_URL` 不强制 https                                       | 待产品决定   | 服务端按 URL 取图已拒绝 http（localhost 除外）；是否在生产禁止 http 的 CDN 需确认是否存在内网 http 场景。                                                                                                                     |
+| 4   | `PUBLIC_APP_URL` / `WEB_APP_URL` 漏配静默回落 localhost             | 已修         | `loadEnv` 生产态拒绝 localhost/非 https；三段负向用例 + 一条「分享链接 host 不是 localhost」正向用例。                                                                                                                        |
+| 5   | `S3_FORCE_PATH_STYLE` 漏注入静默 true                               | 已修         | `loadEnv` 生产态拒绝 `true`（含默认回落），门禁覆盖「未设置」与「显式 true」。                                                                                                                                                |
+| 6   | `PLATFORM_API_URL` 不设时自助开通静默跳过试用订阅                   | 已修         | `loadEnv` 生产态强制必填且拒绝本机地址；§4.1 已改为未注释的生产值。                                                                                                                                                           |
+| 7   | `NOTIFY_PROVIDER` 默认 log，邀请/到期提醒静默不发                   | 已修         | `loadEnv` 生产态强制 `webhook` 且要求 `NOTIFY_WEBHOOK_URL`（拒绝本机地址）。                                                                                                                                                  |
+| 8   | `sample_images` 删除后桶里对象未删                                  | 已修         | `maintain:media` 的 `cleanupOrphanedObjects` 按 DB 引用反查、24h 保护期；CLI 按租户开启 `withTenantSession`，无租户上下文（受 RLS 约束）直接拒绝执行；`sample-images.service.ts` 的 TODO 已指向该实现。                       |
+| 9   | 移动端以图找样的查询图（`uploads/`）无清理策略                      | 已修         | `maintain:media -- --uploads-retention-days=7`（默认 7 天，`--skip-uploads` 可跳过）；`uploads/` key 可随 `POST /api/samples` 的 `imageKeys` 入库，回收先按 `sample_images` 引用建白名单；`media-cleanup.test.ts` 11 条用例。 |
+| 10  | 孤儿/查询图「占用多少」没有实测                                     | 已修（口径） | CLI 每项先打印条数与字节（`listed*` / `candidate*` / `deleted*`）与「仍被引用」数；已用本地非 BYPASSRLS 角色复验「只删孤儿、引用对象保留」。生产桶数字仍需在执行后回填本文。                                                  |
+| 11  | `receipts/` 回款凭证没有回收策略                                    | 接受风险     | 凭证是财务凭据，需长期留存；明确不纳入自动回收，容量成本由业务接受。                                                                                                                                                          |
+| 12  | 回填耗时只是估算                                                    | 接受风险     | 首次回填按租户记录实际速度并回填第 10 节公式，不做无实测的容量承诺。                                                                                                                                                          |
+| 13  | 控制面 `apps/platform-api` 的 `NOTIFY_PROVIDER` 默认也是 `log`      | 待产品决定   | 试用到期提醒由控制面发送；控制面独立部署、独立 env 契约，不在本文档的注入清单内，需在控制面部署清单单独加同样的门禁。                                                                                                         |
+| 14  | 查询图回收的引用白名单只覆盖 `sample_images`                        | 接受风险     | 当前唯一会把 `uploads/` key 入库的路径是 `POST /api/samples` 的 `imageKeys`；未来若有新功能复用该前缀，必须同步加入白名单，否则对象会在保留期后被回收。                                                                       |
 
 ## 10. 上线检查单（打印出来逐项打勾）
 

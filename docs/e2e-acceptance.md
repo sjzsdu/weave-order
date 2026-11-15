@@ -97,7 +97,8 @@ WAN-125 之前的存量库上跑时，脚本会自动调用一次
   成员顺序不保证稳定；真实模型仍有相同问题，但同图仍必在其中。
 - **孤儿查询图**：桌面以图找样的 presign 不带 `sampleId`，对象落在 `uploads/`。
   WAN-130 起纳入 `maintain:media` 回收（默认保留 7 天，`--uploads-retention-days` 可调，`--dry-run` 只统计），
-  但这些对象不入库，自动化测试只覆盖「按年龄删除」的逻辑，不覆盖真实桶。
+  但 `uploads/` 的 key 可以随 `POST /api/samples` 的 `imageKeys` 入库，所以回收必须先按
+  `sample_images` 引用建白名单（被引用的对象不删）；自动化测试用 fake 引用覆盖这条逻辑，不覆盖真实桶。
 - **窄屏桌面壳**：<640px 隐藏公司切换 / 打印 / 设置入口，375 桌面视口用户会失去这三个入口，
   需要产品确认（移动端本身有对应入口）。
 - **完整 E2E 不在 PR CI**：只跑 nightly（`.github/workflows/e2e-nightly.yml`），
