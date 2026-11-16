@@ -475,15 +475,19 @@ export function createMockApiClient(): ApiClient {
         importedCustomers: customers.length,
         importedSamples: 0,
         correlationId: null,
-        rows: customers.map((row, index) => ({
-          ok: true as const,
-          kind: "customer" as const,
-          row: index,
-          key:
+        rows: customers.map((row, index) => {
+          const code =
             typeof row === "object" && row !== null && "code" in row
-              ? String((row as { code?: unknown }).code ?? `#${index}`)
-              : `#${index}`,
-        })),
+              ? (row as { code?: unknown }).code
+              : undefined;
+          return {
+            ok: true as const,
+            kind: "customer" as const,
+            row: index,
+            // 只接受字符串/数字，避免把对象 stringify 成 "[object Object]"。
+            key: typeof code === "string" || typeof code === "number" ? String(code) : `#${index}`,
+          };
+        }),
       });
     },
 
