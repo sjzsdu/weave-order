@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthContext, useCustomerList } from "@weave-order/core";
-import type { CustomerListOptions } from "@weave-order/schema";
-import { Badge, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
+import type { Customer, CustomerListOptions } from "@weave-order/schema";
+import { Badge, Button, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { Customer360Panel } from "@/customer-360";
+import { CustomerForm } from "@/customer-form";
+import { CustomerImport } from "@/customer-import";
 import { TIER_LABEL, relativeTime } from "@/format";
 
 const PAGE_SIZE = 100;
@@ -22,6 +25,7 @@ export default function CustomersPage() {
 
 function CustomersPageContent() {
   const api = useApi();
+  const queryClient = useQueryClient();
   const me = useAuthContext(api);
   // TEAM 范围下「我的」等于本组：后端已按团队过滤，这里把文案对齐。
   const mineLabel =
@@ -31,6 +35,9 @@ function CustomersPageContent() {
   const [tier, setTier] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [created, setCreated] = useState<Customer | null>(null);
 
   // 从时间线 / 别人发来的链接带 ?id= 进来直接展开抽屉；筛选也能分享。
   useEffect(() => {
@@ -66,6 +73,33 @@ function CustomersPageContent() {
 
   const customers = useCustomerList(api, filters);
 
+  // 「一个客户都没有」和「筛选没结果」是两种空状态，文案与 CTA 完全不同。
+  const narrowed = debouncedQuery !== "" || tier !== "" || overdueOnly || owner !== "mine";
+  const isEmpty = (customers.data ?? []).length === 0;
+
+  async function refreshCustomers() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["customers"] }),
+      // 全景的客户数要跟着变，否则切回工作台还是旧数字。
+      queryClient.invalidateQueries({ queryKey: ["panorama"] }),
+    ]);
+  }
+
+  function handleCreated(customer: Customer) {
+    setFormOpen(false);
+    setCreated(customer);
+    void refreshCustomers();
+  }
+
+  const dismissCreated = useCallback(() => setCreated(null), []);
+
+  function clearFilters() {
+    setQuery("");
+    setTier("");
+    setOverdueOnly(false);
+    setOwner("mine");
+  }
+
   function closeDrawer() {
     setSelectedId(null);
     const url = new URL(window.location.href);
@@ -89,10 +123,17 @@ function CustomersPageContent() {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold text-ink-900">客户</h1>
           <p className="mt-1 text-sm text-ink-400">
-            未决报价 / 在途寄样 / 应收余额都由后端聚合，点开就是客户 360。
+            手动建一个，或用 CSV 批量导入；点开就是客户 360。
           </p>
         </div>
-        <Badge tone="neutral">只读视图</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => setImportOpen(true)}>
+            导入 CSV
+          </Button>
+          <Button variant="primary" onClick={() => setFormOpen(true)}>
+            新建客户
+          </Button>
+        </div>
       </header>
 
       <section className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3">
@@ -164,8 +205,31 @@ function CustomersPageContent() {
           title="客户列表暂时不可用"
           description={customers.error instanceof Error ? customers.error.message : "请稍后重试"}
         />
-      ) : (customers.data ?? []).length === 0 ? (
-        <EmptyState title="没有匹配的客户" description="换一个筛选条件，或让agent导入新的客户。" />
+      ) : isEmpty && !narrowed ? (
+        <EmptyState
+          title="还没有客户"
+          description="手动建一个，或导入 CSV（可先下载模板）。"
+          actions={
+            <>
+              <Button variant="primary" onClick={() => setFormOpen(true)}>
+                新建客户
+              </Button>
+              <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                导入 CSV
+              </Button>
+            </>
+          }
+        />
+      ) : isEmpty ? (
+        <EmptyState
+          title="没有匹配的客户"
+          description="换个关键词或清掉筛选。"
+          actions={
+            <Button variant="secondary" onClick={clearFilters}>
+              清空筛选
+            </Button>
+          }
+        />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-line bg-surface">
           <table className="w-full min-w-[1000px] text-sm">
@@ -260,6 +324,69 @@ function CustomersPageContent() {
           </div>
         </div>
       )}
+
+      {formOpen && <CustomerForm onClose={() => setFormOpen(false)} onCreated={handleCreated} />}
+
+      {importOpen && (
+        <CustomerImport
+          onClose={() => setImportOpen(false)}
+          onImported={() => void refreshCustomers()}
+        />
+      )}
+
+      {created && (
+        <CreatedToast
+          customer={created}
+          onDismiss={dismissCreated}
+          onView={() => {
+            dismissCreated();
+            openDrawer(created.id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 动作级 toast：不阻塞，带下一步，而不是让列表悄悄刷新。 */
+function CreatedToast({
+  customer,
+  onDismiss,
+  onView,
+}: {
+  customer: Customer;
+  onDismiss: () => void;
+  onView: () => void;
+}) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(timer);
+  }, [onDismiss]);
+
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-0 top-4 z-50 mx-auto flex w-[min(92vw,640px)] flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-card"
+    >
+      <span className="font-medium text-ink-900">客户「{customer.name}」已建</span>
+      <span className="text-xs text-ink-400">{customer.code}</span>
+      <Link
+        href={`/today?intent=${encodeURIComponent(`给${customer.name}报价：`)}`}
+        className="text-indigo-600 underline underline-offset-2"
+      >
+        用他报第一张价 →
+      </Link>
+      <button type="button" onClick={onView} className="text-ink-700 underline underline-offset-2">
+        看客户 360
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="关闭提示"
+        className="ml-auto text-ink-400 hover:text-ink-900"
+      >
+        ✕
+      </button>
     </div>
   );
 }

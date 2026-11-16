@@ -6,6 +6,8 @@ import {
   ForbiddenException,
   Get,
   Headers,
+  HttpException,
+  HttpStatus,
   Inject,
   NotFoundException,
   Param,
@@ -89,6 +91,16 @@ export function rethrowHttp(error: unknown): never {
     }
     if (error.code === "PERMISSION_DENIED") throw new ForbiddenException(error.message);
     // 编码唯一冲突是「请求本身没问题、与现有数据冲突」，必须 409 而不是 400。
+    // 客户冲突额外带 `error.code`：前端据此提示「换个编号」，而不是解析人话。
+    if (error.details.reason === "CUSTOMER_CODE_EXISTS") {
+      throw new HttpException(
+        {
+          error: { code: "CUSTOMER_CODE_EXISTS", message: error.message },
+          message: error.message,
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
     if (error.details.reason === "SAMPLE_CODE_EXISTS") {
       throw new ConflictException(error.message);
     }
@@ -164,6 +176,26 @@ export class CatalogController {
         this.kernel,
         async (kernel, ctx) => kernel.customers.customer360(id, ctx),
         { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /**
+   * 新建客户。编号可省略：服务端按北京时间生成 `CYYMMDD-NNNN`。
+   * 租户与负责人由登录态注入，请求体里出现这两个字段会被契约直接拒绝。
+   */
+  @Post("customers")
+  async createCustomer(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => ({
+          customer: await kernel.customers.createForHuman(body, ctx),
+        }),
+        { scope: "write" },
       );
     } catch (error) {
       rethrowHttp(error);
