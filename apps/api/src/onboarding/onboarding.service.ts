@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   InvitePreview,
   InviteMemberInput,
+  EntityId,
   OnboardingPreview,
   OnboardingResult,
   StartTenantInput,
@@ -10,7 +11,7 @@ import {
 import { TeamInvite, TeamInviteList, hasCapability } from "@weave-order/schema";
 import type { AuthClaims, Membership } from "@weave-order/schema";
 import { createNotifier, inviteMessage } from "@weave-order/notify";
-import { createKernel } from "../kernel";
+import { createKernel, isKernelError } from "../kernel";
 import type { KernelContext } from "../kernel";
 import { DatabaseProvider } from "../platform/database.provider";
 import { loadEnv } from "../platform/env";
@@ -334,7 +335,10 @@ export class OnboardingService {
         .filter((item) => item.status !== "DISABLED")
         .map((item) => ({
           membershipId: item.id,
-          email: item.subject,
+          // ACTIVE 成员的 `subject` 是 SSO 主键（UUID），不是邮箱。
+          // 成员表只拿到 membership，没有姓名/邮箱的副本；这里不把 UUID 交给前端，
+          // 由前端用「我 / 已加入的同事」呈现。INVITED 的 subject 才是邮箱。
+          email: item.subject.includes("@") ? item.subject : "",
           role: item.role,
           status: item.status === "INVITED" ? "INVITED" : "ACTIVE",
           url: null,
@@ -345,6 +349,44 @@ export class OnboardingService {
     });
   }
 
+  /**
+   * 撤销一条尚未接受的邀请。
+   *
+   * 门槛与 `invite()` 完全一致（能力表判定，服务端说了算，不信前端）：
+   * 只有能邀请同事的人才能撤销邀请。删掉 membership 即让邀请票据失效，
+   * `acceptInvite` 随后会给出「已被撤销」的 410。
+   */
+  async revokeInvite(actor: Membership, membershipId: string, actorName: string): Promise<void> {
+    if (!hasCapability(actor, "member.invite")) {
+      throw new TeamActionError("只有老板或主管可以撤销邀请", 403);
+    }
+    const parsed = EntityId.safeParse(membershipId);
+    if (!parsed.success) {
+      throw new TeamActionError("这条邀请不存在或已被撤销", 404);
+    }
+    const kernel = this.kernel();
+    try {
+      await kernel.tenancy.revokeMembership(actor.tenantId, parsed.data, {
+        actor: { type: "HUMAN", id: actor.subject, role: actor.role },
+        tenantId: actor.tenantId,
+        correlationId: parsed.data,
+      });
+    } catch (error) {
+      if (isKernelError(error)) {
+        if (error.code === "RESOURCE_NOT_FOUND") {
+          throw new TeamActionError("这条邀请不存在或已被撤销", 404);
+        }
+        if (error.code === "PERMISSION_DENIED") {
+          throw new TeamActionError("只有老板或主管可以撤销邀请", 403);
+        }
+        throw new TeamActionError(error.message, 409);
+      }
+      throw error;
+    }
+    // 审计里只存 actorId（登录主体）；姓名是给人看的，记在日志便于排查。
+    console.info(`[team] ${actorName} 撤销了邀请 ${membershipId}`);
+  }
+
   async previewInvite(code: string, claims: AuthClaims): Promise<InvitePreview> {
     const ticket = this.ticket(code);
     if (ticket.kind !== "invite") throw new TeamActionError("这不是邀请链接", 400);
@@ -352,6 +394,12 @@ export class OnboardingService {
     const tenant = await kernel.tenancy.findTenantBySlug(ticket.slug);
     if (!tenant) throw new TeamActionError("这间公司不存在或已停用", 410);
     const existing = await kernel.tenancy.findMembershipForTenant(claims.sub, tenant.id);
+    // 邀请票据是无状态的：撤销即删 membership，票据本身仍然验签通过。
+    // 所以这里必须回查「待接受的邀请」是否还在，否则撤销后的链接看起来仍然有效。
+    const email = ticket.ownerEmail?.trim().toLowerCase() ?? "";
+    if (!existing && (!email || !(await kernel.tenancy.findInvitedMembership(tenant.id, email)))) {
+      throw new TeamActionError("这条邀请已被接受或已撤销，请让邀请人重新发一条", 410);
+    }
     return InvitePreview.parse({
       tenantName: tenant.name,
       tenantSlug: tenant.slug,

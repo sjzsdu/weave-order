@@ -2,7 +2,8 @@ import { HttpException } from "@nestjs/common";
 import type { AuthClaims, OnboardingResult } from "@weave-order/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthService } from "../src/gateway/auth.service";
-import { OnboardingController } from "../src/onboarding/onboarding.controller";
+import { OnboardingController, TeamController } from "../src/onboarding/onboarding.controller";
+import { TeamActionError } from "../src/onboarding/onboarding.service";
 import type { OnboardingService } from "../src/onboarding/onboarding.service";
 import { TENANT_START_RATE_LIMITS, PublicRateLimitService } from "../src/platform/rate-limit";
 
@@ -10,7 +11,15 @@ vi.mock("../src/gateway/auth.service", () => ({ AuthService: class {} }));
 vi.mock("../src/onboarding/onboarding.service", () => ({
   OnboardingService: class {},
   StartTenantConflict: class extends Error {},
-  TeamActionError: class extends Error {},
+  TeamActionError: class TeamActionError extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+    ) {
+      super(message);
+      this.name = "TeamActionError";
+    }
+  },
 }));
 vi.mock("../src/kernel", () => ({ isKernelError: () => false }));
 
@@ -87,5 +96,60 @@ describe("自助创建公司控制器", () => {
     );
 
     expect(check).toHaveBeenCalledWith("203.0.113.99", claims.sub);
+  });
+});
+
+describe("撤销邀请控制器", () => {
+  const member = {
+    id: "membership-owner",
+    tenantId: "tenant-1",
+    subject: "boss@example.com",
+    casdoorOrg: null,
+    role: "OWNER" as const,
+    dataScope: "ALL" as const,
+    teamId: null,
+    approvalLimitAmount: null,
+    status: "ACTIVE" as const,
+    createdAt: "2026-11-16T00:00:00.000Z",
+    updatedAt: "2026-11-16T00:00:00.000Z",
+  };
+
+  function setupTeam(role: "OWNER" | "SALES") {
+    const auth = {
+      authenticate: vi.fn().mockResolvedValue({
+        claims,
+        membership: { ...member, role },
+      }),
+    } as unknown as AuthService;
+    const revokeInvite = vi.fn();
+    const onboarding = { revokeInvite } as unknown as OnboardingService;
+    return { controller: new TeamController(auth, onboarding), revokeInvite };
+  }
+
+  it("老板撤销成功返回统一 ok", async () => {
+    const { controller, revokeInvite } = setupTeam("OWNER");
+    revokeInvite.mockResolvedValue(undefined);
+
+    await expect(controller.revoke("Bearer token", "invite-1")).resolves.toEqual({ ok: true });
+    expect(revokeInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "OWNER", tenantId: "tenant-1" }),
+      "invite-1",
+      claims.name,
+    );
+  });
+
+  it("SALES 调 DELETE 返回 403，不落成 500", async () => {
+    const { controller, revokeInvite } = setupTeam("SALES");
+    revokeInvite.mockRejectedValue(new TeamActionError("只有老板或主管可以撤销邀请", 403));
+
+    const error = await controller
+      .revoke("Bearer token", "invite-1")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(403);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
   });
 });

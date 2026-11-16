@@ -357,6 +357,13 @@ export function createApiClient(options: ApiClientOptions) {
     inviteMember: async (input: z.input<typeof InviteMemberInput>) =>
       TeamInvite.parse(await post("/api/team/invites", input)),
 
+    /** 撤销待接受的邀请：删除成员行，邀请链接立即失效（已加入的成员不可撤销）。 */
+    revokeInvite: async (membershipId: string) => {
+      await request(`/api/team/invites/${encodeURIComponent(membershipId)}`, {
+        method: "DELETE",
+      });
+    },
+
     listCustomers: async (limit = 20) =>
       CustomersResponse.parse(await request(`/api/customers?limit=${limit}`)).customers,
 

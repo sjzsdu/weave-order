@@ -333,3 +333,198 @@ describe("自助开通与邀请", () => {
     expect(conflict.body).toMatchObject({ error: { code: "CONFLICT" } });
   });
 });
+
+describe("撤销邀请", () => {
+  async function teamInvites(token: string) {
+    const response = await api("/api/team/invites", {}, token);
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    return (response.body as { invites: Array<{ membershipId: string; email: string; role: string; status: string }> })
+      .invites;
+  }
+
+  it("老板撤销待接受的邀请：列表移除、链接立即失效、写审计", async (ctx) => {
+    if (!available || !app || !pool) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const bossToken = `dev:revoke-boss-${id}:demo`;
+    const employeeEmail = `revoke-emp-${id}@dev.local`;
+    const start = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `撤销公司 ${id}` }) },
+      bossToken,
+    );
+    expect(start.status, JSON.stringify(start.body)).toBe(201);
+    createdTenants.push((start.body as { tenantId: string }).tenantId);
+
+    const invite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: employeeEmail, role: "SALES" }) },
+      bossToken,
+    );
+    expect(invite.status, JSON.stringify(invite.body)).toBe(201);
+    const code = new URL((invite.body as { url: string }).url).searchParams.get("code") as string;
+
+    const invites = await teamInvites(bossToken);
+    const pending = invites.find((item) => item.email === employeeEmail);
+    expect(pending?.status).toBe("INVITED");
+
+    const revoke = await api(
+      `/api/team/invites/${pending?.membershipId}`,
+      { method: "DELETE" },
+      bossToken,
+    );
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
+    expect(revoke.body).toMatchObject({ ok: true });
+
+    // 列表里立即消失。
+    const after = await teamInvites(bossToken);
+    expect(after.some((item) => item.email === employeeEmail)).toBe(false);
+
+    // 链接打开：410，说明已失效（票据本身仍然验签通过）。
+    const preview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(code)}`,
+      {},
+      `dev:revoke-emp-${id}:demo`,
+    );
+    expect(preview.status, JSON.stringify(preview.body)).toBe(410);
+    expect((preview.body as { error: { message: string } }).error.message).toContain("已撤销");
+
+    // 审计有记录。
+    const audit = await pool.query(
+      "SELECT action, entity_id FROM audit_log WHERE tenant_id = $1 AND action = 'MEMBERSHIP_REVOKED'",
+      [(start.body as { tenantId: string }).tenantId],
+    );
+    expect(audit.rows).toEqual([
+      { action: "MEMBERSHIP_REVOKED", entity_id: pending?.membershipId },
+    ]);
+  });
+
+  it("已接受的成员不能撤销（409），停用是另一条路径", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const bossToken = `dev:active-boss-${id}:demo`;
+    const employeeEmail = `active-emp-${id}@dev.local`;
+    const start = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `已接受公司 ${id}` }) },
+      bossToken,
+    );
+    expect(start.status).toBe(201);
+    createdTenants.push((start.body as { tenantId: string }).tenantId);
+    const invite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: employeeEmail, role: "SALES" }) },
+      bossToken,
+    );
+    const code = new URL((invite.body as { url: string }).url).searchParams.get("code") as string;
+    const pending = (await teamInvites(bossToken)).find((item) => item.email === employeeEmail);
+
+    const accept = await api(
+      "/api/onboarding/invite/accept",
+      { method: "POST", body: JSON.stringify({ code }) },
+      `dev:active-emp-${id}:demo`,
+    );
+    expect(accept.status, JSON.stringify(accept.body)).toBe(201);
+
+    const revoke = await api(
+      `/api/team/invites/${pending?.membershipId}`,
+      { method: "DELETE" },
+      bossToken,
+    );
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(409);
+    expect(revoke.body).toMatchObject({ error: { code: "CONFLICT" } });
+  });
+
+  it("跨租户撤销返回 404，且对方公司的邀请不受影响", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const bossA = `dev:tenant-a-${id}:demo`;
+    const bossB = `dev:tenant-b-${id}:demo`;
+    const emailA = `tenant-a-emp-${id}@dev.local`;
+    for (const [boss, name] of [
+      [bossA, `租户甲 ${id}`],
+      [bossB, `租户乙 ${id}`],
+    ] as const) {
+      const start = await api(
+        "/api/onboarding/start",
+        { method: "POST", body: JSON.stringify({ name }) },
+        boss,
+      );
+      expect(start.status, JSON.stringify(start.body)).toBe(201);
+      createdTenants.push((start.body as { tenantId: string }).tenantId);
+    }
+    const invite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: emailA, role: "SALES" }) },
+      bossA,
+    );
+    expect(invite.status, JSON.stringify(invite.body)).toBe(201);
+    const pending = (await teamInvites(bossA)).find((item) => item.email === emailA);
+
+    const crossTenant = await api(
+      `/api/team/invites/${pending?.membershipId}`,
+      { method: "DELETE" },
+      bossB,
+    );
+    expect(crossTenant.status, JSON.stringify(crossTenant.body)).toBe(404);
+    expect(crossTenant.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+
+    const stillThere = await teamInvites(bossA);
+    expect(stillThere.some((item) => item.membershipId === pending?.membershipId)).toBe(true);
+  });
+
+  it("销售（SALES）调撤销接口返回 403", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const bossToken = `dev:sales-boss-${id}:demo`;
+    const employeeEmail = `sales-emp-${id}@dev.local`;
+    const employeeToken = `dev:sales-emp-${id}:demo`;
+    const start = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `销售公司 ${id}` }) },
+      bossToken,
+    );
+    expect(start.status).toBe(201);
+    createdTenants.push((start.body as { tenantId: string }).tenantId);
+
+    const invite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: employeeEmail, role: "SALES" }) },
+      bossToken,
+    );
+    const code = new URL((invite.body as { url: string }).url).searchParams.get("code") as string;
+    await api(
+      "/api/onboarding/invite/accept",
+      { method: "POST", body: JSON.stringify({ code }) },
+      employeeToken,
+    );
+
+    // 再发一条待接受的邀请，销售尝试撤销它。
+    const otherEmail = `sales-other-${id}@dev.local`;
+    await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: otherEmail, role: "VIEWER" }) },
+      bossToken,
+    );
+    const pending = (await teamInvites(bossToken)).find((item) => item.email === otherEmail);
+
+    const denied = await api(
+      `/api/team/invites/${pending?.membershipId}`,
+      { method: "DELETE" },
+      employeeToken,
+    );
+    expect(denied.status, JSON.stringify(denied.body)).toBe(403);
+    expect(denied.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+  });
+});
