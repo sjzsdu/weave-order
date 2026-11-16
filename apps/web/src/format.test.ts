@@ -12,7 +12,12 @@ import {
 describe("桌面 Web 文案", () => {
   it("审计动作说人话", () => {
     expect(actionLabel("QUOTE_DRAFT_GENERATED")).toBe("生成了报价草稿");
-    expect(actionLabel("UNKNOWN_ACTION")).toBe("UNKNOWN_ACTION");
+    expect(actionLabel("SAMPLE_ARCHIVED")).toBe("归档了样品");
+  });
+
+  it("未映射动作走通用话术，不裸输出枚举", () => {
+    expect(actionLabel("UNKNOWN_ACTION")).toBe("更新了一条记录");
+    expect(actionLabel("UNKNOWN_ACTION")).not.toMatch(/^[A-Z_]+$/);
   });
 
   it("单据类型与状态有中文标签", () => {

@@ -116,6 +116,37 @@ export type ApprovalDecisionOutcome = z.infer<typeof ApprovalDecisionOutcome>;
 export const ApprovalDecisionResult = toolResultSchema(ApprovalDecisionOutcome);
 export type ApprovalDecisionResult = z.infer<typeof ApprovalDecisionResult>;
 
+/**
+ * 工作台动态流的一条业务事件。
+ *
+ * 动态流不是审计流水的直出：只有人 / 智能体发起、且动作落在业务白名单里
+ * 的账本记录才会投影成事件。系统初始化（建公司、加成员、存设置）留在
+ * 全景的 `audit` 里给审计页用，不进这里。
+ *
+ * `actorLabel` 由后端给定（人 = 你/同事，智能体 = 小织/小跟/小序），
+ * 前端不再按动作前缀猜是谁做的。`summary` 是后端写好的中文短句，
+ * 保证页面上永远不会出现 SCREAMING_SNAKE 枚举。
+ */
+export const PanoramaEventKind = z.enum(["AGENT_DONE", "AGENT_RUNNING", "HUMAN_DONE", "MILESTONE"]);
+export type PanoramaEventKind = z.infer<typeof PanoramaEventKind>;
+
+export const PanoramaEvent = z
+  .object({
+    id: EntityId,
+    eventKind: PanoramaEventKind,
+    actorType: z.enum(["AGENT", "HUMAN"]),
+    actorLabel: z.string().min(1).max(64),
+    /** 业务动作（白名单内的审计动作；运行中事件由意图通道给出自己的 kind）。 */
+    action: z.string().min(1).max(64),
+    /** 中文短句，例如「生成了报价草稿」，后端已做过映射与兜底。 */
+    summary: z.string().min(1).max(120),
+    entityType: z.string().min(1).max(64),
+    entityId: EntityId,
+    createdAt: Timestamp,
+  })
+  .strict();
+export type PanoramaEvent = z.infer<typeof PanoramaEvent>;
+
 /** 全景仪表盘的统计计数（全部由后端只读聚合，前端不做业务计算）。 */
 export const PanoramaStats = z
   .object({
@@ -127,7 +158,10 @@ export const PanoramaStats = z
     sentQuoteCount: z.number().int().nonnegative(),
     confirmedShipmentCount: z.number().int().nonnegative(),
     rejectedCount: z.number().int().nonnegative(),
+    /** 最近审计条数：仅供审计页，不能当「今天智能体做了多少事」。 */
     auditCount: z.number().int().nonnegative(),
+    /** 今天（业务时区）智能体完成的业务动作数，标题用它，不用 auditCount。 */
+    todayAgentDoneCount: z.number().int().nonnegative().default(0),
   })
   .strict();
 export type PanoramaStats = z.infer<typeof PanoramaStats>;
@@ -140,6 +174,8 @@ export const PanoramaSnapshot = z
     samples: z.array(FabricSample),
     items: z.array(ApprovalItem),
     audit: z.array(AuditLogEntry),
+    /** 业务事件流投影（已分型、已过滤、已给中文文案）。 */
+    events: z.array(PanoramaEvent).default([]),
     stats: PanoramaStats,
   })
   .strict();

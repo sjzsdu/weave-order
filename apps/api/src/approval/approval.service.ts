@@ -18,6 +18,11 @@ import type {
 import { formatMoney, isKernelError, mayViewCost } from "../kernel";
 import { decodeCursor, encodeCursor, parseApprovalCursor } from "../kernel/cursor";
 import type { Kernel, KernelContext } from "../kernel";
+import {
+  BUSINESS_AUDIT_ACTIONS,
+  projectPanoramaEvents,
+  startOfBusinessDay,
+} from "./panorama-events";
 
 /** 审批队列分页参数：默认一页 50 条，单页最多 100 条（防止一次拉爆）。 */
 export interface ApprovalQueueQuery {
@@ -27,6 +32,9 @@ export interface ApprovalQueueQuery {
 
 const QUEUE_PAGE_DEFAULT = 50;
 const QUEUE_PAGE_MAX = 100;
+
+/** 动态流每次最多取的业务事件条数（SQL 已按动作白名单过滤）。 */
+const PANORAMA_EVENT_LIMIT = 50;
 
 /**
  * 审批服务（审批窗口的服务端核心）。
@@ -332,10 +340,23 @@ export function createApprovalService(kernel: Kernel) {
     async panorama(ctx?: KernelContext): Promise<Panorama> {
       // 顺序执行，避免单连接租户会话上同一 client 并发 query。
       const customers = await kernel.customers.list(100, ctx);
-      const samples = await kernel.search.listSamples(100, ctx);
+      // 归档样品不再计入「样品」：统计要和样品库默认筛选（仅 ACTIVE）一致。
+      const samples = (await kernel.search.listSamples(100, ctx)).filter(
+        (sample) => sample.status === "ACTIVE",
+      );
       const quotes = await kernel.quotes.list(100, ctx);
       const shipments = await kernel.shipments.list(100, ctx);
+      // audit 原样保留（append-only 事实表），动态流是它的业务投影。
       const audit = await kernel.audit.list(20);
+      const businessAudit = await kernel.audit.businessEvents(
+        PANORAMA_EVENT_LIMIT,
+        BUSINESS_AUDIT_ACTIONS,
+      );
+      const todayAgentDoneCount = await kernel.audit.count({
+        since: startOfBusinessDay(new Date()),
+        actorType: "AGENT",
+        actions: BUSINESS_AUDIT_ACTIONS,
+      });
       const items = [...quotes, ...shipments].sort((a, b) =>
         b.createdAt.localeCompare(a.createdAt),
       );
@@ -351,6 +372,7 @@ export function createApprovalService(kernel: Kernel) {
           (entry) => entry.status === "REJECTED" || entry.status === "CANCELLED",
         ).length,
         auditCount: audit.length,
+        todayAgentDoneCount,
       });
       return PanoramaSnapshot.parse({
         generatedAt: new Date().toISOString(),
@@ -358,6 +380,10 @@ export function createApprovalService(kernel: Kernel) {
         samples,
         items,
         audit,
+        events: projectPanoramaEvents(businessAudit, {
+          viewerActorId: ctx?.actor.id ?? null,
+          limit: PANORAMA_EVENT_LIMIT,
+        }),
         stats,
       });
     },

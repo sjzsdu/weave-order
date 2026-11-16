@@ -104,7 +104,7 @@ export default function TodayPage() {
       {approvals.isLoading && !approvals.data ? (
         <Loading />
       ) : pending.length === 0 ? (
-        <EmptyState title="今天没有要你决定的事" desc="小织在跟 3 个客户，有异常会进动态。" />
+        <EmptyState title="今天没有要你决定的事" desc="小织在跟你的客户，有异常会进动态。" />
       ) : (
         pending.slice(0, 2).map((item) => <PendingCard key={item.id} item={item} />)
       )}

@@ -1,10 +1,5 @@
-import { ApprovalItem } from "@weave-order/schema";
-import type {
-  ApprovalItem as ApprovalItemT,
-  AuditLogEntry,
-  Customer,
-  FabricSample,
-} from "@weave-order/schema";
+import { ApprovalItem, FabricSample } from "@weave-order/schema";
+import type { ApprovalItem as ApprovalItemT, AuditLogEntry, Customer } from "@weave-order/schema";
 import { describe, expect, it, vi } from "vitest";
 import { createApprovalService } from "../src/approval";
 import { KernelError } from "../src/kernel";
@@ -60,7 +55,15 @@ function pageOf(items: ApprovalItemT[], limit: number, query: ListQuery = {}): A
     .slice(0, limit);
 }
 
-function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[] } = {}) {
+function makeKernel(
+  opts: {
+    quotes?: ApprovalItemT[];
+    shipments?: ApprovalItemT[];
+    samples?: FabricSample[];
+    audit?: AuditLogEntry[];
+    todayAgentDoneCount?: number;
+  } = {},
+) {
   const spies = {
     confirmDraft: vi.fn((_id: string, _ctx: KernelContext) =>
       Promise.resolve({ status: "SENT" as const }),
@@ -77,6 +80,8 @@ function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[
   };
   const quotes = opts.quotes ?? [];
   const shipments = opts.shipments ?? [];
+  const samples = opts.samples ?? [];
+  const audit = opts.audit ?? [];
   const kernel = {
     quotes: {
       list: vi.fn((limit: number, _ctx?: KernelContext, query?: ListQuery) =>
@@ -93,8 +98,12 @@ function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[
       reject: spies.reject,
     },
     customers: { list: vi.fn(() => Promise.resolve([] as Customer[])) },
-    search: { listSamples: vi.fn(() => Promise.resolve([] as FabricSample[])) },
-    audit: { list: vi.fn(() => Promise.resolve([] as AuditLogEntry[])) },
+    search: { listSamples: vi.fn(() => Promise.resolve(samples)) },
+    audit: {
+      list: vi.fn(() => Promise.resolve(audit)),
+      businessEvents: vi.fn(() => Promise.resolve(audit)),
+      count: vi.fn(() => Promise.resolve(opts.todayAgentDoneCount ?? 0)),
+    },
   } as unknown as Kernel;
   return { kernel, spies };
 }
@@ -253,5 +262,63 @@ describe("审批服务（离线，假内核）", () => {
     expect(snapshot.stats.shipmentCount).toBe(1);
     expect(snapshot.stats.pendingCount).toBe(1);
     expect(snapshot.stats.sentQuoteCount).toBe(1);
+  });
+
+  it("panorama 动态流只含业务事件，归档样品不计入样品数", async () => {
+    const { kernel } = makeKernel({
+      todayAgentDoneCount: 2,
+      samples: [
+        FabricSample.parse({
+          id: ID_QUOTE,
+          tenantId: ID_QUOTE,
+          code: "AUD-001",
+          name: "已归档样品",
+          composition: null,
+          weight: null,
+          unit: "meter",
+          costFloor: null,
+          status: "ARCHIVED",
+          primaryImageUrl: null,
+          createdAt: NOW,
+        }),
+      ],
+      audit: [
+        {
+          id: ID_QUOTE,
+          tenantId: ID_QUOTE,
+          seq: 3,
+          actorType: "SYSTEM",
+          actorId: "system",
+          action: "TENANT_CREATED",
+          entityType: "tenant",
+          entityId: ID_QUOTE,
+          before: null,
+          after: null,
+          correlationId: null,
+          createdAt: NOW,
+        },
+        {
+          id: ID_SHIPMENT,
+          tenantId: ID_QUOTE,
+          seq: 2,
+          actorType: "AGENT",
+          actorId: "quote-agent",
+          action: "QUOTE_DRAFT_GENERATED",
+          entityType: "quote",
+          entityId: ID_SHIPMENT,
+          before: null,
+          after: null,
+          correlationId: null,
+          createdAt: NOW,
+        },
+      ],
+    });
+    const snapshot = await createApprovalService(kernel).panorama(HUMAN);
+    expect(snapshot.stats.sampleCount).toBe(0);
+    expect(snapshot.stats.todayAgentDoneCount).toBe(2);
+    expect(snapshot.events).toHaveLength(1);
+    expect(snapshot.events[0]?.actorLabel).toBe("小织");
+    // 审计原样保留：系统事件仍在 audit 里，只是不进动态流。
+    expect(snapshot.audit).toHaveLength(2);
   });
 });
