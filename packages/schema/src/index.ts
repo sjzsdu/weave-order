@@ -29,3 +29,4 @@ export * from "./platform";
 export * from "./onboarding";
 export * from "./runtime-mode";
 export * from "./demo";
+export * from "./intents";

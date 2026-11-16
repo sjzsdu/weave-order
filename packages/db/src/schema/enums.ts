@@ -201,3 +201,16 @@ export const scanResultEnum = pgEnum("scan_result", [
   "UNKNOWN_CODE",
   "WRONG_BOX",
 ]);
+
+/** 意图状态机（契约 `IntentStatus` 的物理表示）。 */
+export const intentStatusEnum = pgEnum("intent_status", [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "FAILED",
+  "CANCELLED",
+  "TIMEOUT",
+]);
+
+/** 意图提交入口（契约 `IntentSource` 的物理表示）。 */
+export const intentSourceEnum = pgEnum("intent_source", ["today", "command-bar", "customer-360"]);

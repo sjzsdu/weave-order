@@ -179,6 +179,8 @@ export const AuditAction = z.enum([
   /** 导入/重算后补向量失败：导入已提交，需要重跑 reindex。 */
   "SAMPLE_INDEX_FAILED",
   "IMPORT_RESET",
+  /** 用户撤销一条「说点什么」意图（10 分钟内）。 */
+  "INTENT_CANCELLED",
   "SAMPLE_SHIPMENT_DRAFTED",
   "SAMPLE_SHIPMENT_CONFIRMED",
   "SAMPLE_SHIPMENT_REJECTED",

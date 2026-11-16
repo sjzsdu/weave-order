@@ -112,7 +112,8 @@ DECLARE
     'order_boxes',
     'order_box_items',
     'box_labels',
-    'scan_events'
+    'scan_events',
+    'intents'
   ];
 BEGIN
   FOREACH t IN ARRAY business_tables LOOP

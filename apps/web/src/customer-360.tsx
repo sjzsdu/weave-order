@@ -345,12 +345,14 @@ export function Customer360Panel({
       </section>
 
       <section className="flex flex-wrap items-center gap-2">
-        <Link href={`/today?intent=${quickIntent}`}>
+        <Link href={`/today?intent=${quickIntent}&source=customer-360`}>
           <Button variant="primary" className="min-h-9 px-3 text-xs">
             新建报价
           </Button>
         </Link>
-        <Link href={`/today?intent=${encodeURIComponent(`给${customer.name}寄样：`)}`}>
+        <Link
+          href={`/today?intent=${encodeURIComponent(`给${customer.name}寄样：`)}&source=customer-360`}
+        >
           <Button className="min-h-9 px-3 text-xs">建寄样单</Button>
         </Link>
         <Button className="min-h-9 px-3 text-xs" onClick={() => setInboundOpen(true)}>
