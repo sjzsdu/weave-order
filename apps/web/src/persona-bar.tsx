@@ -5,6 +5,7 @@ import { queryKeys, useTenantContext } from "@weave-order/core";
 import type { Persona, PersonaKey } from "@weave-order/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "@/providers";
+import { useProductionLike } from "@/runtime-mode.client";
 import { ROLE_LABEL } from "@/tenant-switch";
 
 /**
@@ -24,12 +25,14 @@ export function PersonaBar() {
   const api = useApi();
   const queryClient = useQueryClient();
   const tenantContext = useTenantContext(api);
+  const productionLike = useProductionLike();
   /*
    * 是否显示由「服务端有没有 dev 路由」决定，而不是构建期 NODE_ENV：
    * `next start`（e2e）会把 NODE_ENV 固定成 production，但 API 仍是 AUTH_MODE=dev。
    * 生产/OIDC 镜像里这个请求 404，查询失败后组件返回 null，不留下任何入口。
    */
-  const enabled = typeof window !== "undefined";
+  // 生产 / OIDC 镜像里根本没有 dev 路由：不发请求，也就不会有 /today 的 404 噪音。
+  const enabled = typeof window !== "undefined" && !productionLike;
 
   const personasQuery = useQuery({
     queryKey: ["dev", "personas"],

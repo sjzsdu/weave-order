@@ -2,7 +2,7 @@ import { auditLog, DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { AuditLogEntry } from "@weave-order/schema";
 import type { AuditAction, DataScope, JsonValue, MemberRole } from "@weave-order/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 /** 谁在写账本：智能体 / 人类 / 系统任务。 */
 export type ActorType = "AGENT" | "HUMAN" | "SYSTEM";
@@ -79,21 +79,82 @@ export async function listAuditLog(
     .where(and(...conditions))
     .orderBy(desc(auditLog.seq))
     .limit(limit);
-  return rows.map((row) =>
-    AuditLogEntry.parse({
-      id: row.id,
-      tenantId: row.tenantId ?? tenantId,
-      seq: row.seq,
-      actorType: row.actorType,
-      actorId: row.actorId,
-      actorRole: row.actorRole ?? null,
-      action: row.action,
-      entityType: row.entityType,
-      entityId: row.entityId,
-      before: row.before ?? null,
-      after: row.after ?? null,
-      correlationId: row.correlationId,
-      createdAt: row.createdAt.toISOString(),
-    }),
-  );
+  return rows.map((row) => toAuditEntry(row, tenantId));
+}
+
+type AuditRow = Awaited<ReturnType<typeof queryAuditRows>>[number];
+
+function queryAuditRows(db: Db, tenantId: string, limit: number, actions: AuditAction[]) {
+  return db
+    .select()
+    .from(auditLog)
+    .where(and(eq(auditLog.tenantId, tenantId), inArray(auditLog.action, actions)))
+    .orderBy(desc(auditLog.seq))
+    .limit(limit);
+}
+
+function toAuditEntry(row: AuditRow, tenantId: string): AuditLogEntry {
+  return AuditLogEntry.parse({
+    id: row.id,
+    tenantId: row.tenantId ?? tenantId,
+    seq: row.seq,
+    actorType: row.actorType,
+    actorId: row.actorId,
+    actorRole: row.actorRole ?? null,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    before: row.before ?? null,
+    after: row.after ?? null,
+    correlationId: row.correlationId,
+    createdAt: row.createdAt.toISOString(),
+  });
+}
+
+/**
+ * 只读业务动作的最近审计（动态流投影的输入）。
+ *
+ * 在 SQL 里按动作白名单过滤，而不是先拉 200 条最近审计再在内存里挑：
+ * 新租户的前几十条几乎全是系统初始化事件，拉多了会白占带宽。
+ */
+export async function listBusinessAuditLog(
+  db: Db,
+  limit: number,
+  tenantId: string,
+  actions: AuditAction[],
+): Promise<AuditLogEntry[]> {
+  if (actions.length === 0) return [];
+  const rows = await queryAuditRows(db, tenantId, limit, actions);
+  return rows.map((row) => toAuditEntry(row, tenantId));
+}
+
+export interface AuditCountFilter {
+  /** 只统计这个时刻（含）之后写入的记录。 */
+  since: Date;
+  actorType?: ActorType;
+  /** 只统计这些动作；空数组 = 不额外过滤动作。 */
+  actions?: AuditAction[];
+}
+
+/**
+ * 审计计数（只读聚合）。
+ *
+ * 为什么必须下推到 SQL：`listAuditLog(20)` 只返回最近 20 条，
+ * 把它 `.length` 当「今天做了几件事」在忙碌的租户里会永远是 20。
+ */
+export async function countAuditLog(
+  db: Db,
+  tenantId: string,
+  filter: AuditCountFilter,
+): Promise<number> {
+  const conditions = [eq(auditLog.tenantId, tenantId), gte(auditLog.createdAt, filter.since)];
+  if (filter.actorType) conditions.push(eq(auditLog.actorType, filter.actorType));
+  if (filter.actions && filter.actions.length > 0) {
+    conditions.push(inArray(auditLog.action, filter.actions));
+  }
+  const rows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auditLog)
+    .where(and(...conditions));
+  return rows[0]?.count ?? 0;
 }

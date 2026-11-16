@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useApprovals,
   useDecideApproval,
@@ -9,27 +9,10 @@ import {
   usePanorama,
   useShippingPending,
 } from "@weave-order/core";
-import {
-  AgentRunStrip,
-  Badge,
-  Button,
-  EmptyState,
-  IntentComposer,
-  MoneyText,
-  Spinner,
-  cn,
-} from "@weave-order/ui";
-import type { AgentRun } from "@weave-order/ui";
+import { Badge, Button, EmptyState, IntentComposer, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
-import { actionLabel, KIND_LABEL, relativeTime } from "@/format";
-
-function agentName(action: string): string {
-  if (action.startsWith("SAMPLE_SHIPMENT")) return "小跟";
-  if (action.startsWith("QUOTE")) return "小织";
-  if (action.startsWith("REVISION")) return "小织";
-  return "小序";
-}
+import { KIND_LABEL, relativeTime } from "@/format";
 
 export default function TodayPage() {
   const mounted = useMounted();
@@ -46,7 +29,6 @@ function TodayPageContent() {
   const shipping = useShippingPending(api);
   const decide = useDecideApproval(api);
   const [notice, setNotice] = useState<string | null>(null);
-  const [intents, setIntents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   // 演示剧本深链：`/today?scene=approval-pending`。生产环境接口 404，这里只是静默失败。
   const [sceneKey] = useState<string | null>(() => {
@@ -60,27 +42,26 @@ function TodayPageContent() {
     return new URLSearchParams(window.location.search).get("intent") ?? undefined;
   });
 
-  const runs = useMemo<AgentRun[]>(() => {
-    const fromAudit = (panorama.data?.audit ?? []).slice(0, 5).map((entry) => ({
-      id: entry.id,
-      agent: agentName(entry.action),
-      what: actionLabel(entry.action),
-      status: "done" as const,
-      hint: `${entry.actorType === "AGENT" ? "自主完成" : "人工操作"} · ${relativeTime(entry.createdAt)}`,
-    }));
-    const local = intents.map((text, index) => ({
-      id: `local-${index}`,
-      agent: "小织",
-      what: "已收到你的话，正在拆解需求",
-      status: "waiting" as const,
-      hint: text,
-    }));
-    return [...local, ...fromAudit];
-  }, [panorama.data, intents]);
-
   const pending = approvals.data?.items ?? [];
   const stats = panorama.data?.stats;
   const loading = panorama.isLoading || approvals.isLoading;
+  // 动态流是后端投影好的业务事件：actorLabel / summary / eventKind 都由 API 给定。
+  const events = panorama.data?.events ?? [];
+  const running = events.filter((event) => event.eventKind === "AGENT_RUNNING");
+  const finished = events.filter((event) => event.eventKind !== "AGENT_RUNNING");
+  const agentDone = stats?.todayAgentDoneCount ?? 0;
+  const customerCount = stats?.customerCount ?? 0;
+  const sampleCount = stats?.sampleCount ?? 0;
+  const newWorkspace = customerCount === 0 && sampleCount === 0;
+
+  const headline =
+    agentDone > 0
+      ? `今天，小织替你做了 ${agentDone} 件事`
+      : pending.length > 0
+        ? "今天没有新的智能体动态"
+        : newWorkspace
+          ? "欢迎，先把客户和样品放进来"
+          : "今天没有新的智能体动态";
 
   useEffect(() => {
     if (!scene.data?.entityId) return;
@@ -117,11 +98,10 @@ function TodayPageContent() {
               </div>
             ) : (
               <h1 className="mt-1 text-2xl font-semibold text-ink-900">
-                今天，小织替你做了 {stats?.auditCount ?? 0} 件事，
-                <span className={pending.length > 0 ? "text-vermilion-600" : "text-moss-600"}>
-                  {" "}
-                  {pending.length} 件等你决定
-                </span>
+                {headline}
+                {pending.length > 0 && (
+                  <span className="text-vermilion-600">，{pending.length} 件等你决定</span>
+                )}
               </h1>
             )}
             <p className="mt-1 text-sm text-ink-400">
@@ -129,7 +109,7 @@ function TodayPageContent() {
             </p>
           </div>
           <div className="flex gap-2">
-            {stats && (
+            {stats && !newWorkspace && (
               <>
                 <Badge tone="info">客户 {stats.customerCount}</Badge>
                 <Badge tone="info">样品 {stats.sampleCount}</Badge>
@@ -206,15 +186,27 @@ function TodayPageContent() {
           {approvals.isLoading && <Spinner />}
           {!approvals.isLoading && pending.length === 0 && (
             <EmptyState
-              title="今天没有要你决定的事。"
-              description="小织在跟 12 个客户；新的草稿会出现在这里。"
+              title="今天没有要你决定的事"
+              description={
+                customerCount > 0
+                  ? `${customerCount} 个客户在跟；新的草稿会出现在这里。`
+                  : "有了客户和样品，小织就能开始报价。新的草稿会出现在这里。"
+              }
               actions={
-                <Link
-                  href="/panorama"
-                  className="text-sm text-indigo-600 underline underline-offset-2"
-                >
-                  看业务全景
-                </Link>
+                <>
+                  <Link
+                    href="/panorama/customers"
+                    className="inline-flex min-h-9 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
+                  >
+                    去建客户
+                  </Link>
+                  <Link
+                    href="/panorama"
+                    className="inline-flex min-h-9 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+                  >
+                    看业务全景
+                  </Link>
+                </>
               }
             />
           )}
@@ -272,12 +264,34 @@ function TodayPageContent() {
 
         <section className="grid content-start gap-3">
           <h2 className="text-sm font-medium text-ink-700">正在进行</h2>
-          <AgentRunStrip
-            runs={runs}
-            empty={<p className="text-sm text-ink-400">今天没有智能体动态。</p>}
-          />
+          {running.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-line bg-surface px-4 py-3 text-sm text-ink-400">
+              小织还没接到活。
+            </p>
+          ) : (
+            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+              {running.map((event) => (
+                <li key={event.id} className="flex items-start gap-3 px-4 py-3">
+                  <span
+                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-600 animate-pulse"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2 text-sm text-ink-900">
+                      <span className="font-medium">{event.actorLabel}</span>
+                      <span className="text-ink-700">{event.summary}</span>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-ink-400">
+                      {relativeTime(event.createdAt)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-400">进行中</span>
+                </li>
+              ))}
+            </ul>
+          )}
 
-          <h2 className="mt-2 text-sm font-medium text-ink-700">出事了</h2>
+          <h2 className="mt-2 text-sm font-medium text-ink-700">需要留意</h2>
           <div
             className={cn(
               "rounded-lg border px-4 py-3 text-sm",
@@ -288,17 +302,82 @@ function TodayPageContent() {
           >
             {(stats?.rejectedCount ?? 0) > 0
               ? `${stats?.rejectedCount} 张单据被驳回，点审批窗口查看原因。`
-              : "没有异常。交期、收款、寄样跟进都在正常范围。"}
+              : "还没有可监控的单据。建第一张订单后，交期和收款会在这里盯。"}
           </div>
         </section>
       </div>
 
-      <section>
+      <section className="grid gap-3">
+        <h2 className="text-sm font-medium text-ink-700">最近的动态</h2>
+        {finished.length === 0 ? (
+          <EmptyState
+            title={newWorkspace ? "小织还没开始干活" : "小织今天还没有新产出"}
+            description={
+              newWorkspace
+                ? "建好第一个客户和样品，或者对它说一句话，这里就会出现它的进展。"
+                : "说一句话，或者从客户 360 派一单，进展会出现在这里。"
+            }
+            actions={
+              <>
+                <Link
+                  href="/panorama/customers"
+                  className="inline-flex min-h-9 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
+                >
+                  去建客户
+                </Link>
+                <a
+                  href="#intent"
+                  className="inline-flex min-h-9 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+                >
+                  说点什么
+                </a>
+              </>
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+            {finished.slice(0, 12).map((event) => {
+              const href =
+                event.entityType === "customer" ? `/panorama/customers/${event.entityId}` : null;
+              const body = (
+                <>
+                  <span className="flex flex-wrap items-center gap-2 text-sm text-ink-900">
+                    <span className="font-medium">{event.actorLabel}</span>
+                    <span className="text-ink-700">{event.summary}</span>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-ink-400">
+                    {relativeTime(event.createdAt)}
+                  </span>
+                </>
+              );
+              return (
+                <li key={event.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                  {href ? (
+                    <Link href={href} className="min-w-0 flex-1 hover:underline">
+                      {body}
+                    </Link>
+                  ) : (
+                    <span className="min-w-0 flex-1">{body}</span>
+                  )}
+                  <span className="shrink-0 text-xs text-ink-400">
+                    {event.eventKind === "MILESTONE"
+                      ? "里程碑"
+                      : event.actorType === "AGENT"
+                        ? "自主完成"
+                        : "人工完成"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section id="intent">
         <h2 className="mb-2 text-sm font-medium text-ink-700">说点什么</h2>
         <IntentComposer
           initialText={initialIntent}
-          onSubmit={(text) => {
-            setIntents((current) => [text, ...current].slice(0, 3));
+          onSubmit={() => {
             setNotice("已收到，小织正在拆解这条需求，草稿会出现在审批窗口。");
           }}
         />

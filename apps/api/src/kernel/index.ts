@@ -1,5 +1,6 @@
 import { DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
+import type { AuditAction } from "@weave-order/schema";
 import {
   createEmbeddingProviderFromEnv,
   createImageEmbeddingProviderFromEnv,
@@ -12,7 +13,8 @@ import { createObjectStorageFromEnv } from "../platform/storage";
 import type { ObjectStorage } from "../platform/storage";
 import { objectUrl } from "../platform/thumbnail";
 import { AccessService } from "./access.service";
-import { listAuditLog } from "./audit";
+import { countAuditLog, listAuditLog, listBusinessAuditLog } from "./audit";
+import type { AuditCountFilter } from "./audit";
 import { KernelError } from "./errors";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
@@ -183,6 +185,9 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     print,
     audit: {
       list: (limit?: number, entityId?: string) => listAuditLog(db, limit, tenantId, entityId),
+      businessEvents: (limit: number, actions: AuditAction[]) =>
+        listBusinessAuditLog(db, limit, tenantId, actions),
+      count: (filter: AuditCountFilter) => countAuditLog(db, tenantId, filter),
     },
   };
 }
