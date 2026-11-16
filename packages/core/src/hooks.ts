@@ -21,6 +21,7 @@ export const queryKeys = {
   customerTimeline: (id: string, kinds: CustomerTimelineKind[]) =>
     ["customers", id, "timeline", kinds.join(",")] as const,
   panorama: ["panorama"] as const,
+  intents: ["intents", "recent"] as const,
   approvals: ["approvals"] as const,
   demoScenes: ["demo", "scenes"] as const,
   demoScene: (key: string) => ["demo", "scene", key] as const,

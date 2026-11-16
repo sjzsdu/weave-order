@@ -36,6 +36,7 @@ import { PublicQuoteController, QuoteSharesController } from "./shares.controlle
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
 import { InboundController } from "./inbound.controllers";
+import { IntentController } from "./intents.controllers";
 import { DemoScenesController } from "../demo/scenes.controller";
 import { demoScenesEnabled } from "../demo/scene-catalog";
 import { InboundIntakeService } from "./inbound-intake.service";
@@ -119,6 +120,7 @@ const providers: Provider[] = [
     PrintAgentController,
     MediaController,
     InboundController,
+    IntentController,
     SampleController,
     OnboardingController,
     TeamController,

@@ -5,9 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useApprovals, useTenantContext } from "@weave-order/core";
+import { useApprovals, useIntentChannel, useTenantContext } from "@weave-order/core";
 import type { TenantChoice } from "@weave-order/schema";
-import { Badge, CommandBar, OfflineBanner, cn } from "@weave-order/ui";
+import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
 import { PersonaBar } from "@/persona-bar";
@@ -112,6 +112,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   };
 
   const approvals = useApprovals(api);
+  // 顶栏与页内 composer 共用同一个意图 hook：同一份幂等键策略、同一份轮询与缓存。
+  const intentChannel = useIntentChannel(api);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -229,7 +231,30 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="mx-auto hidden md:block">
-            <CommandBar onSubmit={() => router.push("/today")} />
+            <CommandBar
+              onSubmit={async (text) => (await intentChannel.submit(text, "command-bar")) !== null}
+              feedback={
+                <div className="grid gap-2">
+                  <p className="text-xs text-ink-400">
+                    说一句话不会跳页：提交后结果就展开在这里，10 分钟内可撤销。
+                  </p>
+                  {intentChannel.submitError && (
+                    <p className="rounded-md border border-vermilion-600/30 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">
+                      {intentChannel.submitError}
+                    </p>
+                  )}
+                  {intentChannel.items.slice(0, 3).map((intent) => (
+                    <IntentRunCard
+                      key={intent.id}
+                      intent={intent}
+                      busy={intentChannel.submitting}
+                      onCancel={(id) => void intentChannel.cancel(id)}
+                      onRetry={(item) => void intentChannel.retry(item)}
+                    />
+                  ))}
+                </div>
+              }
+            />
           </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">

@@ -18,3 +18,4 @@ export * from "./sample-image-embeddings";
 export * from "./llm";
 export * from "./inbound";
 export * from "./print";
+export * from "./intents";

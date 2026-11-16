@@ -104,6 +104,13 @@ export function rethrowHttp(error: unknown): never {
     if (error.details.reason === "SAMPLE_CODE_EXISTS") {
       throw new ConflictException(error.message);
     }
+    // 意图已终结 / 超过撤销窗口：请求合法但与当前状态冲突，返回 409 让前端区分「重试无用」。
+    if (
+      error.details.reason === "INTENT_ALREADY_FINISHED" ||
+      error.details.reason === "INTENT_CANCEL_WINDOW_EXPIRED"
+    ) {
+      throw new ConflictException(error.message);
+    }
     throw new BadRequestException(error.message);
   }
   throw error;

@@ -20,9 +20,10 @@ import {
   ShipmentView,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
+  IntentView,
   roleCapabilities,
 } from "@weave-order/schema";
-import type { ApprovalDecisionInput } from "@weave-order/schema";
+import type { ApprovalDecisionInput, JsonValue } from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
 
 /**
@@ -339,6 +340,58 @@ export function createMockApiClient(): ApiClient {
       }),
     });
 
+  // 演示意图：仍然遵守「未接入执行器 = 待受理」的真相，不制造假成功。
+  const mockIntents: IntentView[] = [];
+  const mockIntentsByRequest = new Map<string, IntentView>();
+  let mockIntentSeq = 0;
+  const submitMockIntent = (input: {
+    text: string;
+    source: "today" | "command-bar" | "customer-360";
+    clientRequestId: string;
+    context?: JsonValue;
+  }) => {
+    // 与真实服务端同样的幂等语义：同一次提交复用同一条意图。
+    const existing = mockIntentsByRequest.get(input.clientRequestId);
+    if (existing) {
+      return Promise.resolve({
+        intentId: existing.id,
+        status: existing.status,
+        executorState: existing.executorState,
+        notice: existing.notice,
+        intent: existing,
+      });
+    }
+    mockIntentSeq += 1;
+    const intent = IntentView.parse({
+      id: `00000000-0000-4000-8000-${String(mockIntentSeq).padStart(12, "0")}`,
+      tenantId: TENANT_ID,
+      text: input.text.trim(),
+      source: input.source,
+      status: "QUEUED",
+      statusLabel: "待受理",
+      executorState: "NOT_CONNECTED",
+      notice:
+        "小织的整理服务还没接入。这句话已经记录下来了，但暂时不会被自动处理，也不会出现在审批里。",
+      failureReason: null,
+      draft: null,
+      cancellableUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+      cancelledAt: null,
+    });
+    mockIntents.unshift(intent);
+    mockIntentsByRequest.set(input.clientRequestId, intent);
+    return Promise.resolve({
+      intentId: intent.id,
+      status: intent.status,
+      executorState: intent.executorState,
+      notice: intent.notice,
+      intent,
+    });
+  };
+
   return {
     previewOnboarding: () =>
       Promise.reject(new Error("演示模式不支持开通，请用真实账号打开开通链接")),
@@ -479,6 +532,31 @@ export function createMockApiClient(): ApiClient {
     ingestInboundReply: () => Promise.reject(new Error("演示模式不支持录入客户回复，请用真实账号")),
 
     inboundReplies: () => Promise.resolve([]),
+
+    submitIntent: submitMockIntent,
+
+    intents: () => Promise.resolve([...mockIntents]),
+
+    intent: (id: string) => {
+      const found = mockIntents.find((item) => item.id === id);
+      return found ? Promise.resolve(found) : Promise.reject(new Error("演示模式里没有这条意图"));
+    },
+
+    cancelIntent: (id: string) => {
+      const index = mockIntents.findIndex((item) => item.id === id);
+      const found = mockIntents[index];
+      if (!found) return Promise.reject(new Error("演示模式里没有这条意图"));
+      const cancelled = IntentView.parse({
+        ...found,
+        status: "CANCELLED",
+        statusLabel: "已撤销",
+        cancellableUntil: null,
+        cancelledAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      mockIntents[index] = cancelled;
+      return Promise.resolve(cancelled);
+    },
 
     panorama: () =>
       Promise.resolve(

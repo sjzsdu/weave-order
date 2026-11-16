@@ -29,6 +29,9 @@ import {
   InboundReplyResult,
   ImportBatch,
   ImportBatchResult,
+  IntentListResponse,
+  IntentView,
+  SubmitIntentResult,
   InviteMemberInput,
   InvitePreview,
   Order,
@@ -69,6 +72,7 @@ import {
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
   T005CreateSampleShipmentResult,
+  SubmitIntentInput,
   SwitchTenantInput,
   TenantChoicesResponse,
   UpdateSampleInput,
@@ -484,6 +488,33 @@ export function createApiClient(options: ApiClientOptions) {
           `/api/inbound/replies?customerId=${encodeURIComponent(customerId)}&limit=${limit}`,
         ),
       ).messages,
+
+    /**
+     * 意图通道：提交一句话 → 立刻拿到可追踪的 intentId。
+     * `clientRequestId` 由调用方生成并复用，重复提交命中同一条记录（幂等）。
+     */
+    submitIntent: async (input: z.input<typeof SubmitIntentInput>) =>
+      SubmitIntentResult.parse(await post("/api/intents", SubmitIntentInput.parse(input))),
+
+    /** 近期意图（最新在前）：刷新页面后依然能看到刚才说了什么、进展到哪。 */
+    intents: async (limit = 20) =>
+      IntentListResponse.parse(await request(`/api/intents?limit=${limit}`)).items,
+
+    intent: async (id: string) => {
+      const body = (await request(`/api/intents/${encodeURIComponent(id)}`)) as {
+        intent: unknown;
+      };
+      return IntentView.parse(body.intent);
+    },
+
+    cancelIntent: async (id: string) =>
+      IntentView.parse(
+        (
+          (await post(`/api/intents/${encodeURIComponent(id)}/cancel`, {})) as {
+            intent: unknown;
+          }
+        ).intent,
+      ),
 
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 

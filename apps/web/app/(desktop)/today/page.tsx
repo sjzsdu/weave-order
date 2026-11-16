@@ -6,10 +6,20 @@ import {
   useApprovals,
   useDecideApproval,
   useDemoScene,
+  useIntentChannel,
   usePanorama,
   useShippingPending,
 } from "@weave-order/core";
-import { Badge, Button, EmptyState, IntentComposer, MoneyText, Spinner, cn } from "@weave-order/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  IntentComposer,
+  IntentRunCard,
+  MoneyText,
+  Spinner,
+  cn,
+} from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { KIND_LABEL, relativeTime } from "@/format";
@@ -31,6 +41,8 @@ function TodayPageContent() {
   const decide = useDecideApproval(api);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 页内 composer 与顶栏 ⌘K 共用同一个 hook；这里只负责选择 source 与展示位置。
+  const intentChannel = useIntentChannel(api);
   // 演示剧本深链：`/today?scene=approval-pending`。生产环境接口 404，这里只是静默失败。
   const [sceneKey] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -41,6 +53,13 @@ function TodayPageContent() {
   const [initialIntent] = useState(() => {
     if (typeof window === "undefined") return undefined;
     return new URLSearchParams(window.location.search).get("intent") ?? undefined;
+  });
+  // 客户 360 的快捷动作带上 source=customer-360，意图卡片据此标明来源。
+  const [intentSource] = useState<"today" | "customer-360">(() => {
+    if (typeof window === "undefined") return "today";
+    return new URLSearchParams(window.location.search).get("source") === "customer-360"
+      ? "customer-360"
+      : "today";
   });
 
   const pending = approvals.data?.items ?? [];
@@ -375,10 +394,26 @@ function TodayPageContent() {
         <h2 className="mb-2 text-sm font-medium text-ink-700">说点什么</h2>
         <IntentComposer
           initialText={initialIntent}
-          onSubmit={() => {
-            setNotice("已收到，小织正在拆解这条需求，草稿会出现在审批窗口。");
-          }}
+          busy={intentChannel.submitting}
+          error={intentChannel.submitError}
+          onSubmit={async (text) => (await intentChannel.submit(text, intentSource)) !== null}
         />
+        {(intentChannel.items.length > 0 || intentChannel.submitError) && (
+          <div className="mt-3 grid gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-ink-400">
+              这句话的去向
+            </h3>
+            {intentChannel.items.slice(0, 5).map((intent) => (
+              <IntentRunCard
+                key={intent.id}
+                intent={intent}
+                busy={intentChannel.submitting}
+                onCancel={(id) => void intentChannel.cancel(id)}
+                onRetry={(item) => void intentChannel.retry(item)}
+              />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

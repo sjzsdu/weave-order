@@ -22,6 +22,7 @@ import { UsageService } from "./usage.service";
 import { CustomerService } from "./customers.service";
 import { ImportService } from "./import.service";
 import { InboundRepliesService } from "./inbound-replies.service";
+import { IntentService } from "./intents.service";
 import { OrderService } from "./orders.service";
 import { OrderShipmentService } from "./order-shipments.service";
 import { PricingService } from "./pricing.service";
@@ -138,6 +139,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
+  const intents = new IntentService(db, tenantId);
   const inboundReplies = new InboundRepliesService(db, tenantId, {
     retentionDays: env.INBOUND_RAW_RETENTION_DAYS,
     resolveImageUrl: async (objectKey) => {
@@ -180,6 +182,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     quotePricing,
     llmSettings,
     usage,
+    intent: intents,
     inboundReplies,
     shares,
     print,

@@ -31,6 +31,7 @@ export const ACTION_LABEL: Record<string, string> = {
   QUOTE_REJECTED: "报价被驳回",
   REVISION_REQUESTED: "发起了改稿",
   REVISION_RESOLVED: "处理了改稿",
+  INTENT_CANCELLED: "撤销了一条意图",
   ORDER_CREATED: "创建了订单",
   ORDER_CONFIRMED: "订单已确认",
   RECEIVABLE_CREATED: "建了应收",
