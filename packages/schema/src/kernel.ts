@@ -215,6 +215,145 @@ export const AuditAction = z.enum([
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
+/**
+ * 工作台动态流只展示「业务动作」。建公司、加成员、改 LLM 设置这类系统
+ * 初始化事件属于「最近审计」，不是任何人或智能体的业务成果，混进动态流会
+ * 让新用户以为系统替他干了活。
+ */
+export const BUSINESS_AUDIT_ACTIONS = [
+  "CUSTOMER_CREATED",
+  "CUSTOMER_CONTEXT_UPDATED",
+  "SAMPLE_CREATED",
+  "SAMPLE_UPDATED",
+  "SAMPLE_ARCHIVED",
+  "SAMPLE_IMAGE_ADDED",
+  "IMPORT_RESET",
+  "SAMPLE_SHIPMENT_DRAFTED",
+  "SAMPLE_SHIPMENT_CONFIRMED",
+  "SAMPLE_SHIPMENT_REJECTED",
+  "QUOTE_DRAFT_GENERATED",
+  "QUOTE_DRAFT_REVISED",
+  "QUOTE_REVISION_PROPOSED",
+  "QUOTE_APPROVAL_ESCALATED",
+  "QUOTE_CONFIRMED",
+  "QUOTE_REJECTED",
+  "ORDER_CREATED",
+  "ORDER_CONFIRMED",
+  "SHIPMENT_CREATED",
+  "SHIPMENT_CONFIRMED",
+  "RECEIVABLE_CREATED",
+  "RECEIVABLE_PAYMENT_RECORDED",
+  "QUOTE_SHARE_CREATED",
+  "QUOTE_SHARE_REVOKED",
+  "REVISION_REQUESTED",
+  "REVISION_RESOLVED",
+  "DECISION_DELTA_RECORDED",
+  "PRICING_POLICY_CREATED",
+  "PRICING_POLICY_UPDATED",
+] as const satisfies readonly AuditAction[];
+
+export type BusinessAuditAction = (typeof BUSINESS_AUDIT_ACTIONS)[number];
+
+export function isBusinessAuditAction(action: AuditAction): action is BusinessAuditAction {
+  return (BUSINESS_AUDIT_ACTIONS as readonly string[]).includes(action);
+}
+
+/** 动态流里「谁做的」：人类由调用方按当前身份判断，智能体按动作归属。 */
+export const AGENT_LABEL = {
+  QUOTING: "小织",
+  FOLLOWUP: "小跟",
+  OPS: "小序",
+} as const;
+
+export type AgentLabel = (typeof AGENT_LABEL)[keyof typeof AGENT_LABEL];
+
+/** 动作 → 执行智能体。未列入的动作归到小序（业务运营），但绝不返回原始枚举。 */
+export function agentLabelForAction(action: string): AgentLabel {
+  if (
+    action.startsWith("QUOTE") ||
+    action.startsWith("REVISION") ||
+    action === "DECISION_DELTA_RECORDED" ||
+    action.startsWith("PRICING_POLICY")
+  ) {
+    return AGENT_LABEL.QUOTING;
+  }
+  if (
+    action.startsWith("SAMPLE_SHIPMENT") ||
+    action.startsWith("SHIPMENT") ||
+    action === "SAMPLE_ARCHIVED" ||
+    action === "SAMPLE_IMAGE_ADDED"
+  ) {
+    return AGENT_LABEL.FOLLOWUP;
+  }
+  return AGENT_LABEL.OPS;
+}
+
+/** 审计动作的中文说明：单一事实源，web / mobile / 审批卡共用，绝不直出枚举。 */
+export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
+  CUSTOMER_CREATED: "新建了客户",
+  CUSTOMER_CONTEXT_UPDATED: "更新了客户偏好",
+  SAMPLE_CREATED: "新建了样品",
+  SAMPLE_UPDATED: "更新了样品",
+  SAMPLE_ARCHIVED: "归档了样品",
+  SAMPLE_IMAGE_ADDED: "补了样品图片",
+  SAMPLE_INDEX_FAILED: "样品索引失败",
+  IMPORT_RESET: "重置了导入数据",
+  SAMPLE_SHIPMENT_DRAFTED: "生成了寄样单草稿",
+  SAMPLE_SHIPMENT_CONFIRMED: "寄样单已确认",
+  SAMPLE_SHIPMENT_REJECTED: "寄样单被驳回",
+  QUOTE_DRAFT_GENERATED: "生成了报价草稿",
+  QUOTE_DRAFT_REVISED: "改了报价草稿",
+  QUOTE_REVISION_PROPOSED: "提出了改稿",
+  QUOTE_APPROVAL_ESCALATED: "报价升级复核",
+  QUOTE_CONFIRMED: "报价已批准生效",
+  QUOTE_REJECTED: "报价被驳回",
+  TENANT_CREATED: "开了新公司",
+  MEMBERSHIP_CREATED: "添加了成员",
+  TENANT_SWITCHED: "切换了公司",
+  MEMBERSHIP_INVITED: "发出了成员邀请",
+  MEMBERSHIP_ACTIVATED: "成员已接受邀请",
+  ORDER_CREATED: "创建了订单",
+  ORDER_CONFIRMED: "订单已确认",
+  SHIPMENT_CREATED: "建了发货单",
+  SHIPMENT_CONFIRMED: "发货单已确认",
+  RECEIVABLE_CREATED: "建了应收",
+  RECEIVABLE_PAYMENT_RECORDED: "登记了回款",
+  QUOTE_SHARE_CREATED: "生成了报价分享",
+  QUOTE_SHARE_REVOKED: "撤销了报价分享",
+  REVISION_REQUESTED: "发起了改稿",
+  REVISION_RESOLVED: "处理了改稿",
+  DECISION_DELTA_RECORDED: "记录了决策偏好",
+  PRICING_POLICY_CREATED: "建了价格政策",
+  PRICING_POLICY_UPDATED: "改了价格政策",
+  LLM_SETTINGS_UPDATED: "更新了模型设置",
+  USER_CREATED: "创建了账号",
+  API_TOKEN_CREATED: "创建了访问令牌",
+  API_TOKEN_REVOKED: "吊销了访问令牌",
+  PRINT_AGENT_REGISTERED: "注册了打印代理",
+  PRINT_AGENT_DISABLED: "停用了打印代理",
+  PRINT_TEMPLATE_PUBLISHED: "发布了打印模板",
+  PRINT_JOB_CREATED: "发起了打印任务",
+  PRINT_JOB_COMPLETED: "打印任务完成",
+  PRINT_JOB_FAILED: "打印任务失败",
+  PRINT_JOB_CANCELLED: "取消了打印任务",
+  PRINT_BOX_CREATED: "建了箱",
+  PRINT_BOX_VOIDED: "作废了箱",
+  PRINT_LABEL_REISSUED: "补打了标签",
+  PRINT_DISCREPANCY_FLAGGED: "标记了发货差异",
+  PRINT_SCAN_RECORDED: "记录了扫码",
+};
+
+export function auditActionLabel(action: string): string {
+  return (AUDIT_ACTION_LABEL as Record<string, string>)[action] ?? "更新了业务数据";
+}
+
+/** 「谁做的」的中文说明；人类的具体姓名由调用方更好的话再覆盖。 */
+export const ACTOR_TYPE_LABEL = {
+  AGENT: "智能体",
+  HUMAN: "人工",
+  SYSTEM: "系统",
+} as const;
+
 /** 审计日志读取模型（只读，不可能由调用方写入）。 */
 export const AuditLogEntry = z
   .object({

@@ -169,6 +169,24 @@ export function useDecideApproval(client: ApiClient) {
   });
 }
 
+/**
+ * 真实意图通道：提交客户原话，拿到 DRAFTED / NEEDS_INPUT / FAILED 三种结局之一。
+ * 成功即刷新工作台与审批队列 —— 草稿本来就应该出现在「等你决定」里。
+ */
+export function useRunQuoteAgent(client: ApiClient) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { rawText: string; customerId?: string }) => client.runQuoteAgent(input),
+    onSuccess: async (result) => {
+      if (result.status !== "DRAFTED") return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.panorama }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.approvals }),
+      ]);
+    },
+  });
+}
+
 export interface OrderListFilters {
   statuses?: string[];
   customerId?: string;

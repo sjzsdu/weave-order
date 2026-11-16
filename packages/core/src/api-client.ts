@@ -65,6 +65,8 @@ import {
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
+  QuoteAgentResult,
+  QuoteRequestInput,
   T005CreateSampleShipmentResult,
   SwitchTenantInput,
   TenantChoicesResponse,
@@ -470,6 +472,20 @@ export function createApiClient(options: ApiClientOptions) {
       ).messages,
 
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
+
+    /**
+     * 工作台 / 命令栏的真实意图通道：把客户原话交给报价 agent。
+     * 返回 DRAFTED / NEEDS_INPUT / FAILED 三种真实结局，前端不伪造「已收到」。
+     */
+    runQuoteAgent: async (input: z.input<typeof QuoteRequestInput>) =>
+      QuoteAgentResult.parse(
+        await request("/api/agents/quote", {
+          method: "POST",
+          body: JSON.stringify(QuoteRequestInput.parse(input)),
+          // LLM + 找样 + 定价是一条同步链；超过 2 分钟就如实失败，不让用户干等。
+          signal: AbortSignal.timeout(120_000),
+        }),
+      ),
 
     /** 审批队列（游标分页）：不传 cursor 即第一页。 */
     approvals: async (options: { cursor?: string | null; limit?: number } = {}) => {

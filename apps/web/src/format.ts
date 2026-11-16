@@ -10,27 +10,11 @@ export function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString("zh-CN");
 }
 
-export const ACTION_LABEL: Record<string, string> = {
-  QUOTE_DRAFT_GENERATED: "生成了报价草稿",
-  QUOTE_CONFIRMED: "报价已批准生效",
-  QUOTE_REJECTED: "报价被驳回",
-  SAMPLE_SHIPMENT_DRAFTED: "生成了寄样单草稿",
-  SAMPLE_SHIPMENT_CONFIRMED: "寄样单已确认",
-  SAMPLE_SHIPMENT_REJECTED: "寄样单被驳回",
-  CUSTOMER_CREATED: "新建了客户",
-  SAMPLE_CREATED: "新建了样品",
-  REVISION_REQUESTED: "发起了改稿",
-  REVISION_RESOLVED: "处理了改稿",
-  IMPORT_RESET: "重置了导入数据",
-  ORDER_CREATED: "创建了订单",
-  ORDER_CONFIRMED: "订单已确认",
-  RECEIVABLE_CREATED: "建了应收",
-  RECEIVABLE_PAYMENT_RECORDED: "登记了回款",
-};
-
-export function actionLabel(action: string): string {
-  return ACTION_LABEL[action] ?? action;
-}
+/** 动作文案的唯一事实源在 @weave-order/schema：页面、审批卡、移动端共用一份。 */
+export {
+  AUDIT_ACTION_LABEL as ACTION_LABEL,
+  auditActionLabel as actionLabel,
+} from "@weave-order/schema";
 
 export const KIND_LABEL: Record<string, string> = {
   quote: "报价",

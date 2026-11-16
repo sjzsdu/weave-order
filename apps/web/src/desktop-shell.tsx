@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useApprovals, useTenantContext } from "@weave-order/core";
+import { useApprovals, useAuthContext, useTenantContext } from "@weave-order/core";
 import type { TenantChoice } from "@weave-order/schema";
 import { Badge, CommandBar, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
@@ -60,6 +60,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const tenantContext = useTenantContext(api);
+  // 顶栏显示人名，不显示 SSO 主键：`membership.subject` 是内部 ID。
+  const me = useAuthContext(api);
   const [printOpen, setPrintOpen] = useState(false);
   const [switcherSignal, setSwitcherSignal] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -189,7 +191,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
 
   const tenant = tenantContext.tenant;
   const membership = tenantContext.membership;
-  const name = membership.subject;
+  const profile = me.data && !("tenants" in me.data) ? me.data : null;
+  const name = profile?.name?.trim() || "我";
   const tenants: TenantChoice[] = tenantList.data?.tenants ?? [];
   // 窄屏没有顶栏的 TenantSwitcher：把可切换的公司直接列进「更多」，
   // 否则 375 宽度下「功能存在但入口消失」。
@@ -229,7 +232,9 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="mx-auto hidden md:block">
-            <CommandBar onSubmit={() => router.push("/today")} />
+            <CommandBar
+              onSubmit={(text) => router.push(`/today?intent=${encodeURIComponent(text)}&submit=1`)}
+            />
           </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
@@ -367,8 +372,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
-        3 个业务窗口 + 1 个管理面 · 打印是全局抽屉 · 前端只读展示 +
-        发起审批，金额与阈值一律后端校验。
+        织序 WeaveOrder · 智能体做初稿，你按批准落地
       </footer>
 
       <PrintDrawer open={printOpen} onClose={() => setPrintOpen(false)} />

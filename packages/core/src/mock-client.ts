@@ -17,9 +17,11 @@ import {
   PanoramaSnapshot,
   QuoteShareStats,
   QuoteShareStatsList,
+  QuoteAgentResult,
   ShipmentView,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
+  agentLabelForAction,
   roleCapabilities,
 } from "@weave-order/schema";
 import type { ApprovalDecisionInput } from "@weave-order/schema";
@@ -454,6 +456,18 @@ export function createMockApiClient(): ApiClient {
           samples: [sample],
           items: [current.item],
           audit: [auditEntry],
+          events: audit
+            .filter((entry) => entry.actorType !== "SYSTEM")
+            .slice(0, 12)
+            .map((entry) => ({
+              id: entry.id,
+              kind: entry.actorType === "AGENT" ? ("AGENT_DONE" as const) : ("HUMAN_DONE" as const),
+              actorLabel: entry.actorType === "AGENT" ? agentLabelForAction(entry.action) : "你",
+              action: entry.action,
+              entityType: entry.entityType,
+              entityId: entry.entityId,
+              createdAt: entry.createdAt,
+            })),
           stats: {
             customerCount: 12,
             sampleCount: 48,
@@ -464,7 +478,31 @@ export function createMockApiClient(): ApiClient {
             confirmedShipmentCount: 2,
             rejectedCount: 0,
             auditCount: 30,
+            todayAgentDoneCount: audit.filter((entry) => entry.actorType === "AGENT").length,
           },
+        }),
+      ),
+
+    /**
+     * 演示模式用本地草稿模拟一次真实 agent 回执，形状与生产一致：
+     * 页面看到的是 DRAFTED / NEEDS_INPUT / FAILED 三态，不会出现「假成功」。
+     */
+    runQuoteAgent: () =>
+      Promise.resolve(
+        QuoteAgentResult.parse({
+          threadId: "mock-thread",
+          stage: "DRAFTED",
+          status: "DRAFTED",
+          intent: null,
+          candidates: [],
+          selectedSampleId: SAMPLE_ID,
+          pricingBasis: null,
+          draft,
+          missingFields: [],
+          explanation: "演示模式：这份草稿来自本地 mock 数据，不是真实定价。",
+          provider: "mock",
+          usage: null,
+          failure: null,
         }),
       ),
 

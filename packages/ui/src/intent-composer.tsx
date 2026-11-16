@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Button } from "./primitives";
 
 const EXAMPLES = [
@@ -15,14 +16,35 @@ export function IntentComposer({
   busy,
   error,
   initialText,
+  resetToken,
+  contextSlot,
+  autoSubmit,
 }: {
   onSubmit: (text: string) => void;
   busy?: boolean;
   error?: string | null;
   /** 从客户 360 带过来的上下文（如「给杭州青禾报价：」）。 */
   initialText?: string;
+  /** 每次变化把输入框清空（只在提交成功后由父组件递增）。 */
+  resetToken?: number;
+  /** 提交前可选的业务上下文（如选择客户），放在输入框上方。 */
+  contextSlot?: ReactNode;
+  /** 顶栏 ⌘K 带过来的原话：挂载后自动提交一次（只一次，StrictMode 也不重复）。 */
+  autoSubmit?: boolean;
 }) {
   const [text, setText] = useState(initialText ?? "");
+  const autoSubmitted = useRef(false);
+  useEffect(() => {
+    if (resetToken === undefined) return;
+    setText("");
+  }, [resetToken]);
+  useEffect(() => {
+    if (!autoSubmit || autoSubmitted.current) return;
+    const value = initialText?.trim();
+    if (!value) return;
+    autoSubmitted.current = true;
+    onSubmit(value);
+  }, [autoSubmit, initialText, onSubmit]);
   const submit = () => {
     const value = text.trim();
     if (!value || busy) return;
@@ -30,6 +52,7 @@ export function IntentComposer({
   };
   return (
     <div className="rounded-lg border border-line bg-surface p-5">
+      {contextSlot && <div className="mb-3">{contextSlot}</div>}
       <label htmlFor="intent" className="text-sm font-medium text-ink-900">
         粘贴客户原话，小织会整理成报价草稿
       </label>

@@ -11,7 +11,7 @@ import {
   SampleShipmentStatus,
   Timestamp,
 } from "./domain";
-import { AuditLogEntry } from "./kernel";
+import { AuditAction, AuditLogEntry } from "./kernel";
 import { ApprovalLevel, ApprovalRequirement, EscalationReason } from "./pricing";
 import { RevisionDiff } from "./revisions";
 import { MemberRole } from "./tenancy";
@@ -128,9 +128,36 @@ export const PanoramaStats = z
     confirmedShipmentCount: z.number().int().nonnegative(),
     rejectedCount: z.number().int().nonnegative(),
     auditCount: z.number().int().nonnegative(),
+    /**
+     * 今天（业务日，Asia/Shanghai）由智能体完成、且属于业务动作的条数。
+     * 工作台标题只认这个数，不拿「最近 N 条审计」冒充「今天做的事」。
+     */
+    todayAgentDoneCount: z.number().int().nonnegative(),
   })
   .strict();
 export type PanoramaStats = z.infer<typeof PanoramaStats>;
+
+/**
+ * 工作台动态流的一条事件。
+ *
+ * 只包含人类与智能体的业务动作：系统初始化事件不进这里。`actorLabel` 由后端
+ * 给出，前端不再按 action 前缀猜「是谁做的」。
+ */
+export const WorkbenchEventKind = z.enum(["AGENT_DONE", "HUMAN_DONE"]);
+export type WorkbenchEventKind = z.infer<typeof WorkbenchEventKind>;
+
+export const WorkbenchEvent = z
+  .object({
+    id: EntityId,
+    kind: WorkbenchEventKind,
+    actorLabel: z.string().min(1).max(64),
+    action: AuditAction,
+    entityType: z.string().min(1).max(64),
+    entityId: EntityId,
+    createdAt: Timestamp,
+  })
+  .strict();
+export type WorkbenchEvent = z.infer<typeof WorkbenchEvent>;
 
 /** 业务全景（只读）：一次拉取，前端纯展示，不提供任何写操作。 */
 export const PanoramaSnapshot = z
@@ -140,6 +167,8 @@ export const PanoramaSnapshot = z
     samples: z.array(FabricSample),
     items: z.array(ApprovalItem),
     audit: z.array(AuditLogEntry),
+    /** 动态流（人类 + 智能体的业务动作，最新在前）。`audit` 仍保留完整账本。 */
+    events: z.array(WorkbenchEvent),
     stats: PanoramaStats,
   })
   .strict();

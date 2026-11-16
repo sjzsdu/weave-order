@@ -59,12 +59,13 @@ function PanoramaPageContent() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">业务全景</p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">只读 · 全局一眼看完</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">全局一眼看完</h1>
           <p className="mt-1 text-sm text-ink-400">
-            生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")} · 这里没有任何写操作
+            生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")} ·
+            这里的数据是只读聚合，所有生效决定都在审批窗口
           </p>
         </div>
-        <Badge tone="neutral">只读视图</Badge>
+        <Badge tone="neutral">聚合视图</Badge>
       </header>
 
       <section className="grid gap-3 md:grid-cols-2">

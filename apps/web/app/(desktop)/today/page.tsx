@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   useApprovals,
+  useCustomerList,
   useDecideApproval,
   useDemoScene,
   usePanorama,
+  useRunQuoteAgent,
   useShippingPending,
 } from "@weave-order/core";
 import {
@@ -23,13 +25,7 @@ import type { AgentRun } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { actionLabel, KIND_LABEL, relativeTime } from "@/format";
-
-function agentName(action: string): string {
-  if (action.startsWith("SAMPLE_SHIPMENT")) return "小跟";
-  if (action.startsWith("QUOTE")) return "小织";
-  if (action.startsWith("REVISION")) return "小织";
-  return "小序";
-}
+import type { QuoteAgentResult } from "@weave-order/schema";
 
 export default function TodayPage() {
   const mounted = useMounted();
@@ -46,8 +42,13 @@ function TodayPageContent() {
   const shipping = useShippingPending(api);
   const decide = useDecideApproval(api);
   const [notice, setNotice] = useState<string | null>(null);
-  const [intents, setIntents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [agentResult, setAgentResult] = useState<QuoteAgentResult | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState(0);
+  const [customerId, setCustomerId] = useState("");
+  const customers = useCustomerList(api, { limit: 100, owner: "all" });
+  const runAgent = useRunQuoteAgent(api);
   // 演示剧本深链：`/today?scene=approval-pending`。生产环境接口 404，这里只是静默失败。
   const [sceneKey] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -59,28 +60,27 @@ function TodayPageContent() {
     if (typeof window === "undefined") return undefined;
     return new URLSearchParams(window.location.search).get("intent") ?? undefined;
   });
+  // 顶栏 ⌘K 提交后带着原话跳到这里并自动执行一次；不再把输入直接丢掉。
+  const [autoSubmitIntent] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("submit") === "1";
+  });
 
   const runs = useMemo<AgentRun[]>(() => {
-    const fromAudit = (panorama.data?.audit ?? []).slice(0, 5).map((entry) => ({
-      id: entry.id,
-      agent: agentName(entry.action),
-      what: actionLabel(entry.action),
+    return (panorama.data?.events ?? []).map((event) => ({
+      id: event.id,
+      agent: event.actorLabel,
+      what: actionLabel(event.action),
       status: "done" as const,
-      hint: `${entry.actorType === "AGENT" ? "自主完成" : "人工操作"} · ${relativeTime(entry.createdAt)}`,
+      hint: `${event.kind === "AGENT_DONE" ? "自主完成" : "人工操作"} · ${relativeTime(event.createdAt)}`,
     }));
-    const local = intents.map((text, index) => ({
-      id: `local-${index}`,
-      agent: "小织",
-      what: "已收到你的话，正在拆解需求",
-      status: "waiting" as const,
-      hint: text,
-    }));
-    return [...local, ...fromAudit];
-  }, [panorama.data, intents]);
+  }, [panorama.data]);
 
   const pending = approvals.data?.items ?? [];
   const stats = panorama.data?.stats;
   const loading = panorama.isLoading || approvals.isLoading;
+  const isBrandNew = (stats?.customerCount ?? 0) === 0 && (stats?.sampleCount ?? 0) === 0;
+  const agentDoneToday = stats?.todayAgentDoneCount ?? 0;
 
   useEffect(() => {
     if (!scene.data?.entityId) return;
@@ -105,6 +105,34 @@ function TodayPageContent() {
     }
   }
 
+  /**
+   * 真实意图提交：只有 agent 明确回 `DRAFTED` 才算成功。失败与缺字段都
+   * 原样展示，并保留输入内容供重试 —— 不再有「绿色假成功」。
+   */
+  async function submitIntent(text: string) {
+    setAgentResult(null);
+    setAgentError(null);
+    try {
+      const result = await runAgent.mutateAsync({
+        rawText: text,
+        ...(customerId ? { customerId } : {}),
+      });
+      setAgentResult(result);
+      if (result.status !== "FAILED") setResetToken((value) => value + 1);
+    } catch (cause) {
+      const aborted =
+        cause instanceof DOMException &&
+        (cause.name === "TimeoutError" || cause.name === "AbortError");
+      setAgentError(
+        aborted
+          ? "小织超过 2 分钟没回来，这次没整理出来；原话还在输入框里，可以直接再试一次。"
+          : cause instanceof Error
+            ? cause.message
+            : "提交失败，请稍后重试",
+      );
+    }
+  }
+
   return (
     <div className="grid gap-6">
       <section className="rounded-lg border border-line bg-surface px-6 py-5">
@@ -117,11 +145,25 @@ function TodayPageContent() {
               </div>
             ) : (
               <h1 className="mt-1 text-2xl font-semibold text-ink-900">
-                今天，小织替你做了 {stats?.auditCount ?? 0} 件事，
-                <span className={pending.length > 0 ? "text-vermilion-600" : "text-moss-600"}>
-                  {" "}
-                  {pending.length} 件等你决定
-                </span>
+                {agentDoneToday > 0 ? (
+                  <>
+                    今天，小织替你做了 {agentDoneToday} 件事，
+                    <span className={pending.length > 0 ? "text-vermilion-600" : "text-moss-600"}>
+                      {" "}
+                      {pending.length} 件等你决定
+                    </span>
+                  </>
+                ) : isBrandNew ? (
+                  <>欢迎，先把客户和样品放进来</>
+                ) : (
+                  <>
+                    今天还没有新的智能体动态，
+                    <span className={pending.length > 0 ? "text-vermilion-600" : "text-moss-600"}>
+                      {" "}
+                      {pending.length} 件等你决定
+                    </span>
+                  </>
+                )}
               </h1>
             )}
             <p className="mt-1 text-sm text-ink-400">
@@ -207,14 +249,27 @@ function TodayPageContent() {
           {!approvals.isLoading && pending.length === 0 && (
             <EmptyState
               title="今天没有要你决定的事。"
-              description="小织在跟 12 个客户；新的草稿会出现在这里。"
+              description={
+                (stats?.customerCount ?? 0) > 0
+                  ? `${stats?.customerCount} 个客户在跟；新的草稿会出现在这里。`
+                  : "还没有客户。建一个客户，小织才能开始报价。"
+              }
               actions={
-                <Link
-                  href="/panorama"
-                  className="text-sm text-indigo-600 underline underline-offset-2"
-                >
-                  看业务全景
-                </Link>
+                (stats?.customerCount ?? 0) > 0 ? (
+                  <Link
+                    href="/panorama"
+                    className="text-sm text-indigo-600 underline underline-offset-2"
+                  >
+                    看业务全景
+                  </Link>
+                ) : (
+                  <Link
+                    href="/panorama/customers"
+                    className="text-sm text-indigo-600 underline underline-offset-2"
+                  >
+                    去建第一个客户 →
+                  </Link>
+                )
               }
             />
           )}
@@ -271,13 +326,17 @@ function TodayPageContent() {
         </section>
 
         <section className="grid content-start gap-3">
-          <h2 className="text-sm font-medium text-ink-700">正在进行</h2>
+          <h2 className="text-sm font-medium text-ink-700">今天发生的事</h2>
           <AgentRunStrip
             runs={runs}
-            empty={<p className="text-sm text-ink-400">今天没有智能体动态。</p>}
+            empty={
+              <p className="text-sm text-ink-400">
+                小织还没接到活。先把客户和样品放进来，或者下面说一句话。
+              </p>
+            }
           />
 
-          <h2 className="mt-2 text-sm font-medium text-ink-700">出事了</h2>
+          <h2 className="mt-2 text-sm font-medium text-ink-700">需要留意</h2>
           <div
             className={cn(
               "rounded-lg border px-4 py-3 text-sm",
@@ -288,7 +347,9 @@ function TodayPageContent() {
           >
             {(stats?.rejectedCount ?? 0) > 0
               ? `${stats?.rejectedCount} 张单据被驳回，点审批窗口查看原因。`
-              : "没有异常。交期、收款、寄样跟进都在正常范围。"}
+              : (stats?.quoteCount ?? 0) + (stats?.shipmentCount ?? 0) === 0
+                ? "还没有可监控的单据。建第一张订单后，交期和收款会在这里盯。"
+                : "暂时没有需要留意的异常。"}
           </div>
         </section>
       </div>
@@ -297,12 +358,85 @@ function TodayPageContent() {
         <h2 className="mb-2 text-sm font-medium text-ink-700">说点什么</h2>
         <IntentComposer
           initialText={initialIntent}
-          onSubmit={(text) => {
-            setIntents((current) => [text, ...current].slice(0, 3));
-            setNotice("已收到，小织正在拆解这条需求，草稿会出现在审批窗口。");
-          }}
+          autoSubmit={autoSubmitIntent}
+          busy={runAgent.isPending}
+          error={agentError}
+          resetToken={resetToken}
+          onSubmit={(text) => void submitIntent(text)}
+          contextSlot={
+            <label className="flex flex-wrap items-center gap-2 text-sm text-ink-700">
+              报价给
+              <select
+                value={customerId}
+                onChange={(event) => setCustomerId(event.target.value)}
+                className="min-h-9 min-w-48 rounded-md border border-line bg-surface px-2 text-sm"
+              >
+                <option value="">先不选（小织会告诉你还缺客户）</option>
+                {(customers.data ?? []).map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
         />
+        {runAgent.isPending && (
+          <p className="mt-3 text-sm text-ink-400" aria-live="polite">
+            小织正在读你贴的原话、找样、算价，通常会等十几秒。
+          </p>
+        )}
+        {agentResult && <IntentResultCard result={agentResult} />}
       </section>
+    </div>
+  );
+}
+
+/**
+ * 意图回执卡：三种真实结局各自可见。
+ * DRAFTED 指到审批窗口，NEEDS_INPUT 列出缺什么，FAILED 给出原因与重试入口
+ * （重试由用户再点一次「生成草稿」，原文仍在输入框里）。
+ */
+function IntentResultCard({ result }: { result: QuoteAgentResult }) {
+  if (result.status === "DRAFTED" && result.draft) {
+    return (
+      <div className="mt-3 rounded-lg border border-moss-600/40 bg-moss-600/10 px-4 py-3 text-sm text-ink-700">
+        <p className="font-medium text-moss-600">草稿已生成，等你决定。</p>
+        <p className="mt-1">{result.explanation}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <span className="text-ink-400">
+            合计 <MoneyText money={result.draft.total} />
+          </span>
+          <Link
+            href={`/approvals?id=${result.draft.id}&kind=quote`}
+            className="text-indigo-600 underline underline-offset-2"
+          >
+            去看这份草稿 →
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  if (result.status === "NEEDS_INPUT") {
+    return (
+      <div className="mt-3 rounded-lg border border-amber-600/40 bg-amber-100 px-4 py-3 text-sm text-ink-700">
+        <p className="font-medium">小织还缺这些信息，补齐后才能出草稿：</p>
+        <ul className="mt-2 list-inside list-disc text-ink-700">
+          {result.missingFields.map((field) => (
+            <li key={field.code}>
+              {field.label}：{field.prompt}
+            </li>
+          ))}
+        </ul>
+        {result.explanation && <p className="mt-2 text-ink-400">{result.explanation}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 rounded-lg border border-vermilion-600/40 bg-vermilion-600/10 px-4 py-3 text-sm text-vermilion-600">
+      <p className="font-medium">小织这次没整理出来。</p>
+      <p className="mt-1">{result.failure?.message ?? result.explanation}</p>
+      <p className="mt-1 text-ink-400">原话还在输入框里，改一改再提交一次即可。</p>
     </div>
   );
 }

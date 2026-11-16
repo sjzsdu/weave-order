@@ -111,6 +111,7 @@ describe("审批 / 全景契约（第五步）", () => {
       samples: [],
       items: [item],
       audit: [],
+      events: [],
       stats: {
         customerCount: 1,
         sampleCount: 0,
@@ -121,6 +122,7 @@ describe("审批 / 全景契约（第五步）", () => {
         confirmedShipmentCount: 0,
         rejectedCount: 0,
         auditCount: 0,
+        todayAgentDoneCount: 0,
       },
     });
     expect(snapshot.success).toBe(true);

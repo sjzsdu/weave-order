@@ -6,7 +6,7 @@ import type {
   FabricSample,
 } from "@weave-order/schema";
 import { describe, expect, it, vi } from "vitest";
-import { createApprovalService } from "../src/approval";
+import { businessDayStart, createApprovalService } from "../src/approval";
 import { KernelError } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
 
@@ -60,7 +60,14 @@ function pageOf(items: ApprovalItemT[], limit: number, query: ListQuery = {}): A
     .slice(0, limit);
 }
 
-function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[] } = {}) {
+function makeKernel(
+  opts: {
+    quotes?: ApprovalItemT[];
+    shipments?: ApprovalItemT[];
+    events?: AuditLogEntry[];
+    todayAgentDoneCount?: number;
+  } = {},
+) {
   const spies = {
     confirmDraft: vi.fn((_id: string, _ctx: KernelContext) =>
       Promise.resolve({ status: "SENT" as const }),
@@ -94,12 +101,48 @@ function makeKernel(opts: { quotes?: ApprovalItemT[]; shipments?: ApprovalItemT[
     },
     customers: { list: vi.fn(() => Promise.resolve([] as Customer[])) },
     search: { listSamples: vi.fn(() => Promise.resolve([] as FabricSample[])) },
-    audit: { list: vi.fn(() => Promise.resolve([] as AuditLogEntry[])) },
+    audit: {
+      list: vi.fn(() => Promise.resolve([] as AuditLogEntry[])),
+      businessEvents: vi.fn(() => Promise.resolve(opts.events ?? [])),
+      countAgentBusinessActionsSince: vi.fn(() => Promise.resolve(opts.todayAgentDoneCount ?? 0)),
+    },
   } as unknown as Kernel;
   return { kernel, spies };
 }
 
+function auditEntry(
+  overrides: Partial<AuditLogEntry> & Pick<AuditLogEntry, "actorType" | "action">,
+): AuditLogEntry {
+  return {
+    id: ID_QUOTE,
+    tenantId: ID_QUOTE,
+    seq: 1,
+    actorType: overrides.actorType,
+    actorId: "someone",
+    actorRole: null,
+    action: overrides.action,
+    entityType: "quote",
+    entityId: ID_QUOTE,
+    before: null,
+    after: null,
+    correlationId: null,
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
 describe("审批服务（离线，假内核）", () => {
+  it("业务日按北京时间切分：UTC 容器不会把昨晚算进今天", () => {
+    // 北京时间 2026-11-16 00:30 = UTC 2026-11-15 16:30
+    expect(businessDayStart(new Date("2026-11-15T16:30:00.000Z")).toISOString()).toBe(
+      "2026-11-15T16:00:00.000Z",
+    );
+    // 北京时间 2026-11-15 23:59:59 = UTC 15:59:59，仍属于前一天
+    expect(businessDayStart(new Date("2026-11-15T15:59:59.000Z")).toISOString()).toBe(
+      "2026-11-14T16:00:00.000Z",
+    );
+  });
+
   it("listPending 只返回 DRAFT 且按创建时间倒序合并两类单据", async () => {
     const { kernel } = makeKernel({
       quotes: [
@@ -253,5 +296,33 @@ describe("审批服务（离线，假内核）", () => {
     expect(snapshot.stats.shipmentCount).toBe(1);
     expect(snapshot.stats.pendingCount).toBe(1);
     expect(snapshot.stats.sentQuoteCount).toBe(1);
+  });
+
+  it("panorama 事件按身份给标签：智能体按动作归属、本人是「你」、同事是「同事」", async () => {
+    const { kernel } = makeKernel({
+      events: [
+        auditEntry({ id: ID_SHIPMENT, actorType: "AGENT", action: "QUOTE_DRAFT_GENERATED" }),
+        auditEntry({
+          id: ID_QUOTE,
+          actorType: "HUMAN",
+          action: "CUSTOMER_CREATED",
+          actorId: HUMAN.actor.id,
+        }),
+        auditEntry({
+          id: "123e4567-e89b-12d3-a456-426614174099",
+          actorType: "HUMAN",
+          action: "CUSTOMER_CREATED",
+          actorId: "another-human",
+        }),
+      ],
+      todayAgentDoneCount: 3,
+    });
+    const snapshot = await createApprovalService(kernel).panorama(HUMAN);
+    expect(snapshot.events.map((event) => event.actorLabel)).toEqual(["小织", "你", "同事"]);
+    expect(snapshot.events[0]?.kind).toBe("AGENT_DONE");
+    expect(snapshot.events[1]?.kind).toBe("HUMAN_DONE");
+    // 标题数字用「今天智能体业务动作」的精确计数，不是审计条数。
+    expect(snapshot.stats.todayAgentDoneCount).toBe(3);
+    expect(snapshot.stats.auditCount).toBe(0);
   });
 });

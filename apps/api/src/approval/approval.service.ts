@@ -3,6 +3,7 @@ import {
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
+  agentLabelForAction,
   PanoramaSnapshot,
   PanoramaStats,
 } from "@weave-order/schema";
@@ -332,13 +333,33 @@ export function createApprovalService(kernel: Kernel) {
     async panorama(ctx?: KernelContext): Promise<Panorama> {
       // 顺序执行，避免单连接租户会话上同一 client 并发 query。
       const customers = await kernel.customers.list(100, ctx);
-      const samples = await kernel.search.listSamples(100, ctx);
+      // 归档样品不进全景：它不是「在用的样品」，计数与会话都不该出现。
+      const samples = (await kernel.search.listSamples(100, ctx)).filter(
+        (sample) => sample.status === "ACTIVE",
+      );
       const quotes = await kernel.quotes.list(100, ctx);
       const shipments = await kernel.shipments.list(100, ctx);
       const audit = await kernel.audit.list(20);
+      const businessEvents = await kernel.audit.businessEvents(12);
       const items = [...quotes, ...shipments].sort((a, b) =>
         b.createdAt.localeCompare(a.createdAt),
       );
+      const events = businessEvents.map((entry) => ({
+        id: entry.id,
+        kind: entry.actorType === "AGENT" ? ("AGENT_DONE" as const) : ("HUMAN_DONE" as const),
+        actorLabel:
+          entry.actorType === "AGENT"
+            ? agentLabelForAction(entry.action)
+            : ctx?.actor.id === entry.actorId
+              ? "你"
+              : "同事",
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        createdAt: entry.createdAt,
+      }));
+      const todayAgentDoneCount =
+        await kernel.audit.countAgentBusinessActionsSince(businessDayStart());
       const stats = PanoramaStats.parse({
         customerCount: customers.length,
         sampleCount: samples.length,
@@ -351,6 +372,7 @@ export function createApprovalService(kernel: Kernel) {
           (entry) => entry.status === "REJECTED" || entry.status === "CANCELLED",
         ).length,
         auditCount: audit.length,
+        todayAgentDoneCount,
       });
       return PanoramaSnapshot.parse({
         generatedAt: new Date().toISOString(),
@@ -358,10 +380,23 @@ export function createApprovalService(kernel: Kernel) {
         samples,
         items,
         audit,
+        events,
         stats,
       });
     },
   };
+}
+
+/**
+ * 业务日边界：纺织外贸按北京时间算「今天」。中国无夏令时，用固定 +08:00
+ * 换算，避免服务器时区（UTC 容器）把昨晚 8 点之后的事算进今天。
+ */
+export function businessDayStart(now: Date = new Date()): Date {
+  const OFFSET_MS = 8 * 60 * 60 * 1000;
+  const shifted = new Date(now.getTime() + OFFSET_MS);
+  return new Date(
+    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - OFFSET_MS,
+  );
 }
 
 /**

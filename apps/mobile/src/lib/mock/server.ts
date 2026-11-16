@@ -755,6 +755,18 @@ export function createMockServer(options: MockServerOptions): MockServer {
         samples: MOCK_SAMPLES,
         items,
         audit: state.audit,
+        events: state.audit
+          .filter((entry) => entry.actorType !== "SYSTEM")
+          .slice(0, 12)
+          .map((entry) => ({
+            id: entry.id,
+            kind: entry.actorType === "AGENT" ? "AGENT_DONE" : "HUMAN_DONE",
+            actorLabel: entry.actorType === "AGENT" ? "小织" : "你",
+            action: entry.action,
+            entityType: entry.entityType,
+            entityId: entry.entityId,
+            createdAt: entry.createdAt,
+          })),
         stats: {
           customerCount: MOCK_CUSTOMERS.length,
           sampleCount: MOCK_SAMPLES.length,
@@ -765,6 +777,7 @@ export function createMockServer(options: MockServerOptions): MockServer {
           confirmedShipmentCount: 0,
           rejectedCount: state.quotes.filter((quote) => quote.status === "REJECTED").length,
           auditCount: state.audit.length,
+          todayAgentDoneCount: state.audit.filter((entry) => entry.actorType === "AGENT").length,
         },
       });
     }

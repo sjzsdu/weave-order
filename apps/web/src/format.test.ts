@@ -12,7 +12,8 @@ import {
 describe("桌面 Web 文案", () => {
   it("审计动作说人话", () => {
     expect(actionLabel("QUOTE_DRAFT_GENERATED")).toBe("生成了报价草稿");
-    expect(actionLabel("UNKNOWN_ACTION")).toBe("UNKNOWN_ACTION");
+    // 未映射的动作给通用话术，绝不把 SCREAMING_SNAKE 枚举泄漏到界面。
+    expect(actionLabel("UNKNOWN_ACTION")).toBe("更新了业务数据");
   });
 
   it("单据类型与状态有中文标签", () => {

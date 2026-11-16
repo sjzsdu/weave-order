@@ -29,4 +29,12 @@ describe("mock transport（无后端预览）", () => {
     }
     expect((await client.approvals()).items).toHaveLength(0);
   });
+
+  it("意图通道回真实三态之一，并明确标注演示数据", async () => {
+    const client = createMockApiClient();
+    const result = await client.runQuoteAgent({ rawText: "这款 220g 棉的，要 500 米，什么价" });
+    expect(result.status).toBe("DRAFTED");
+    expect(result.draft).not.toBeNull();
+    expect(result.explanation).toContain("演示模式");
+  });
 });

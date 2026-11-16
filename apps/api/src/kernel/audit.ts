@@ -1,8 +1,8 @@
 import { auditLog, DEFAULT_TENANT_ID } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { AuditLogEntry } from "@weave-order/schema";
+import { AuditLogEntry, BUSINESS_AUDIT_ACTIONS } from "@weave-order/schema";
 import type { AuditAction, DataScope, JsonValue, MemberRole } from "@weave-order/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
 
 /** 谁在写账本：智能体 / 人类 / 系统任务。 */
 export type ActorType = "AGENT" | "HUMAN" | "SYSTEM";
@@ -79,21 +79,70 @@ export async function listAuditLog(
     .where(and(...conditions))
     .orderBy(desc(auditLog.seq))
     .limit(limit);
-  return rows.map((row) =>
-    AuditLogEntry.parse({
-      id: row.id,
-      tenantId: row.tenantId ?? tenantId,
-      seq: row.seq,
-      actorType: row.actorType,
-      actorId: row.actorId,
-      actorRole: row.actorRole ?? null,
-      action: row.action,
-      entityType: row.entityType,
-      entityId: row.entityId,
-      before: row.before ?? null,
-      after: row.after ?? null,
-      correlationId: row.correlationId,
-      createdAt: row.createdAt.toISOString(),
-    }),
-  );
+  return rows.map((row) => toEntry(row, tenantId));
+}
+
+/**
+ * 工作台动态流的数据源：只取人类 / 智能体的业务动作，系统事件留在审计里。
+ * 排序与审计一致（seq DESC），前端按返回顺序渲染。
+ */
+export async function listBusinessEvents(
+  db: Db,
+  limit = 12,
+  tenantId: string = DEFAULT_TENANT_ID,
+): Promise<AuditLogEntry[]> {
+  const rows = await db
+    .select()
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.tenantId, tenantId),
+        inArray(auditLog.actorType, ["AGENT", "HUMAN"]),
+        inArray(auditLog.action, [...BUSINESS_AUDIT_ACTIONS]),
+      ),
+    )
+    .orderBy(desc(auditLog.seq))
+    .limit(limit);
+  return rows.map((row) => toEntry(row, tenantId));
+}
+
+/**
+ * 「今天智能体做了几件事」：今天的业务动作 + AGENT 身份。用 SQL 计数而不是
+ * 数「最近 N 条审计」，否则数字会随审计保留窗口漂移，也会把系统事件算进去。
+ */
+export async function countAgentBusinessActionsSince(
+  db: Db,
+  since: Date,
+  tenantId: string = DEFAULT_TENANT_ID,
+): Promise<number> {
+  const rows = await db
+    .select({ value: count() })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.tenantId, tenantId),
+        eq(auditLog.actorType, "AGENT"),
+        inArray(auditLog.action, [...BUSINESS_AUDIT_ACTIONS]),
+        gte(auditLog.createdAt, since),
+      ),
+    );
+  return rows[0]?.value ?? 0;
+}
+
+function toEntry(row: typeof auditLog.$inferSelect, tenantId: string): AuditLogEntry {
+  return AuditLogEntry.parse({
+    id: row.id,
+    tenantId: row.tenantId ?? tenantId,
+    seq: row.seq,
+    actorType: row.actorType,
+    actorId: row.actorId,
+    actorRole: row.actorRole ?? null,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    before: row.before ?? null,
+    after: row.after ?? null,
+    correlationId: row.correlationId,
+    createdAt: row.createdAt.toISOString(),
+  });
 }

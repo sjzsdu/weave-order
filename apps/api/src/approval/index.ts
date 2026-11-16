@@ -1,2 +1,2 @@
-export { createApprovalService } from "./approval.service";
+export { businessDayStart, createApprovalService } from "./approval.service";
 export type { ApprovalService } from "./approval.service";

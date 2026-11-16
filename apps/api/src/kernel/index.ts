@@ -12,7 +12,7 @@ import { createObjectStorageFromEnv } from "../platform/storage";
 import type { ObjectStorage } from "../platform/storage";
 import { objectUrl } from "../platform/thumbnail";
 import { AccessService } from "./access.service";
-import { listAuditLog } from "./audit";
+import { countAgentBusinessActionsSince, listAuditLog, listBusinessEvents } from "./audit";
 import { KernelError } from "./errors";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
@@ -183,6 +183,9 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     print,
     audit: {
       list: (limit?: number, entityId?: string) => listAuditLog(db, limit, tenantId, entityId),
+      businessEvents: (limit?: number) => listBusinessEvents(db, limit, tenantId),
+      countAgentBusinessActionsSince: (since: Date) =>
+        countAgentBusinessActionsSince(db, since, tenantId),
     },
   };
 }
