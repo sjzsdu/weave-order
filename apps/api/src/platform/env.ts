@@ -338,13 +338,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
         "请改成控制面的正式地址，例如 https://platform.<你的域名>。",
     );
   }
-  // 默认 log 只写服务端日志：邀请、试用到期提醒用户永远收不到，且发送方会拿到 ok:false 也无人看。
-  if (isProductionLike(env) && env.NOTIFY_PROVIDER !== "webhook") {
-    throw new Error(
-      "生产/OIDC 模式必须配置 NOTIFY_PROVIDER=webhook；默认的 log 只写服务端日志，" +
-        "邀请链接与试用到期提醒不会真正发给用户。",
-    );
-  }
+  // log 是显式降级：发送结果为 ok:false，由调用方展示手动处理，不阻断启动。
   if (isProductionLike(env) && env.NOTIFY_PROVIDER === "webhook" && !env.NOTIFY_WEBHOOK_URL) {
     throw new Error(
       "NOTIFY_PROVIDER=webhook 必须同时配置 NOTIFY_WEBHOOK_URL（通知网关地址，例如 https://notify.<你的域名>/send）；" +

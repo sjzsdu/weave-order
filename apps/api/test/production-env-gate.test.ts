@@ -292,12 +292,14 @@ describe("生产 env 启动门禁（fail-fast）", () => {
     ).toThrow(/PLATFORM_API_URL/);
   });
 
-  it("生产 NOTIFY_PROVIDER 保持 log → 拒绝启动，通知不会静默丢弃", () => {
-    const { NOTIFY_PROVIDER: _omit, ...withoutProvider } = productionBase;
-    expect(() => bootstrap(withoutProvider)).toThrow(/NOTIFY_PROVIDER/);
-    expect(() => bootstrap({ ...productionBase, NOTIFY_PROVIDER: "log" })).toThrow(
-      /NOTIFY_PROVIDER/,
-    );
+  it("生产可显式使用 log 通知，未配置 webhook 时不阻塞启动", () => {
+    const {
+      NOTIFY_PROVIDER: _omitProvider,
+      NOTIFY_WEBHOOK_URL: _omitWebhook,
+      ...withoutNotifier
+    } = productionBase;
+    expect(() => bootstrap(withoutNotifier)).not.toThrow();
+    expect(() => bootstrap({ ...withoutNotifier, NOTIFY_PROVIDER: "log" })).not.toThrow();
   });
 
   it("生产 NOTIFY_PROVIDER=webhook 但缺 NOTIFY_WEBHOOK_URL → 拒绝启动", () => {

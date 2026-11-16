@@ -67,4 +67,9 @@ describe("控制面生产环境门控", () => {
     );
     expect(assertProductionDatabaseUrl).toBeTypeOf("function");
   });
+
+  it("SUPPORT_EMAIL 空字符串按未配置处理，非空仍校验格式", () => {
+    expect(loadEnv({ SUPPORT_EMAIL: "" }).SUPPORT_EMAIL).toBeUndefined();
+    expect(() => loadEnv({ SUPPORT_EMAIL: "not-an-email" })).toThrow(/SUPPORT_EMAIL/);
+  });
 });
