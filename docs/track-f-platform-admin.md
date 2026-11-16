@@ -167,7 +167,7 @@ pnpm --filter @weave-order/admin dev          # :3003
 
 打开 `http://localhost:3003`：本地会显示 6 个开发身份（owner / owner2 / finance / ops / support / readonly），点选即用；owner2 用于危险操作的第二人复核。生产构建不显示、也不回退 dev 令牌。
 
-生产环境变量见 `.env.example` 的「E4 平台总管理端」段：`PLATFORM_AUTH_MODE=oidc`、`CASDOOR_PLATFORM_*`、`PLATFORM_REQUIRE_MFA=true`、`PLATFORM_INGEST_KEY`。
+生产环境变量见 `.env` 的「E4 平台总管理端」段：`PLATFORM_AUTH_MODE=oidc`、`CASDOOR_PLATFORM_*`、`PLATFORM_REQUIRE_MFA=true`、`PLATFORM_INGEST_KEY`。
 
 ## 9. 验收路径（一个人做一次具体动作）
 

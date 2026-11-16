@@ -8,13 +8,7 @@ apps/print-agent/src-tauri/gen/
 coverage/
 # Astro 生成的类型与内容集合缓存（apps/site）
 .astro/
-.env
 .env.*
-!.env.example
-# 任何 `.env.<名字>.example` 都是可提交的模板（infra/test-env 等），
-# 其余 `.env.*` 仍然忽略。WAN-137 教训：只放行 `.env.example` 会让
-# `infra/test-env/.env.test.example` 只在本地存在，干净检出直接失败。
-!**/.env.*.example
 *.log
 .DS_Store
 .next/

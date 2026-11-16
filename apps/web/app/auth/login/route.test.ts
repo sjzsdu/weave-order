@@ -20,6 +20,7 @@ describe("租户端登录跳转", () => {
     const location = new URL(response.headers.get("location")!);
 
     expect(location.origin).toBe("https://sso.wnbgj.com");
+    expect(location.pathname).toBe("/login/oauth/authorize");
     expect(location.searchParams.get("redirect_uri")).toBe(`${PUBLIC_ORIGIN}/auth/callback`);
     expect(location.searchParams.get("redirect_uri")).not.toContain("localhost");
   });
@@ -96,5 +97,25 @@ describe("租户端登录跳转", () => {
       ),
     );
     expect(response.cookies.get("weave_oidc_next")?.value).toBe("/today?tab=a");
+  });
+
+  it("注册模式走 Casdoor 注册授权端点并保留 PKCE 与创建公司回跳", () => {
+    vi.stubEnv("WEB_APP_URL", PUBLIC_ORIGIN);
+    vi.stubEnv("CASDOOR_ISSUER", "https://sso.wnbgj.com/");
+
+    const response = GET(
+      new NextRequest("http://localhost:3001/auth/login?mode=signup&next=%2Fstart"),
+    );
+    const location = new URL(response.headers.get("location")!);
+
+    expect(location.pathname).toBe("/signup/oauth/authorize");
+    expect(location.searchParams.get("response_type")).toBe("code");
+    expect(location.searchParams.get("code_challenge")).toBeTruthy();
+    expect(location.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(location.searchParams.get("state")).toBe(
+      response.cookies.get("weave_oidc_state")?.value,
+    );
+    expect(response.cookies.get("weave_oidc_verifier")?.value).toBeTruthy();
+    expect(response.cookies.get("weave_oidc_next")?.value).toBe("/start");
   });
 });

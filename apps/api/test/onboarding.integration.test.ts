@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module";
 import { DEV_ONBOARDING_SECRET, signOnboardingTicket } from "../src/onboarding/ticket";
+import { TENANT_START_RATE_LIMITS } from "../src/platform/rate-limit";
 
 /**
  * 开通链接验收（真实 PG）：
@@ -259,5 +260,76 @@ describe("自助开通与邀请", () => {
       `dev:outsider-${id}:demo`,
     );
     expect([401, 403]).toContain(outsider.status);
+  });
+
+  it("未登录不能创建公司", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const response = await api("/api/onboarding/start", {
+      method: "POST",
+      body: JSON.stringify({ name: "未认证公司" }),
+    });
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ error: { code: "UNAUTHENTICATED" } });
+  });
+
+  it("重复创建返回已有公司，超过账号阈值后返回 429", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const token = `dev:repeat-${id}:demo`;
+    const request = () =>
+      api(
+        "/api/onboarding/start",
+        { method: "POST", body: JSON.stringify({ name: `重复公司 ${id}` }) },
+        token,
+      );
+
+    const first = await request();
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const company = first.body as { tenantId: string };
+    createdTenants.push(company.tenantId);
+
+    for (let index = 1; index < TENANT_START_RATE_LIMITS.sub.limit; index += 1) {
+      const repeated = await request();
+      expect(repeated.status, JSON.stringify(repeated.body)).toBe(201);
+      expect(repeated.body).toMatchObject({ tenantId: company.tenantId, alreadyActivated: true });
+    }
+
+    const limited = await request();
+    expect(limited.status, JSON.stringify(limited.body)).toBe(429);
+    expect(limited.body).toMatchObject({ error: { code: "RATE_LIMITED" } });
+    const retryAfterSeconds = (
+      limited.body as { error: { details: { retryAfterSeconds: unknown } } }
+    ).error.details.retryAfterSeconds;
+    expect(typeof retryAfterSeconds).toBe("number");
+  });
+
+  it("公司标识冲突时返回 409", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const slug = `self-${id}`;
+    const first = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `标识公司甲 ${id}`, slug }) },
+      `dev:slug-a-${id}:demo`,
+    );
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    createdTenants.push((first.body as { tenantId: string }).tenantId);
+
+    const conflict = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `标识公司乙 ${id}`, slug }) },
+      `dev:slug-b-${id}:demo`,
+    );
+    expect(conflict.status, JSON.stringify(conflict.body)).toBe(409);
+    expect(conflict.body).toMatchObject({ error: { code: "CONFLICT" } });
   });
 });

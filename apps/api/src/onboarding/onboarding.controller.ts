@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Ip,
   Post,
   Query,
 } from "@nestjs/common";
@@ -15,6 +16,8 @@ import { AuthService } from "../gateway/auth.service";
 import { isKernelError } from "../kernel";
 import { OnboardingTicketError } from "./ticket";
 import { OnboardingService, StartTenantConflict, TeamActionError } from "./onboarding.service";
+import { PUBLIC_RATE_LIMIT } from "../http/tokens";
+import { PublicRateLimitService } from "../platform/rate-limit";
 
 function fail(status: number, code: string, message: string): HttpException {
   return new HttpException(ApiErrorResponse.parse({ error: { code, message } }), status);
@@ -57,6 +60,7 @@ export class OnboardingController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(OnboardingService) private readonly onboarding: OnboardingService,
+    @Inject(PUBLIC_RATE_LIMIT) private readonly limits: PublicRateLimitService,
   ) {}
 
   @Get("preview")
@@ -95,9 +99,25 @@ export class OnboardingController {
   async start(
     @Headers("authorization") authorization: string | undefined,
     @Body() body: unknown,
+    @Ip() ip: string | undefined,
+    @Headers("x-forwarded-for") forwarded: string | undefined,
   ): Promise<OnboardingResult> {
     try {
       const claims = await this.auth.verifyClaims(authorization);
+      const sourceIp = forwarded?.split(",")[0]?.trim() || ip;
+      const denial = await this.limits.checkTenantStart(sourceIp, claims.sub);
+      if (denial) {
+        throw new HttpException(
+          ApiErrorResponse.parse({
+            error: {
+              code: "RATE_LIMITED",
+              message: "创建公司请求过于频繁，请稍后再试",
+              details: { retryAfterSeconds: denial.retryAfterSeconds },
+            },
+          }),
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
       return await this.onboarding.start(claims, body);
     } catch (error) {
       throw toHttpError(error);

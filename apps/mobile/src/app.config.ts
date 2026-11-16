@@ -8,6 +8,7 @@ export default defineAppConfig({
     "pages/more/index",
     "pages/quote/index",
     "pages/customer/index",
+    "pages/start/index",
   ],
   window: {
     backgroundTextStyle: "light",

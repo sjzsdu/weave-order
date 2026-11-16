@@ -32,6 +32,11 @@ export interface PublicRateLimitRuleSet {
   token: RateLimitRule;
 }
 
+export const TENANT_START_RATE_LIMITS = {
+  ip: { limit: 20, windowMs: 3_600_000 },
+  sub: { limit: 3, windowMs: 3_600_000 },
+} satisfies { ip: RateLimitRule; sub: RateLimitRule };
+
 /**
  * 阈值（每分钟，固定窗口）。数值刻意宽松：
  * - `view` 允许正常客户反复刷新 / 多人共用一条链接；
@@ -57,8 +62,10 @@ export const PUBLIC_QUOTE_RATE_LIMITS: Record<PublicQuoteAction, PublicRateLimit
   },
 };
 
+export type RateLimitDimension = "ip" | "token" | "sub";
+
 export interface RateLimitDenial {
-  dimension: "ip" | "token";
+  dimension: RateLimitDimension;
   limit: number;
   retryAfterSeconds: number;
 }
@@ -162,13 +169,25 @@ export class PublicRateLimitService implements OnApplicationShutdown {
     token: string,
   ): Promise<RateLimitDenial | null> {
     const rules = PUBLIC_QUOTE_RATE_LIMITS[action];
-    const dimensions: Array<{ dimension: "ip" | "token"; value: string; rule: RateLimitRule }> = [
+    return this.checkDimensions(`public-quote:${action}`, [
       { dimension: "ip", value: ip ?? "unknown", rule: rules.ip },
       { dimension: "token", value: token, rule: rules.token },
-    ];
+    ]);
+  }
 
+  async checkTenantStart(ip: string | undefined, sub: string): Promise<RateLimitDenial | null> {
+    return this.checkDimensions("tenant-start", [
+      { dimension: "ip", value: ip ?? "unknown", rule: TENANT_START_RATE_LIMITS.ip },
+      { dimension: "sub", value: sub, rule: TENANT_START_RATE_LIMITS.sub },
+    ]);
+  }
+
+  private async checkDimensions(
+    namespace: string,
+    dimensions: Array<{ dimension: RateLimitDimension; value: string; rule: RateLimitRule }>,
+  ): Promise<RateLimitDenial | null> {
     for (const entry of dimensions) {
-      const key = this.key(action, entry.dimension, entry.value);
+      const key = this.key(namespace, entry.dimension, entry.value);
       const decision = (await this.hitRedis(key, entry.rule)) ?? this.memory.hit(key, entry.rule);
       if (!decision.allowed) {
         return {
@@ -181,9 +200,9 @@ export class PublicRateLimitService implements OnApplicationShutdown {
     return null;
   }
 
-  private key(action: PublicQuoteAction, dimension: "ip" | "token", value: string): string {
+  private key(namespace: string, dimension: RateLimitDimension, value: string): string {
     const digest = createHmac("sha256", this.secret).update(value).digest("base64url");
-    return `ratelimit:public-quote:${action}:${dimension}:${digest}`;
+    return `ratelimit:${namespace}:${dimension}:${digest}`;
   }
 
   private async hitRedis(key: string, rule: RateLimitRule): Promise<WindowDecision | null> {

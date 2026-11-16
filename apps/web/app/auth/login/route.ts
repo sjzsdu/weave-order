@@ -25,7 +25,8 @@ export function GET(request: NextRequest) {
   const verifier = base64url(randomBytes(48));
   const challenge = base64url(createHash("sha256").update(verifier).digest());
 
-  const authorize = new URL(`${issuer.replace(/\/$/, "")}/login/oauth/authorize`);
+  const authorizePath = request.nextUrl.searchParams.get("mode") === "signup" ? "signup" : "login";
+  const authorize = new URL(`${issuer.replace(/\/$/, "")}/${authorizePath}/oauth/authorize`);
   authorize.searchParams.set("client_id", clientId);
   authorize.searchParams.set("redirect_uri", redirectUri);
   authorize.searchParams.set("response_type", "code");

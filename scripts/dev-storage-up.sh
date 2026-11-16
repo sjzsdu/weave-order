@@ -14,7 +14,7 @@
 #   scripts/dev-storage-up.sh logs       # tail 日志
 #   scripts/dev-storage-up.sh env        # 打印可供 shell 使用的环境变量
 #
-# 可覆盖（与 .env.example 默认值一致）：
+# 可覆盖（与 .env 默认值一致）：
 #   MINIO_PORT=9000 MINIO_CONSOLE_PORT=9001
 #   S3_ACCESS_KEY_ID=weave-media S3_SECRET_ACCESS_KEY=weave-media-secret S3_BUCKET=weave-media
 #   STORAGE_HOME=<repo>/.dev-storage       # 二进制、数据、日志、pid 都在这
@@ -229,7 +229,7 @@ cmd_logs() {
 cmd_env() {
   cat <<EOF
 
-本地对象存储已就绪（与 .env.example 默认值一致，API 无需额外配置）：
+本地对象存储已就绪（与 .env 默认值一致，API 无需额外配置）：
   S3_ENDPOINT=$ENDPOINT
   S3_REGION=us-east-1
   S3_BUCKET=$S3_BUCKET

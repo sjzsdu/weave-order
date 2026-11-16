@@ -54,10 +54,10 @@ export default async function LoginPage({
             忘记密码
           </a>
           <a
-            href={`${MARKETING_URL}/signup.html`}
+            href="/auth/login?mode=signup&next=%2Fstart"
             className="underline underline-offset-4 hover:text-indigo-600"
           >
-            还没有账号？申请开通
+            还没有账号？注册并创建公司
           </a>
         </div>
       </div>

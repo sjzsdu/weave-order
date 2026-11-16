@@ -20,7 +20,7 @@
 
 ## 2. 环境变量
 
-见 `.env.example` 的 embedding 段。要点：
+见 `.env` 的 embedding 段。要点：
 
 ```bash
 EMBEDDING_PROVIDER=dashscope-text-v3

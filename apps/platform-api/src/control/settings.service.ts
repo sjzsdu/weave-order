@@ -27,7 +27,7 @@ import { currentMonthPeriod, toJson } from "./util";
 
 /**
  * 密钥引用白名单：只接受 LiteLLM 约定的密钥变量名
- * （`LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`，见 `.env.example` 与 docs/track-b-agents.md）。
+ * （`LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`，见 `.env` 与 docs/track-b-agents.md）。
  *
  * 其它任何名字（`DATABASE_URL`、`CASDOOR_*_SECRET`…）一律拒绝：
  * 绝不执行 `process.env[用户输入]`，否则最低权限账号可以把控制面进程的全部密钥发到任意地址。

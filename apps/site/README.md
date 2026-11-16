@@ -369,4 +369,4 @@ weave-site:
 共用 `packages/ui` 的品牌变量（墨、纸、靛蓝、朱砂）。改色改 `packages/ui/src/tokens.ts`
 一处即可：Tailwind v4 的 `@theme`（`src/styles/theme.css`）由脚本生成，不会漏。
 
-登录页的「申请开通」「帮助中心」「返回官网」指向 `NEXT_PUBLIC_MARKETING_URL`（见 `.env.example`），上线时改成正式域名即可，不需要改代码。
+登录页的「申请开通」「帮助中心」「返回官网」指向 `NEXT_PUBLIC_MARKETING_URL`（见 `.env`），上线时改成正式域名即可，不需要改代码。

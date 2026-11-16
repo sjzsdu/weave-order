@@ -2,10 +2,12 @@ import { Text, View } from "@tarojs/components";
 import Taro, { useLaunch } from "@tarojs/taro";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
-import { useEffect, useState } from "react";
-import { ensureAuthenticated, getAuthError, isAuthRequired, startLogin } from "./lib/oidc";
+import { useCallback, useEffect, useState } from "react";
+import { ensureAuthenticated, getAuthError } from "./lib/oidc";
 import { initPwa } from "./lib/pwa";
-import { syncQueue } from "./lib/runtime";
+import { api, syncQueue } from "./lib/runtime";
+import { needsTenantOnboarding } from "./lib/tenant-onboarding";
+import { openStart } from "./lib/nav";
 import "./app.scss";
 
 /**
@@ -24,22 +26,36 @@ export default function App({ children }: PropsWithChildren) {
       }),
   );
 
-  // 生产 H5 有 OIDC 配置时，登录完成前不渲染业务页面，避免一堆 401 空态。
-  const [authReady, setAuthReady] = useState(!isAuthRequired());
+  // 登录和公司门禁完成前不渲染业务页面，避免未登录或无公司时出现空态。
+  const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  useLaunch((options) => {
-    // 只记录启动来源，不上报敏感参数。
-    console.info("[mobile] launch", options.scene);
-    void ensureAuthenticated().then((ready) => {
+  const bootstrap = useCallback(async () => {
+    setAuthReady(false);
+    setAuthError(null);
+    try {
+      const ready = await ensureAuthenticated();
       if (!ready) {
         setAuthError(getAuthError());
         return;
       }
+      const needsStart = await needsTenantOnboarding(() => api.me());
       setAuthReady(true);
       initPwa();
-      void syncQueue();
-    });
+      if (needsStart) {
+        openStart();
+      } else {
+        void syncQueue();
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "启动失败，请重试");
+    }
+  }, []);
+
+  useLaunch((options) => {
+    // 只记录启动来源，不上报敏感参数。
+    console.info("[mobile] launch", options.scene);
+    void bootstrap();
   });
 
   useEffect(() => {
@@ -57,16 +73,10 @@ export default function App({ children }: PropsWithChildren) {
         children
       ) : (
         <View style={{ padding: "48px 24px", textAlign: "center" }}>
-          <Text>{authError ?? "正在打开统一登录…"}</Text>
+          <Text>{authError ?? "正在检查账号与公司空间…"}</Text>
           {authError && (
-            <View
-              style={{ marginTop: "24px", color: "#1f6f5c" }}
-              onClick={() => {
-                setAuthError(null);
-                startLogin();
-              }}
-            >
-              <Text>重新登录</Text>
+            <View style={{ marginTop: "24px", color: "#1f6f5c" }} onClick={() => void bootstrap()}>
+              <Text>重试</Text>
             </View>
           )}
         </View>

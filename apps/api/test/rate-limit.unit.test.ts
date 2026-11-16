@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { PUBLIC_QUOTE_RATE_LIMITS, PublicRateLimitService } from "../src/platform/rate-limit";
+import {
+  PUBLIC_QUOTE_RATE_LIMITS,
+  TENANT_START_RATE_LIMITS,
+  PublicRateLimitService,
+} from "../src/platform/rate-limit";
 
 /**
  * 限流单元测试：强制使用进程内存储（redisUrl=null），不依赖 Redis。
@@ -66,5 +70,40 @@ describe("公开报价链接限流", () => {
     }
     const denial = await limiter.check("questions", undefined, "token-final");
     expect(denial?.dimension).toBe("ip");
+  });
+});
+
+describe("自助创建公司限流", () => {
+  it("同一账号换 IP 后仍受 sub 维度每小时 3 次限制", async () => {
+    const limiter = service();
+    const { limit } = TENANT_START_RATE_LIMITS.sub;
+
+    for (let index = 0; index < limit; index += 1) {
+      expect(await limiter.checkTenantStart(`198.51.100.${index}`, "user-a")).toBeNull();
+    }
+    const denial = await limiter.checkTenantStart("198.51.100.250", "user-a");
+    expect(denial).toMatchObject({ dimension: "sub", limit });
+    expect(denial?.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it("同一 IP 换账号后仍受 IP 维度每小时 20 次限制", async () => {
+    const limiter = service();
+    const { limit } = TENANT_START_RATE_LIMITS.ip;
+
+    for (let index = 0; index < limit; index += 1) {
+      expect(await limiter.checkTenantStart("203.0.113.30", `user-${index}`)).toBeNull();
+    }
+    const denial = await limiter.checkTenantStart("203.0.113.30", "user-final");
+    expect(denial).toMatchObject({ dimension: "ip", limit });
+  });
+
+  it("创建公司与公开报价的计数命名空间互不影响", async () => {
+    const limiter = service();
+    const { limit } = TENANT_START_RATE_LIMITS.sub;
+
+    for (let index = 0; index <= limit; index += 1) {
+      await limiter.checkTenantStart(`198.51.100.${index}`, "shared-subject");
+    }
+    expect(await limiter.check("view", "203.0.113.40", "shared-subject")).toBeNull();
   });
 });

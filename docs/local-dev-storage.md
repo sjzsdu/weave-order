@@ -53,7 +53,7 @@ API_BASE=http://127.0.0.1:3010 SAMPLE_ID=<uuid> scripts/verify-media-e2e.sh
 | `status`     | 进程 / 健康 / bucket 三项；未运行时退出码 3                                   |
 | `down`       | 只停 PID 文件里、且命令行匹配本目录数据目录的进程（避免误杀同机其它 minio）   |
 | `logs`       | `tail -f .dev-storage/minio.log`                                              |
-| `env`        | 打印与 `.env.example` 一致的 `S3_*` / `MEDIA_*`                               |
+| `env`        | 打印与 `.env` 一致的 `S3_*` / `MEDIA_*`                               |
 
 固定版本（避免"latest"漂移）：`minio RELEASE.2025-07-23T15-54-02Z`、
 `mc RELEASE.2025-07-21T05-28-08Z`。下载后按镜像站的 `.sha256sum` 校验；校验和缺失时
@@ -82,7 +82,7 @@ MC_IMAGE=registry.example.com/minio/mc:RELEASE.2025-07-21T05-28-08Z \
 默认 `docker compose up -d` 不会再尝试拉 minio 镜像，因此 PG/Redis/LiteLLM 的开发流程
 不受影响。`--profile media` 与脚本二选一即可，不要同时起（端口 9000/9001 冲突）。
 
-## 环境变量契约（与 `.env.example` 一致）
+## 环境变量契约（与 `.env` 一致）
 
 | 变量                   | 本地值                  | 说明                                                              |
 | ---------------------- | ----------------------- | ----------------------------------------------------------------- |

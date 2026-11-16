@@ -135,7 +135,7 @@ PAT 绑定 membership，仍然走同一租户与 RLS；默认作用域 `read,wri
 7. 找样工具 T-002（参数匹配）/ T-001（以图搜图，默认 local stub 图像向量）
 8. 审计日志逐条列出，数据库触发器拒绝改写
 
-不需要 `.env`（默认值与 `docker-compose.yml` 一致）；需要覆盖时 `cp .env.example .env`。
+本地手填配置直接维护在根目录 `.env`（进 git），默认值与 `docker-compose.yml` 一致。
 演示**不依赖任何外部模型 key**：embedding 默认走 `local-stub`（哈希、无语义）。
 真实语义检索用 `EMBEDDING_PROVIDER=dashscope-text-v3` + key，细节见
 [`docs/semantic-search.md`](docs/semantic-search.md)。
@@ -321,7 +321,7 @@ pnpm dev           # http://localhost:3001
 
 - 来源：`data/seed/customers.csv` + `samples.csv`（CSV），或 `weave-order-seed.xlsx`
   （Excel，两个 sheet）。环境变量 `IMPORT_CUSTOMERS` / `IMPORT_SAMPLES` / `IMPORT_XLSX`
-  可覆盖（见 `.env.example`）；解析在 `apps/api/src/import/parse.ts`（CSV: `csv-parse`，
+  可覆盖（见 `.env`）；解析在 `apps/api/src/import/parse.ts`（CSV: `csv-parse`，
   XLSX: `exceljs`），CLI 在 `apps/api/scripts/import-data.ts`。
 - **归属**：seed 客户挂到演示业务员成员（默认 `demo-sales`，dataScope=`OWN`），
   所以 `Bearer dev:demo-sales:demo` 能看到；`Bearer dev:demo:demo`（OWNER，ALL）看全量。

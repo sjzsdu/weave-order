@@ -690,7 +690,7 @@ export interface CreateLlmOptions {
 
 /**
  * 密钥引用白名单（与控制面 `apps/platform-api/src/control/settings.service.ts` 同规则）：
- * 只接受 `LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`（见 .env.example / docs/track-b-agents.md）。
+ * 只接受 `LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`（见 .env / docs/track-b-agents.md）。
  * 两包不共享源码，改这里必须同步控制面那份。
  */
 const LLM_KEY_REF_PATTERN = /^LITELLM_(MASTER|TENANT)_KEY(?:_[A-Za-z0-9]+)*$/;

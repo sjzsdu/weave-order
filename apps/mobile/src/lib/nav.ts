@@ -9,10 +9,19 @@ export const ROUTES = {
   more: "/pages/more/index",
   quote: "/pages/quote/index",
   customer: "/pages/customer/index",
+  start: "/pages/start/index",
 } as const;
 
 export function goTab(page: (typeof ROUTES)[keyof typeof ROUTES]): void {
   void Taro.switchTab({ url: page });
+}
+
+export function openStart(): void {
+  void Taro.reLaunch({ url: ROUTES.start });
+}
+
+export function openWorkspace(): void {
+  void Taro.reLaunch({ url: ROUTES.today });
 }
 
 export function openQuote(
