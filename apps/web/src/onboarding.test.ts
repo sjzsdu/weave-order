@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_ONBOARDING_PREFS,
-  ONBOARDING_STORAGE_KEY,
+  onboardingIntentContext,
   onboardingProgress,
+  onboardingQuoteContextFrom,
   onboardingSteps,
-  readOnboardingPrefs,
-  recordCompletions,
-  writeOnboardingPrefs,
-  type OnboardingPrefs,
+  quoteHref,
+  stepsToRecord,
 } from "./onboarding";
 
 const zero = {
@@ -17,15 +15,6 @@ const zero = {
   sentQuoteCount: 0,
   confirmedShipmentCount: 0,
 };
-
-function memoryStorage(initial: Record<string, string> = {}) {
-  const data = new Map(Object.entries(initial));
-  return {
-    getItem: (key: string) => data.get(key) ?? null,
-    setItem: (key: string, value: string) => void data.set(key, value),
-    dump: () => Object.fromEntries(data),
-  };
-}
 
 describe("开张清单", () => {
   it("新公司：四步顺序固定，全部未完成", () => {
@@ -39,11 +28,28 @@ describe("开张清单", () => {
     const [customer, sample, quote, approve] = onboardingSteps(zero);
     expect(customer?.href).toBe("/panorama/customers?new=1");
     expect(sample?.href).toBe("/panorama/samples?new=1");
-    expect(quote?.href.startsWith("/today?intent=")).toBe(true);
+    expect(quote?.href).toContain("/today?intent=");
     expect(approve?.href).toBe("/approvals");
   });
 
-  it("完成判定只读统计：建了客户就打勾，产品报价不会误判成已批", () => {
+  it("第③步带上刚建的客户名与开张标记，工作台据此注入 context", () => {
+    const href = quoteHref({ customerName: "杭州青禾服饰", sampleCode: "AUD-001" });
+    const url = new URL(href, "https://app.wnbgj.com");
+    expect(url.pathname).toBe("/today");
+    expect(url.searchParams.get("intent")).toBe("给杭州青禾服饰报第一张价：");
+    expect(url.searchParams.get("onboard")).toBe("quote");
+
+    const guess = onboardingSteps(zero, { customerName: "杭州青禾服饰" })[2];
+    expect(guess?.hint).toContain("杭州青禾服饰");
+  });
+
+  it("没有客户时退化成通用话术，不编造客户名", () => {
+    const [text] = [quoteHref({})];
+    expect(decodeURIComponent(text)).toContain("给客户报第一张价：");
+    expect(onboardingSteps(zero)[2]?.hint).not.toContain("客户 ");
+  });
+
+  it("完成判定只读统计：建了客户就打勾，报了价不会误判成已批", () => {
     const steps = onboardingSteps({ ...zero, customerCount: 1, sampleCount: 2, quoteCount: 1 });
     const byKey = Object.fromEntries(steps.map((step) => [step.key, step.done]));
     expect(byKey).toEqual({ customer: true, sample: true, quote: true, approve: false });
@@ -67,57 +73,58 @@ describe("开张清单", () => {
   });
 });
 
-describe("开张清单进度持久化", () => {
-  it("没有存档时回到默认值", () => {
-    expect(readOnboardingPrefs(memoryStorage())).toEqual(EMPTY_ONBOARDING_PREFS);
+describe("开张进度上报", () => {
+  it("只上报业务上已完成、服务端还没记时间的步骤", () => {
+    const steps = onboardingSteps({ ...zero, customerCount: 1, sampleCount: 1 });
+    expect(stepsToRecord(steps, undefined)).toEqual(["customer", "sample"]);
+    expect(
+      stepsToRecord(steps, {
+        completedAt: { customer: "2026-11-16T10:00:00.000Z" },
+      }),
+    ).toEqual(["sample"]);
   });
 
-  it("写进去的只要可读字段，脏数据不抛错", () => {
-    const store = memoryStorage();
-    writeOnboardingPrefs(
-      { collapsed: true, skipped: false, completedAt: { customer: "t" } },
-      store,
-    );
-    expect(readOnboardingPrefs(store)).toEqual({
-      collapsed: true,
-      skipped: false,
-      completedAt: { customer: "t" },
-    });
-
-    const dirty = memoryStorage({ [ONBOARDING_STORAGE_KEY]: "{not json" });
-    expect(readOnboardingPrefs(dirty)).toEqual(EMPTY_ONBOARDING_PREFS);
-  });
-
-  it("没有 storage（服务端 / 隐私模式）时不崩", () => {
-    expect(readOnboardingPrefs(null)).toEqual(EMPTY_ONBOARDING_PREFS);
-    expect(() => writeOnboardingPrefs(EMPTY_ONBOARDING_PREFS, null)).not.toThrow();
-  });
-
-  it("完成时间只记第一次，重复观察不覆盖", () => {
+  it("服务端已经记过的步骤不重复上报（幂等）", () => {
     const steps = onboardingSteps({ ...zero, customerCount: 1 });
-    const first = recordCompletions(EMPTY_ONBOARDING_PREFS, steps, "2026-11-16T10:00:00.000Z");
-    expect(first.completedAt.customer).toBe("2026-11-16T10:00:00.000Z");
+    const state = {
+      completedAt: {
+        customer: "2026-11-16T10:00:00.000Z",
+        sample: "2026-11-16T10:00:00.000Z",
+        quote: "2026-11-16T10:00:00.000Z",
+        approve: "2026-11-16T10:00:00.000Z",
+      },
+    };
+    expect(stepsToRecord(steps, state)).toEqual([]);
+  });
+});
 
-    const second = recordCompletions(first, steps, "2026-11-16T12:00:00.000Z");
-    expect(second).toBe(first);
-
-    // 新增完成步骤时只补新键，旧时间保持不变。
-    const more = recordCompletions(
-      first,
-      onboardingSteps({ ...zero, customerCount: 1, sampleCount: 1 }),
-      "2026-11-16T12:00:00.000Z",
-    );
-    expect(more.completedAt).toEqual({
-      customer: "2026-11-16T10:00:00.000Z",
-      sample: "2026-11-16T12:00:00.000Z",
+describe("第③步的上下文", () => {
+  it("从 panorama 取第一个客户与样品，用于文案与提交 context", () => {
+    const panorama = {
+      customers: [{ id: "c1", name: "杭州青禾服饰", code: "KH-018" }],
+      samples: [{ id: "s1", code: "AUD-001", name: "走查测试样品" }],
+    };
+    expect(onboardingQuoteContextFrom(panorama)).toEqual({
+      customerName: "杭州青禾服饰",
+      customerCode: "KH-018",
+      sampleCode: "AUD-001",
+    });
+    expect(onboardingIntentContext(panorama)).toEqual({
+      customerId: "c1",
+      customerName: "杭州青禾服饰",
+      customerCode: "KH-018",
+      sampleId: "s1",
+      sampleCode: "AUD-001",
+      source: "onboarding-checklist",
     });
   });
 
-  it("跳过状态会写进存档（同一 key，版本化）", () => {
-    const store = memoryStorage();
-    const prefs: OnboardingPrefs = { ...EMPTY_ONBOARDING_PREFS, skipped: true };
-    writeOnboardingPrefs(prefs, store);
-    expect(store.dump()[ONBOARDING_STORAGE_KEY]).toContain('"skipped":true');
-    expect(ONBOARDING_STORAGE_KEY).toBe("weave:onboarding:v1");
+  it("什么都没有时不编造 context", () => {
+    expect(onboardingQuoteContextFrom(undefined)).toEqual({
+      customerName: null,
+      customerCode: null,
+      sampleCode: null,
+    });
+    expect(onboardingIntentContext(undefined)).toBeUndefined();
   });
 });

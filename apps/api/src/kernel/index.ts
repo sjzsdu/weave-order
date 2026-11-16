@@ -25,6 +25,7 @@ import { InboundRepliesService } from "./inbound-replies.service";
 import { IntentService } from "./intents.service";
 import { OrderService } from "./orders.service";
 import { OrderShipmentService } from "./order-shipments.service";
+import { OnboardingStateService } from "./onboarding-state.service";
 import { PricingService } from "./pricing.service";
 import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
@@ -140,6 +141,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
   const intents = new IntentService(db, tenantId);
+  const onboardingState = new OnboardingStateService(db, tenantId);
   const inboundReplies = new InboundRepliesService(db, tenantId, {
     retentionDays: env.INBOUND_RAW_RETENTION_DAYS,
     resolveImageUrl: async (objectKey) => {
@@ -183,6 +185,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     llmSettings,
     usage,
     intent: intents,
+    onboardingState,
     inboundReplies,
     shares,
     print,

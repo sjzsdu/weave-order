@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { InvitePreview } from "@weave-order/schema";
+import { memberRoleLabel } from "@weave-order/schema";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { track } from "@/analytics";
@@ -132,7 +133,7 @@ export function JoinClient({ code }: { code: string }) {
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-ink-400">角色</dt>
-          <dd className="text-ink-700">{preview.role}</dd>
+          <dd className="text-ink-700">{memberRoleLabel(preview.role)}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-ink-400">被邀请邮箱</dt>

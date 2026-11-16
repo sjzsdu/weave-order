@@ -11,7 +11,7 @@ import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-orde
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
 import { PersonaBar } from "@/persona-bar";
-import { SupportMailto } from "@/support";
+import { SUPPORT_EMAIL, SupportMailto } from "@/support";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
 
 /** 页脚只留版本与帮助：内部工程口径（几个窗口、只读与否）不属于用户界面。 */
@@ -417,7 +417,12 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
         <span>织序 WeaveOrder · v{APP_VERSION}</span>
         <span className="mx-2 text-line">·</span>
-        <SupportMailto label="帮助与支持" className="underline underline-offset-2" />
+        {/* 没配支持邮箱时不留一个孤零零的分隔点：改成一句可执行的兜底说明。 */}
+        {SUPPORT_EMAIL ? (
+          <SupportMailto label="帮助与支持" className="underline underline-offset-2" />
+        ) : (
+          <span>帮助请联系公司管理员</span>
+        )}
       </footer>
 
       <PrintDrawer open={printOpen} onClose={() => setPrintOpen(false)} />

@@ -2,7 +2,7 @@ import { Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useState } from "react";
 import type { ApprovalItem } from "@weave-order/schema";
-import { actorTypeLabel, auditActionLabel } from "@weave-order/schema";
+import { actorTypeLabel, auditActionLabel, auditEntityLabel } from "@weave-order/schema";
 import {
   Amount,
   Badge,
@@ -262,7 +262,7 @@ export default function TodayPage() {
                     {actorTypeLabel(entry.actorType)} · {ACTION_LABEL(entry.action)}
                   </View>
                   <View className="timeline-meta">
-                    {entry.entityType} · {relativeTime(entry.createdAt)}
+                    {auditEntityLabel(entry.entityType)} · {relativeTime(entry.createdAt)}
                   </View>
                 </View>
               </View>

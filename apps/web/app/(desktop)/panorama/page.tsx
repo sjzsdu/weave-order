@@ -17,7 +17,7 @@ import { useApi } from "@/providers";
 import { Can } from "@/can";
 import { useMounted } from "@/use-mounted";
 import { SharePanel } from "@/share-panel";
-import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL } from "@/format";
+import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL, TIER_LABEL } from "@/format";
 
 const STAT_KEYS = [
   { key: "customerCount", label: "客户" },
@@ -154,7 +154,7 @@ function PanoramaPageContent() {
                     </td>
                     <td className="px-3 py-2">
                       <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>
-                        {customer.tier}
+                        {TIER_LABEL[customer.tier] ?? "新客"}
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-ink-700">

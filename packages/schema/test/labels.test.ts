@@ -27,3 +27,21 @@ describe("审计文案", () => {
     expect(Object.keys(ACTOR_TYPE_LABEL)).toEqual(["AGENT", "HUMAN", "SYSTEM"]);
   });
 });
+
+describe("成员角色与审计实体文案", () => {
+  it("角色一律中文，未知值不裸输出", async () => {
+    const { memberRoleLabel, MEMBER_ROLE_LABEL } = await import("../src/labels");
+    expect(memberRoleLabel("SALES")).toBe("销售");
+    expect(memberRoleLabel("OWNER")).toBe("负责人");
+    expect(memberRoleLabel("SOMETHING_ELSE")).toBe("成员");
+    expect(Object.keys(MEMBER_ROLE_LABEL)).toHaveLength(7);
+  });
+
+  it("审计实体名不暴露数据库表名", async () => {
+    const { auditEntityLabel } = await import("../src/labels");
+    expect(auditEntityLabel("sample_shipment")).toBe("寄样单");
+    expect(auditEntityLabel("membership")).toBe("成员");
+    expect(auditEntityLabel("internal_thing")).toBe("业务记录");
+    expect(auditEntityLabel(null)).toBe("业务记录");
+  });
+});

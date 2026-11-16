@@ -1,4 +1,5 @@
 import type { AuditLogEntry } from "./kernel";
+import type { MemberRole } from "./tenancy";
 
 /**
  * 审计动作 → 用户看得懂的中文。
@@ -85,4 +86,69 @@ export const ACTOR_TYPE_LABEL: Record<AuditLogEntry["actorType"], string> = {
 export function actorTypeLabel(actorType: string | null | undefined): string {
   if (!actorType) return "系统";
   return ACTOR_TYPE_LABEL[actorType as AuditLogEntry["actorType"]] ?? "系统";
+}
+
+/**
+ * 成员角色 → 中文。
+ *
+ * 三端各留一份必然会漂移（settings 与 tenant-switch 之前就有两份），
+ * 所以这里是唯一来源；英文枚举不允许直接出现在界面上。
+ */
+export const MEMBER_ROLE_LABEL: Record<MemberRole, string> = {
+  OWNER: "负责人",
+  MANAGER: "经理",
+  SALES: "销售",
+  MERCHANDISER: "跟单",
+  SAMPLE_ADMIN: "样品管理",
+  FINANCE: "财务",
+  VIEWER: "只读",
+};
+
+export function memberRoleLabel(role: string | null | undefined): string {
+  if (!role) return "成员";
+  return MEMBER_ROLE_LABEL[role as MemberRole] ?? "成员";
+}
+
+/**
+ * 审计实体的中文名。
+ *
+ * 账本里的 `entity_type` 是内部表名（`sample_shipment_items` 之类），
+ * 直接渲染等于把数据库结构摊给用户看。未收录的实体统一说「业务记录」。
+ */
+export const AUDIT_ENTITY_LABEL: Record<string, string> = {
+  customer: "客户",
+  customer_context: "客户背景",
+  sample: "样品",
+  sample_image: "样品图片",
+  sample_shipment: "寄样单",
+  quote: "报价",
+  quote_item: "报价明细",
+  quote_share: "客户报价链接",
+  order: "订单",
+  order_item: "订单明细",
+  shipment: "发货单",
+  shipment_item: "发货明细",
+  receivable: "应收",
+  receivable_payment: "回款",
+  revision_request: "改稿请求",
+  pricing_policy: "报价策略",
+  membership: "成员",
+  tenant: "公司",
+  intent: "一句话意图",
+  llm_settings: "智能体设置",
+  api_token: "接口凭据",
+  print_job: "打印任务",
+  print_template: "打印模板",
+  print_agent: "打印代理",
+  print_box: "箱",
+  scan_event: "扫码记录",
+  audit_log: "审计记录",
+  document_snapshot: "单据快照",
+};
+
+export const UNKNOWN_AUDIT_ENTITY_LABEL = "业务记录";
+
+export function auditEntityLabel(entityType: string | null | undefined): string {
+  if (!entityType) return UNKNOWN_AUDIT_ENTITY_LABEL;
+  return AUDIT_ENTITY_LABEL[entityType] ?? UNKNOWN_AUDIT_ENTITY_LABEL;
 }

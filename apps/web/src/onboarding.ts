@@ -1,14 +1,16 @@
-import type { PanoramaStats } from "@weave-order/schema";
+import type { OnboardingState, OnboardingStepKey, PanoramaStats } from "@weave-order/schema";
 
 /**
  * 开张清单：新公司首屏的四步。
  *
  * 每一步都指向**已经存在**的真实入口，不新增流程：
- * ① 客户页的新建抽屉 ② 样品页的新建编辑器 ③ 工作台的意图栏 ④ 审批窗口。
+ * ① 客户页的新建抽屉 ② 样品页的新建编辑器 ③ 工作台的意图栏（带上刚建的客户与样品）
+ * ④ 审批窗口。
+ *
  * 完成判定只读 panorama 的统计，不另建表、不在前端推算业务数字。
+ * 进度本身（首次完成时间 / 收起 / 跳过）由后端 `onboarding_state` 持有，
+ * 换设备一致；见 `useOnboardingState`。
  */
-export type OnboardingStepKey = "customer" | "sample" | "quote" | "approve";
-
 export interface OnboardingStep {
   key: OnboardingStepKey;
   title: string;
@@ -22,7 +24,17 @@ type OnboardingStats = Pick<
   "customerCount" | "sampleCount" | "quoteCount" | "sentQuoteCount" | "confirmedShipmentCount"
 >;
 
-export function onboardingSteps(stats: OnboardingStats): OnboardingStep[] {
+/** 第③步自动带上的上下文：客户与样品都来自已加载的 panorama。 */
+export interface OnboardingQuoteContext {
+  customerName?: string | null;
+  customerCode?: string | null;
+  sampleCode?: string | null;
+}
+
+export function onboardingSteps(
+  stats: OnboardingStats,
+  context: OnboardingQuoteContext = {},
+): OnboardingStep[] {
   return [
     {
       key: "customer",
@@ -41,8 +53,8 @@ export function onboardingSteps(stats: OnboardingStats): OnboardingStep[] {
     {
       key: "quote",
       title: "让小织报第一张价",
-      hint: "客户和样品已经在库里，说一句要报什么就行。",
-      href: "/today?intent=给客户报第一张价：",
+      hint: quoteHint(context),
+      href: quoteHref(context),
       done: stats.quoteCount > 0,
     },
     {
@@ -53,6 +65,26 @@ export function onboardingSteps(stats: OnboardingStats): OnboardingStep[] {
       done: stats.sentQuoteCount > 0 || stats.confirmedShipmentCount > 0,
     },
   ];
+}
+
+/**
+ * 第③步落地时把客户与样品带进 composer：`/today?onboard=quote` 让工作台
+ * 知道这次输入来自开张清单，提交意图时把已有客户/样品作为 context 一起落库，
+ * 用户只补数量与价格。
+ */
+export function quoteHref(context: OnboardingQuoteContext): string {
+  const name = context.customerName?.trim();
+  const text = name ? `给${name}报第一张价：` : "给客户报第一张价：";
+  return `/today?intent=${encodeURIComponent(text)}&onboard=quote`;
+}
+
+function quoteHint(context: OnboardingQuoteContext): string {
+  const parts = [
+    context.customerName?.trim() ? `客户 ${context.customerName.trim()}` : null,
+    context.sampleCode?.trim() ? `样品 ${context.sampleCode.trim()}` : null,
+  ].filter((part): part is string => Boolean(part));
+  if (parts.length === 0) return "客户和样品已经在库里，说一句要报什么就行。";
+  return `${parts.join(" · ")} 已经带上了，只补数量和价格。`;
 }
 
 export interface OnboardingProgress {
@@ -73,90 +105,54 @@ export function onboardingProgress(steps: OnboardingStep[]): OnboardingProgress 
   };
 }
 
-/** localStorage key 带版本号：以后改步骤就换版本，旧进度自然失效而不是错勾。 */
-export const ONBOARDING_STORAGE_KEY = "weave:onboarding:v1";
-
-export interface OnboardingPrefs {
-  /** 用户主动收起：不再占屏，完整版可以从工作台尾部重新展开。 */
-  collapsed: boolean;
-  /** 用户跳过：本设备不再提示。 */
-  skipped: boolean;
-  /** 第一次观察到某步完成的时间（ISO），不编造、不补写历史。 */
-  completedAt: Partial<Record<OnboardingStepKey, string>>;
-}
-
-export const EMPTY_ONBOARDING_PREFS: OnboardingPrefs = {
-  collapsed: false,
-  skipped: false,
-  completedAt: {},
-};
-
-type ReadableStorage = Pick<Storage, "getItem">;
-type WritableStorage = Pick<Storage, "setItem">;
-
-/** 读失败（隐私模式、配额、脏数据）一律回到默认值：清单不该让整个页面报错。 */
-export function readOnboardingPrefs(storage?: ReadableStorage | null): OnboardingPrefs {
-  const store = storage ?? safeStorage();
-  if (!store) return EMPTY_ONBOARDING_PREFS;
-  try {
-    const raw = store.getItem(ONBOARDING_STORAGE_KEY);
-    if (!raw) return EMPTY_ONBOARDING_PREFS;
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return EMPTY_ONBOARDING_PREFS;
-    const value = parsed as Partial<OnboardingPrefs>;
-    return {
-      collapsed: value.collapsed === true,
-      skipped: value.skipped === true,
-      completedAt:
-        typeof value.completedAt === "object" && value.completedAt !== null
-          ? value.completedAt
-          : {},
-    };
-  } catch {
-    return EMPTY_ONBOARDING_PREFS;
-  }
-}
-
-export function writeOnboardingPrefs(
-  prefs: OnboardingPrefs,
-  storage?: WritableStorage | null,
-): void {
-  const store = storage ?? safeStorage();
-  if (!store) return;
-  try {
-    store.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // 存不下就只影响下次进入的勾选，不影响当前页面。
-  }
-}
-
 /**
- * 把「这一步现在是完成的」记成时间戳（只记第一次）。
+ * 需要上报给服务端的步骤：业务上已经完成、但进度表里还没有首次时间。
  *
- * 完成时间拿不到真实时刻（比如别人在其他设备建的客户）就不写，
- * 界面上只显示勾，不编造「3 分钟前完成」。
+ * 只上报「完成」，时间戳由服务端生成——客户端时钟不可信，
+ * 也不能让一次误操作把历史时间改掉。
  */
-export function recordCompletions(
-  prefs: OnboardingPrefs,
+export function stepsToRecord(
   steps: OnboardingStep[],
-  now: string,
-): OnboardingPrefs {
-  let changed = false;
-  const completedAt = { ...prefs.completedAt };
-  for (const step of steps) {
-    if (step.done && !completedAt[step.key]) {
-      completedAt[step.key] = now;
-      changed = true;
-    }
-  }
-  return changed ? { ...prefs, completedAt } : prefs;
+  state: Pick<OnboardingState, "completedAt"> | undefined,
+): OnboardingStepKey[] {
+  return steps.filter((step) => step.done && !state?.completedAt[step.key]).map((step) => step.key);
 }
 
-function safeStorage(): Storage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
+/** 从 panorama 取第③步要带上的客户与样品：优先最早建的那一个。 */
+export function onboardingQuoteContextFrom(
+  panorama:
+    | {
+        customers: ReadonlyArray<{ name: string; code: string }>;
+        samples: ReadonlyArray<{ code: string }>;
+      }
+    | undefined,
+): OnboardingQuoteContext {
+  const customer = panorama?.customers[0];
+  const sample = panorama?.samples[0];
+  return {
+    customerName: customer?.name ?? null,
+    customerCode: customer?.code ?? null,
+    sampleCode: sample?.code ?? null,
+  };
+}
+
+/** 提交意图时随行落库的 context：客户/样品 id + 编号，执行器据此不用再问一遍。 */
+export function onboardingIntentContext(
+  panorama:
+    | {
+        customers: ReadonlyArray<{ id: string; name: string; code: string }>;
+        samples: ReadonlyArray<{ id: string; code: string; name?: string }>;
+      }
+    | undefined,
+): Record<string, string> | undefined {
+  const customer = panorama?.customers[0];
+  const sample = panorama?.samples[0];
+  if (!customer && !sample) return undefined;
+  return {
+    ...(customer
+      ? { customerId: customer.id, customerName: customer.name, customerCode: customer.code }
+      : {}),
+    ...(sample ? { sampleId: sample.id, sampleCode: sample.code } : {}),
+    source: "onboarding-checklist",
+  };
 }

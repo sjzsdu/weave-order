@@ -157,3 +157,65 @@ export const InvitePreview = z
   })
   .strict();
 export type InvitePreview = z.infer<typeof InvitePreview>;
+
+/**
+ * 开张清单（新公司四步引导）的步骤键。
+ *
+ * 键序即产品顺序；服务端按这个顺序判断「全部完成」，前端不再自己维护第二份。
+ */
+export const OnboardingStepKey = z.enum(["customer", "sample", "quote", "approve"]);
+export type OnboardingStepKey = z.infer<typeof OnboardingStepKey>;
+
+/** 四步的稳定顺序；服务端判断「全部完成」时用它，不依赖对象键序。 */
+export const ONBOARDING_STEP_KEYS = ["customer", "sample", "quote", "approve"] as const;
+
+/**
+ * 开张进度（`GET /api/onboarding/state`）。
+ *
+ * 为什么落库而不是只放浏览器：issue 要求「换设备进度一致」。
+ * 哪些步骤已完成仍然由业务事实派生（客户数/样品数/报价数/已批单数），
+ * 这里只持久化**服务器观察到完成的时间**与用户的收起/跳过偏好——
+ * 换一台设备打开，勾与时间都对得上，也不会因为换设备就把引导重新弹一遍。
+ */
+export const OnboardingState = z
+  .object({
+    /**
+     * 观察到的首次完成时间；没完成的步骤不出现，不编造历史。
+     * 四个键显式声明而不是 record：接口契约要能看出「一共就这四步」。
+     */
+    completedAt: z
+      .object({
+        customer: z.string().datetime().optional(),
+        sample: z.string().datetime().optional(),
+        quote: z.string().datetime().optional(),
+        approve: z.string().datetime().optional(),
+      })
+      .strict(),
+    /** 用户收起了完整清单，只保留一行折叠条。 */
+    collapsed: z.boolean(),
+    /** 用户跳过了整张清单。 */
+    skipped: z.boolean(),
+    /** 四步全部完成的时间；未全部完成时为 null。 */
+    allDoneAt: z.string().datetime().nullable(),
+    /** 从未保存过时为 null：客户端据此知道这是默认值而不是真实进度。 */
+    updatedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type OnboardingState = z.infer<typeof OnboardingState>;
+
+/**
+ * 更新开张进度（`PUT /api/onboarding/state`）。
+ *
+ * 只允许上报「这几步现在完成了」而不是直接写时间：
+ * 时间戳由服务器生成，客户端时钟不可信；重复上报同一键不会覆盖首次时间。
+ * 全部字段可选，收敛成「只改用户真正动过的那一项」。
+ */
+export const UpdateOnboardingStateInput = z
+  .object({
+    collapsed: z.boolean().optional(),
+    skipped: z.boolean().optional(),
+    /** 本次观察到已完成的步骤（来自 panorama 统计）。 */
+    completeSteps: z.array(OnboardingStepKey).max(4).optional(),
+  })
+  .strict();
+export type UpdateOnboardingStateInput = z.infer<typeof UpdateOnboardingStateInput>;

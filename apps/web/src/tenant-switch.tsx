@@ -3,18 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { MemberRole, TenantChoice } from "@weave-order/schema";
+import { MEMBER_ROLE_LABEL } from "@weave-order/schema";
 import { Badge, Button, cn } from "@weave-order/ui";
 
-/** 角色中文映射与产品文案表一致；英文枚举不直接出现在界面上。 */
-export const ROLE_LABEL: Record<MemberRole, string> = {
-  OWNER: "负责人",
-  MANAGER: "经理",
-  SALES: "销售",
-  MERCHANDISER: "跟单",
-  SAMPLE_ADMIN: "样品管理",
-  FINANCE: "财务",
-  VIEWER: "只读",
-};
+/** 角色中文映射的唯一来源在 schema；这里保留旧名字给已有调用方。 */
+export const ROLE_LABEL: Record<MemberRole, string> = MEMBER_ROLE_LABEL;
 
 const TENANT_STATUS_LABEL: Record<TenantChoice["tenantStatus"], string | null> = {
   ACTIVE: null,
@@ -277,8 +270,23 @@ export function TenantSwitcher({
   );
 }
 
-/** 零租户页：解释 + 可复制的账号 ID，而不是一句裸 403。 */
-export function NoMembershipNotice({ subject, message }: { subject?: string; message: string }) {
+/**
+ * 零租户页：解释 + 复制诊断信息。
+ *
+ * SSO 主键（`subject`）是 UUID，只用于定位账号，**不铺在页面上**：
+ * 用户看不懂，还容易被误当成「账号名」。需要发给管理员时点「复制账号 ID」。
+ */
+export function NoMembershipNotice({
+  subject,
+  name,
+  email,
+  message,
+}: {
+  subject?: string;
+  name?: string | null;
+  email?: string | null;
+  message: string;
+}) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     if (!subject) return;
@@ -304,16 +312,16 @@ export function NoMembershipNotice({ subject, message }: { subject?: string; mes
         创建公司
       </a>
       <p className="mt-4 text-xs text-ink-400">
-        也可以把下面的账号 ID 发给管理员，让对方在公司里邀请你。
+        也可以把账号 ID 发给管理员，让对方在公司里邀请你。
       </p>
-      {subject && (
-        <p className="mt-4 break-all rounded-md border border-line bg-surface px-3 py-2 font-mono text-xs text-ink-700">
-          {subject}
+      {(name || email) && (
+        <p className="mt-2 text-xs text-ink-700">
+          当前登录：{[name, email].filter(Boolean).join(" · ")}
         </p>
       )}
       <div className="mt-6 flex gap-3">
         <Button variant="primary" onClick={() => void copy()} disabled={!subject}>
-          {copied ? "已复制" : "复制我的账号 ID"}
+          {copied ? "已复制" : "复制账号 ID"}
         </Button>
         <a href="/auth/logout">
           <Button variant="secondary">退出登录</Button>

@@ -3,22 +3,13 @@
 import { useAuthContext } from "@weave-order/core";
 import { Fragment, useEffect, useState } from "react";
 import type { TeamInvite } from "@weave-order/schema";
+import { memberRoleLabel } from "@weave-order/schema";
 import { Badge, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
 import { track } from "@/analytics";
 import { formatMoney } from "@weave-order/ui";
-
-const ROLE_LABEL: Record<string, string> = {
-  OWNER: "老板",
-  MANAGER: "主管",
-  SALES: "销售",
-  MERCHANDISER: "跟单",
-  SAMPLE_ADMIN: "样品管理",
-  FINANCE: "财务",
-  VIEWER: "只读",
-};
 
 const INVITE_STATUS_LABEL: Record<TeamInvite["status"], string> = {
   INVITED: "待接受",
@@ -171,15 +162,10 @@ function SettingsPageContent() {
             <Field
               label="成员"
               value={memberDisplayName(me.data)}
-              hint={
-                me.data.name?.trim() && me.data.email ? me.data.email : undefined
-              }
+              hint={me.data.name?.trim() && me.data.email ? me.data.email : undefined}
             />
-            <Field label="角色" value={ROLE_LABEL[membership.role] ?? "成员"} />
-            <Field
-              label="数据范围"
-              value={SCOPE_LABEL[membership.dataScope] ?? "本人"}
-            />
+            <Field label="角色" value={memberRoleLabel(membership.role)} />
+            <Field label="数据范围" value={SCOPE_LABEL[membership.dataScope] ?? "本人"} />
             <Field
               label="审批上限"
               value={
@@ -511,12 +497,12 @@ function TeamSection({
                     <td className="px-3 py-2 text-xs">
                       {memberRowLabel(item, selfMembershipId)}
                       <span className="mt-0.5 block text-ink-400 sm:hidden">
-                        {ROLE_LABEL[item.role] ?? "成员"} ·{" "}
+                        {memberRoleLabel(item.role)} ·{" "}
                         {INVITE_STATUS_LABEL[item.status] ?? "已加入"}
                       </span>
                     </td>
                     <td className="hidden whitespace-nowrap px-3 py-2 text-xs sm:table-cell">
-                      {ROLE_LABEL[item.role] ?? "成员"}
+                      {memberRoleLabel(item.role)}
                     </td>
                     <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-ink-400 sm:table-cell">
                       {INVITE_STATUS_LABEL[item.status] ?? "已加入"}
