@@ -13,6 +13,7 @@ import { Badge, Button, EmptyState, IntentComposer, MoneyText, Spinner, cn } fro
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { KIND_LABEL, relativeTime } from "@/format";
+import { todayHeadline } from "@/today-copy";
 
 export default function TodayPage() {
   const mounted = useMounted();
@@ -54,14 +55,11 @@ function TodayPageContent() {
   const sampleCount = stats?.sampleCount ?? 0;
   const newWorkspace = customerCount === 0 && sampleCount === 0;
 
-  const headline =
-    agentDone > 0
-      ? `今天，小织替你做了 ${agentDone} 件事`
-      : pending.length > 0
-        ? "今天没有新的智能体动态"
-        : newWorkspace
-          ? "欢迎，先把客户和样品放进来"
-          : "今天没有新的智能体动态";
+  const headline = todayHeadline({
+    agentDone,
+    pendingCount: pending.length,
+    isNewWorkspace: newWorkspace,
+  });
 
   useEffect(() => {
     if (!scene.data?.entityId) return;
