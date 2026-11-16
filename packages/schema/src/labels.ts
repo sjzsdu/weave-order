@@ -45,7 +45,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   TENANT_SWITCHED: "切换了公司",
   MEMBERSHIP_CREATED: "添加了成员",
   MEMBERSHIP_INVITED: "邀请了成员",
-  MEMBERSHIP_ACTIVATED: "成员已加入",
+  MEMBERSHIP_ACTIVATED: "成员接受了邀请",
   MEMBERSHIP_REVOKED: "撤销了成员邀请",
   LLM_SETTINGS_UPDATED: "更新了智能体设置",
   PRICING_POLICY_CREATED: "建了报价策略",

@@ -231,20 +231,8 @@ export const AuditAction = z.enum([
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
-/**
- * 审计动作的中文文案。
- *
- * 只收录成员/身份这类「设置页与审计页都要展示」的动作；业务动作的文案
- * 仍由各端自己维护（工作台有上下文，能写出比枚举更具体的一句话）。
- * 未收录的动作由调用方兜底，不得把 SCREAMING_SNAKE 直接放到界面上。
- */
-export const AUDIT_ACTION_LABEL: Partial<Record<AuditAction, string>> = {
-  TENANT_CREATED: "创建了公司",
-  MEMBERSHIP_CREATED: "添加了成员",
-  MEMBERSHIP_INVITED: "邀请了成员",
-  MEMBERSHIP_ACTIVATED: "成员接受了邀请",
-  MEMBERSHIP_REVOKED: "撤销了成员邀请",
-};
+// 审计动作的中文文案统一在 `./labels`（全量一份，含成员/身份动作），
+// 不要再在本文件里另建一份，否则 index 的 `export *` 会撞名、三端也会漂移。
 
 /** 审计日志读取模型（只读，不可能由调用方写入）。 */
 export const AuditLogEntry = z
