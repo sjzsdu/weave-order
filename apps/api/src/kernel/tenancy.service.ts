@@ -314,6 +314,60 @@ export class TenancyService {
   }
 
   /**
+   * 撤销一条待接受的邀请。
+   *
+   * 只允许删 `INVITED`：邀请链接里的票据没有落库，删掉这条 membership
+   * 就等于让票据失效（`activateMembership` 找不到行）。`ACTIVE` 成员是
+   * 「停用」语义，需要保留成员行以还原历史归属，不在这里删。
+   * 条件写在 DELETE 里，避免「查完刚好被对方接受」的竞态。
+   */
+  async revokeMembership(
+    tenantId: string,
+    membershipId: string,
+    ctx: KernelContext,
+  ): Promise<Membership> {
+    return await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(memberships)
+        .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, tenantId)))
+        .limit(1);
+      const row = rows[0];
+      if (!row) throw new KernelError("RESOURCE_NOT_FOUND", "这条邀请不存在或已被撤销");
+      if (row.status !== "INVITED") {
+        throw new KernelError("KERNEL_REJECTED", "对方已经接受了邀请，不能再撤销");
+      }
+
+      const deleted = await tx
+        .delete(memberships)
+        .where(
+          and(
+            eq(memberships.id, membershipId),
+            eq(memberships.tenantId, tenantId),
+            eq(memberships.status, "INVITED"),
+          ),
+        )
+        .returning();
+      if (deleted.length === 0) {
+        throw new KernelError("KERNEL_REJECTED", "对方已经接受了邀请，不能再撤销");
+      }
+
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "MEMBERSHIP_REVOKED",
+          entityType: "membership",
+          entityId: membershipId,
+          before: { email: row.subject, role: row.role, status: row.status },
+        },
+        tenantId,
+      );
+      return mapMembership(row);
+    });
+  }
+
+  /**
    * 邀请同事：先落一条 `INVITED` 成员，`subject` 暂存邮箱。
    *
    * 为什么不直接按邮箱建 ACTIVE：登录身份是 Casdoor 的 `sub`，在对方接受之前

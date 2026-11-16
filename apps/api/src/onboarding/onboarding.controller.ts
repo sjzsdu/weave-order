@@ -1,12 +1,14 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpException,
   HttpStatus,
   Inject,
   Ip,
+  Param,
   Post,
   Query,
 } from "@nestjs/common";
@@ -26,7 +28,15 @@ function fail(status: number, code: string, message: string): HttpException {
 function toHttpError(error: unknown): HttpException {
   if (error instanceof HttpException) return error;
   if (error instanceof TeamActionError) {
-    return fail(error.status, error.status === 403 ? "FORBIDDEN" : "INVALID_INPUT", error.message);
+    const code =
+      error.status === 403
+        ? "FORBIDDEN"
+        : error.status === 404
+          ? "NOT_FOUND"
+          : error.status === 409
+            ? "CONFLICT"
+            : "INVALID_INPUT";
+    return fail(error.status, code, error.message);
   }
   if (error instanceof StartTenantConflict) {
     return fail(HttpStatus.CONFLICT, "CONFLICT", error.message);
@@ -186,6 +196,30 @@ export class TeamController {
         body,
         claims.name ?? claims.email ?? "公司管理员",
       );
+    } catch (error) {
+      throw toHttpError(error);
+    }
+  }
+
+  /**
+   * 撤销一条待接受的邀请。
+   *
+   * 只删 INVITED 成员；ACTIVE 成员走「停用」，这里明确拒绝而不是静默删除。
+   * 权限由服务端按能力表判定，前端是否显示按钮不影响结果。
+   */
+  @Delete("invites/:membershipId")
+  async revoke(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("membershipId") membershipId: string,
+  ): Promise<{ ok: true }> {
+    try {
+      const { claims, membership } = await this.auth.authenticate(authorization);
+      await this.onboarding.revokeInvite(
+        membership,
+        membershipId,
+        claims.name ?? claims.email ?? "公司管理员",
+      );
+      return { ok: true };
     } catch (error) {
       throw toHttpError(error);
     }

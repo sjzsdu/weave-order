@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthContext } from "@weave-order/core";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { TeamInvite } from "@weave-order/schema";
 import { Badge, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
@@ -11,14 +11,34 @@ import { track } from "@/analytics";
 import { formatMoney } from "@weave-order/ui";
 
 const ROLE_LABEL: Record<string, string> = {
-  OWNER: "老板 / Owner",
-  MANAGER: "主管 / Manager",
-  SALES: "销售 / Sales",
-  MERCHANDISER: "跟单 / Merchandiser",
+  OWNER: "老板",
+  MANAGER: "主管",
+  SALES: "销售",
+  MERCHANDISER: "跟单",
   SAMPLE_ADMIN: "样品管理",
-  FINANCE: "财务 / Finance",
+  FINANCE: "财务",
   VIEWER: "只读",
 };
+
+const INVITE_STATUS_LABEL: Record<TeamInvite["status"], string> = {
+  INVITED: "待接受",
+  ACTIVE: "已加入",
+};
+
+/**
+ * 成员姓名：`name` 为空时退到邮箱，再退到「我」。
+ * 绝不回退到 `subject` —— 那是 SSO 主键 UUID，给用户看只会破坏信任。
+ */
+function memberDisplayName(me: { name: string | null; email: string | null }): string {
+  return me.name?.trim() || me.email?.trim() || "我";
+}
+
+/** 成员表里的一行怎么称呼：绝不把 SSO 主键或原始枚举放到界面上。 */
+function memberRowLabel(item: TeamInvite, selfMembershipId: string): string {
+  if (item.membershipId === selfMembershipId) return "我";
+  if (item.email.includes("@")) return item.email;
+  return item.status === "INVITED" ? "待接受的邀请" : "已加入的同事";
+}
 
 const SCOPE_LABEL: Record<string, string> = {
   ALL: "全公司",
@@ -38,6 +58,13 @@ const ISOLATION_LABEL: Record<string, string> = {
   SHARED_RLS: "共享库 · 按公司隔离",
   SCHEMA: "独立 schema",
   DATABASE: "独立数据库",
+};
+
+const CURRENCY_LABEL: Record<string, string> = {
+  CNY: "人民币（CNY）",
+  USD: "美元（USD）",
+  EUR: "欧元（EUR）",
+  HKD: "港币（HKD）",
 };
 
 function Field({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
@@ -113,13 +140,13 @@ function SettingsPageContent() {
             <Field label="组织名称" value={tenant.name} />
             <Field label="品牌抬头" value={tenant.brand ?? "—"} hint="用于报价页与打印单证抬头" />
             <Field
-              label="租户标识"
-              value={<code className="font-mono text-xs">{tenant.id}</code>}
-              hint="平台分配的公司编号，和我们的技术支持沟通时提供这一串即可"
+              label="公司标识"
+              value={<code className="font-mono text-xs">{tenant.slug}</code>}
+              hint="和我们的技术支持沟通时提供这一串即可"
             />
             <Field
               label="计费币种"
-              value={tenant.currency}
+              value={CURRENCY_LABEL[tenant.currency] ?? tenant.currency}
               hint="报价、订单与账单都按这个币种计算"
             />
             <Field
@@ -127,10 +154,10 @@ function SettingsPageContent() {
               value={
                 <span className="flex items-center gap-2">
                   <Badge tone={tenant.status === "ACTIVE" ? "success" : "warning"}>
-                    {STATUS_LABEL[tenant.status] ?? tenant.status}
+                    {STATUS_LABEL[tenant.status] ?? "状态未知"}
                   </Badge>
                   <span className="text-xs text-ink-400">
-                    {ISOLATION_LABEL[tenant.isolationMode] ?? tenant.isolationMode}
+                    {ISOLATION_LABEL[tenant.isolationMode] ?? "按公司隔离"}
                   </span>
                 </span>
               }
@@ -143,13 +170,15 @@ function SettingsPageContent() {
           <dl>
             <Field
               label="成员"
-              value={me.data.name ?? me.data.subject}
-              hint={me.data.email ?? undefined}
+              value={memberDisplayName(me.data)}
+              hint={
+                me.data.name?.trim() && me.data.email ? me.data.email : undefined
+              }
             />
-            <Field label="角色" value={ROLE_LABEL[membership.role] ?? membership.role} />
+            <Field label="角色" value={ROLE_LABEL[membership.role] ?? "成员"} />
             <Field
               label="数据范围"
-              value={SCOPE_LABEL[membership.dataScope] ?? membership.dataScope}
+              value={SCOPE_LABEL[membership.dataScope] ?? "本人"}
             />
             <Field
               label="审批上限"
@@ -231,10 +260,13 @@ function SettingsPageContent() {
 
       <CreditsCard />
 
-      <TeamSection />
+      <TeamSection
+        canManage={me.data.capabilities.includes("member.invite")}
+        selfMembershipId={membership.id}
+      />
 
       <p className="text-xs text-ink-400">
-        公司资料与成员由平台管理员维护，本页只读。需要改公司名、抬头或增加账号数，
+        公司资料由平台管理员维护；成员邀请可以在这里随时撤销。需要改公司名、抬头或增加账号数，
         <SupportMailto
           className="text-indigo-600 underline underline-offset-2"
           label="写信给我们"
@@ -260,7 +292,13 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
  * 生成一条 7 天有效的专属链接，复制到微信或邮件发给对方；对方登录后点接受即加入。
  * 没有接短信/邮件服务，所以这里负责生成与复制，不做「已发送」的假象。
  */
-function TeamSection() {
+function TeamSection({
+  canManage,
+  selfMembershipId,
+}: {
+  canManage: boolean;
+  selfMembershipId: string;
+}) {
   const api = useApi();
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [email, setEmail] = useState("");
@@ -271,6 +309,19 @@ function TeamSection() {
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [delivery, setDelivery] = useState<TeamInvite["delivery"]>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<{
+    membershipId: string;
+    message: string;
+  } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -319,6 +370,26 @@ function TeamSection() {
       await navigator.clipboard.writeText(link);
     } catch {
       setError("复制失败，请手动选中链接复制");
+    }
+  }
+
+  async function revoke(item: TeamInvite) {
+    setRevokingId(item.membershipId);
+    setRevokeError(null);
+    try {
+      await api.revokeInvite(item.membershipId);
+      setInvites((rows) => rows.filter((row) => row.membershipId !== item.membershipId));
+      setConfirmingId(null);
+      setToast(`已撤销给 ${item.email} 的邀请，原链接已失效`);
+    } catch (cause) {
+      // 服务端已经给出人话原因（403 / 404 / 409）；没有就用通用文案，不假装成功。
+      setRevokeError({
+        membershipId: item.membershipId,
+        message: cause instanceof Error ? cause.message : "撤销失败，请稍后重试",
+      });
+      setConfirmingId(null);
+    } finally {
+      setRevokingId(null);
     }
   }
 
@@ -428,22 +499,92 @@ function TeamSection() {
             <thead className="bg-paper text-xs text-ink-400">
               <tr>
                 <th className="px-3 py-2 text-left font-normal">同事</th>
-                <th className="px-3 py-2 text-left font-normal">角色</th>
-                <th className="px-3 py-2 text-left font-normal">状态</th>
+                <th className="hidden px-3 py-2 text-left font-normal sm:table-cell">角色</th>
+                <th className="hidden px-3 py-2 text-left font-normal sm:table-cell">状态</th>
+                {canManage ? <th className="px-3 py-2 text-right font-normal">操作</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-line text-ink-700">
               {invites.map((item) => (
-                <tr key={item.membershipId}>
-                  <td className="px-3 py-2 text-xs">{item.email}</td>
-                  <td className="px-3 py-2 text-xs">{item.role}</td>
-                  <td className="px-3 py-2 text-xs text-ink-400">
-                    {item.status === "INVITED" ? "待接受" : "已加入"}
-                  </td>
-                </tr>
+                <Fragment key={item.membershipId}>
+                  <tr>
+                    <td className="px-3 py-2 text-xs">
+                      {memberRowLabel(item, selfMembershipId)}
+                      <span className="mt-0.5 block text-ink-400 sm:hidden">
+                        {ROLE_LABEL[item.role] ?? "成员"} ·{" "}
+                        {INVITE_STATUS_LABEL[item.status] ?? "已加入"}
+                      </span>
+                    </td>
+                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs sm:table-cell">
+                      {ROLE_LABEL[item.role] ?? "成员"}
+                    </td>
+                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-ink-400 sm:table-cell">
+                      {INVITE_STATUS_LABEL[item.status] ?? "已加入"}
+                    </td>
+                    {canManage ? (
+                      <td className="px-3 py-2 text-right text-xs">
+                        {item.status === "INVITED" ? (
+                          confirmingId === item.membershipId ? (
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <span className="text-ink-500">
+                                撤销后这条邀请链接立即失效，对方将无法再通过它加入。
+                              </span>
+                              <button
+                                type="button"
+                                disabled={revokingId === item.membershipId}
+                                onClick={() => void revoke(item)}
+                                className="rounded-md bg-vermilion-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-vermilion-600/90 disabled:opacity-60"
+                              >
+                                {revokingId === item.membershipId ? "撤销中…" : "确认撤销"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={revokingId === item.membershipId}
+                                onClick={() => setConfirmingId(null)}
+                                className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-700 hover:border-ink-400 disabled:opacity-60"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmingId(item.membershipId);
+                                setRevokeError(null);
+                              }}
+                              className="whitespace-nowrap rounded-md border border-line px-2.5 py-1 text-xs text-ink-700 hover:border-vermilion-600 hover:text-vermilion-600"
+                            >
+                              撤销
+                            </button>
+                          )
+                        ) : null}
+                      </td>
+                    ) : null}
+                  </tr>
+                  {revokeError?.membershipId === item.membershipId ? (
+                    <tr>
+                      <td
+                        colSpan={canManage ? 4 : 3}
+                        className="bg-vermilion-100 px-3 py-2 text-xs text-vermilion-600"
+                      >
+                        撤销失败：{revokeError.message}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div
+          role="status"
+          className="fixed bottom-6 right-6 z-50 rounded-md bg-ink-900 px-4 py-2 text-sm text-white shadow-lg"
+        >
+          {toast}
         </div>
       ) : null}
     </section>
