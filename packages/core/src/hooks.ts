@@ -450,6 +450,12 @@ export type TenantContextState =
       status: "READY";
       tenant: AuthContextResponse["tenant"];
       membership: AuthContextResponse["membership"];
+      /**
+       * SSO 给的显示名 / 邮箱：顶栏只能显示这两个，绝不显示 `membership.subject`。
+       * 两者都可能为空（IdP 没配 profile），由界面兜底成「我」。
+       */
+      name: AuthContextResponse["name"];
+      email: AuthContextResponse["email"];
       /** 服务端算好的能力清单；前端显隐只读它，不再从 role 推导。 */
       capabilities: AuthContextResponse["capabilities"];
     }
@@ -484,6 +490,8 @@ export function useTenantContext(client: ApiClient) {
       status: "READY",
       tenant: data.tenant,
       membership: data.membership,
+      name: data.name,
+      email: data.email,
       capabilities: data.capabilities,
     };
   })();

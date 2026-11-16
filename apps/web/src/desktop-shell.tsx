@@ -11,7 +11,11 @@ import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-orde
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
 import { PersonaBar } from "@/persona-bar";
+import { SupportMailto } from "@/support";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
+
+/** 页脚只留版本与帮助：内部工程口径（几个窗口、只读与否）不属于用户界面。 */
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 
 const WINDOWS = [
   { href: "/today", label: "工作台", key: "1", hint: "⌘1" },
@@ -191,7 +195,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
 
   const tenant = tenantContext.tenant;
   const membership = tenantContext.membership;
-  const name = membership.subject;
+  // SSO 主键（subject）绝不能出现在界面上：先姓名，再邮箱，最后兜底「我」。
+  const name = tenantContext.name?.trim() || tenantContext.email?.trim() || "我";
   const tenants: TenantChoice[] = tenantList.data?.tenants ?? [];
   // 窄屏没有顶栏的 TenantSwitcher：把可切换的公司直接列进「更多」，
   // 否则 375 宽度下「功能存在但入口消失」。
@@ -233,10 +238,28 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           <div className="mx-auto hidden md:block">
             <CommandBar
               onSubmit={async (text) => (await intentChannel.submit(text, "command-bar")) !== null}
+              commands={[
+                {
+                  label: "建客户",
+                  hint: "打开新建客户",
+                  run: () => router.push("/panorama/customers?new=1"),
+                },
+                {
+                  label: "建样品",
+                  hint: "打开新建样品",
+                  run: () => router.push("/panorama/samples?new=1"),
+                },
+                {
+                  label: "导入客户",
+                  hint: "CSV 批量导入",
+                  run: () => router.push("/panorama/customers?import=1"),
+                },
+              ]}
               feedback={
                 <div className="grid gap-2">
                   <p className="text-xs text-ink-400">
-                    说一句话不会跳页：提交后结果就展开在这里，10 分钟内可撤销。
+                    打「建客户 / 建样品 / 导入客户」回车直达，其他文字交给小织；结果展开在这里，10
+                    分钟内可撤销。
                   </p>
                   {intentChannel.submitError && (
                     <p className="rounded-md border border-vermilion-600/30 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">
@@ -392,8 +415,9 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
-        3 个业务窗口 + 1 个管理面 · 打印是全局抽屉 · 前端只读展示 +
-        发起审批，金额与阈值一律后端校验。
+        <span>织序 WeaveOrder · v{APP_VERSION}</span>
+        <span className="mx-2 text-line">·</span>
+        <SupportMailto label="帮助与支持" className="underline underline-offset-2" />
       </footer>
 
       <PrintDrawer open={printOpen} onClose={() => setPrintOpen(false)} />

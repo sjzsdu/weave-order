@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useApprovals,
   useDecideApproval,
@@ -24,6 +24,15 @@ import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { KIND_LABEL, relativeTime } from "@/format";
 import { todayHeadline } from "@/today-copy";
+import { OnboardingChecklist } from "@/onboarding-checklist";
+import {
+  onboardingSteps,
+  readOnboardingPrefs,
+  recordCompletions,
+  writeOnboardingPrefs,
+  type OnboardingPrefs,
+} from "@/onboarding";
+import { useProductionLike } from "@/runtime-mode.client";
 
 export default function TodayPage() {
   const mounted = useMounted();
@@ -43,12 +52,14 @@ function TodayPageContent() {
   const [error, setError] = useState<string | null>(null);
   // 页内 composer 与顶栏 ⌘K 共用同一个 hook；这里只负责选择 source 与展示位置。
   const intentChannel = useIntentChannel(api);
-  // 演示剧本深链：`/today?scene=approval-pending`。生产环境接口 404，这里只是静默失败。
+  // 演示剧本深链只属于演示环境：生产态连请求都不发，避免每条访问打一次 404。
+  const productionLike = useProductionLike();
+  // 演示剧本深链：`/today?scene=approval-pending`。
   const [sceneKey] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("scene");
   });
-  const scene = useDemoScene(api, sceneKey);
+  const scene = useDemoScene(api, productionLike ? null : sceneKey);
   // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
   const [initialIntent] = useState(() => {
     if (typeof window === "undefined") return undefined;
@@ -73,6 +84,41 @@ function TodayPageContent() {
   const customerCount = stats?.customerCount ?? 0;
   const sampleCount = stats?.sampleCount ?? 0;
   const newWorkspace = customerCount === 0 && sampleCount === 0;
+
+  // 开张清单：步骤完成与否只看服务端统计；设备上的「收起 / 跳过 / 完成时间」本地保存。
+  const [onboardingPrefs, setOnboardingPrefs] = useState<OnboardingPrefs>(() =>
+    readOnboardingPrefs(),
+  );
+  const updateOnboardingPrefs = useCallback((next: OnboardingPrefs) => {
+    setOnboardingPrefs(next);
+    writeOnboardingPrefs(next);
+  }, []);
+  const onboarding = useMemo(
+    () =>
+      onboardingSteps({
+        customerCount,
+        sampleCount,
+        quoteCount: stats?.quoteCount ?? 0,
+        sentQuoteCount: stats?.sentQuoteCount ?? 0,
+        confirmedShipmentCount: stats?.confirmedShipmentCount ?? 0,
+      }),
+    [
+      customerCount,
+      sampleCount,
+      stats?.quoteCount,
+      stats?.sentQuoteCount,
+      stats?.confirmedShipmentCount,
+    ],
+  );
+
+  useEffect(() => {
+    if (loading) return;
+    const next = recordCompletions(onboardingPrefs, onboarding, new Date().toISOString());
+    if (next !== onboardingPrefs) {
+      setOnboardingPrefs(next);
+      writeOnboardingPrefs(next);
+    }
+  }, [loading, onboarding, onboardingPrefs]);
 
   const headline = todayHeadline({
     agentDone,
@@ -105,6 +151,14 @@ function TodayPageContent() {
 
   return (
     <div className="grid gap-6">
+      {!loading && (
+        <OnboardingChecklist
+          steps={onboarding}
+          prefs={onboardingPrefs}
+          onPrefsChange={updateOnboardingPrefs}
+          autoCollapse={customerCount > 0 || sampleCount > 0}
+        />
+      )}
       <section className="rounded-lg border border-line bg-surface px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

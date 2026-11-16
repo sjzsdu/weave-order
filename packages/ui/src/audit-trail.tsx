@@ -1,4 +1,5 @@
 import type { AuditLogEntry } from "@weave-order/schema";
+import { actorTypeLabel, auditActionLabel } from "@weave-order/schema";
 
 /** 审计只追加：这里只读展示，不提供任何编辑入口。 */
 export function AuditTrail({ entries, limit = 6 }: { entries: AuditLogEntry[]; limit?: number }) {
@@ -14,9 +15,10 @@ export function AuditTrail({ entries, limit = 6 }: { entries: AuditLogEntry[]; l
             ✓
           </span>
           <div className="min-w-0">
-            <div className="truncate text-ink-700">{entry.action}</div>
+            <div className="truncate text-ink-700">{auditActionLabel(entry.action)}</div>
             <div className="text-xs text-ink-400">
-              {entry.actorType} · {new Date(entry.createdAt).toLocaleString("zh-CN")}
+              {actorTypeLabel(entry.actorType)} ·{" "}
+              {new Date(entry.createdAt).toLocaleString("zh-CN")}
             </div>
           </div>
         </li>
