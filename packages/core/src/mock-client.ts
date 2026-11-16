@@ -399,6 +399,40 @@ export function createMockApiClient(): ApiClient {
         ? Promise.resolve(customer360)
         : Promise.reject(new Error("CUSTOMER_NOT_FOUND")),
 
+    createCustomer: (input) =>
+      Promise.resolve({
+        ...customer,
+        code: input.code ?? "C000000-0001",
+        name: input.name,
+        tier: input.tier ?? "REGULAR",
+        contactName: input.contactName ?? null,
+        contactPhone: input.contactPhone ?? null,
+        contactEmail: input.contactEmail ?? null,
+      }),
+
+    importBatch: (batch) => {
+      const customers = batch.customers ?? [];
+      return Promise.resolve({
+        committed: true,
+        batchError: null,
+        totalRows: customers.length,
+        okRows: customers.length,
+        rejectedRows: 0,
+        importedCustomers: customers.length,
+        importedSamples: 0,
+        correlationId: null,
+        rows: customers.map((row, index) => ({
+          ok: true as const,
+          kind: "customer" as const,
+          row: index,
+          key:
+            typeof row === "object" && row !== null && "code" in row
+              ? String((row as { code?: unknown }).code ?? `#${index}`)
+              : `#${index}`,
+        })),
+      });
+    },
+
     customerTimeline: () => Promise.resolve(customerTimeline),
 
     listSamples: () => Promise.resolve([sample]),

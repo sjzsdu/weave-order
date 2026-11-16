@@ -32,6 +32,18 @@ export const CreateCustomerInput = z
   .strict();
 export type CreateCustomerInput = z.infer<typeof CreateCustomerInput>;
 
+/**
+ * 人类新建客户的 HTTP 请求体。
+ *
+ * 与内核输入的唯一差别：`code` 可以省略，由服务端按北京时间生成
+ * `CYYMMDD-NNNN`（并发撞码时重试）。租户与归属人一律由登录态注入，
+ * 因此这里也不接受这两个字段（`.strict()` 会直接拒绝）。
+ */
+export const CreateCustomerRequest = CreateCustomerInput.extend({
+  code: z.string().min(1).max(64).optional(),
+}).strict();
+export type CreateCustomerRequest = z.infer<typeof CreateCustomerRequest>;
+
 /** 样品图片 objectKey 列表（已上传到对象存储、属于本租户）。 */
 export const SampleImageKeyList = z.array(z.string().min(1).max(512)).max(20);
 

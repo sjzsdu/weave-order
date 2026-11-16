@@ -233,6 +233,38 @@ describe("HTTP 面（e2e）", () => {
     expect(result.importedCustomers).toBe(0);
   });
 
+  it("POST /api/customers：不填编号由服务端生成，重复编号返回 409 + 可判别 code", async (ctx) => {
+    if (!available) ctx.skip();
+    const created = await fetch(`${baseUrl}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: `HTTP 新客户 ${Date.now().toString(36)}`, tier: "NEW" }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as {
+      customer: { id: string; code: string; name: string };
+    };
+    expect(body.customer.id).toBeTruthy();
+    expect(body.customer.code).toMatch(/^C\d{6}-\d{4,}$/);
+
+    const code = `E2E-HUMAN-C-${Date.now().toString(36)}`;
+    const first = await fetch(`${baseUrl}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, name: "显式编号客户" }),
+    });
+    expect(first.status).toBe(201);
+
+    const duplicate = await fetch(`${baseUrl}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, name: "重复编号客户" }),
+    });
+    expect(duplicate.status).toBe(409);
+    const duplicateBody = (await duplicate.json()) as { error?: { code?: string } };
+    if (duplicateBody.error) expect(duplicateBody.error.code).toBe("CUSTOMER_CODE_EXISTS");
+  });
+
   it("参数匹配工具走 HTTP，非法输入返回 400 + INVALID_INPUT 而不是 500", async (ctx) => {
     if (!available) ctx.skip();
     const response = await fetch(`${baseUrl}/api/tools/search-by-spec`, {

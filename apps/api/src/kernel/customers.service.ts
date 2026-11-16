@@ -9,7 +9,7 @@ import {
   samples,
 } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { CreateCustomerInput, Customer360 } from "@weave-order/schema";
+import { CreateCustomerInput, CreateCustomerRequest, Customer360 } from "@weave-order/schema";
 import type {
   Customer,
   CustomerContext,
@@ -33,7 +33,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { loadCustomerList, loadCustomerSummary, loadCustomerTimeline } from "./customer-aggregates";
-import { KernelError, isUniqueViolation } from "./errors";
+import { KernelError, isKernelError, isUniqueViolation } from "./errors";
 import { ownerScopeFilter } from "./data-scope";
 import { currencyOf, toIso } from "./mappers";
 
@@ -60,6 +60,24 @@ const DEFAULT_FOLLOWUP_PREFERENCE: FollowupPreference = {
 
 type CustomerRow = typeof customers.$inferSelect;
 type ContextRow = typeof customerContexts.$inferSelect;
+
+/**
+ * 客户编号前缀：`C` + 北京时间 `YYMMDD` + `-`。
+ *
+ * 用固定 +8 小时偏移而不是 `Intl`，避免运行环境时区/ICU 差异让同一天生成两个前缀。
+ */
+export function customerCodePrefix(now: Date = new Date()): string {
+  const beijing = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const yy = String(beijing.getUTCFullYear() % 100).padStart(2, "0");
+  const mm = String(beijing.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(beijing.getUTCDate()).padStart(2, "0");
+  return `C${yy}${mm}${dd}-`;
+}
+
+/** 前缀 + 至少 4 位序号（`C261116-0001`）；超过 9999 自然进位成 5 位。 */
+export function formatCustomerCode(prefix: string, sequence: number): string {
+  return `${prefix}${String(sequence).padStart(4, "0")}`;
+}
 
 function mapCustomer(row: CustomerRow): Customer {
   return {
@@ -108,6 +126,46 @@ export class CustomerService {
       }
       throw error;
     }
+  }
+
+  /**
+   * 人类新建客户：`code` 可省略，由服务端按「同租户当日最大序号 + 1」生成。
+   *
+   * 序号查询与写入不在同一事务里，因此并发请求可能算出同一编号；唯一索引兜底，
+   * 撞码时重算并重试（最多 3 次），仍失败就明确报错，绝不吞掉冲突。
+   */
+  async createForHuman(input: unknown, ctx: KernelContext): Promise<Customer> {
+    const parsed = CreateCustomerRequest.parse(input);
+    if (parsed.code) return this.create(parsed, ctx);
+
+    const prefix = customerCodePrefix();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const code = formatCustomerCode(prefix, await this.nextCustomerSequence(prefix));
+      try {
+        return await this.create({ ...parsed, code }, ctx);
+      } catch (error) {
+        if (!isKernelError(error) || error.details.reason !== "CUSTOMER_CODE_EXISTS") throw error;
+      }
+    }
+    throw new KernelError("KERNEL_REJECTED", "客户编号连续冲突，请稍后重试", {
+      reason: "CUSTOMER_CODE_EXISTS",
+    });
+  }
+
+  /** 同租户、同前缀（当日）的最大序号；非本格式的历史编号不参与计算。 */
+  private async nextCustomerSequence(prefix: string): Promise<number> {
+    const start = prefix.length + 1;
+    const result = await this.db.execute<{ max_seq: number | string | null }>(sql`
+      -- 显式 ::int：不带类型的参数会让 PostgreSQL 选到 regex 版 substring，
+      -- 结果恒为 null，序号永远从 1 开始（并发时直接撞唯一索引）。
+      SELECT MAX(substring(code from (${start})::int)::int) AS max_seq
+      FROM customers
+      WHERE tenant_id = ${this.tenantId}
+        AND code LIKE ${`${prefix}%`}
+        AND substring(code from (${start})::int) ~ '^[0-9]+$'
+    `);
+    const max = result.rows[0]?.max_seq;
+    return (max === null || max === undefined ? 0 : Number(max)) + 1;
   }
 
   /**

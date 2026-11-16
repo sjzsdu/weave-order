@@ -142,6 +142,31 @@ describe("确定性内核（集成）", () => {
     });
   }, 20_000);
 
+  it("建客户不填编号：服务端生成 CYYMMDD-NNNN，连续创建序号递增", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const first = await kernel.customers.createForHuman({ name: `自动编号-${suffix()}` }, HUMAN);
+    const second = await kernel.customers.createForHuman({ name: `自动编号-${suffix()}` }, HUMAN);
+
+    expect(first.code).toMatch(/^C\d{6}-\d{4,}$/);
+    expect(second.code).not.toBe(first.code);
+    const sequenceOf = (code: string) => Number(code.slice(code.indexOf("-") + 1));
+    expect(sequenceOf(second.code)).toBeGreaterThan(sequenceOf(first.code));
+  }, 20_000);
+
+  it("建客户：显式编号重复返回 CUSTOMER_CODE_EXISTS（HTTP 映射 409）", async (ctx) => {
+    if (!available) ctx.skip();
+    const kernel = kernelOf();
+    const code = `IT-HUMAN-DUP-${suffix()}`;
+    await kernel.customers.createForHuman({ code, name: "第一次" }, HUMAN);
+    await expect(
+      kernel.customers.createForHuman({ code, name: "第二次" }, HUMAN),
+    ).rejects.toMatchObject({
+      code: "KERNEL_REJECTED",
+      details: { reason: "CUSTOMER_CODE_EXISTS" },
+    });
+  }, 20_000);
+
   it("寄样单：智能体只能建 DRAFT，确认必须人类（铁律 #2）", async (ctx) => {
     if (!available) ctx.skip();
     const kernel = kernelOf();

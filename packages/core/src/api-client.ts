@@ -7,6 +7,7 @@ import {
   AuthMeResponse,
   AuthContextResponse,
   CreatedQuoteShare,
+  CreateCustomerRequest,
   CreateQuoteShareInput,
   CreateSampleInput,
   CreateSampleShipmentInput,
@@ -26,6 +27,8 @@ import {
   InboundIntakeInput,
   InboundReplyList,
   InboundReplyResult,
+  ImportBatch,
+  ImportBatchResult,
   InviteMemberInput,
   InvitePreview,
   Order,
@@ -133,6 +136,7 @@ export class ApiError extends Error {
 }
 
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
+const CustomerResponse = z.object({ customer: Customer }).strict();
 const CustomerListResponse = z.object({ customers: z.array(CustomerListItem) }).strict();
 const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
 const SamplePageResponse = z
@@ -384,6 +388,18 @@ export function createApiClient(options: ApiClientOptions) {
     /** 客户 360 首屏：档案 + 上下文 + 汇总。 */
     customer360: async (customerId: string) =>
       Customer360.parse(await request(`/api/customers/${encodeURIComponent(customerId)}`)),
+
+    /**
+     * 新建客户。`code` 可以省略，由服务端生成 `CYYMMDD-NNNN`；
+     * 负责人与租户由登录态注入，这里不传。
+     */
+    createCustomer: async (input: z.input<typeof CreateCustomerRequest>) =>
+      CustomerResponse.parse(await post("/api/customers", CreateCustomerRequest.parse(input)))
+        .customer,
+
+    /** 批量导入（整批原子）：逐行回执由服务端给出，前端只展示。 */
+    importBatch: async (batch: z.input<typeof ImportBatch>) =>
+      ImportBatchResult.parse(await post("/api/import", ImportBatch.parse(batch))),
 
     /** 客户时间线（游标分页）。 */
     customerTimeline: async (
