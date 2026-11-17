@@ -36,6 +36,14 @@ export const OnboardingTicket = z
     ownerEmail: z.string().email().nullable(),
     /** 仅 `invite` 使用：加入后拿到的角色。 */
     role: MemberRole.nullable().default(null),
+    /**
+     * 仅 `invite` 使用：这条邀请对应的成员行（`INVITED`）。
+     *
+     * 票据是无状态的，撤销不会改动已发出去的链接；把成员行 id 钉在票据里，
+     * 预览时才能确认「被撤销的那一条」确实失效，而不会因为同邮箱被重新邀请
+     * 就让旧链接复活。缺省（老票据）时回退到按邮箱查待接受邀请。
+     */
+    membershipId: z.string().min(1).max(64).optional(),
     /** 过期时间（Unix 秒）。 */
     exp: z.number().int().positive(),
   })

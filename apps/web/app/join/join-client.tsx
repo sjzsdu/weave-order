@@ -50,7 +50,9 @@ export function JoinClient({ code }: { code: string }) {
       .catch((cause: unknown) => {
         if (!cancelled) {
           setError(
-            readableInviteError(cause instanceof Error ? cause.message : "邀请无效，请让对方重新发一条"),
+            readableInviteError(
+              cause instanceof Error ? cause.message : "邀请无效，请让对方重新发一条",
+            ),
           );
         }
       })
@@ -72,9 +74,7 @@ export function JoinClient({ code }: { code: string }) {
       if (preview) track("invite_accepted", { role: preview.role });
       window.setTimeout(() => window.location.assign("/today"), 1000);
     } catch (cause) {
-      setError(
-        readableInviteError(cause instanceof Error ? cause.message : "加入失败，请重试"),
-      );
+      setError(readableInviteError(cause instanceof Error ? cause.message : "加入失败，请重试"));
     } finally {
       setBusy(false);
     }
@@ -121,6 +121,9 @@ export function JoinClient({ code }: { code: string }) {
           。
         </p>
         <div className="mt-6 flex gap-4 text-xs">
+          <a href="/today" className="text-ink-400 underline underline-offset-4">
+            回工作台
+          </a>
           <a href="/login" className="text-ink-400 underline underline-offset-4">
             换个账号登录
           </a>
