@@ -36,11 +36,15 @@ async function proxy(request: NextRequest, segments: string[]): Promise<Response
   request.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
   });
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  headers.set("x-request-id", requestId);
   const token = tokenFromRequest(request);
   if (!token) {
     return NextResponse.json(
-      { error: { code: "UNAUTHENTICATED", message: "请先登录平台控制台" } },
-      { status: 401 },
+      {
+        error: { code: "UNAUTHENTICATED", message: "请先登录平台控制台", requestId },
+      },
+      { status: 401, headers: { "x-request-id": requestId } },
     );
   }
   headers.set("authorization", `Bearer ${token}`);
@@ -58,20 +62,29 @@ async function proxy(request: NextRequest, segments: string[]): Promise<Response
       redirect: "manual",
     });
   } catch (cause) {
+    // 不把 fetch failed / ECONNREFUSED 之类的底层文案透到页面上。
+    console.error("[admin] 控制面不可达", {
+      requestId,
+      path: segments.join("/"),
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
     return NextResponse.json(
       {
         error: {
-          code: "INTERNAL",
-          message: cause instanceof Error ? cause.message : "控制面不可达",
+          code: "PLATFORM_UNREACHABLE",
+          message: "控制面服务暂时不可达，请稍后重试",
+          requestId,
         },
       },
-      { status: 502 },
+      { status: 502, headers: { "x-request-id": requestId } },
     );
   }
 
   const responseHeaders = new Headers();
   const contentType = upstream.headers.get("content-type");
   if (contentType) responseHeaders.set("content-type", contentType);
+  const upstreamRequestId = upstream.headers.get("x-request-id");
+  responseHeaders.set("x-request-id", upstreamRequestId ?? requestId);
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,

@@ -57,7 +57,11 @@ export async function GET(request: NextRequest) {
     body = (await response.json()) as CasdoorTokenResponse;
     if (!response.ok) return fail(body.error_description ?? body.error ?? "换取令牌失败");
   } catch (cause) {
-    return fail(cause instanceof Error ? cause.message : "身份服务不可达");
+    // 网络层报错是英文技术文案（fetch failed），登录页只展示可读的中文。
+    console.error("[admin] 令牌交换请求失败", {
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+    return fail("身份服务暂时不可达，请稍后重试或联系平台管理员");
   }
 
   const token =
