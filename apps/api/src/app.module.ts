@@ -7,6 +7,7 @@ import { DevModule, devPersonasEnabled } from "./dev/dev.module";
 import { HttpModule } from "./http/http.module";
 import { ZodExceptionFilter } from "./http/zod-exception.filter";
 import { DatabaseModule } from "./platform/database.module";
+import { ControlSyncService } from "./platform/control-sync.service";
 import { PrintAgentScopeMiddleware } from "./print/print-scope.middleware";
 
 /**
@@ -15,6 +16,7 @@ import { PrintAgentScopeMiddleware } from "./print/print-scope.middleware";
  * 只读目录、工具调用、人类确认与认证上下文。
  */
 const providers: Provider[] = [
+  ControlSyncService,
   PrintAgentScopeMiddleware,
   SessionCredentialMiddleware,
   // 内核裸 `.parse()` 抛出的 ZodError 统一按 400 INVALID_INPUT 回，不再冒 500。

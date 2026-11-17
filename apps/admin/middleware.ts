@@ -1,41 +1,46 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { platformSessionState } from "@/src/session-cookie";
 
 const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/_next", "/favicon"];
+// 登录页也要显示的品牌图标 / PWA 图标：未登录时不能被会话守卫重定向到 /login，
+// 否则 <img> 拿到的是 HTML，图标显示不出来。
+const PUBLIC_ASSETS = ["/brand/", "/icon.svg", "/apple-icon.png"];
 const SESSION_COOKIE = "weave_platform_token";
 
 /**
- * 平台端生产：没有可用会话一律回登录页（不暴露任何控制台数据）。
- * 本地 dev 放行，BFF 回退 dev:owner 便于无 Casdoor 联调。
+ * 平台端会话守卫：只判「有没有 cookie」，不判「令牌是否过期」，更不删 cookie。
  *
- * 这里只判断「cookie 是否可能有效」，不做验签与权限判定（那是控制面的职责）。
- * 目的是别让过期会话进入控制台 SSR：否则 layout 的 redirect 与子页面
- * platformFetch 的异常会同时冒泡，Next.js 生产环境直接返回 __next_error__ 页面，
- * 浏览器只显示 "Application error ... Digest: xxx"。
+ * 为什么移除本地 exp 判定：
+ * - 令牌验签的唯一真相源是平台控制面（platform-api 的 jwtVerify：签名/JWKS/
+ *   issuer/audience/有效期）。middleware 本地 atob 解 payload.exp 只是猜测，
+ *   与真实验签存在时钟偏差、opaque 令牌、JWKS 轮转等不一致，会误杀正常会话。
+ * - 过去这里命中「过期」就删 cookie，把一次本可恢复的「令牌验不过」升级成
+ *   不可逆的「被登出」——用户表现为「点某个菜单突然被踢出去」。
+ *
+ * 现在分工：
+ * - middleware：只拦「未登录」（没有 cookie），这是会话起点，不是登出；
+ * - (console)/layout.tsx：调 /auth/me 做真实验签，401 → 登录页，403 → 无权限页；
+ * - cookie 寿命由令牌真实 exp 决定（见 auth/callback/route.ts），到期浏览器自动清，
+ *   因此不存在「cookie 还在、令牌已死」需要 middleware 抢着删的窗口。
  */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+  if (
+    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+    PUBLIC_ASSETS.some((prefix) => pathname.startsWith(prefix))
+  ) {
     return NextResponse.next();
   }
   if (process.env.NODE_ENV !== "production") return NextResponse.next();
 
-  const state = platformSessionState(request.cookies.get(SESSION_COOKIE)?.value, {
-    production: true,
-  });
-  if (state === "usable") return NextResponse.next();
-
-  const login = new URL("/login", request.url);
-  login.searchParams.set("next", pathname);
-  if (state !== "missing") {
-    login.searchParams.set("error", "会话已失效，请重新登录");
+  // 没有会话 cookie 就是未登录：回登录页。有 cookie 一律放行，
+  // 有效性由 layout 的 /auth/me（控制面验签）判定——middleware 永不主动登出用户。
+  if (!request.cookies.get(SESSION_COOKIE)?.value) {
+    const login = new URL("/login", request.url);
+    login.searchParams.set("next", pathname);
+    return NextResponse.redirect(login);
   }
-
-  const response = NextResponse.redirect(login);
-  // 过期 / dev 令牌就地清掉，避免每次访问都重复触发同一次失败渲染。
-  if (state !== "missing") response.cookies.delete(SESSION_COOKIE);
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

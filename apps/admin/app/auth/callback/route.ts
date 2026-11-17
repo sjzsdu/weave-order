@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { jwtPayload } from "@/src/session-cookie";
 import { publicOrigin } from "@/src/public-origin";
 import { safeNext } from "@/src/safe-next";
 
@@ -64,16 +65,38 @@ export async function GET(request: NextRequest) {
   if (!token) return fail("身份服务未返回令牌");
 
   const secure = process.env.NODE_ENV === "production";
+  // Cookie 寿命对齐令牌真实 exp：过去写死 8h，而 Casdoor id_token 往往短得多，
+  // 导致「cookie 还在、令牌已死」——middleware 只能靠本地解 exp 抢着删 cookie，
+  // 用户就表现为「点菜单被登出」。现在令牌到期时浏览器自己清 cookie，
+  // 会话失效由控制面验签统一判定，不再有本地猜测与不可逆清除。
+  const maxAge = sessionMaxAge(token);
   const response = NextResponse.redirect(new URL(next, origin));
   response.cookies.set("weave_platform_token", token, {
     httpOnly: true,
     sameSite: "strict",
     secure,
     path: "/",
-    maxAge: 8 * 60 * 60,
+    maxAge,
   });
   response.cookies.delete("weave_platform_oidc_state");
   response.cookies.delete("weave_platform_oidc_verifier");
   response.cookies.delete("weave_platform_oidc_next");
   return response;
+}
+
+const DEFAULT_SESSION_SECONDS = 8 * 60 * 60;
+const MAX_SESSION_SECONDS = 24 * 60 * 60;
+
+/**
+ * 会话 cookie 寿命 = 令牌剩余有效期（多留 30s 抵消验签时钟偏差），
+ * 上限 24h、下限 60s。读不懂 exp（opaque 令牌等）时退回 8h 默认值，
+ * 由控制面验签兜底——这里只决定浏览器何时自动丢弃 cookie，不做鉴权。
+ */
+export function sessionMaxAge(token: string, now: number = Date.now()): number {
+  const payload = jwtPayload(token);
+  const exp = payload?.exp;
+  if (typeof exp !== "number" || !Number.isFinite(exp)) return DEFAULT_SESSION_SECONDS;
+  const remaining = Math.floor(exp - now / 1000) + 30;
+  if (remaining <= 0) return 60;
+  return Math.min(remaining, MAX_SESSION_SECONDS);
 }

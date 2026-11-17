@@ -40,3 +40,23 @@ describe("控制面内部登记接口", () => {
     expect(result).toEqual({ tenantId: "id-1", slug: body.slug, created: true });
   });
 });
+
+describe("控制面对账 slug 接口", () => {
+  function controllerWithSlugs(spy: ReturnType<typeof vi.fn>) {
+    return new InternalController({
+      listControlSlugs: spy,
+    } as unknown as TenantsService);
+  }
+
+  it("凭据不对时拒绝", async () => {
+    const spy = vi.fn();
+    await expect(controllerWithSlugs(spy).slugs("wrong")).rejects.toMatchObject({ status: 401 });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("凭据正确时返回控制面已知 slug 集合", async () => {
+    const spy = vi.fn().mockResolvedValue([{ slug: "a", status: "TRIAL" }]);
+    const result = await controllerWithSlugs(spy).slugs(DEV_ONBOARDING_SECRET);
+    expect(result).toEqual({ slugs: [{ slug: "a", status: "TRIAL" }] });
+  });
+});

@@ -129,9 +129,16 @@ export class OnboardingService {
     }
 
     if (!tenant) {
+      // 同样登记控制面 outbox：无论走开通链接还是自助创建，
+      // 租户落地都必须伴随一条可靠的登记意图，杜绝总后台漏记录。
       tenant = await kernel.tenancy.createTenant(
         { slug: ticket.slug, name: ticket.name, casdoorOrg: claims.org },
         OnboardingService.systemContext(),
+        {
+          slug: ticket.slug,
+          name: ticket.name,
+          ownerEmail: ticket.ownerEmail ?? claims.email ?? null,
+        },
       );
     }
 
@@ -194,9 +201,12 @@ export class OnboardingService {
       throw new StartTenantConflict("这个公司标识已经被用了，换一个再试");
     }
 
+    // 控制面登记意图与租户在同一事务写入（Transactional Outbox）：
+    // 租户落地 ⟺ outbox 落地，后续由投递 worker 可靠同步到控制面。
     const tenant = await kernel.tenancy.createTenant(
       { slug, name: input.name, casdoorOrg: claims.org },
       OnboardingService.systemContext(),
+      { slug, name: input.name, ownerEmail: claims.email ?? null },
     );
     const membership = await kernel.tenancy.createMembership(
       {
@@ -226,12 +236,8 @@ export class OnboardingService {
       console.warn(`[onboarding] 初始化 credits 预算失败（不影响开通）：${tenant.id}`, error);
     }
 
-    // 控制面登记试用：失败不阻断使用，但会留下明显日志，运营可补录。
-    await this.syncControlPlane({
-      slug: tenant.slug,
-      name: tenant.name,
-      ownerEmail: claims.email,
-    });
+    // 控制面登记已改为 outbox + 可靠投递 worker + 定时对账三道防线，
+    // 不再在这里裸调 HTTP（失败即吞）。登记意图已在 createTenant 同事务落库。
 
     return OnboardingResult.parse({
       tenantId: tenant.id,
@@ -242,38 +248,6 @@ export class OnboardingService {
       dataScope: membership.dataScope,
       alreadyActivated: false,
     });
-  }
-
-  /**
-   * 把自助开通的公司登记到控制面（租户 + 3 天试用订阅）。
-   *
-   * 两个库没有分布式事务：控制面失败时公司仍然可用，只是账单视图里暂时缺一条，
-   * 由运营按 slug 补录。宁可少一条账单，也不让用户点完「创建」发现进不去。
-   */
-  private async syncControlPlane(input: {
-    slug: string;
-    name: string;
-    ownerEmail: string | null;
-  }): Promise<void> {
-    const env = loadEnv();
-    const base = env.PLATFORM_API_URL?.replace(/\/$/, "");
-    if (!base) return;
-    try {
-      const response = await fetch(`${base}/platform/api/internal/tenants`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-weave-internal": env.ONBOARDING_SECRET,
-        },
-        body: JSON.stringify(input),
-        signal: AbortSignal.timeout(4000),
-      });
-      if (!response.ok) {
-        console.warn(`[onboarding] 控制面登记失败 ${response.status}：${input.slug}`);
-      }
-    } catch (error) {
-      console.warn(`[onboarding] 控制面不可达，先放行使用：${input.slug}`, error);
-    }
   }
 
   /**

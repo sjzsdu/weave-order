@@ -1,4 +1,4 @@
-import { memberships, tenants } from "@weave-order/db";
+import { controlSyncOutbox, memberships, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { CreateMembershipInput, CreateTenantInput } from "@weave-order/schema";
 import type { DataScope, MemberRole, Membership, Tenant, TenantChoice } from "@weave-order/schema";
@@ -52,7 +52,17 @@ export function mapMembership(row: MembershipRow): Membership {
 export class TenancyService {
   constructor(private readonly db: Db) {}
 
-  async createTenant(input: unknown, ctx: KernelContext): Promise<Tenant> {
+  /**
+   * 控制面登记意图（Transactional Outbox）。
+   *
+   * 传入时，outbox 行与租户、审计在**同一个事务**写入：租户落地 ⟺ 登记意图落地，
+   * 杜绝「公司建好了但总后台没有」。outbox 由 apps/api 的投递 worker 可靠消费。
+   */
+  async createTenant(
+    input: unknown,
+    ctx: KernelContext,
+    controlSync?: { slug: string; name: string; ownerEmail: string | null },
+  ): Promise<Tenant> {
     const parsed = CreateTenantInput.parse(input);
     try {
       return await this.db.transaction(async (tx) => {
@@ -78,6 +88,15 @@ export class TenancyService {
           },
           row.id,
         );
+        if (controlSync) {
+          // 与租户同事务：投递失败也不会留下「有租户、无登记意图」的半瘸状态。
+          await tx.insert(controlSyncOutbox).values({
+            tenantId: row.id,
+            slug: controlSync.slug,
+            name: controlSync.name,
+            ownerEmail: controlSync.ownerEmail,
+          });
+        }
         return mapTenant(row);
       });
     } catch (error) {

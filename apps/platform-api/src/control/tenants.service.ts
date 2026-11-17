@@ -57,6 +57,15 @@ export class TenantsService {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
+  /**
+   * 对账用：返回控制面已知的租户 slug + 状态，给业务侧比对「业务库有、控制面无」的漂移。
+   * 只读，不触碰业务库；由内部共享密钥接口调用，非运营 UI 数据源。
+   */
+  async listControlSlugs(): Promise<{ slug: string; status: PlatformTenantStatus }[]> {
+    const rows = await this.db.select({ slug: tenants.slug, status: tenants.status }).from(tenants);
+    return rows.map((row) => ({ slug: row.slug, status: row.status }));
+  }
+
   async list(filter: TenantListFilter = {}): Promise<TenantSummary[]> {
     const where = [];
     if (filter.q) {
