@@ -45,7 +45,7 @@ export const IS_MOCK = process.env.TARO_APP_MOCK === "1" && process.env.NODE_ENV
 export const API_BASE_URL =
   runtimeConfig().apiBase || process.env.TARO_APP_API_BASE || "http://localhost:3000";
 
-// 令牌只驻留内存、不落本地明文；页面刷新 / 冷启动重新走 OIDC 登录。
+// 令牌持久化在 sessionStorage（session.ts），跨回调页导航与刷新都可用。
 export { getAuthToken, setAuthToken, TOKEN_KEY } from "./session";
 
 function readPreference(key: string): string | null {
@@ -124,10 +124,17 @@ const domFetch: MinimalFetch = async (input, init) => {
 
 const remoteFetch: MinimalFetch = IS_H5 || IS_RN ? domFetch : createTaroFetch();
 
-/** 业务请求 401 统一回登录；mock 演示模式不走这层包装。 */
+/**
+ * 业务请求 401 统一回登录；mock 演示模式不走这层包装。
+ *
+ * 记录发请求时的令牌：只有「确实带了令牌」的 401 才算会话失效。
+ * 启动早期未带令牌的 401（页面查询先于登录就绪）不得触发全局登出，
+ * 否则会形成「401 → 跳 SSO → 回调 → 再 401」死循环。
+ */
 const authorizedFetch: MinimalFetch = async (input, init) => {
+  const sentToken = getAuthToken();
   const response = await remoteFetch(input, init);
-  if (response.status === 401) onUnauthorized();
+  if (response.status === 401) onUnauthorized(sentToken);
   return response;
 };
 

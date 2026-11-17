@@ -165,20 +165,80 @@ describe("移动端 OIDC 登录跳转", () => {
     expect(form.get("redirect_uri")).toBe(REDIRECT_URI);
     expect(form.get("client_secret")).toBeNull();
     expect(storage.has("weave.oidc.callback")).toBe(false);
-    expect(storage.size).toBe(0);
+    expect(location.href).toBe("https://weave-m.example.test/");
 
     const session = await import("../src/lib/session");
     expect(session.getAuthToken()).toBe("test-id-token");
+    // 令牌持久化：回调页与业务页是两个文档，只有写进 sessionStorage 才不会随文档丢失。
+    expect(storage.get("weave.session.token")).toBe("test-id-token");
+    expect(storage.has("weave.oidc.verifier")).toBe(false);
+    expect(storage.has("weave.oidc.state")).toBe(false);
+
+    // 模拟刷新：新文档里模块重新加载，应从 sessionStorage 恢复令牌，不必再登录。
+    vi.resetModules();
+    const refreshedSession = await import("../src/lib/session");
+    expect(refreshedSession.getAuthToken()).toBe("test-id-token");
   });
 
-  it("业务请求 401 时清令牌并重新登录，非生产环境不跳", async () => {
+  it("业务请求带了令牌且被判失效时清令牌并重新登录", async () => {
     const { location } = makeWindow();
     const oidc = await loadOidc();
     const session = await import("../src/lib/session");
     session.setAuthToken("expired");
 
-    oidc.onUnauthorized();
+    oidc.onUnauthorized("expired");
     expect(session.getAuthToken()).toBeNull();
     await vi.waitFor(() => expect(location.replace).toHaveBeenCalledOnce());
+  });
+
+  it("未携带令牌的 401 不触发全局登出（登录死循环回归）", async () => {
+    const { location } = makeWindow();
+    const oidc = await loadOidc();
+    const session = await import("../src/lib/session");
+
+    // 「今日」页在登录就绪前发出的四个查询：没有 Authorization，服务端 401。
+    oidc.onUnauthorized(null);
+    oidc.onUnauthorized(null);
+
+    expect(location.replace).not.toHaveBeenCalled();
+    expect(session.getAuthToken()).toBeNull();
+  });
+
+  it("过期令牌只跳转一次，且不会误伤已刷新的新令牌", async () => {
+    const { location } = makeWindow();
+    const oidc = await loadOidc();
+    const session = await import("../src/lib/session");
+
+    // 并发的四个请求共用同一个过期令牌：只允许一次跳转。
+    session.setAuthToken("expired");
+    oidc.onUnauthorized("expired");
+    oidc.onUnauthorized("expired");
+    oidc.onUnauthorized("expired");
+    oidc.onUnauthorized("expired");
+
+    expect(session.getAuthToken()).toBeNull();
+    await vi.waitFor(() => expect(location.replace).toHaveBeenCalledOnce());
+
+    // 旧请求的 401 晚到，此时用户已拿到新令牌：不能把新会话登出。
+    vi.resetModules();
+    const refreshed = makeWindow();
+    const fresh = await loadOidc();
+    const freshSession = await import("../src/lib/session");
+    freshSession.setAuthToken("fresh");
+    fresh.onUnauthorized("expired");
+    expect(freshSession.getAuthToken()).toBe("fresh");
+    expect(refreshed.location.replace).not.toHaveBeenCalled();
+  });
+
+  it("非生产环境 401 不跳转", async () => {
+    const { location } = makeWindow();
+    const oidc = await loadOidc();
+    const session = await import("../src/lib/session");
+    session.setAuthToken("expired");
+    vi.stubEnv("NODE_ENV", "development");
+
+    oidc.onUnauthorized("expired");
+
+    expect(location.replace).not.toHaveBeenCalled();
   });
 });

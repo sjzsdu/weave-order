@@ -4,7 +4,9 @@ import { getAuthToken, setAuthToken } from "./session";
  * 移动端 H5/PWA 的 OIDC Authorization Code + PKCE。
  *
  * 与租户端 Web 的区别：这里没有服务端 BFF，**不能持有 client_secret**，
- * 所以走 public PKCE（code_verifier 换 token），令牌只驻留内存，刷新即重新登录。
+ * 所以走 public PKCE（code_verifier 换 token）。令牌由 session.ts 写入
+ * sessionStorage：回调页与业务页是两个文档，只有持久化才能让后续请求带上它，
+ * 刷新也不会掉登录（关掉标签页即失效）。
  * 小程序 / RN 端不启用（TARO_ENV 分支只在这里出现一次）。
  *
  * 配置由托管层在 HTML 里注入 `window.__WEAVE_CONFIG__`（见 scripts/serve-static.mjs
@@ -236,9 +238,21 @@ export async function ensureAuthenticated(): Promise<boolean> {
   return false;
 }
 
-/** 业务请求 401：清空内存令牌并重新登录（同一次页面生命周期只跳一次）。 */
-export function onUnauthorized(): void {
+/**
+ * 业务请求 401：只有「请求确实带了当前令牌」且服务端判定它失效时才登出。
+ *
+ * 启动早期，页面查询可能先于会话就绪发出，这类**未携带令牌**的 401 若触发
+ * 全局登出，就会「401 → 跳 SSO → 回调 → 再 401」无限循环（线上 P0）。
+ * 并发请求共用同一个过期令牌时也只跳一次：第一个 401 清空令牌后，其余请求
+ * 的 sentToken 与当前令牌不再相等，直接忽略；startLogin 的 redirecting 标志
+ * 保证一次页面生命周期只导航一次。
+ *
+ * @param sentToken 该请求实际发送的令牌；未携带 Authorization 时传 null。
+ */
+export function onUnauthorized(sentToken: string | null = getAuthToken()): void {
   if (!isAuthRequired()) return;
+  const current = getAuthToken();
+  if (!sentToken || !current || current !== sentToken) return;
   setAuthToken(null);
   startLogin();
 }
