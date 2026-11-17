@@ -571,6 +571,8 @@ body {
   color: #fff;
 }
 
+/* 弹层随 `.taro_page` 一起挂在页面栈内部，z-index 只在页面这个层叠上下文里生效，
+   挡不住页面外的 tabbar（WAN-161）。组件打开弹层时会收起 tabbar，见 lib/sheet.ts。 */
 .sheet-layer {
   position: fixed;
   inset: 0;
