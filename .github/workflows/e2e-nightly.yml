@@ -76,8 +76,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # minio/minio 与 minio/mc 已从 Docker Hub 下架（2026-09），改用官方二进制脚本：
+      # 端口、凭据、bucket 与 compose 的 media profile 完全一致。
       - name: Start MinIO
-        run: docker compose --profile media up -d minio minio-init
+        run: scripts/dev-storage-up.sh
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium

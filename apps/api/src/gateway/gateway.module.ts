@@ -9,11 +9,11 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { createCasdoorVerifier, createDevVerifier } from "./oidc";
 import type { TokenVerifier } from "./oidc";
-import { createSessionService, SessionService } from "./session.service";
+import { createSessionService, SessionService, TENANT_SESSIONS } from "./session.service";
 
 export const TOKEN_VERIFIER = Symbol("TOKEN_VERIFIER");
 export const DIRECTORY_KERNEL = Symbol("DIRECTORY_KERNEL");
-export const TENANT_SESSIONS = Symbol("TENANT_SESSIONS");
+export { TENANT_SESSIONS };
 
 function verifierFactory(): TokenVerifier {
   const env = loadEnv();
@@ -76,6 +76,6 @@ const providers: Provider[] = [
 @Module({
   controllers: [AuthController],
   providers,
-  exports: [AuthService, PersonalAccessService],
+  exports: [AuthService, PersonalAccessService, TENANT_SESSIONS],
 })
 export class GatewayModule {}

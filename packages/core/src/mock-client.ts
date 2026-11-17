@@ -475,15 +475,18 @@ export function createMockApiClient(): ApiClient {
         importedCustomers: customers.length,
         importedSamples: 0,
         correlationId: null,
-        rows: customers.map((row, index) => ({
-          ok: true as const,
-          kind: "customer" as const,
-          row: index,
-          key:
-            typeof row === "object" && row !== null && "code" in row
-              ? String((row as { code?: unknown }).code ?? `#${index}`)
-              : `#${index}`,
-        })),
+        rows: customers.map((row, index) => {
+          const key =
+            typeof row === "object" && row !== null && "code" in row && typeof row.code === "string"
+              ? row.code
+              : `#${index}`;
+          return {
+            ok: true as const,
+            kind: "customer" as const,
+            row: index,
+            key,
+          };
+        }),
       });
     },
 
