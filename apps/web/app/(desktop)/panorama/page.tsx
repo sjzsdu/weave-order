@@ -179,14 +179,22 @@ function PanoramaPageContent() {
             {data.samples.length === 0 && (
               <EmptyState
                 title="还没有样品"
-                description="新建一个样品就能报价；图墙里可以随时补图。"
+                description="手动建一个，或导入 CSV（可先下载模板）。"
                 actions={
-                  <Link
-                    href="/panorama/samples?new=1"
-                    className="text-sm text-indigo-600 underline underline-offset-2"
-                  >
-                    去建第一个样品
-                  </Link>
+                  <>
+                    <Link
+                      href="/panorama/samples?new=1"
+                      className="inline-flex min-h-9 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
+                    >
+                      新建样品
+                    </Link>
+                    <Link
+                      href="/panorama/samples?import=1"
+                      className="inline-flex min-h-9 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+                    >
+                      导入 CSV
+                    </Link>
+                  </>
                 }
               />
             )}
