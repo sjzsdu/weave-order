@@ -31,6 +31,8 @@ import { narrowPricingContext } from "../kernel/pricing-scope";
 import { QuoteAgentService } from "./quote-agent.service";
 import type { Kernel } from "../kernel";
 import { toToolError } from "../tools/errors";
+import { findSchemaGap, schemaGapMessage } from "../platform/db-errors";
+import { SchemaReadinessProbe } from "../platform/schema-readiness";
 import type { AgentActorService } from "./agent-actor.service";
 import type { HumanActorService } from "./human-actor.service";
 import type { MediaService } from "../media/media.service";
@@ -113,6 +115,23 @@ export function rethrowHttp(error: unknown): never {
     }
     throw new BadRequestException(error.message);
   }
+  // 缺表 / 缺列是「服务还没部署完」，不是用户输入错：明确 503 并给出可执行的原因，
+  // 否则前端只能显示「请求失败（HTTP 500）」，运维也不知道该跑迁移。
+  const gap = findSchemaGap(error);
+  if (gap) {
+    const message = schemaGapMessage(gap);
+    throw new HttpException(
+      {
+        // 缺对象与缺权限的运维动作不同（跑迁移 vs 补 GRANT），code 也要能分辨。
+        error: {
+          code: gap.kind === "denied" ? "DB_PRIVILEGE_MISSING" : "DB_SCHEMA_NOT_MIGRATED",
+          message,
+        },
+        message,
+      },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
   throw error;
 }
 
@@ -128,13 +147,36 @@ function isZodError(error: unknown): error is ZodError {
 
 @Controller("api")
 export class HealthController {
-  constructor(@Inject(KERNEL) private readonly kernel: Kernel) {}
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(SchemaReadinessProbe) private readonly schema: SchemaReadinessProbe,
+  ) {}
 
+  /**
+   * 健康检查同时回答两件事：库通不通、结构是不是这一版要的结构。
+   *
+   * 状态码保持 200：容器探针不该因为「结构落后」把进程重启掉（那会把一个坏功能
+   * 放大成整站不可用）。结构状态放在 `schema` 里，由发布验收与告警读取。
+   */
   @Get("health")
-  async health(): Promise<{ ok: boolean; database: string }> {
+  async health(): Promise<{
+    ok: boolean;
+    database: string;
+    schema: { state: "ok" | "behind"; missing: string[]; denied: string[]; error?: string };
+  }> {
     // 一次最小审计读取即证明 DB 可达，同时不碰业务数据。
     await this.kernel.audit.list(1);
-    return { ok: true, database: "up" };
+    const readiness = await this.schema.check();
+    return {
+      ok: true,
+      database: "up",
+      schema: {
+        state: readiness.ok ? "ok" : "behind",
+        missing: readiness.missing,
+        denied: readiness.denied,
+        ...(readiness.error ? { error: readiness.error } : {}),
+      },
+    };
   }
 }
 

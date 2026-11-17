@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { AppDatabaseProvider } from "./platform/database.provider";
+import { SchemaReadinessProbe } from "./platform/schema-readiness";
 import { createImageEmbeddingProviderFromEnv } from "./platform/embedding";
 import { loadEnv } from "./platform/env";
 import { ImageIndexWorker, setImageIndexWorker } from "./platform/image-index-worker";
@@ -25,6 +26,9 @@ async function bootstrap(): Promise<void> {
   // 图像索引后台队列：confirm / 建样品只入队，HTTP 响应不等模型。
   // 用业务连接池 + `withTenantSession`，因此每个任务都在正确的 RLS 租户上下文里执行。
   const appDatabase = app.get(AppDatabaseProvider);
+  // 数据库结构校验：漏跑迁移时在启动日志里说清楚，而不是等用户撞上 500。
+  // 容器在 `listen` 之前就要有结论，所以放在起 HTTP 之前。
+  await app.get(SchemaReadinessProbe).assertAtBoot(env.WEAVE_REQUIRE_SCHEMA_AT_BOOT);
   const worker = new ImageIndexWorker(
     appDatabase.pool,
     createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY),
@@ -51,4 +55,9 @@ async function bootstrap(): Promise<void> {
   );
 }
 
-void bootstrap();
+void bootstrap().catch((error: unknown) => {
+  // 启动失败必须真的退出：连接池与 Nest 容器还开着，只打印错误会让容器「日志里有错、
+  // 进程还在跑」，编排器永远等不到一次明确的失败（WEAVE_REQUIRE_SCHEMA_AT_BOOT 依赖这点）。
+  console.error("✖ API 启动失败：", error instanceof Error ? error.message : error);
+  process.exit(1);
+});
