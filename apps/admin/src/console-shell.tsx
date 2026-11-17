@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { ROLE_LABEL } from "./format";
+import { LogoutForm } from "./logout-form";
 
 const NAV: { group: string; items: { href: string; label: string }[] }[] = [
   {
@@ -73,7 +74,7 @@ export function ConsoleShell({
           <strong>{actor.name}</strong>
           <span>{ROLE_LABEL[actor.role] ?? actor.role}</span>
           <div style={{ marginTop: 6 }}>
-            <Link href="/auth/logout">退出</Link>
+            <LogoutForm buttonClassName="logout-button sidebar-logout">退出</LogoutForm>
           </div>
         </div>
       </aside>

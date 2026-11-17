@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { LogoutForm } from "@/src/logout-form";
 
 interface GlobalErrorProps {
   error: Error & { digest?: string };
@@ -56,9 +57,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
             </p>
           ) : null}
           <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-            <a href="/auth/logout" style={actionStyle}>
-              重新登录
-            </a>
+            <LogoutForm buttonStyle={actionStyle}>重新登录</LogoutForm>
             <button type="button" onClick={() => reset()} style={actionStyle}>
               重试
             </button>

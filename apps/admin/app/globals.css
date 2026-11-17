@@ -129,6 +129,20 @@ a:hover {
   color: #9fb3c8;
 }
 
+/* 登出是 POST 表单里的按钮，视觉上保持原来的文字链接样式。 */
+.logout-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.sidebar-logout {
+  color: #9fb3c8;
+}
+
 .main {
   padding: 26px 32px 64px;
   max-width: 1400px;

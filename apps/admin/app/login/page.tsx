@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { LogoutForm } from "@/src/logout-form";
 import { safeNext } from "@/src/safe-next";
 
 export const dynamic = "force-dynamic";
@@ -78,9 +78,9 @@ export default async function LoginPage({
             只有管理员名册内的账号才能进入。需要开通或调整权限，联系平台负责人。
           </p>
         </div>
-        <p className="login-foot" style={{ textAlign: "center" }}>
-          <Link href="/auth/logout">清除会话</Link>
-        </p>
+        <div className="login-foot" style={{ textAlign: "center" }}>
+          <LogoutForm>清除会话</LogoutForm>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoutForm } from "@/src/logout-form";
 
 export const dynamic = "force-dynamic";
 
@@ -43,9 +44,7 @@ export default async function NoAccessPage({
           ) : null}
 
           <div className="btn-row" style={{ marginTop: 16 }}>
-            <Link className="btn btn-primary" href="/auth/logout">
-              改用其他管理员账号
-            </Link>
+            <LogoutForm buttonClassName="btn btn-primary">改用其他管理员账号</LogoutForm>
             <Link className="btn" href="/">
               返回
             </Link>
