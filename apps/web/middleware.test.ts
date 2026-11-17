@@ -66,3 +66,29 @@ describe("租户端 middleware 会话守卫", () => {
     }
   });
 });
+
+/**
+ * 发布验收靠这个响应头核对版本（页脚只有登录后才看得到，`/today` 未登录是 307）。
+ * 两条底线：注入了就如实带上；没注入就一个版本都不带，不编。
+ */
+describe("发布版本响应头", () => {
+  it("构建期注入了版本时，放行与跳转的响应都带 x-weave-version", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("AUTH_MODE", "oidc");
+    vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "0.1.9");
+
+    expect(middleware(request("/login")).headers.get("x-weave-version")).toBe("v0.1.9");
+    expect(middleware(request("/today")).headers.get("x-weave-version")).toBe("v0.1.9");
+  });
+
+  it("没注入或值不可信时不带版本头", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("AUTH_MODE", "oidc");
+
+    vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "");
+    expect(middleware(request("/login")).headers.get("x-weave-version")).toBeNull();
+
+    vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "77b6ef4abcde");
+    expect(middleware(request("/login")).headers.get("x-weave-version")).toBeNull();
+  });
+});
