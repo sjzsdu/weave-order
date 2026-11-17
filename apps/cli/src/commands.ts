@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { ApiError, createClient, EXIT, NetworkError } from "./api";
 import type {
   ApiClient,
@@ -15,7 +16,34 @@ import { clearConfig, readConfig, resolveServer, resolveToken, writeConfig } fro
 import { printJson, printLine, printTable, shortTime } from "./output";
 import { installSkill, readSkill, resolveSkillTarget } from "./skill";
 
-export const CLI_VERSION = "0.1.0";
+/**
+ * 版本信息在构建期由 scripts/write-version.mjs 固化到 dist/version.json。
+ * CLI 运行在用户机器上读不到 .git，不能用 git describe；dev/test 直跑 src 时没有
+ * 该文件，退到兜底值。__dirname 在 dist 下命中该文件；vitest/tsx 直跑 src 时落到兜底。
+ */
+function readBuildInfo(): { version: string; commit: string } {
+  const fallback = { version: "0.1.0", commit: "" };
+  const candidates = [
+    path.join(__dirname, "version.json"),
+    path.join(__dirname, "..", "version.json"), // 兼容 tsc 前/后的目录层级
+  ];
+  for (const file of candidates) {
+    if (!existsSync(file)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
+        version?: string;
+        commit?: string;
+      };
+      if (parsed.version) return { version: parsed.version, commit: parsed.commit ?? "" };
+    } catch {
+      // 文件损坏就继续找下一个候选，最终落到兜底值。
+    }
+  }
+  return fallback;
+}
+
+export const BUILD_INFO = readBuildInfo();
+export const CLI_VERSION = BUILD_INFO.version;
 const CLIENT_NAME = `weave-cli/${CLI_VERSION}`;
 
 export interface CliContext {

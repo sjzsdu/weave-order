@@ -57,7 +57,12 @@
     "WEB_APP_URL",
     "TARO_APP_API_BASE",
     "TARO_APP_MOCK",
-    "TARO_APP_OUTPUT"
+    "TARO_APP_OUTPUT",
+    "NEXT_PUBLIC_APP_VERSION",
+    "NEXT_PUBLIC_GIT_COMMIT",
+    "PUBLIC_APP_VERSION",
+    "APP_VERSION",
+    "GIT_COMMIT"
   ],
   "tasks": {
     "build": {

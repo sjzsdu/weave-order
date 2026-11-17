@@ -7,6 +7,8 @@ const description =
   "织序有网页版、Windows 与 macOS 桌面版、手机网页版（PWA）与打印代理。网页版免安装，打开即可用；桌面版与打印代理内测中，登记后发放安装包。";
 const ogTitle = "下载与安装 · 织序 WeaveOrder";
 const ogDescription = "网页版免安装；Windows / macOS 桌面版与打印代理内测中；手机浏览器即可使用。";
+// 构建期由 Dockerfile 注入（与 web 的 APP_VERSION 同源）；本地未注入时兜底，避免断链。
+const appVersion = import.meta.env.PUBLIC_APP_VERSION || "0.1.0";
 ---
 
 <BaseLayout
@@ -242,7 +244,7 @@ const ogDescription = "网页版免安装；Windows / macOS 桌面版与打印�
             等智能体直接操作织序：查询客户、起草报价、拉审批列表。源码开放，内测期间按文档从仓库构建。
           </p>
           <div class="dl-card__meta">
-            <span>Node 20+ · 当前 v0.1.0</span>
+            <span>Node 20+ · 当前 v{appVersion}</span>
             <span>npm 包尚未公开发布</span>
           </div>
           <a

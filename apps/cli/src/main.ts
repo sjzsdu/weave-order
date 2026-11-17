@@ -1,6 +1,7 @@
 import { ApiError, EXIT, exitCodeFor } from "./api";
 import { flagBool, flagString, parseArgs } from "./args";
 import {
+  BUILD_INFO,
   CLI_VERSION,
   dataCommand,
   decideCommand,
@@ -24,7 +25,9 @@ async function dispatch(argv: string[]): Promise<number> {
   const [command, sub] = args.command;
 
   if (flagBool(args, "version")) {
-    printLine(`weave ${CLI_VERSION}`);
+    printLine(
+      `weave ${CLI_VERSION}${BUILD_INFO.commit ? ` (${BUILD_INFO.commit})` : ""}`,
+    );
     return EXIT.OK;
   }
   if (flagBool(args, "help") || command === undefined || command === "help") {

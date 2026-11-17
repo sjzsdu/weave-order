@@ -15,7 +15,9 @@ import { SUPPORT_EMAIL, SupportMailto } from "@/support";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
 
 /** 页脚只留版本与帮助：内部工程口径（几个窗口、只读与否）不属于用户界面。 */
+// 构建期由 build_push_images.sh 经 Dockerfile 注入；未注入时（本地 dev）保留 0.1.0 兜底。
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
+const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT;
 
 const WINDOWS = [
   { href: "/today", label: "工作台", key: "1", hint: "⌘1" },
@@ -415,7 +417,10 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
-        <span>织序 WeaveOrder · v{APP_VERSION}</span>
+        <span>
+          织序 WeaveOrder · v{APP_VERSION}
+          {GIT_COMMIT ? ` (${GIT_COMMIT})` : ""}
+        </span>
         <span className="mx-2 text-line">·</span>
         {/* 没配支持邮箱时不留一个孤零零的分隔点：改成一句可执行的兜底说明。 */}
         {SUPPORT_EMAIL ? (

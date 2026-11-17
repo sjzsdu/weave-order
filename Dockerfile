@@ -29,6 +29,16 @@ RUN pnpm install --frozen-lockfile
 
 ARG TARO_APP_API_BASE=https://weave-api.wnbgj.com
 ENV TARO_APP_API_BASE=${TARO_APP_API_BASE}
+
+# 版本与 commit 由构建脚本在有 .git 的环境算好后传入（镜像内无 .git，运行时读不到）。
+# NEXT_PUBLIC_* 被 Next 在 pnpm build 阶段内联进前端 bundle，因此随镜像固化、可追溯。
+ARG APP_VERSION=0.1.0
+ARG GIT_COMMIT=unknown
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
+ENV NEXT_PUBLIC_GIT_COMMIT=${GIT_COMMIT}
+# 官网静态站的下载页显示同一版本（Astro 以 PUBLIC_ 前缀在构建期内联）。
+ENV PUBLIC_APP_VERSION=${APP_VERSION}
+
 # NODE_ENV=production 保证移动端 mock 门禁把 mock 代码从产物中摘除
 RUN NODE_ENV=production pnpm build
 
