@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GET, sessionMaxAge } from "./route";
+import { sessionMaxAge } from "@/src/session-max-age";
+import { GET } from "./route";
 
 function jwtWithExp(exp: number): string {
   const encode = (value: object) =>

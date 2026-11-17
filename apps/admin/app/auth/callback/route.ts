@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtPayload } from "@/src/session-cookie";
+import { sessionMaxAge } from "@/src/session-max-age";
 import { publicOrigin } from "@/src/public-origin";
 import { safeNext } from "@/src/safe-next";
 
@@ -82,21 +82,4 @@ export async function GET(request: NextRequest) {
   response.cookies.delete("weave_platform_oidc_verifier");
   response.cookies.delete("weave_platform_oidc_next");
   return response;
-}
-
-const DEFAULT_SESSION_SECONDS = 8 * 60 * 60;
-const MAX_SESSION_SECONDS = 24 * 60 * 60;
-
-/**
- * 会话 cookie 寿命 = 令牌剩余有效期（多留 30s 抵消验签时钟偏差），
- * 上限 24h、下限 60s。读不懂 exp（opaque 令牌等）时退回 8h 默认值，
- * 由控制面验签兜底——这里只决定浏览器何时自动丢弃 cookie，不做鉴权。
- */
-export function sessionMaxAge(token: string, now: number = Date.now()): number {
-  const payload = jwtPayload(token);
-  const exp = payload?.exp;
-  if (typeof exp !== "number" || !Number.isFinite(exp)) return DEFAULT_SESSION_SECONDS;
-  const remaining = Math.floor(exp - now / 1000) + 30;
-  if (remaining <= 0) return 60;
-  return Math.min(remaining, MAX_SESSION_SECONDS);
 }
