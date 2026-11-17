@@ -31,6 +31,8 @@ import {
   ImportBatchResult,
   IntentListResponse,
   IntentView,
+  OnboardingState,
+  UpdateOnboardingStateInput,
   SubmitIntentResult,
   InviteMemberInput,
   InvitePreview,
@@ -272,6 +274,9 @@ export function createApiClient(options: ApiClientOptions) {
 
   const post = (path: string, body: unknown) =>
     request(path, { method: "POST", body: JSON.stringify(body) });
+
+  const put = (path: string, body: unknown) =>
+    request(path, { method: "PUT", body: JSON.stringify(body) });
 
   /** 工具 / 审批面：4xx 的业务失败按契约对象交回。 */
   const toolPost = (path: string, body: unknown) =>
@@ -521,6 +526,17 @@ export function createApiClient(options: ApiClientOptions) {
             intent: unknown;
           }
         ).intent,
+      ),
+
+    /**
+     * 开张清单进度（每个成员一行）：换设备后勾选时间与收起/跳过一致。
+     * 完成时间由服务端生成，客户端只上报「哪几步现在完成了」。
+     */
+    onboardingState: async () => OnboardingState.parse(await request("/api/onboarding/state")),
+
+    updateOnboardingState: async (input: z.input<typeof UpdateOnboardingStateInput>) =>
+      OnboardingState.parse(
+        await put("/api/onboarding/state", UpdateOnboardingStateInput.parse(input)),
       ),
 
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),

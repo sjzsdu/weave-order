@@ -15,6 +15,7 @@ export * from "./quoting";
 export * from "./llm";
 export * from "./inbound";
 export * from "./kernel";
+export * from "./labels";
 export * from "./approval";
 export * from "./import";
 export * from "./auth";

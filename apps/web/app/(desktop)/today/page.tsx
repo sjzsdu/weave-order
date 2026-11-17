@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useApprovals,
   useDecideApproval,
   useDemoScene,
   useIntentChannel,
+  useOnboardingState,
   usePanorama,
   useShippingPending,
 } from "@weave-order/core";
@@ -24,6 +25,14 @@ import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { KIND_LABEL, relativeTime } from "@/format";
 import { todayHeadline } from "@/today-copy";
+import { OnboardingChecklist } from "@/onboarding-checklist";
+import {
+  onboardingIntentContext,
+  onboardingQuoteContextFrom,
+  onboardingSteps,
+  stepsToRecord,
+} from "@/onboarding";
+import { useProductionLike } from "@/runtime-mode.client";
 
 export default function TodayPage() {
   const mounted = useMounted();
@@ -43,16 +52,23 @@ function TodayPageContent() {
   const [error, setError] = useState<string | null>(null);
   // 页内 composer 与顶栏 ⌘K 共用同一个 hook；这里只负责选择 source 与展示位置。
   const intentChannel = useIntentChannel(api);
-  // 演示剧本深链：`/today?scene=approval-pending`。生产环境接口 404，这里只是静默失败。
+  // 演示剧本深链只属于演示环境：生产态连请求都不发，避免每条访问打一次 404。
+  const productionLike = useProductionLike();
+  // 演示剧本深链：`/today?scene=approval-pending`。
   const [sceneKey] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("scene");
   });
-  const scene = useDemoScene(api, sceneKey);
+  const scene = useDemoScene(api, productionLike ? null : sceneKey);
   // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
   const [initialIntent] = useState(() => {
     if (typeof window === "undefined") return undefined;
     return new URLSearchParams(window.location.search).get("intent") ?? undefined;
+  });
+  // 开张清单第③步：这次输入带着刚建的客户 + 样品，提交时随意图一起落库。
+  const [onboardingQuote] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("onboard") === "quote";
   });
   // 客户 360 的快捷动作带上 source=customer-360，意图卡片据此标明来源。
   const [intentSource] = useState<"today" | "customer-360">(() => {
@@ -73,6 +89,84 @@ function TodayPageContent() {
   const customerCount = stats?.customerCount ?? 0;
   const sampleCount = stats?.sampleCount ?? 0;
   const newWorkspace = customerCount === 0 && sampleCount === 0;
+
+  // 开张清单：完成判定只看服务端统计；首次完成时间与收起/跳过存在后端，换设备一致。
+  const {
+    state: onboardingSaved,
+    update: saveOnboarding,
+    updating: onboardingSaving,
+    saveError: onboardingSaveError,
+  } = useOnboardingState(api);
+  const quoteContext = useMemo(
+    () =>
+      onboardingQuoteContextFrom(
+        panorama.data
+          ? { customers: panorama.data.customers, samples: panorama.data.samples }
+          : undefined,
+      ),
+    [panorama.data],
+  );
+  const onboarding = useMemo(
+    () =>
+      onboardingSteps(
+        {
+          customerCount,
+          sampleCount,
+          quoteCount: stats?.quoteCount ?? 0,
+          sentQuoteCount: stats?.sentQuoteCount ?? 0,
+          confirmedShipmentCount: stats?.confirmedShipmentCount ?? 0,
+        },
+        quoteContext,
+      ),
+    [
+      customerCount,
+      sampleCount,
+      stats?.quoteCount,
+      stats?.sentQuoteCount,
+      stats?.confirmedShipmentCount,
+      quoteContext,
+    ],
+  );
+
+  // 业务上已经完成、进度表还没有首次时间的步骤：上报一次，时间由服务端给。
+  const recordSteps = useCallback(
+    async (keys: ReturnType<typeof stepsToRecord>) => {
+      if (keys.length === 0) return;
+      try {
+        await saveOnboarding({ completeSteps: keys });
+      } catch {
+        // 错误由 onboardingSaveError 在清单里就地展示，不吞掉也不假装成功。
+      }
+    },
+    [saveOnboarding],
+  );
+
+  useEffect(() => {
+    if (loading || !onboardingSaved || onboardingSaving) return;
+    void recordSteps(stepsToRecord(onboarding, onboardingSaved));
+  }, [loading, onboarding, onboardingSaved, onboardingSaving, recordSteps]);
+
+  const handleCollapse = useCallback(
+    (collapsed: boolean) => {
+      void saveOnboarding({ collapsed }).catch(() => {
+        // 同上：失败由 saveError 显示。
+      });
+    },
+    [saveOnboarding],
+  );
+
+  const handleSkip = useCallback(() => {
+    void saveOnboarding({ skipped: true, collapsed: true }).catch(() => {});
+  }, [saveOnboarding]);
+
+  // 第③步带过来的客户 + 样品：作为意图 context 一起落库，用户只补数量与价格。
+  const intentContext = onboardingQuote
+    ? onboardingIntentContext(
+        panorama.data
+          ? { customers: panorama.data.customers, samples: panorama.data.samples }
+          : undefined,
+      )
+    : undefined;
 
   const headline = todayHeadline({
     agentDone,
@@ -105,6 +199,22 @@ function TodayPageContent() {
 
   return (
     <div className="grid gap-6">
+      {!loading && onboardingSaved && (
+        <OnboardingChecklist
+          steps={onboarding}
+          state={onboardingSaved}
+          onCollapse={handleCollapse}
+          onSkip={handleSkip}
+          saveError={
+            onboardingSaveError instanceof Error
+              ? onboardingSaveError.message
+              : onboardingSaveError
+                ? "网络或服务暂时不可用"
+                : null
+          }
+          autoCollapse={customerCount > 0 || sampleCount > 0}
+        />
+      )}
       <section className="rounded-lg border border-line bg-surface px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -392,11 +502,22 @@ function TodayPageContent() {
 
       <section id="intent">
         <h2 className="mb-2 text-sm font-medium text-ink-700">说点什么</h2>
+        {onboardingQuote && (
+          <p className="mb-2 rounded-md border border-indigo-600/25 bg-indigo-600/5 px-3 py-2 text-xs text-ink-700">
+            {intentContext
+              ? `已带上客户 ${intentContext.customerName ?? ""}${
+                  intentContext.sampleCode ? ` · 样品 ${intentContext.sampleCode}` : ""
+                }，只补数量和价格。`
+              : "先在客户/样品页建好一个，这里提交时就会自动带上。"}
+          </p>
+        )}
         <IntentComposer
           initialText={initialIntent}
           busy={intentChannel.submitting}
           error={intentChannel.submitError}
-          onSubmit={async (text) => (await intentChannel.submit(text, intentSource)) !== null}
+          onSubmit={async (text) =>
+            (await intentChannel.submit(text, intentSource, intentContext)) !== null
+          }
         />
         {(intentChannel.items.length > 0 || intentChannel.submitError) && (
           <div className="mt-3 grid gap-2">

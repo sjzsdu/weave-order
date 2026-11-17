@@ -70,6 +70,13 @@ function SamplesWall() {
     setEditorSample(null);
     setEditorOpen(true);
   };
+  // 深链入口：开张清单与 ⌘K 命令直接打开新建样品。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    setEditorSample(null);
+    setEditorOpen(true);
+  }, []);
   const openEdit = (sample: FabricSample) => {
     setEditorSample(sample);
     setEditorOpen(true);

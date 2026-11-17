@@ -6,6 +6,8 @@ import type {
   Capability,
   CustomerListOptions,
   CustomerTimelineKind,
+  OnboardingState,
+  UpdateOnboardingStateInput,
   TenantChoice,
   Unit,
 } from "@weave-order/schema";
@@ -22,6 +24,7 @@ export const queryKeys = {
     ["customers", id, "timeline", kinds.join(",")] as const,
   panorama: ["panorama"] as const,
   intents: ["intents", "recent"] as const,
+  onboardingState: ["onboarding", "state"] as const,
   approvals: ["approvals"] as const,
   demoScenes: ["demo", "scenes"] as const,
   demoScene: (key: string) => ["demo", "scene", key] as const,
@@ -450,6 +453,12 @@ export type TenantContextState =
       status: "READY";
       tenant: AuthContextResponse["tenant"];
       membership: AuthContextResponse["membership"];
+      /**
+       * SSO 给的显示名 / 邮箱：顶栏只能显示这两个，绝不显示 `membership.subject`。
+       * 两者都可能为空（IdP 没配 profile），由界面兜底成「我」。
+       */
+      name: AuthContextResponse["name"];
+      email: AuthContextResponse["email"];
       /** 服务端算好的能力清单；前端显隐只读它，不再从 role 推导。 */
       capabilities: AuthContextResponse["capabilities"];
     }
@@ -484,6 +493,8 @@ export function useTenantContext(client: ApiClient) {
       status: "READY",
       tenant: data.tenant,
       membership: data.membership,
+      name: data.name,
+      email: data.email,
       capabilities: data.capabilities,
     };
   })();
@@ -516,4 +527,35 @@ export function useTenantContext(client: ApiClient) {
 export function useCapability(client: ApiClient, capability: Capability): boolean {
   const context = useTenantContext(client);
   return context.status === "READY" && context.capabilities.includes(capability);
+}
+
+/**
+ * 开张清单进度：服务端是唯一事实来源（换设备一致）。
+ *
+ * 完成判定仍来自 panorama 统计，这个 hook 只负责「首次完成时间 + 收起/跳过」。
+ * 写路径先本地落缓存再返回，界面不闪；失败时错误交给调用方显示，不假装保存成功。
+ */
+export function useOnboardingState(client: ApiClient) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: queryKeys.onboardingState,
+    queryFn: () => client.onboardingState(),
+    staleTime: 30_000,
+  });
+  const mutation = useMutation({
+    mutationFn: (input: UpdateOnboardingStateInput) => client.updateOnboardingState(input),
+    onSuccess: (next: OnboardingState) => {
+      queryClient.setQueryData(queryKeys.onboardingState, next);
+    },
+  });
+
+  return {
+    state: query.data,
+    isLoading: query.isLoading,
+    error: query.error,
+    /** 写失败抛错，由页面就地提示；不会既有错误又显示已保存。 */
+    update: mutation.mutateAsync,
+    updating: mutation.isPending,
+    saveError: mutation.error,
+  };
 }

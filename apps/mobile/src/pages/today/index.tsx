@@ -2,6 +2,7 @@ import { Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useState } from "react";
 import type { ApprovalItem } from "@weave-order/schema";
+import { actorTypeLabel, auditActionLabel, auditEntityLabel } from "@weave-order/schema";
 import {
   Amount,
   Badge,
@@ -28,17 +29,7 @@ import type { Role } from "../../lib/roles";
 import { IS_MOCK, prefs } from "../../lib/runtime";
 import { goTab, openCamera, openCustomer, openQuote, ROUTES } from "../../lib/nav";
 
-const ACTION_LABEL: Record<string, string> = {
-  QUOTE_DRAFT_GENERATED: "生成了报价草稿",
-  QUOTE_CONFIRMED: "报价已批准",
-  QUOTE_REJECTED: "报价被驳回",
-  SAMPLE_SHIPMENT_DRAFTED: "建了寄样单草稿",
-  SAMPLE_SHIPMENT_CONFIRMED: "寄样单已确认",
-  CUSTOMER_CONTEXT_UPDATED: "更新了客户上下文",
-  REVISION_REQUESTED: "收到改价请求",
-  REVISION_RESOLVED: "改价请求已裁决",
-  QUOTE_SHARE_CREATED: "生成了报价链接",
-};
+const ACTION_LABEL = auditActionLabel;
 
 const QUICK_META: Record<string, { icon: string; label: string; action: () => void }> = {
   paste: { icon: "📋", label: "粘贴微信", action: () => openQuote({ mode: "paste" }) },
@@ -268,10 +259,10 @@ export default function TodayPage() {
                 <View className="timeline-dot" />
                 <View className="timeline-body">
                   <View className="timeline-title">
-                    {entry.actorId} · {ACTION_LABEL[entry.action] ?? entry.action}
+                    {actorTypeLabel(entry.actorType)} · {ACTION_LABEL(entry.action)}
                   </View>
                   <View className="timeline-meta">
-                    {entry.entityType} · {relativeTime(entry.createdAt)}
+                    {auditEntityLabel(entry.entityType)} · {relativeTime(entry.createdAt)}
                   </View>
                 </View>
               </View>

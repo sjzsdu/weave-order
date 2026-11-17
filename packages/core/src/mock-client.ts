@@ -23,7 +23,12 @@ import {
   IntentView,
   roleCapabilities,
 } from "@weave-order/schema";
-import type { ApprovalDecisionInput, JsonValue } from "@weave-order/schema";
+import type {
+  ApprovalDecisionInput,
+  JsonValue,
+  OnboardingState,
+  OnboardingStepKey,
+} from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
 
 /**
@@ -392,6 +397,37 @@ export function createMockApiClient(): ApiClient {
     });
   };
 
+  // 演示进度：与真实服务端同样的合并规则（首次时间不覆盖、四步齐全才 allDoneAt）。
+  let mockOnboarding: OnboardingState = {
+    completedAt: {},
+    collapsed: false,
+    skipped: false,
+    allDoneAt: null,
+    updatedAt: null,
+  };
+  const updateMockOnboarding = (input: {
+    collapsed?: boolean;
+    skipped?: boolean;
+    completeSteps?: OnboardingStepKey[];
+  }) => {
+    const now = new Date().toISOString();
+    const completedAt = { ...mockOnboarding.completedAt };
+    for (const step of input.completeSteps ?? []) {
+      if (!completedAt[step]) completedAt[step] = now;
+    }
+    const allDone =
+      mockOnboarding.allDoneAt !== null ||
+      (["customer", "sample", "quote", "approve"] as const).every((step) => completedAt[step]);
+    mockOnboarding = {
+      completedAt,
+      collapsed: input.collapsed ?? mockOnboarding.collapsed,
+      skipped: input.skipped ?? mockOnboarding.skipped,
+      allDoneAt: allDone ? (mockOnboarding.allDoneAt ?? now) : null,
+      updatedAt: now,
+    };
+    return Promise.resolve(mockOnboarding);
+  };
+
   return {
     previewOnboarding: () =>
       Promise.reject(new Error("演示模式不支持开通，请用真实账号打开开通链接")),
@@ -476,15 +512,16 @@ export function createMockApiClient(): ApiClient {
         importedSamples: 0,
         correlationId: null,
         rows: customers.map((row, index) => {
-          const key =
-            typeof row === "object" && row !== null && "code" in row && typeof row.code === "string"
-              ? row.code
-              : `#${index}`;
+          const code =
+            typeof row === "object" && row !== null && "code" in row
+              ? (row as { code?: unknown }).code
+              : undefined;
           return {
             ok: true as const,
             kind: "customer" as const,
             row: index,
-            key,
+            // 只接受字符串/数字，避免把对象 stringify 成 "[object Object]"。
+            key: typeof code === "string" || typeof code === "number" ? String(code) : `#${index}`,
           };
         }),
       });
@@ -561,6 +598,10 @@ export function createMockApiClient(): ApiClient {
       mockIntents[index] = cancelled;
       return Promise.resolve(cancelled);
     },
+
+    onboardingState: () => Promise.resolve(mockOnboarding),
+
+    updateOnboardingState: updateMockOnboarding,
 
     panorama: () =>
       Promise.resolve(

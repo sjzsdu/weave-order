@@ -17,7 +17,7 @@ import { useApi } from "@/providers";
 import { Can } from "@/can";
 import { useMounted } from "@/use-mounted";
 import { SharePanel } from "@/share-panel";
-import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL } from "@/format";
+import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL, TIER_LABEL } from "@/format";
 
 const STAT_KEYS = [
   { key: "customerCount", label: "客户" },
@@ -59,12 +59,27 @@ function PanoramaPageContent() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">业务全景</p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">只读 · 全局一眼看完</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">全局一眼看完</h1>
           <p className="mt-1 text-sm text-ink-400">
-            生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")} · 这里没有任何写操作
+            生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")}
           </p>
         </div>
-        <Badge tone="neutral">只读视图</Badge>
+        {/* 全景里能新建样品、能从客户 360 发起报价，所以不再声明「只读」。
+            常驻操作条让「建客户 / 建样品」在任何时候都点得到，而不是翻三级菜单。 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/panorama/customers?new=1"
+            className="inline-flex min-h-9 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
+          >
+            建客户
+          </Link>
+          <Link
+            href="/panorama/samples?new=1"
+            className="inline-flex min-h-9 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+          >
+            建样品
+          </Link>
+        </div>
       </header>
 
       <section className="grid gap-3 md:grid-cols-2">
@@ -139,7 +154,7 @@ function PanoramaPageContent() {
                     </td>
                     <td className="px-3 py-2">
                       <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>
-                        {customer.tier}
+                        {TIER_LABEL[customer.tier] ?? "新客"}
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-ink-700">

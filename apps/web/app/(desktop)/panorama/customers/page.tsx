@@ -51,6 +51,9 @@ function CustomersPageContent() {
     const initialTier = params.get("tier");
     if (initialTier) setTier(initialTier);
     if (params.get("overdue") === "1") setOverdueOnly(true);
+    // 深链入口：开张清单与 ⌘K 命令直接落到「新建客户 / 导入 CSV」，少两次点击。
+    if (params.get("new") === "1") setFormOpen(true);
+    if (params.get("import") === "1") setImportOpen(true);
   }, []);
 
   // 搜索走防抖，避免每敲一个字打一次后端。
