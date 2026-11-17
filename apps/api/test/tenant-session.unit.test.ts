@@ -432,12 +432,12 @@ describe("租户会话与选择（单元）", () => {
 });
 
 describe("会话 Cookie 与凭据优先级（中间件）", () => {
-  it("有 sid 时归一成 session 凭据；PAT 优先于浏览器会话", () => {
+  it("有 sid 时归一成 session 凭据；PAT 优先于浏览器会话", async () => {
     const middleware = new SessionCredentialMiddleware();
     const fromCookie: { headers: { cookie?: string; authorization?: string } } = {
       headers: { cookie: "other=1; weave_sid=abc123" },
     };
-    middleware.use(fromCookie, {}, () => undefined);
+    await middleware.use(fromCookie, {}, () => undefined);
     expect(fromCookie.headers.authorization).toBe("Bearer session:abc123");
 
     const pat: { headers: { cookie?: string; authorization?: string } } = {
@@ -446,12 +446,50 @@ describe("会话 Cookie 与凭据优先级（中间件）", () => {
         authorization: "Bearer wo_abcdefghij_" + "a".repeat(32),
       },
     };
-    middleware.use(pat, {}, () => undefined);
+    await middleware.use(pat, {}, () => undefined);
     expect(pat.headers.authorization).toMatch(/^Bearer wo_/);
 
     const none: { headers: { cookie?: string; authorization?: string } } = { headers: {} };
-    middleware.use(none, {}, () => undefined);
+    await middleware.use(none, {}, () => undefined);
     expect(none.headers.authorization).toBeUndefined();
+  });
+
+  /**
+   * dev 会话在进程内，API 重启后就丢了；此时浏览器里的旧 sid 不能盖掉
+   * BFF 注入的 dev 兜底令牌，否则「免登录」会变成「会话已过期」。
+   */
+  it("dev 态会话已失效时保留兜底令牌；有效会话仍然优先", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousAuthMode = process.env.AUTH_MODE;
+    process.env.NODE_ENV = "test";
+    process.env.AUTH_MODE = "dev";
+    try {
+      const sessions = new SessionService(new MemorySessionStore(), 60);
+      const middleware = new SessionCredentialMiddleware(sessions);
+
+      const stale: { headers: { cookie?: string; authorization?: string } } = {
+        headers: { cookie: "weave_sid=restarted", authorization: "Bearer dev:demo:demo" },
+      };
+      await middleware.use(stale, {}, () => undefined);
+      expect(stale.headers.authorization).toBe("Bearer dev:demo:demo");
+
+      const { sid } = await sessions.create({
+        sub: "demo",
+        name: null,
+        email: null,
+        tenantId: TENANT_A,
+      });
+      const valid: { headers: { cookie?: string; authorization?: string } } = {
+        headers: { cookie: `weave_sid=${sid}`, authorization: "Bearer dev:demo:demo" },
+      };
+      await middleware.use(valid, {}, () => undefined);
+      expect(valid.headers.authorization).toBe(`Bearer session:${sid}`);
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousAuthMode === undefined) delete process.env.AUTH_MODE;
+      else process.env.AUTH_MODE = previousAuthMode;
+    }
   });
 
   it("Cookie 解析只认 weave_sid，忽略其它值", () => {

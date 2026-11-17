@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" role="img" aria-labelledby="title desc">
+  <title id="title">万鸟科技飞鸟标识</title>
+  <desc id="desc">由三只抽象飞鸟组成的蓝色标识，象征统一连接</desc>
+  <defs>
+    <linearGradient id="wing" x1="12" y1="12" x2="68" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#155EEF"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="30" y1="24" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#155EEF"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#wing)" d="M9 43.5C25.5 41.5 39.5 31.5 54.5 11C56.5 29 51.5 45.5 38 56.5C29.5 63.5 19 64 10.5 60.5L4 67L7 53.5C3.5 48.5 4.5 44.5 9 43.5Z"/>
+  <path fill="url(#feather)" d="M24 45.5C34.5 40.5 44 32.5 53 20C49.5 36.5 42.5 47.5 30.5 55.5L18 58.5L24 45.5Z"/>
+  <path fill="#67E8F9" d="M41 48.5C50.5 45 58.5 38.5 66 28.5C64.5 42.5 57.5 53 45 58.5L33 60L41 48.5Z"/>
+  <circle cx="51.5" cy="23.5" r="2.2" fill="#fff"/>
+</svg>

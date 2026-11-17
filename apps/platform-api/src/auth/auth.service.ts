@@ -47,6 +47,15 @@ export class AuthService {
     const user = rows[0];
     if (!user) throw forbidden("该账号不在平台人员名册中，请联系平台 owner 开通");
     if (user.status !== "ACTIVE") throw forbidden("平台账号已停用");
+    // 平台总管理端强制 MFA：令牌通过后，名册仍须把该账号标记为 mfa_enforced。
+    // 这是 audience 级信任之外的第二道不可绕过防线（dev 模式是本地后门，不参与）。
+    if (
+      this.env.PLATFORM_AUTH_MODE === "oidc" &&
+      this.env.PLATFORM_REQUIRE_MFA &&
+      !user.mfaEnforced
+    ) {
+      throw forbidden("平台账号未启用 MFA 强制，请联系平台 owner");
+    }
 
     await this.db
       .update(platformUsers)

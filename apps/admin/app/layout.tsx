@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "织序 · 平台总管理端",
+  title: "万鸟科技 · 平台总管理端",
   description: "控制面：租户、订阅、用量、账单与平台审计。",
   robots: { index: false, follow: false, nocache: true },
   referrer: "no-referrer",

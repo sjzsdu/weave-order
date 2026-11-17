@@ -7,6 +7,14 @@ import { connectRedis } from "../platform/redis";
 export const SESSION_COOKIE = "weave_sid";
 
 /**
+ * `SessionService` 的注入 token。
+ *
+ * 放在这里而不是 `gateway.module.ts`，避免「中间件 → gateway.module → auth.controller
+ * → 中间件」的循环依赖把 token 求值成 undefined。
+ */
+export const TENANT_SESSIONS = Symbol("TENANT_SESSIONS");
+
+/**
  * 会话记录。
  *
  * `tenantId = null` 表示「Casdoor 认证通过，但还没选租户」，这是多租户账号的
