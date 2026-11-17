@@ -51,9 +51,9 @@ export function ConsoleShell({
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <p className="eyebrow">内部管理</p>
-          <p className="name">织序 · 平台</p>
-          <p className="sub">平台管理后台</p>
+          <p className="eyebrow">WANNIAO TECHNOLOGY</p>
+          <p className="name">万鸟科技</p>
+          <p className="sub">平台总管理端</p>
         </div>
         {NAV.map((group) => (
           <div className="nav-group" key={group.group}>

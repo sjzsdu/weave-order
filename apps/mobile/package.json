@@ -15,7 +15,7 @@
     "build:tabbar-icons": "node scripts/build-tabbar-icons.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint src config"
+    "lint": "node ../../scripts/lint.mjs mobile"
   },
   "dependencies": {
     "@babel/runtime": "^7.29.0",

@@ -13,7 +13,34 @@ $danger-soft: #fbeceb;
 $info: #1d4ed8;
 $info-soft: #eaeffd;
 
-page,
+/* 启动门禁覆盖层：children 始终挂载，加载/错误只是盖在上面的层，避免卸载首屏 Page。 */
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: $bg;
+  padding: 48px 24px;
+}
+
+.auth-gate-card {
+  max-width: 640px;
+  text-align: center;
+  color: $muted;
+  font-size: 26px;
+}
+
+.auth-gate-retry {
+  margin-top: 24px;
+  color: $accent;
+  font-size: 28px;
+  font-weight: 600;
+  padding: 16px 32px;
+}
+
+.page,
 body {
   background: $bg;
   color: $ink;

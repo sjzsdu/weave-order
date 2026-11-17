@@ -16,10 +16,17 @@ export default async function LoginPage({
     <div className="login-page">
       <div className="login-card">
         <div className="card">
+          <div className="login-brand">
+            <img src="/brand/logo-mark.svg" alt="" width={44} height={44} />
+            <div>
+              <p className="login-brand__name">万鸟科技</p>
+              <p className="login-brand__sub">WANNIAO TECHNOLOGY</p>
+            </div>
+          </div>
           <p className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}>
-            织序 · 内部管理
+            平台总管理端
           </p>
-          <h1>登录管理后台</h1>
+          <h1>登录总后台</h1>
           <p className="sub">
             这里只管理公司账号、套餐、账单与用量。客户的业务数据默认看不到；需要查看时，由客户同意并留痕。
           </p>

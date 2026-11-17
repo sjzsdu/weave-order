@@ -20,6 +20,16 @@ export const Env = z.object({
     .string()
     .default("true")
     .transform((value) => value === "true" || value === "1"),
+  /**
+   * audience 级 MFA 信任开关（默认关闭）。
+   * 开启后：aud 精确等于 CASDOOR_PLATFORM_AUDIENCE 的令牌，若签名/JWKS/issuer/有效期/
+   * 社交登录校验全部通过，且平台名册 mfa_enforced 成立，则视为「来自强制 MFA 的平台入口」。
+   * 这是应用级/签发入口级保证，不是认证事件级证明；启用前提见 claims.ts 注释与交付说明。
+   */
+  PLATFORM_MFA_TRUST_VIA_AUDIENCE: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
   PLATFORM_APPROVAL_TTL_MINUTES: z.coerce.number().int().positive().default(60),
   PLATFORM_BREAK_GLASS_MINUTES: z.coerce.number().int().positive().max(60).default(60),
   PLATFORM_INGEST_KEY: z.string().optional(),

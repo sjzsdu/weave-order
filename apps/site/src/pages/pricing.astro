@@ -4,7 +4,7 @@ import jsonLd from "../data/jsonld/pricing.ts";
 
 const title = "价格与套餐 · 织序 WeaveOrder";
 const description =
-  "织序按公司订阅：基础 ¥299 / 月、专业 ¥899 / 月、企业 ¥2,999 起，含固定账号数与每月 AI credits。不按人头、不按 token 单价收费。价格、超额规则与合同条款一次说清。";
+  "织序按公司订阅：基础 ¥299 / 月、专业 ¥899 / 月、企业 ¥2,999 起，含固定账号数与每月 AI credits。不按人头、不按模型调用单价收费。价格、超额规则与合同条款一次说清。";
 const ogDescription = "按公司订阅，含账号数与 AI credits。基础 ¥299 / 月、专业 ¥899 / 月。";
 ---
 
@@ -252,7 +252,7 @@ const ogDescription = "按公司订阅，含账号数与 AI credits。基础 ¥2
               >
                 <path d="M5 13l4 4 10-10" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              独立 schema / 独立数据库 / 私有化
+              独立数据库 / 私有化
             </li>
             <li>
               <svg
@@ -293,7 +293,7 @@ const ogDescription = "按公司订阅，含账号数与 AI credits。基础 ¥2
         </article>
       </div>
       <p class="pricing__note">
-        价格含税，可开增值税普通发票或专用发票。不按人头、不按打印张数、不按 token
+        价格含税，可开增值税普通发票或专用发票。不按人头、不按打印张数、不按模型调用
         单价收费；按公司订阅，含固定账号数与每月 credits。
       </p>
     </div>
@@ -345,7 +345,7 @@ const ogDescription = "按公司订阅，含账号数与 AI credits。基础 ¥2
             </tr>
             <tr>
               <td>AI credits</td>
-              <td>1 credit = 1,000 tokens（输入+输出）</td>
+              <td>AI 用量额度，1 credit 约等于 1,000 个词的处理量（读 + 写）</td>
               <td>基础 20,000、专业 100,000、企业 500,000 起；每月 1 日重置，不结转</td>
             </tr>
             <tr>
