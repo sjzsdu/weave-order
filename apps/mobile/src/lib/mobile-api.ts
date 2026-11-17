@@ -7,6 +7,8 @@ import {
   QuoteDetail,
   QuoteShare,
   RevisionRequest,
+  T006SuggestLinePriceInput,
+  T006SuggestLinePriceResult,
 } from "@weave-order/schema";
 import type { CreatedQuoteShare } from "@weave-order/schema";
 
@@ -51,6 +53,13 @@ export interface ShareSummary {
 
 export interface MobileApi extends ApiClient {
   getQuote(quoteId: string): Promise<QuoteDetail>;
+  /**
+   * 建议单价（T-006）：内核按成本底线 + 默认毛利算出建议价，只读不落库。
+   * 手机端拿不到成本底线，只能通过这个接口给业务员一个合规起点。
+   */
+  suggestLinePrice(
+    input: z.input<typeof T006SuggestLinePriceInput>,
+  ): Promise<z.infer<typeof T006SuggestLinePriceResult>>;
   createRevision(input: z.input<typeof CreateRevisionRequestInput>): Promise<RevisionRequest>;
   decideRevision(input: z.input<typeof DecideRevisionRequestInput>): Promise<RevisionRequest>;
   listQuoteShares(quoteId: string): Promise<ShareSummary[]>;
@@ -166,6 +175,19 @@ export function createMobileApi(
 
     async getQuote(quoteId) {
       return QuoteDetail.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`));
+    },
+
+    async suggestLinePrice(input) {
+      return T006SuggestLinePriceResult.parse(
+        await request(
+          "/api/tools/suggest-line-price",
+          {
+            method: "POST",
+            body: JSON.stringify(T006SuggestLinePriceInput.parse(input)),
+          },
+          { toolFailure: true },
+        ),
+      );
     },
 
     async createRevision(input) {

@@ -349,6 +349,20 @@ export class QuoteController {
     );
   }
 
+  /**
+   * 建议单价（T-006）：只读计算，不落库。
+   * 手机端没有成本底线字段，必须由内核给建议价，前端只负责把它回填到可编辑输入框。
+   */
+  @Post("tools/suggest-line-price")
+  async suggestLinePrice(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.agent.run(
+      authorization,
+      this.kernel,
+      (tools, ctx) => tools.suggestLinePrice.execute(body, ctx),
+      { scope: "read" },
+    );
+  }
+
   /** 人类改稿：版本 +1、重算、审计、改幅升级审批。 */
   @Post("quotes/revise")
   async revise(@Body() body: unknown, @Headers("authorization") authorization?: string) {

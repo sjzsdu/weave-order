@@ -12,6 +12,8 @@ import {
 } from "../../lib/parse-customer-text";
 import type { ParsedSlots } from "../../lib/parse-customer-text";
 import { formatMoneyShort, formatUnitPrice } from "../../lib/format";
+import { quoteToolNotice, requestNotice } from "../../lib/quote-notice";
+import type { QuoteNotice } from "../../lib/quote-notice";
 import { verifyLargeAmount } from "../../lib/biometric";
 import { api, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
@@ -62,8 +64,15 @@ export default function QuotePage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [customerSheet, setCustomerSheet] = useState(false);
   const [customerFilter, setCustomerFilter] = useState("");
+  /** 生成草稿前的单价（元/单位）：客户原话里提过就预填，否则由报价助手建议。 */
+  const [unitPrice, setUnitPrice] = useState("");
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [priceHint, setPriceHint] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<QuoteNotice | null>(null);
+  /** 出错时记住是哪块面料，提示里的「建议单价」可以直接作用于它。 */
+  const [failedSample, setFailedSample] = useState<FabricSample | null>(null);
 
   const customer = useMemo(
     () => (customers.data ?? []).find((entry) => entry.id === customerId) ?? null,
@@ -112,7 +121,7 @@ export default function QuotePage() {
         );
         setStep("draft");
       } catch (caught) {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : "报价加载失败");
+        if (!cancelled) setNotice(requestNotice(caught, "报价加载失败"));
       } finally {
         if (!cancelled) setBusy(false);
       }
@@ -152,28 +161,100 @@ export default function QuotePage() {
       setQuantity(String(result.quantity.value));
       setUnit(result.quantity.unit);
     }
+    // 客户原话里提过价格就预填；没提则留空，等报价助手给合规建议价。
+    if (result.targetPriceCents !== null) {
+      setUnitPrice(centsToYuanInput(result.targetPriceCents));
+      setPriceError(null);
+    }
     return result;
   };
 
   const findSamples = async () => {
-    setError(null);
+    setNotice(null);
     const slots = doParse();
     setBusy(true);
     try {
       const result = await api.searchBySpec({ query: slots.query, limit: 8 });
       if (!result.ok) {
-        setError(result.error.message);
+        setNotice(quoteToolNotice(result.error));
         return;
       }
       setMatches(result.data.matches);
       if (result.data.matches.length === 0) {
-        setError("没有匹配的面料。换个说法（成分 / 克重 / 编号），或去相机拍照找样。");
+        setNotice({
+          title: "没有匹配的面料",
+          detail: "换个说法（成分 / 克重 / 编号），或去相机拍照找样。",
+        });
       }
       setStep("candidates");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "找样失败");
+      setNotice(requestNotice(caught, "找样失败"));
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** 把输入框里的「元」转成分；不合规时把错误标在字段上，不发请求。 */
+  const readUnitPrice = (): number | null => {
+    const cents = yuanInputToCents(unitPrice);
+    if (cents === null || cents <= 0) {
+      setPriceError(
+        `请填写单价（元/${UNIT_LABEL[unit]}）。不知道报多少，可以点「建议单价」让报价助手算一个合规价。`,
+      );
+      setNotice(null);
+      return null;
+    }
+    setPriceError(null);
+    return cents;
+  };
+
+  /**
+   * 建议单价（T-006）：成本在服务端，手机端算不出来，只能请内核给建议价。
+   * 结果回填到可编辑输入框，业务员仍然可以自己改。
+   */
+  const suggestPrice = async (sample?: FabricSample | null) => {
+    const target = sample ?? preset ?? matches[0]?.sample ?? null;
+    if (!target) {
+      setNotice({
+        title: "先找一块面料",
+        detail: "建议单价要绑定具体面料（成本不同），请先点「找样」。",
+      });
+      return;
+    }
+    if (!customerId) {
+      setCustomerSheet(true);
+      await Taro.showToast({ title: "先选客户", icon: "none" });
+      return;
+    }
+    const quantityValue = Number(quantity);
+    if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
+      await Taro.showToast({ title: "数量要大于 0", icon: "none" });
+      return;
+    }
+    setSuggesting(true);
+    setNotice(null);
+    setPriceError(null);
+    try {
+      const result = await api.suggestLinePrice({
+        customerId,
+        fabricSampleId: target.id,
+        quantity: { value: quantityValue, unit },
+        currency: "CNY",
+      });
+      if (!result.ok) {
+        setNotice(quoteToolNotice(result.error, { unitLabel: UNIT_LABEL[target.unit] }));
+        return;
+      }
+      const next = result.data.pricing;
+      setUnitPrice(centsToYuanInput(next.suggestedUnitPrice.amount));
+      const basis = next.components.map((component) => component.label).join(" + ");
+      setPriceHint(
+        `报价助手建议 ${formatUnitPrice(next.suggestedUnitPrice.amount)}/${UNIT_LABEL[target.unit]}（${basis}，内核算出，可改）`,
+      );
+    } catch (caught) {
+      setNotice(requestNotice(caught, "报价助手暂时给不出建议价"));
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -188,15 +269,18 @@ export default function QuotePage() {
       await Taro.showToast({ title: "数量要大于 0", icon: "none" });
       return;
     }
+    const unitPriceCents = readUnitPrice();
+    if (unitPriceCents === null) return;
     setBusy(true);
-    setError(null);
+    setFailedSample(sample);
+    setNotice(null);
     const payload = {
       customerId,
       items: [
         {
           fabricSampleId: sample.id,
           quantity: { value: quantityValue, unit },
-          unitPrice: { amount: parsed?.targetPriceCents ?? 0, currency: "CNY" as const },
+          unitPrice: { amount: unitPriceCents, currency: "CNY" as const },
           ...(parsed?.deliveryHint ? { notes: `交期：${parsed.deliveryHint}` } : {}),
         },
       ],
@@ -207,7 +291,11 @@ export default function QuotePage() {
     try {
       const result = await api.generateQuoteDraft(payload);
       if (!result.ok) {
-        setError(result.error.message);
+        setNotice(
+          quoteToolNotice(result.error, {
+            unitLabel: UNIT_LABEL[sample.unit],
+          }),
+        );
         return;
       }
       const next = result.data.draft;
@@ -222,7 +310,7 @@ export default function QuotePage() {
       setStep("draft");
     } catch (caught) {
       if (caught instanceof ApiError) {
-        setError(caught.message);
+        setNotice(requestNotice(caught, "生成草稿失败"));
       } else {
         await enqueueOperation(offlineQueue, {
           kind: "quote.compose",
@@ -231,7 +319,7 @@ export default function QuotePage() {
         });
         await Taro.showModal({
           title: "已存本地",
-          content: "原话与槽位已入离线队列，联网后自动生成草稿，并出现在审批里。",
+          content: "原话、数量与单价已入离线队列，联网后自动生成草稿，并出现在审批里。",
           showCancel: false,
         });
       }
@@ -291,7 +379,7 @@ export default function QuotePage() {
       baseVersion: version,
     };
     setBusy(true);
-    setError(null);
+    setNotice(null);
     try {
       const revision = await api.createRevision(revisionPayload);
       await api.decideRevision({
@@ -337,7 +425,7 @@ export default function QuotePage() {
           // 拉取失败保留原页面，用户可重试。
         }
       } else if (caught instanceof ApiError) {
-        setError(caught.message);
+        setNotice(requestNotice(caught, "改价没有提交成功"));
       } else {
         await enqueueOperation(offlineQueue, {
           kind: "quote.revise",
@@ -357,7 +445,7 @@ export default function QuotePage() {
   const approve = async () => {
     if (!draft) return;
     setBusy(true);
-    setError(null);
+    setNotice(null);
     try {
       const verified = await verifyLargeAmount(
         draft.total.amount,
@@ -373,7 +461,7 @@ export default function QuotePage() {
       }
       const result = await api.decideApproval({ id: draft.id, kind: "quote", decision: "APPROVE" });
       if (!result.ok) {
-        setError(result.error.message);
+        setNotice(quoteToolNotice(result.error));
         return;
       }
       setStatus("SENT");
@@ -387,7 +475,7 @@ export default function QuotePage() {
             showCancel: false,
           });
         } else {
-          setError(caught.message);
+          setNotice(requestNotice(caught, "批准没有提交成功"));
         }
       } else {
         await enqueueOperation(offlineQueue, {
@@ -419,7 +507,7 @@ export default function QuotePage() {
         icon: copied ? "success" : "none",
       });
     } catch (caught) {
-      if (caught instanceof ApiError) setError(caught.message);
+      if (caught instanceof ApiError) setNotice(requestNotice(caught, "分享链接没有生成"));
       else await Taro.showToast({ title: "分享链接需要联网生成", icon: "none" });
     } finally {
       setBusy(false);
@@ -435,12 +523,23 @@ export default function QuotePage() {
     setParsed(null);
     setRevisionNote(null);
     setShareUrl(null);
-    setError(null);
+    setNotice(null);
+    setUnitPrice("");
+    setPriceError(null);
+    setPriceHint(null);
+    setFailedSample(null);
   };
 
   const candidateList = preset
     ? [{ sample: preset, score: 1, matchedOn: [] as SpecMatch["matchedOn"] }, ...matches]
     : matches;
+
+  const draftPriceCents = yuanInputToCents(unitPrice);
+  const draftQuantityValue = Number(quantity);
+  const estimatedSubtotal =
+    draftPriceCents && Number.isFinite(draftQuantityValue) && draftQuantityValue > 0
+      ? draftPriceCents * draftQuantityValue
+      : null;
 
   return (
     <Page>
@@ -451,10 +550,16 @@ export default function QuotePage() {
           : "粘贴客户原话，系统先给「听懂了什么」，错了可改。"}
       </View>
 
-      {error && (
-        <Card className="card-flat">
-          <View style={{ color: "#b26a00", fontSize: 24 }}>{error}</View>
-        </Card>
+      {notice && (
+        <View className="error-banner">
+          <View className="error-banner-title">{notice.title}</View>
+          {notice.detail && <View className="error-banner-detail">{notice.detail}</View>}
+          {notice.action?.kind === "suggest-price" && (
+            <View className="error-banner-action" onClick={() => void suggestPrice(failedSample)}>
+              {notice.action.label} →
+            </View>
+          )}
+        </View>
       )}
 
       {step === "input" && (
@@ -575,6 +680,45 @@ export default function QuotePage() {
             </View>
           </Card>
 
+          {/* 单价是生成草稿的硬门槛：内核会拦低于成本底线的报价，所以先在这里让用户给价。 */}
+          <Card className="card-draft">
+            <View className="row">
+              <View className="list-title">这一单的单价</View>
+              <Badge tone={draftPriceCents ? "accent" : "warn"}>
+                {draftPriceCents ? "已填写" : "还没填"}
+              </Badge>
+            </View>
+            <View className="label">单价（元 / {UNIT_LABEL[unit]}）</View>
+            <View className="row" style={{ marginTop: 0 }}>
+              <Input
+                className="input"
+                type="digit"
+                value={unitPrice}
+                placeholder="如 15.00"
+                style={{ flex: 1, minWidth: 0 }}
+                onInput={(event) => {
+                  setUnitPrice(event.detail.value);
+                  setPriceError(null);
+                }}
+              />
+              <Button small variant="soft" loading={suggesting} onClick={() => void suggestPrice()}>
+                建议单价
+              </Button>
+            </View>
+            {priceError && <View className="field-error">{priceError}</View>}
+            {priceHint && <View className="footnote">{priceHint}</View>}
+            {!priceHint && !priceError && (
+              <View className="footnote">
+                客户原话里提到价格会预填；没提就点「建议单价」，由报价助手按成本底线和默认毛利给一个合规价。
+              </View>
+            )}
+            {estimatedSubtotal !== null && (
+              <View className="footnote">
+                预计小计 {formatMoneyShort(estimatedSubtotal)}（最终金额由内核重算）
+              </View>
+            )}
+          </Card>
+
           {candidateList.length === 0 ? (
             <Card className="card-flat">
               <View className="muted">没有候选。回上一步换检索词，或去相机拍照找样。</View>
@@ -630,10 +774,22 @@ export default function QuotePage() {
                   <Badge tone="accent">{(match.score * 100).toFixed(0)}</Badge>
                 </View>
                 <View className="actions">
-                  <Button block small onClick={() => void generate(match.sample)} loading={busy}>
+                  <Button
+                    block
+                    small
+                    disabled={match.sample.unit !== unit}
+                    onClick={() => void generate(match.sample)}
+                    loading={busy}
+                  >
                     用这个面料生成草稿
                   </Button>
                 </View>
+                {match.sample.unit !== unit && (
+                  <View className="footnote">
+                    这块面料按{UNIT_LABEL[match.sample.unit]}计价，当前数量单位是
+                    {UNIT_LABEL[unit]}；请点「改原话」把单位改过来再生成。
+                  </View>
+                )}
               </Card>
             ))
           )}
@@ -674,12 +830,13 @@ export default function QuotePage() {
                   </View>
                 </View>
               </View>
-              <View className="row" style={{ marginTop: 16 }}>
-                <View className="field-label">单价（元 / {UNIT_LABEL[item.quantity.unit]}）</View>
+              <View className="label">单价（元 / {UNIT_LABEL[item.quantity.unit]}）</View>
+              <View className="row" style={{ marginTop: 0 }}>
                 <Input
-                  className="input input-inline"
+                  className="input"
                   type="digit"
                   value={prices[item.fabricSampleId] ?? ""}
+                  style={{ flex: 1, minWidth: 0 }}
                   onInput={(event) =>
                     setPrices((current) => ({
                       ...current,
