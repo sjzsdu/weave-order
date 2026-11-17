@@ -1,6 +1,8 @@
 import { Text, View } from "@tarojs/components";
 import type { PropsWithChildren, ReactNode } from "react";
 import type { CSSProperties } from "react";
+import { useEffect } from "react";
+import { sheetTabBar } from "../lib/sheet-tabbar";
 
 /** 移动端基础组件：只对齐 tokens，不复用 DOM 组件（packages/ui 仅桌面）。 */
 
@@ -153,6 +155,13 @@ export function Sheet({
   onClose: () => void;
   footer?: ReactNode;
 }>) {
+  // 弹层在 `.taro_page` 内部，z-index 再高也盖不住页面外的 tabbar（见 lib/sheet.ts），
+  // 打开期间收起 tabbar，关闭后恢复。非 tabbar 页面会静默跳过。
+  useEffect(() => {
+    if (!open) return;
+    return sheetTabBar.acquire();
+  }, [open]);
+
   if (!open) return null;
   return (
     <View className="sheet-layer">

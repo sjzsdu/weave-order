@@ -185,6 +185,46 @@ test.describe("移动端 H5 关键路径", () => {
     });
     expect(forged.status()).toBe(401);
   });
+
+  /**
+   * WAN-161 回归：tabbar 页面的底部弹层曾经被 tabbar 盖住——`.taro_page` 自带
+   * 层叠上下文，弹层 z-index 再高也只能在页面内部比较，`.weui-tabbar` 永远画在上面。
+   * 修复后弹层打开时收起 tabbar，关闭后恢复；这里用命中测试锁住「保存」真的可点。
+   */
+  test("tabbar 页面的底部弹层不被 tabbar 遮挡，可保存大额审批阈值", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".weui-tabbar__label").first()).toBeVisible();
+    await openTab(page, "更多");
+
+    await page.getByText("大额审批阈值", { exact: true }).click();
+    const sheet = page.locator(".sheet");
+    await expect(sheet).toBeVisible();
+    // 弹层期间 tabbar 收起；否则它会盖住 `.sheet-footer`。
+    await expect(page.locator(".taro-tabbar__tabbar")).toBeHidden();
+
+    const save = sheet.locator(".sheet-footer .btn");
+    // 复现路径的核心断言：按钮中心点命中的必须是按钮自己，而不是 tabbar 图标。
+    await expect
+      .poll(() =>
+        save.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          return hit === element || element.contains(hit);
+        }),
+      )
+      .toBe(true);
+
+    await sheet.locator("input").fill("80000");
+    await save.click();
+    await expect(sheet).toBeHidden();
+    await expect(page.locator(".taro-tabbar__tabbar")).toBeVisible();
+
+    // 保存真的生效：重新打开看到新阈值。
+    await page.getByText("大额审批阈值", { exact: true }).click();
+    await expect(sheet.locator("input")).toHaveValue("80000");
+    await sheet.locator(".sheet-close").click();
+    await expect(sheet).toBeHidden();
+  });
 });
 
 async function openTab(page: Page, label: string): Promise<void> {
