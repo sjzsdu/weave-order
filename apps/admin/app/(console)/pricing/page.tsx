@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Plan, PriceBook, PriceBookDetail } from "@weave-order/schema";
 import { date, money, statusClass } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
-import { ActivatePriceBook, PriceBookForm, PricingPreviewForm } from "@/src/actions";
+import { ActivatePriceBook, PlanForm, PriceBookForm, PricingPreviewForm } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -58,45 +58,59 @@ export default async function PricingPage({
             <p>席位与内置额度；价格在下方价格表</p>
           </div>
         </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>套餐</th>
-                <th className="num">席位</th>
-                <th className="num">agent 动作/月</th>
-                <th className="num">存储</th>
-                <th>功能</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plans.map((plan) => (
-                <tr key={plan.code}>
-                  <td>
-                    <strong>{plan.name}</strong>
-                    <div className="tiny muted mono">{plan.code}</div>
-                  </td>
-                  <td className="num">
-                    {plan.seatMin}–{plan.seatMax ?? "不限"}
-                  </td>
-                  <td className="num">{plan.agentActionsQuota.toLocaleString()}</td>
-                  <td className="num">{plan.storageGb} GB</td>
-                  <td className="tiny">
-                    {Object.entries(plan.features)
-                      .filter(([, enabled]) => enabled)
-                      .map(([key]) => key)
-                      .join("、") || "—"}
-                  </td>
-                  <td>
-                    <span className={statusClass(plan.status)}>{plan.status}</span>
-                  </td>
+        {plans.length === 0 ? (
+          <p className="alert alert-info" style={{ margin: 0 }}>
+            尚未配置任何套餐。请用下方「新建套餐」创建第一个套餐，之后才能开通租户、维护价格表。
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>套餐</th>
+                  <th className="num">席位</th>
+                  <th className="num">agent 动作/月</th>
+                  <th className="num">存储</th>
+                  <th>功能</th>
+                  <th>状态</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {plans.map((plan) => (
+                  <tr key={plan.code}>
+                    <td>
+                      <strong>{plan.name}</strong>
+                      <div className="tiny muted mono">{plan.code}</div>
+                    </td>
+                    <td className="num">
+                      {plan.seatMin}–{plan.seatMax ?? "不限"}
+                    </td>
+                    <td className="num">{plan.agentActionsQuota.toLocaleString()}</td>
+                    <td className="num">{plan.storageGb} GB</td>
+                    <td className="tiny">
+                      {Object.entries(plan.features)
+                        .filter(([, enabled]) => enabled)
+                        .map(([key]) => key)
+                        .join("、") || "—"}
+                    </td>
+                    <td>
+                      <span className={statusClass(plan.status)}>{plan.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+
+      <details className="card" open={plans.length === 0}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>新建套餐</summary>
+        <p className="small muted">
+          套餐定义席位与内置额度，价格在价格表版本里维护。套餐代码创建后不可修改。
+        </p>
+        <PlanForm existingCodes={plans.map((plan) => plan.code)} />
+      </details>
 
       <div className="card">
         <div className="card-head">
@@ -105,37 +119,43 @@ export default async function PricingPage({
             <p>新版本只影响新合同；存量合同按签署时版本（grandfathering）。</p>
           </div>
         </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>版本</th>
-                <th>状态</th>
-                <th>生效日</th>
-                <th>说明</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {books.map((book) => (
-                <tr key={book.id}>
-                  <td className="mono">v{book.version}</td>
-                  <td>
-                    <span className={statusClass(book.status)}>{book.status}</span>
-                  </td>
-                  <td className="tiny">{date(book.effectiveFrom)}</td>
-                  <td className="tiny">{book.notes ?? "—"}</td>
-                  <td className="tiny">
-                    <Link className="btn btn-sm" href={`/pricing?book=${book.id}`}>
-                      查看 / 试算
-                    </Link>{" "}
-                    {book.status === "DRAFT" ? <ActivatePriceBook bookId={book.id} /> : null}
-                  </td>
+        {books.length === 0 ? (
+          <p className="alert alert-info" style={{ margin: 0 }}>
+            还没有任何价格表版本。在下方「新建价格版本」为每个套餐填写价格，保存为草稿后提交生效。
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>版本</th>
+                  <th>状态</th>
+                  <th>生效日</th>
+                  <th>说明</th>
+                  <th>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {books.map((book) => (
+                  <tr key={book.id}>
+                    <td className="mono">v{book.version}</td>
+                    <td>
+                      <span className={statusClass(book.status)}>{book.status}</span>
+                    </td>
+                    <td className="tiny">{date(book.effectiveFrom)}</td>
+                    <td className="tiny">{book.notes ?? "—"}</td>
+                    <td className="tiny">
+                      <Link className="btn btn-sm" href={`/pricing?book=${book.id}`}>
+                        查看 / 试算
+                      </Link>{" "}
+                      {book.status === "DRAFT" ? <ActivatePriceBook bookId={book.id} /> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {active ? (

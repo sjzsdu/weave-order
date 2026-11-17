@@ -9,7 +9,8 @@ import { resolvePlatformDatabaseUrl } from "./env";
  * 控制面迁移：
  * 1. 目标库不存在时先用同一凭据在 maintenance 库 CREATE DATABASE；
  * 2. 跑 drizzle 下生成的迁移（建 control schema、表、枚举、序列）；
- * 3. 套用平台侧附加 SQL（审计只追加触发器）。
+ * 3. 套用平台侧附加 SQL（审计只追加触发器）；
+ * 4. 写入默认套餐与初始价格表（幂等，空控制面也能直接开通租户）。
  *
  * 与租户库迁移完全分开：`pnpm db:migrate` 永远不会碰控制面。
  */
@@ -47,6 +48,12 @@ async function main(): Promise<void> {
     });
     const sql = await readFile(path.join(__dirname, "..", "sql", "platform.sql"), "utf8");
     await pool.query(sql);
+    // 默认套餐与初始价格表：控制面冷启动必需，幂等，已存在不覆盖。
+    const defaults = await readFile(
+      path.join(__dirname, "..", "sql", "platform-defaults.sql"),
+      "utf8",
+    );
+    await pool.query(defaults);
     console.log(`✔ 控制面迁移已应用：${databaseUrl}`);
   } finally {
     await pool.end();

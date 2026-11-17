@@ -33,6 +33,13 @@ export default async function TenantsPage({
         </div>
       </div>
 
+      {plans.length === 0 ? (
+        <p className="alert alert-info" style={{ marginBottom: 16 }}>
+          尚未配置任何套餐，暂时无法开通租户。请先到 <Link href="/pricing">套餐与价格</Link>{" "}
+          新建套餐。
+        </p>
+      ) : null}
+
       <details className="card" open={params.provision === "1"}>
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>开通公司</summary>
         <p className="small muted">

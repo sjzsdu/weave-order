@@ -128,6 +128,7 @@ POST /invoices/:id/refund-request
 POST /invoices/:id/void-request
 GET/PATCH /settings/invoicing          # 税率变更返回 approval
 GET  /pricing/plans | /pricing/books | /pricing/books/:id
+POST /pricing/plans                    # 新建套餐（空控制面自助初始化）
 GET  /pricing/books/:id/impact
 POST /pricing/books
 POST /pricing/books/:id/activate-request
@@ -158,12 +159,17 @@ PATCH /support/tickets/:id/status
 ```bash
 pnpm install
 docker compose up -d postgres          # 端口 5433
-pnpm platform:migrate                  # 自动建 weave_platform + control schema
-pnpm platform:seed                     # 平台人员 / 套餐 / 价格表 / 演示租户
+pnpm platform:migrate                  # 自动建 weave_platform + control schema + 默认套餐/初始价格表
+pnpm platform:seed                     # 可选：平台人员 / 演示租户（生产被闸门拒绝）
 
 pnpm --filter @weave-order/platform-api dev   # :3002
 pnpm --filter @weave-order/admin dev          # :3003
 ```
+
+默认套餐（TRIAL / STARTER / PRO / ENTERPRISE）与 v1 价格表随 `platform:migrate` 幂等写入
+（`packages/control-db/sql/platform-defaults.sql`），已存在的行不覆盖。生产环境不需要、也不允许跑
+`platform:seed`；`platform:seed` 只补平台人员名册与演示租户。空控制面需要新增档位时，用
+`/pricing` 页的「新建套餐」（`POST /platform/api/pricing/plans`，需要 `pricing:write`）。
 
 打开 `http://localhost:3003`：本地会显示 6 个开发身份（owner / owner2 / finance / ops / support / readonly），点选即用；owner2 用于危险操作的第二人复核。生产构建不显示、也不回退 dev 令牌。
 
