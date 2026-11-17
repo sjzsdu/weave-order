@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ApprovalRequest } from "@weave-order/schema";
-import { APPROVAL_ACTION_LABEL, APPROVAL_STATUS_LABEL, date, statusClass } from "@/src/format";
+import { APPROVAL_ACTION_LABEL, APPROVAL_STATUS_LABEL, statusClass } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { ApprovalDecision } from "@/src/actions";
 
@@ -91,7 +92,9 @@ export default async function ApprovalsPage({
                       ))}
                       <div className="muted">{approval.votes.length} 票</div>
                     </td>
-                    <td className="tiny">{date(approval.expiresAt)}</td>
+                    <td className="tiny">
+                      <Time value={approval.expiresAt} />
+                    </td>
                     <td>
                       <span className={statusClass(approval.status)}>
                         {APPROVAL_STATUS_LABEL[approval.status]}

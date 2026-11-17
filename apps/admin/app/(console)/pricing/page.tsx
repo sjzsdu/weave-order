@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { Plan, PriceBook, PriceBookDetail } from "@weave-order/schema";
-import { date, money, statusClass } from "@/src/format";
+import { money, statusClass } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { ActivatePriceBook, PlanForm, PriceBookForm, PricingPreviewForm } from "@/src/actions";
 
@@ -144,7 +145,9 @@ export default async function PricingPage({
                     <td>
                       <span className={statusClass(book.status)}>{book.status}</span>
                     </td>
-                    <td className="tiny">{date(book.effectiveFrom)}</td>
+                    <td className="tiny">
+                      <Time value={book.effectiveFrom} />
+                    </td>
                     <td className="tiny">{book.notes ?? "—"}</td>
                     <td className="tiny">
                       <Link className="btn btn-sm" href={`/pricing?book=${book.id}`}>

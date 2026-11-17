@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { PlatformAuditEntry } from "@weave-order/schema";
-import { date } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,9 @@ export default async function AuditPage({
             <tbody>
               {entries.map((entry) => (
                 <tr key={entry.id}>
-                  <td className="tiny nowrap">{date(entry.createdAt)}</td>
+                  <td className="tiny nowrap">
+                    <Time value={entry.createdAt} />
+                  </td>
                   <td className="mono">{entry.action}</td>
                   <td className="tiny">
                     {entry.actorName}

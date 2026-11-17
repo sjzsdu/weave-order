@@ -17,10 +17,12 @@ import type {
 } from "@weave-order/schema";
 import { mutate } from "./client-api";
 import { toFormError, toErrorMessage, type FormError } from "./api-error";
+import { currentMonthRange } from "./format";
 import { describeJsonError } from "./json-error";
 import { featureFlagPayload, validateFeatureFlagDraft } from "./feature-flag";
 import { CheckboxField, Field, FieldContextProvider } from "./form-field";
 import { collectFormIssues, focusField, summaryText, type FieldIssue } from "./form-validation";
+import { Time } from "./time";
 
 type Method = "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -591,12 +593,10 @@ export function InvoiceCreateForm({
   defaultTenantId?: string;
 }) {
   const { pending, error, success, submit } = useSubmit();
-  const today = new Date();
-  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0));
+  const { start, end } = currentMonthRange();
   const [tenantId, setTenantId] = useState(defaultTenantId ?? tenants[0]?.id ?? "");
-  const [periodStart, setPeriodStart] = useState(start.toISOString().slice(0, 10));
-  const [periodEnd, setPeriodEnd] = useState(end.toISOString().slice(0, 10));
+  const [periodStart, setPeriodStart] = useState(start);
+  const [periodEnd, setPeriodEnd] = useState(end);
   const [notes, setNotes] = useState("");
 
   return (
@@ -2121,7 +2121,7 @@ export function OnboardingLinkPanel({
               自己先打开看看
             </a>
             <span className="tiny muted">
-              到期：{new Date(link.expiresAt).toLocaleString("zh-CN")}
+              到期：<Time value={link.expiresAt} />
             </span>
           </div>
         </div>

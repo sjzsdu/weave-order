@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ROLE_LABEL } from "./format";
+import { ADMIN_TIME_ZONE_LABEL, ROLE_LABEL } from "./format";
 import { LogoutForm } from "./logout-form";
 
 const NAV: { group: string; items: { href: string; label: string }[] }[] = [
@@ -179,6 +179,9 @@ export function ConsoleShell({
         <div className="sidebar-foot">
           <strong>{actor.name}</strong>
           <span>{ROLE_LABEL[actor.role] ?? actor.role}</span>
+          <span className="tiny muted" style={{ display: "block", marginTop: 4 }}>
+            时间按{ADMIN_TIME_ZONE_LABEL}显示
+          </span>
           <div style={{ marginTop: 6 }}>
             <LogoutForm buttonClassName="logout-button sidebar-logout">退出</LogoutForm>
           </div>

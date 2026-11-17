@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { Plan, TenantSummary } from "@weave-order/schema";
-import { TENANT_STATUS_LABEL, day, money, statusClass } from "@/src/format";
+import { TENANT_STATUS_LABEL, money, statusClass } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { ProvisionTenantForm } from "@/src/actions";
 
@@ -148,7 +149,9 @@ export default async function TenantsPage({
                           ? "独立 schema"
                           : "独立库"}
                     </td>
-                    <td className="tiny nowrap">{day(tenant.nextDueAt)}</td>
+                    <td className="tiny nowrap">
+                      <Time value={tenant.nextDueAt} mode="day" />
+                    </td>
                     <td className="num">{tenant.healthScore}</td>
                   </tr>
                 );

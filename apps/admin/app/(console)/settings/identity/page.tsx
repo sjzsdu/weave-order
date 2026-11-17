@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { PlatformIdentitySettings } from "@weave-order/schema";
-import { date } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { IdentitySettingsForm } from "@/src/actions";
 
@@ -24,7 +24,9 @@ export default async function IdentityPage() {
             独立 Casdoor 应用 weave-platform：强制 MFA、禁止社交登录；一个租户一个 Organization。
           </p>
         </div>
-        <div className="muted small">更新于 {date(data.settings.updatedAt)}</div>
+        <div className="muted small">
+          更新于 <Time value={data.settings.updatedAt} />
+        </div>
       </div>
 
       <div className="grid cols-2">

@@ -23,20 +23,59 @@ export function bps(value: number): string {
   return `${(value / 100).toFixed(2)}%`;
 }
 
+/**
+ * 管理端统一展示时区。
+ *
+ * 这些格式化函数既在服务端组件里跑（Node 进程默认 UTC），也在客户端组件里跑
+ * （浏览器本地时区），不显式指定 timeZone 时两边结果会差 8 小时。运营只在国内，
+ * 统一按北京时间展示；将来若有海外运营，再改成按用户时区在客户端格式化。
+ */
+export const ADMIN_TIME_ZONE = "Asia/Shanghai";
+export const ADMIN_TIME_ZONE_LABEL = "北京时间（UTC+8）";
+
+function parse(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function date(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString("zh-CN", {
+  const parsed = parse(value);
+  if (!parsed) return "—";
+  return parsed.toLocaleString("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: ADMIN_TIME_ZONE,
   });
 }
 
 export function day(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString("zh-CN");
+  const parsed = parse(value);
+  if (!parsed) return "—";
+  return parsed.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: ADMIN_TIME_ZONE,
+  });
+}
+
+/** 北京时间下的当月区间（YYYY-MM-DD），避免月初/月末在 UTC 与本地时区之间错位。 */
+export function currentMonthRange(now = new Date()): { start: string; end: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ADMIN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const mm = String(month).padStart(2, "0");
+  return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(lastDay).padStart(2, "0")}` };
 }
 
 export const TENANT_STATUS_LABEL: Record<string, string> = {
