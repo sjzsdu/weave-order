@@ -56,7 +56,12 @@ describe("HTTP 面（e2e）", () => {
     if (!available) ctx.skip();
     const health = await fetch(`${baseUrl}/api/health`);
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ ok: true, database: "up" });
+    expect(await health.json()).toEqual({
+      ok: true,
+      database: "up",
+      // 结构状态与探活同时返回：发布漏跑迁移时这里会是 behind + 缺表名。
+      schema: { state: "ok", missing: [] },
+    });
 
     const samples = await fetch(`${baseUrl}/api/samples?limit=5`);
     const sampleBody = (await samples.json()) as { samples: unknown[] };

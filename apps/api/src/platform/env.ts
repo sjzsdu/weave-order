@@ -125,6 +125,12 @@ const EnvSchema = z.object({
    * 只有它能把 `demo:reset` 与剧本接口标记为「可重置」。
    */
   WEAVE_ENV: z.enum(["dev", "test", "production"]).optional(),
+  /**
+   * 启动即断言数据库结构与镜像一致：缺表则拒绝启动（部署失败），而不是让单个功能
+   * 在运行时 500。仅在 compose 把 migrate 排在 api 之前时打开，否则会把
+   * 「一个功能坏」放大成「整站起不来」。
+   */
+  WEAVE_REQUIRE_SCHEMA_AT_BOOT: booleanEnv(false),
   /** dev：接受 `Bearer dev:<sub>:<org>`（仅本地）；oidc：Casdoor JWKS 验签。 */
   AUTH_MODE: z.enum(["dev", "oidc"]).default("dev"),
   /**
