@@ -5,6 +5,7 @@ import {
   DecideRevisionRequestInput,
   T002SearchFabricBySpecInput,
   T004GenerateQuoteDraftInput,
+  T006SuggestLinePriceInput,
   roleCapabilities,
   statusForToolFailure,
 } from "@weave-order/schema";
@@ -18,6 +19,7 @@ import type {
   ToolResult,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
+  T006SuggestLinePriceResult,
   T001SearchFabricByImageResult,
 } from "@weave-order/schema";
 import {
@@ -36,6 +38,23 @@ const MOCK_CAPABILITIES = roleCapabilities({
   dataScope: "ALL",
   approvalLimitAmount: null,
 });
+
+/**
+ * 与真实内核同口径的最低可报单价：成本底线 × (1 + 最低毛利)。
+ * mock 之前把「单价 0」当成「请助手报价」静默放行，所以前端缺单价的问题
+ * 在 mock 里跑得通、到了真后端才 422 —— 这里必须与 `priceFloorOf` 保持一致。
+ */
+const MOCK_MIN_MARGIN_PCT = 20;
+
+function mockCostFloor(sample: (typeof MOCK_SAMPLES)[number]): number {
+  return sample.costFloor?.currency === "CNY" ? (sample.costFloor.amount ?? 0) : 0;
+}
+
+function mockPriceFloor(sample: (typeof MOCK_SAMPLES)[number]): number {
+  const base = mockCostFloor(sample);
+  if (base <= 0) return 0;
+  return Math.floor((base * (100 + MOCK_MIN_MARGIN_PCT) * 100 + 9999) / 10_000);
+}
 
 /**
  * 本地 mock 服务端：实现移动端 P0 会用到的契约端点。
@@ -279,7 +298,7 @@ export function createMockServer(options: MockServerOptions): MockServer {
       };
     }
     const items = [];
-    for (const input of parsed.data.items) {
+    for (const [index, input] of parsed.data.items.entries()) {
       const sample = MOCK_SAMPLES.find((entry) => entry.id === input.fabricSampleId);
       if (!sample) {
         return {
@@ -292,11 +311,39 @@ export function createMockServer(options: MockServerOptions): MockServer {
           },
         };
       }
-      // 单价 0 表示「客户没提价」：由报价助手给建议价（mock 用成本底线 × 1.18）。
-      const base =
-        input.unitPrice.amount > 0
-          ? input.unitPrice.amount
-          : Math.round(((sample.costFloor?.amount ?? 1000) * 118) / 100 / 10) * 10;
+      if (input.quantity.unit !== sample.unit) {
+        return {
+          ok: false,
+          error: {
+            code: "KERNEL_REJECTED",
+            message: `第 ${index + 1} 行数量单位 ${input.quantity.unit} 与样品 ${sample.code} 的单位 ${sample.unit} 不一致`,
+            reason: "UNIT_MISMATCH",
+          },
+        };
+      }
+      const floor = mockPriceFloor(sample);
+      if (mockCostFloor(sample) <= 0) {
+        return {
+          ok: false,
+          error: {
+            code: "KERNEL_REJECTED",
+            message: `样品 ${sample.code} 未维护成本底线，无法判定价格是否合规`,
+            reason: "COST_FLOOR_MISSING",
+          },
+        };
+      }
+      // 低于成本底线 / 最低毛利必须和真后端一样拒绝：静默补价会掩盖前端缺单价的问题。
+      if (input.unitPrice.amount < floor) {
+        return {
+          ok: false,
+          error: {
+            code: "KERNEL_REJECTED",
+            message: `第 ${index + 1} 行单价低于成本底线/最低毛利：${input.unitPrice.amount} < ${floor}（分）`,
+            reason: "PRICE_BELOW_COST_FLOOR",
+          },
+        };
+      }
+      const base = input.unitPrice.amount;
       const lineTotal = Math.round(base * input.quantity.value);
       items.push({
         fabricSampleId: sample.id,
@@ -354,6 +401,106 @@ export function createMockServer(options: MockServerOptions): MockServer {
     });
     persist();
     return draftView(quote);
+  };
+
+  /** T-006：成本底线 + 默认毛利，向上取整到整元；与真后端同样的计算顺序。 */
+  const suggestLinePrice = (body: Body): T006SuggestLinePriceResult => {
+    const parsed = T006SuggestLinePriceInput.safeParse(body);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: { code: "INVALID_INPUT", message: "定价入参未通过校验", issues: [] },
+      };
+    }
+    if (!customerById(parsed.data.customerId)) {
+      return {
+        ok: false,
+        error: {
+          code: "CUSTOMER_NOT_FOUND",
+          message: "客户不存在",
+          customerId: parsed.data.customerId,
+        },
+      };
+    }
+    const sample = MOCK_SAMPLES.find((entry) => entry.id === parsed.data.fabricSampleId);
+    if (!sample) {
+      return {
+        ok: false,
+        error: {
+          code: "RESOURCE_NOT_FOUND",
+          message: "样品不存在",
+          resourceType: "fabric_sample",
+          resourceId: parsed.data.fabricSampleId,
+        },
+      };
+    }
+    if (parsed.data.quantity.unit !== sample.unit) {
+      return {
+        ok: false,
+        error: {
+          code: "KERNEL_REJECTED",
+          message: `数量单位 ${parsed.data.quantity.unit} 与样品 ${sample.code} 的单位 ${sample.unit} 不一致`,
+          reason: "UNIT_MISMATCH",
+        },
+      };
+    }
+    const costFloor = mockCostFloor(sample);
+    if (costFloor <= 0) {
+      return {
+        ok: false,
+        error: {
+          code: "KERNEL_REJECTED",
+          message: `样品 ${sample.code} 未维护成本底线，无法判定价格是否合规`,
+          reason: "COST_FLOOR_MISSING",
+        },
+      };
+    }
+    const markupAmount = Math.round((costFloor * MOCK_MIN_MARGIN_PCT) / 100);
+    const suggestedAmount = Math.max(costFloor, Math.ceil((costFloor + markupAmount) / 100) * 100);
+    return {
+      ok: true,
+      data: {
+        pricing: {
+          customerId: parsed.data.customerId,
+          fabricSampleId: sample.id,
+          currency: parsed.data.currency,
+          quantity: parsed.data.quantity,
+          costFloor: { amount: costFloor, currency: parsed.data.currency },
+          markupRateBps: MOCK_MIN_MARGIN_PCT * 100,
+          suggestedUnitPrice: { amount: suggestedAmount, currency: parsed.data.currency },
+          components: [
+            {
+              kind: "COST_FLOOR",
+              label: "成本底线",
+              amount: { amount: costFloor, currency: parsed.data.currency },
+              rateBps: null,
+              source: `samples.cost_floor（${sample.code}）`,
+              note: "低于该价格的报价会被内核拒绝",
+            },
+            {
+              kind: "POLICY",
+              label: `默认毛利（${MOCK_MIN_MARGIN_PCT}%）`,
+              amount: { amount: markupAmount, currency: parsed.data.currency },
+              rateBps: MOCK_MIN_MARGIN_PCT * 100,
+              source: "pricing_policies: pricing.default_margin_pct",
+              note: null,
+            },
+            {
+              kind: "ROUNDING",
+              label: "单价整元取整",
+              amount: {
+                amount: suggestedAmount - costFloor - markupAmount,
+                currency: parsed.data.currency,
+              },
+              rateBps: null,
+              source: "kernel.quotePricing.rounding",
+              note: "向上取整到 1 元（100 分）",
+            },
+          ],
+          computedBy: "KERNEL",
+        },
+      },
+    };
   };
 
   const createRevision = (body: Body): RevisionRequest | MockResponse => {
@@ -797,6 +944,8 @@ export function createMockServer(options: MockServerOptions): MockServer {
     }
     if (method === "POST" && path === "/api/tools/generate-quote-draft")
       return toolResponse(generateDraft(body));
+    if (method === "POST" && path === "/api/tools/suggest-line-price")
+      return toolResponse(suggestLinePrice(body));
 
     if (method === "POST" && path === "/api/approvals/decide") return decideApproval(body);
 

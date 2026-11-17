@@ -24,7 +24,7 @@ function buildApi(): { api: MobileApi; server: ReturnType<typeof createMockServe
   return { api, server };
 }
 
-async function createDraft(api: MobileApi) {
+async function createDraft(api: MobileApi, unitPriceAmount = 1450) {
   const search = await api.searchBySpec({ query: "棉 220g", limit: 5 });
   if (!search.ok) throw new Error(search.error.message);
   const sampleId = search.data.matches[0]?.sample.id ?? SAMPLE_ID;
@@ -34,7 +34,7 @@ async function createDraft(api: MobileApi) {
       {
         fabricSampleId: sampleId,
         quantity: { value: 500, unit: "meter" },
-        unitPrice: { amount: 0, currency: "CNY" },
+        unitPrice: { amount: unitPriceAmount, currency: "CNY" },
       },
     ],
     currency: "CNY",
@@ -135,6 +135,65 @@ describe("P0 报价主链路（mock 契约）", () => {
 
     await expect(api.searchByImageUrl("mock://media/fabric.jpg")).resolves.toMatchObject({
       ok: true,
+    });
+  });
+
+  it("建议单价来自内核，且高于成本底线", async () => {
+    const result = await api.suggestLinePrice({
+      customerId: CUSTOMER_ID,
+      fabricSampleId: SAMPLE_ID,
+      quantity: { value: 500, unit: "meter" },
+      currency: "CNY",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { pricing } = result.data;
+    expect(pricing.computedBy).toBe("KERNEL");
+    expect(pricing.costFloor?.amount).toBeGreaterThan(0);
+    expect(pricing.suggestedUnitPrice.amount).toBeGreaterThanOrEqual(
+      pricing.costFloor?.amount ?? 0,
+    );
+  });
+
+  it("单价为 0 或低于成本底线时内核拒绝，不会被静默补价", async () => {
+    for (const amount of [0, 100]) {
+      await expect(createDraft(api, amount)).rejects.toThrow(/成本底线/);
+    }
+
+    const rejected = await api.generateQuoteDraft({
+      customerId: CUSTOMER_ID,
+      items: [
+        {
+          fabricSampleId: SAMPLE_ID,
+          quantity: { value: 500, unit: "meter" },
+          unitPrice: { amount: 0, currency: "CNY" },
+        },
+      ],
+      currency: "CNY",
+      validityDays: 14,
+    });
+    expect(rejected).toMatchObject({
+      ok: false,
+      error: { code: "KERNEL_REJECTED", reason: "PRICE_BELOW_COST_FLOOR" },
+    });
+  });
+
+  it("数量单位与面料不一致时不生成草稿", async () => {
+    const rejected = await api.generateQuoteDraft({
+      customerId: CUSTOMER_ID,
+      items: [
+        {
+          fabricSampleId: SAMPLE_ID,
+          quantity: { value: 100, unit: "yard" },
+          unitPrice: { amount: 1500, currency: "CNY" },
+        },
+      ],
+      currency: "CNY",
+      validityDays: 14,
+    });
+    expect(rejected).toMatchObject({
+      ok: false,
+      error: { code: "KERNEL_REJECTED", reason: "UNIT_MISMATCH" },
     });
   });
 

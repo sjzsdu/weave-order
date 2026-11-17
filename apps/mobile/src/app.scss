@@ -795,6 +795,47 @@ body {
   margin-top: 16px;
 }
 
+/*
+ * 业务失败提示：字号固定走 rpx（不写字号到 inline style，否则 24px 会变成 24 CSS px，
+ * 比页面标题还大）。标题 + 说明 + 一个动作，最多三行信息。
+ */
+.error-banner {
+  background: $danger-soft;
+  border: 1px solid rgba(179, 38, 30, 0.24);
+  border-left: 6px solid $danger;
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.error-banner-title {
+  color: $danger;
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.error-banner-detail {
+  color: $muted;
+  font-size: 24px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+.error-banner-action {
+  color: $accent;
+  font-size: 26px;
+  font-weight: 600;
+  padding: 12px 0 4px;
+}
+
+.field-error {
+  color: $danger;
+  font-size: 22px;
+  line-height: 1.6;
+  margin-top: 12px;
+}
+
 .mock-banner {
   background: $info-soft;
   color: $info;
