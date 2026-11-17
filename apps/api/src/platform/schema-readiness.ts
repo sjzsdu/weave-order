@@ -18,14 +18,28 @@ export const EXPECTED_TABLES: readonly string[] = Object.values(dbSchema)
   .flatMap((value) => (is(value, Table) ? [String(getTableName(value))] : []))
   .sort();
 
+/**
+ * 控制面表：只经 owner 连接读写（PAT / 设备码），业务角色 `weave_app` 本就无权，
+ * 不参与权限检查。名单与 `sql/rls.sql` 的 GRANT 名单互补，由
+ * `apps/api/test/rls-grants.test.ts` 双向校对——新增表要么授权，要么在这里声明。
+ */
+export const CONTROL_PLANE_TABLES: readonly string[] = ["api_tokens", "device_authorizations"];
+
+const PRIVILEGE_CHECKED = EXPECTED_TABLES.filter((name) => !CONTROL_PLANE_TABLES.includes(name));
+
 /** 探针会被每次健康检查打到，结果缓存一小会儿；部署窗口内仍能秒级反映真实状态。 */
 const CACHE_MS = 15_000;
 
 export interface SchemaReadiness {
-  /** 期望的表全部存在。 */
+  /** 期望的表全部存在，且业务角色能用。 */
   ok: boolean;
   /** 缺失的表名（最多列 20 个，够定位是哪一批迁移没跑）。 */
   missing: string[];
+  /**
+   * 表建好了但业务角色读不了的表。典型成因：迁移跑过了，但 `sql/rls.sql` 的
+   * GRANT 名单漏了这张新表 —— 表面「结构正常」，实际每次查询都 500。
+   */
+  denied: string[];
   /** 检查本身失败（连不上库等）时的原因；含义是「未知」，不是「正常」。 */
   error?: string;
   checkedAt: string;
@@ -47,24 +61,36 @@ export class SchemaReadinessProbe {
 
     let value: SchemaReadiness;
     try {
-      const { rows } = await this.appDatabase.pool.query<{ relname: string }>(
-        `SELECT c.relname
+      const { rows } = await this.appDatabase.pool.query<{
+        relname: string;
+        can_select: boolean;
+      }>(
+        `SELECT c.relname,
+                has_table_privilege(current_user, c.oid, 'SELECT') AS can_select
            FROM pg_class c
            JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = 'public' AND c.relname = ANY($1::text[])`,
         [EXPECTED_TABLES],
       );
-      const present = new Set(rows.map((row) => row.relname));
+      const present = new Map(rows.map((row) => [row.relname, row.can_select]));
       const missing = EXPECTED_TABLES.filter((name) => !present.has(name));
+      const denied = PRIVILEGE_CHECKED.filter((name) => present.get(name) === false);
       value = {
-        ok: missing.length === 0,
+        ok: missing.length === 0 && denied.length === 0,
         missing: missing.slice(0, 20),
+        denied: denied.slice(0, 20),
         checkedAt: new Date().toISOString(),
       };
     } catch (error) {
       // 检查失败 ≠ 结构正常：显式标成未知，别把「查不到」当成「没问题」。
       const message = error instanceof Error ? error.message : String(error);
-      value = { ok: false, missing: [], error: message, checkedAt: new Date().toISOString() };
+      value = {
+        ok: false,
+        missing: [],
+        denied: [],
+        error: message,
+        checkedAt: new Date().toISOString(),
+      };
     }
 
     this.cached = { at: Date.now(), value };
@@ -87,11 +113,23 @@ export class SchemaReadinessProbe {
       return;
     }
 
+    const parts: string[] = [];
+    if (readiness.missing.length > 0) {
+      parts.push(
+        `数据库结构落后：缺少 ${readiness.missing.join("、")} 等表。` +
+          "本次发布没有执行数据库迁移，依赖这些表的接口会返回 503。",
+      );
+    }
+    if (readiness.denied.length > 0) {
+      parts.push(
+        `数据库权限缺失：业务角色读不了 ${readiness.denied.join("、")}。` +
+          "表已建好，但 sql/rls.sql 的 GRANT 名单没有这张表，接口会 500。",
+      );
+    }
     const detail =
-      `数据库结构落后：缺少 ${readiness.missing.join("、")}` +
-      `${readiness.missing.length > 0 ? " 等表" : "表"}。` +
-      "本次发布没有执行数据库迁移，依赖这些表的接口会返回 503。" +
-      "修复：在部署机执行 `pnpm --filter @weave-order/db migrate`（或 compose 的 migrate 服务）。";
+      parts.join(" ") +
+      "修复：在部署机重跑 `pnpm --filter @weave-order/db migrate`（会重新套用 sql/rls.sql），" +
+      "或对缺失的表补 GRANT。";
     if (requireSchema) {
       throw new Error(detail);
     }

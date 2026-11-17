@@ -12,14 +12,14 @@ function wrappedPgError(code: string, message: string): Error {
 describe("缺表/缺列的识别", () => {
   it("沿 cause 链认出 undefined_table 并取出表名", () => {
     const gap = findSchemaGap(wrappedPgError("42P01", 'relation "intents" does not exist'));
-    expect(gap).toEqual({ code: "42P01", missing: "intents" });
+    expect(gap).toEqual({ code: "42P01", kind: "missing", target: "intents" });
   });
 
   it("认出缺列并取出列名", () => {
     const gap = findSchemaGap(
       wrappedPgError("42703", 'column "executor_state" of relation "intents" does not exist'),
     );
-    expect(gap?.missing).toBe("executor_state");
+    expect(gap?.target).toBe("executor_state");
   });
 
   it("业务错误不会被误判成结构缺口", () => {
@@ -28,10 +28,16 @@ describe("缺表/缺列的识别", () => {
   });
 
   it("人话里带上缺失对象，并说明该找管理员", () => {
-    const message = schemaGapMessage({ code: "42P01", missing: "intents" });
+    const message = schemaGapMessage({ code: "42P01", kind: "missing", target: "intents" });
     expect(message).toContain("intents");
     expect(message).toContain("数据库还没升级");
     expect(message).toContain("管理员");
+  });
+
+  it("表在但没权限 -> denied，文案说的是权限而不是迁移", () => {
+    const gap = findSchemaGap(wrappedPgError("42501", "permission denied for table intents"));
+    expect(gap).toEqual({ code: "42501", kind: "denied", target: "intents" });
+    expect(schemaGapMessage(gap!)).toContain("数据库权限还没配置好");
   });
 });
 
@@ -55,5 +61,18 @@ describe("HTTP 面把结构缺口翻成 503", () => {
   it("非结构错误原样抛出，交给 Nest 默认处理", () => {
     const original = new Error("boom");
     expect(() => rethrowHttp(original)).toThrow(original);
+  });
+
+  it("权限缺失 -> 503 + DB_PRIVILEGE_MISSING（WAN-147 的真实形态）", () => {
+    let caught: unknown;
+    try {
+      rethrowHttp(wrappedPgError("42501", "permission denied for table intents"));
+    } catch (error) {
+      caught = error;
+    }
+    const exception = caught as HttpException;
+    expect(exception.getStatus()).toBe(503);
+    const body = exception.getResponse() as { error: { code: string } };
+    expect(body.error.code).toBe("DB_PRIVILEGE_MISSING");
   });
 });

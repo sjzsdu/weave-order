@@ -121,7 +121,14 @@ export function rethrowHttp(error: unknown): never {
   if (gap) {
     const message = schemaGapMessage(gap);
     throw new HttpException(
-      { error: { code: "DB_SCHEMA_NOT_MIGRATED", message }, message },
+      {
+        // 缺对象与缺权限的运维动作不同（跑迁移 vs 补 GRANT），code 也要能分辨。
+        error: {
+          code: gap.kind === "denied" ? "DB_PRIVILEGE_MISSING" : "DB_SCHEMA_NOT_MIGRATED",
+          message,
+        },
+        message,
+      },
       HttpStatus.SERVICE_UNAVAILABLE,
     );
   }
@@ -155,7 +162,7 @@ export class HealthController {
   async health(): Promise<{
     ok: boolean;
     database: string;
-    schema: { state: "ok" | "behind"; missing: string[]; error?: string };
+    schema: { state: "ok" | "behind"; missing: string[]; denied: string[]; error?: string };
   }> {
     // 一次最小审计读取即证明 DB 可达，同时不碰业务数据。
     await this.kernel.audit.list(1);
@@ -166,6 +173,7 @@ export class HealthController {
       schema: {
         state: readiness.ok ? "ok" : "behind",
         missing: readiness.missing,
+        denied: readiness.denied,
         ...(readiness.error ? { error: readiness.error } : {}),
       },
     };

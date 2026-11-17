@@ -20,6 +20,11 @@ ALTER ROLE weave_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 GRANT USAGE ON SCHEMA public TO weave_app;
 
 -- 只授予业务表与租户/成员表的 DML 权限；LangGraph checkpoint 等内部表不开放。
+--
+-- 新增业务表必须同时出现在这里和下面的 business_tables：漏在 GRANT 里时表建好了但
+-- weave_app 没有权限，接口表现为 500（WAN-147 的 intents 就是这样，被
+-- apps/api/test/rls-grants.test.ts 兜住）。api_tokens / device_authorizations 是
+-- 控制面表，只经 owner 连接读写，故意不授予业务角色。
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   tenants,
   memberships,
@@ -64,6 +69,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   order_box_items,
   box_labels,
   scan_events,
+  intents,
   onboarding_state
 TO weave_app;
 

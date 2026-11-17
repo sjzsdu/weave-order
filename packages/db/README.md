@@ -108,17 +108,31 @@ pnpm db:check       # 应通过：8/8 与 journal 一致
 
 # 3. 起 api/web，然后看健康检查的 schema 字段
  curl -s https://app.wnbgj.com/api/health
-# 期望：{"ok":true,"database":"up","schema":{"state":"ok","missing":[]}}
+# 期望：{"ok":true,"database":"up","schema":{"state":"ok","missing":[],"denied":[]}}
 ```
 
 判读：
 
-| 现象                                  | 含义                   | 处理                               |
-| ------------------------------------- | ---------------------- | ---------------------------------- |
-| `schema.state = "behind"`             | 有表没建，迁移漏跑     | 回到第 1 步，不要继续发布          |
-| `schema.missing` 非空                 | 上面缺的具体表名       | 同上；表名直接对应漏掉的迁移       |
-| 启动日志 `数据库结构落后：缺少 …`     | 同上（启动时会主动打） | 同上                               |
-| 接口返回 503 `DB_SCHEMA_NOT_MIGRATED` | 请求撞上了不存在的表   | 同上；前端会显示人话原因而不是 500 |
+| 现象                                  | 含义                                      | 处理                                              |
+| ------------------------------------- | ----------------------------------------- | ------------------------------------------------- |
+| `schema.state = "behind"`             | 有表没建，或建了但业务角色没权限          | 回到第 1 步，不要继续发布                         |
+| `schema.missing` 非空                 | 缺的具体表名                              | 同上；表名直接对应漏掉的迁移                      |
+| `schema.denied` 非空                  | 表在、`weave_app` 没有权限（漏 GRANT）    | 重跑第 1 步即可（`migrate` 每次都会重套 rls.sql） |
+| 启动日志 `数据库结构落后：缺少 …`     | 同上（启动时会主动打）                    | 同上                                              |
+| 启动日志 `数据库权限缺失：…`          | 同上（漏授权版本）                        | 同上                                              |
+| 接口返回 503 `DB_SCHEMA_NOT_MIGRATED` | 请求撞上了不存在的表                      | 同上；前端会显示人话原因而不是 500                |
+| 接口返回 503 `DB_PRIVILEGE_MISSING`   | 表在、当前角色无权（`permission denied`） | 同上                                              |
+
+### 「表建好了，接口还是 500」
+
+2026-11-17 的 WAN-147 就是这种形态：迁移跑过了，`intents` 表也在，但 `sql/rls.sql`
+的 `GRANT ... TO weave_app` 名单漏了这张新表，于是**只有意图相关的接口** 500
+（`permission denied for table intents`），而同批的 `onboarding_state` 一切正常，
+看起来像「迁移没跑」。用 owner 连接本地测永远测不出来。
+
+修法：把表补进 `sql/rls.sql` 的 GRANT 名单，然后重跑 `pnpm --filter @weave-order/db migrate`
+（迁移后会幂等重套 `rls.sql`）。防回归：`apps/api/test/rls-grants.test.ts` 断言
+「GRANT 名单 ⊇ RLS 业务表名单」，且「没有授权的表必须正是控制面表」。
 
 更彻底的做法：部署机的 compose 给 api 加上 `WEAVE_REQUIRE_SCHEMA_AT_BOOT=1`，
 且 `depends_on: migrate: condition: service_completed_successfully`。缺表时 api 直接拒绝启动，
