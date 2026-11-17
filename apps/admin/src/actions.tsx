@@ -95,6 +95,8 @@ function FormShell({
   pending,
   error,
   success,
+  disabled,
+  hint,
 }: {
   children: React.ReactNode;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -102,10 +104,18 @@ function FormShell({
   pending: boolean;
   error: string | null;
   success?: string | null;
+  /** 前置条件不满足时禁用提交（例如还没有任何套餐）。 */
+  disabled?: boolean;
+  hint?: string | null;
 }) {
   return (
     <form className="form" onSubmit={onSubmit}>
       {children}
+      {hint ? (
+        <p className="alert alert-info" style={{ margin: 0 }}>
+          {hint}
+        </p>
+      ) : null}
       <ErrorLine error={error} />
       {success ? (
         <p className="alert alert-ok" style={{ margin: 0 }}>
@@ -113,7 +123,7 @@ function FormShell({
         </p>
       ) : null}
       <div className="btn-row">
-        <button className="btn btn-primary" type="submit" disabled={pending}>
+        <button className="btn btn-primary" type="submit" disabled={pending || disabled}>
           {pending ? "提交中…" : submitLabel}
         </button>
       </div>
@@ -146,6 +156,8 @@ function useSubmit() {
 
 export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
   const { pending, error, success, submit } = useSubmit();
+  // 没有套餐时订阅无从创建：明确说明原因并禁用提交，而不是让用户撞上参数错误。
+  const noPlans = plans.length === 0;
   const [form, setForm] = useState({
     name: "",
     slug: "",
@@ -169,6 +181,8 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
       pending={pending}
       error={error}
       success={success}
+      disabled={noPlans}
+      hint={noPlans ? "尚未配置任何套餐，无法创建试用订阅。请先到「套餐与价格」新建套餐。" : null}
       submitLabel="开通公司 + 试用订阅"
       onSubmit={(event) => {
         event.preventDefault();
@@ -209,13 +223,15 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
         </div>
         <div className="field">
           <label>套餐</label>
-          <select value={form.planCode} onChange={set("planCode")}>
+          <select value={form.planCode} onChange={set("planCode")} disabled={noPlans}>
+            {noPlans ? <option value="">暂无可用套餐</option> : null}
             {plans.map((plan) => (
               <option key={plan.code} value={plan.code}>
                 {plan.name}
               </option>
             ))}
           </select>
+          {noPlans ? <span className="hint">请先在「套餐与价格」创建套餐。</span> : null}
         </div>
         <div className="field">
           <label>席位数</label>
@@ -581,6 +597,123 @@ export function ApprovalDecision({ id }: { id: string }) {
 
 /* --------------------------- 价格 --------------------------- */
 
+const PLAN_FEATURES = [
+  { key: "customer_portal", label: "客户门户" },
+  { key: "sso", label: "企业 SSO" },
+  { key: "custom_domain", label: "自定义域名" },
+  { key: "print_agent", label: "打印代理" },
+] as const;
+
+/**
+ * 新建套餐：空控制面（迁移未带默认套餐 / 需要新增档位）时的自助入口。
+ * 套餐代码不可修改，价格不在套餐里而在价格表中维护。
+ */
+export function PlanForm({ existingCodes }: { existingCodes: string[] }) {
+  const { pending, error, success, submit } = useSubmit();
+  const [form, setForm] = useState({
+    code: "",
+    name: "",
+    tier: "1",
+    seatMin: "5",
+    seatMax: "5",
+    credits: "20000",
+    storageGb: "50",
+  });
+  const [features, setFeatures] = useState<Record<string, boolean>>({});
+  const set =
+    (key: keyof typeof form) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setForm((current) => ({ ...current, [key]: event.target.value }));
+
+  return (
+    <FormShell
+      pending={pending}
+      error={error}
+      success={success}
+      submitLabel="新建套餐"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit(
+          "/pricing/plans",
+          "POST",
+          {
+            code: form.code.trim().toUpperCase(),
+            name: form.name,
+            tier: Number(form.tier),
+            seatMin: Number(form.seatMin),
+            seatMax: form.seatMax.trim() ? Number(form.seatMax) : null,
+            agentActionsQuota: Number(form.credits),
+            storageGb: Number(form.storageGb),
+            features,
+          },
+          `已新建套餐「${form.name}」；价格请到「新建价格版本」补齐`,
+        );
+      }}
+    >
+      <div className="form row">
+        <div className="field">
+          <label>套餐代码</label>
+          <input
+            required
+            value={form.code}
+            onChange={set("code")}
+            placeholder="GROWTH"
+            pattern="[A-Za-z][A-Za-z0-9_]*"
+          />
+          <span className="hint">大写字母、数字和下划线；创建后不可修改。</span>
+        </div>
+        <div className="field">
+          <label>套餐名称</label>
+          <input required value={form.name} onChange={set("name")} placeholder="成长版 Growth" />
+        </div>
+        <div className="field">
+          <label>档位</label>
+          <input type="number" min={0} max={9} value={form.tier} onChange={set("tier")} />
+          <span className="hint">数值越大档位越高，用于排序与功能分层。</span>
+        </div>
+      </div>
+      <div className="form row">
+        <div className="field">
+          <label>内含席位</label>
+          <input type="number" min={0} value={form.seatMin} onChange={set("seatMin")} />
+        </div>
+        <div className="field">
+          <label>席位上限定（留空不限）</label>
+          <input type="number" min={1} value={form.seatMax} onChange={set("seatMax")} />
+        </div>
+        <div className="field">
+          <label>每月 credits</label>
+          <input type="number" min={0} value={form.credits} onChange={set("credits")} />
+        </div>
+        <div className="field">
+          <label>存储（GB）</label>
+          <input type="number" min={0} value={form.storageGb} onChange={set("storageGb")} />
+        </div>
+      </div>
+      <div className="field">
+        <label>功能开关</label>
+        <div className="check-row">
+          {PLAN_FEATURES.map((feature) => (
+            <label key={feature.key} className="check">
+              <input
+                type="checkbox"
+                checked={features[feature.key] === true}
+                onChange={(event) =>
+                  setFeatures((current) => ({ ...current, [feature.key]: event.target.checked }))
+                }
+              />
+              {feature.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      {existingCodes.length > 0 ? (
+        <p className="tiny muted">已有套餐：{existingCodes.join("、")}</p>
+      ) : null}
+    </FormShell>
+  );
+}
+
 export function PriceBookForm({ plans, base }: { plans: Plan[]; base?: PriceBookDetail }) {
   const { pending, error, success, submit } = useSubmit();
   const initial = Object.fromEntries(
@@ -602,6 +735,15 @@ export function PriceBookForm({ plans, base }: { plans: Plan[]; base?: PriceBook
       ...current,
       [code]: { ...(current[code] ?? { monthly: "0", annual: "0" }), [key]: value },
     }));
+
+  // 没有套餐就没有可定价的行：说明原因，避免提交出「请求参数校验失败」。
+  if (plans.length === 0) {
+    return (
+      <p className="alert alert-info" style={{ margin: 0 }}>
+        尚未配置任何套餐，无法创建价格版本。请先在上方「新建套餐」创建套餐。
+      </p>
+    );
+  }
 
   return (
     <FormShell
@@ -712,6 +854,14 @@ export function PricingPreviewForm({ plans }: { plans: Plan[] }) {
   }>(null);
   const [error, setError] = useState<string | null>(null);
   const { pending, startTransition } = useTransitionStore();
+
+  if (plans.length === 0) {
+    return (
+      <p className="alert alert-info" style={{ margin: 0 }}>
+        尚未配置任何套餐，无法试算。请先在上方「新建套餐」创建套餐。
+      </p>
+    );
+  }
 
   return (
     <form

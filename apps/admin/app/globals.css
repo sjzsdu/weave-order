@@ -404,6 +404,18 @@ table.table {
 .check input {
   margin-top: 3px;
 }
+/* 放在 .field 里的多选：抵消 `.field input` 的全宽/边框，避免变成大方块。 */
+.field .check input {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
 .inline-form {
   display: flex;
   flex-wrap: wrap;

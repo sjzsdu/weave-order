@@ -73,6 +73,33 @@ export const Plan = z
   .strict();
 export type Plan = z.infer<typeof Plan>;
 
+/**
+ * 新建套餐：控制面冷启动没有套餐时，owner 可以自助补齐。
+ * 套餐代码一旦被订阅/价格表引用就不允许改，所以只允许新建，不支持改代码。
+ */
+export const PlanInput = z
+  .object({
+    code: z
+      .string()
+      .min(2)
+      .max(32)
+      .regex(/^[A-Z][A-Z0-9_]*$/, "套餐代码只能是大写字母、数字和下划线，且以字母开头"),
+    name: z.string().min(1).max(64),
+    tier: z.number().int().min(0).max(9),
+    seatMin: z.number().int().nonnegative().default(1),
+    seatMax: z.number().int().positive().nullable().default(null),
+    agentActionsQuota: z.number().int().nonnegative().default(0),
+    storageGb: z.number().int().nonnegative().default(0),
+    features: z.record(z.boolean()).default({}),
+    status: PlanStatus.default("ACTIVE"),
+  })
+  .strict()
+  .refine((value) => value.seatMax === null || value.seatMax >= value.seatMin, {
+    message: "席位上限定不能小于下限",
+    path: ["seatMax"],
+  });
+export type PlanInput = z.infer<typeof PlanInput>;
+
 export const PriceBookStatus = z.enum(["DRAFT", "ACTIVE", "RETIRED"]);
 export type PriceBookStatus = z.infer<typeof PriceBookStatus>;
 

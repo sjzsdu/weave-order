@@ -77,6 +77,13 @@ export class PricingController {
     return { plans: await this.pricing.listPlans() };
   }
 
+  /** 空控制面自助初始化：没有默认套餐时，owner/finance 可以直接建。 */
+  @Post("plans")
+  @RequirePermission("pricing:write")
+  async createPlan(@Req() request: PlatformRequest, @Body() body: unknown) {
+    return { plan: await this.pricing.createPlan(actorOf(request), body) };
+  }
+
   @Get("books")
   @RequirePermission("pricing:read")
   async books() {

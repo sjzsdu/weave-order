@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import {
+  PlanInput,
   PriceBookDetail,
   PriceBookInput,
   PricingPreview,
@@ -42,6 +43,56 @@ export class PricingService {
       features: row.features,
       status: row.status,
     }));
+  }
+
+  /**
+   * 新建套餐：空控制面（迁移没带默认套餐 / 运营要加新档位）时 owner 自助补齐。
+   * 已存在同代码时返回 409 而不是静默覆盖，避免把在售套餐的属性改坏。
+   */
+  async createPlan(actor: PlatformActor, raw: unknown): Promise<Plan> {
+    const input = PlanInput.parse(raw);
+    const existing = await this.db
+      .select({ code: plans.code })
+      .from(plans)
+      .where(eq(plans.code, input.code))
+      .limit(1);
+    if (existing[0]) throw conflict(`套餐代码已存在：${input.code}`);
+
+    const rows = await this.db
+      .insert(plans)
+      .values({
+        code: input.code,
+        name: input.name,
+        tier: input.tier,
+        seatMin: input.seatMin,
+        seatMax: input.seatMax,
+        agentActionsQuota: input.agentActionsQuota,
+        storageGb: input.storageGb,
+        features: input.features,
+        status: input.status,
+      })
+      .returning();
+    const created = rows[0];
+    if (!created) throw new Error("套餐创建失败");
+
+    await this.audit.record(actor, {
+      action: "PLAN_CREATED",
+      targetType: "plan",
+      targetId: created.code,
+      after: input,
+      reason: "新建套餐",
+    });
+    return {
+      code: created.code,
+      name: created.name,
+      tier: created.tier,
+      seatMin: created.seatMin,
+      seatMax: created.seatMax,
+      agentActionsQuota: created.agentActionsQuota,
+      storageGb: created.storageGb,
+      features: created.features,
+      status: created.status,
+    };
   }
 
   async listBooks(): Promise<PriceBook[]> {
