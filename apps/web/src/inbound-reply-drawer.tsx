@@ -222,7 +222,7 @@ export function InboundReplyDrawer({
 
           <div className="flex items-center justify-between border-t border-line pt-3">
             <span className="text-xs text-ink-400">
-              重复提交同一条消息不会重复入库，也不会重复生成草稿。
+              同一条消息重复提交，不会重复生成草稿。
             </span>
             <Button variant="primary" disabled={busy || !canSubmit} onClick={() => submit.mutate()}>
               {busy ? "正在识别…" : "录入并识别"}

@@ -294,7 +294,7 @@ export function SampleDrawer({
                   </div>
                 ))}
                 <p className="text-[10px] text-ink-400">
-                  图像向量索引在 S4 落地；当前分数来自服务端可用的 embedding provider。
+                  相似样品按面料特征匹配，比例仅供参考，以实物确认为准。
                 </p>
               </section>
             )}

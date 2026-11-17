@@ -297,7 +297,7 @@ export default function ApprovalsPage() {
                 </View>
 
                 <View className="section-head" style={{ margin: "16px 0 8px" }}>
-                  <View className="tiny">智能体依据与缺失项都在摘要里；点客户名看 360</View>
+                  <View className="tiny">依据和缺什么都在摘要里；点下面看客户详情</View>
                   <Text className="link" onClick={() => openCustomer(item.customerId)}>
                     客户 360
                   </Text>
@@ -374,7 +374,7 @@ export default function ApprovalsPage() {
         }
       >
         {rejecting && <View className="muted">{rejecting.title}</View>}
-        <View className="label">原因（进审计，不进业务字段）</View>
+        <View className="label">原因（仅内部记录）</View>
         <View className="wrap">
           {REJECT_REASONS.map((entry) => (
             <View
@@ -484,7 +484,7 @@ export default function ApprovalsPage() {
           </View>
         )}
         {!shareUrl && (
-          <View className="footnote">链接需联网生成；离线时不会把明文 token 存到本地。</View>
+          <View className="footnote">客户链接需要联网生成，离线时不会保存。</View>
         )}
       </Sheet>
 

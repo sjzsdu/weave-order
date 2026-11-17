@@ -2,9 +2,9 @@
 
 纺织贸易的智能体原生业务操作系统。智能体（Agent）是系统的默认操作者，人类只负责审批结果和处理异常。
 
-竞品（布管家、珍妮软件）的架构前提是「业务员是操作者」；织序的前提是「智能体是操作者」。
+传统 ERP 软件的架构前提是「业务员是操作者」；织序的前提是「智能体是操作者」。
 
-> 产品设计（定位、角色与权限、布管家能力对照、双端 IA、设计系统、指标与分期）：`docs/product-design.md`。
+> 产品设计（定位、角色与权限、传统 ERP 软件能力对照、双端 IA、设计系统、指标与分期）：`docs/product-design.md`。
 > 可点击原型（桌面三窗口 + 手机四 Tab）：`prototype/product-design.html`，直接用浏览器打开。
 > 用户凭据 / CLI / agent 接入（codex 等）：`docs/cli-and-agent-access.md`，skill 源文件 `skills/weave-order/SKILL.md`。
 > 品牌（logo、口号、色彩与字体）：`brand/`，入口 `brand/brand-guide.md`，品牌板 `brand/preview.html`。

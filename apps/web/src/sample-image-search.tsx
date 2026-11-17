@@ -107,7 +107,7 @@ export function SampleImageSearch({ onClose }: { onClose: () => void }) {
         <div>
           <p className="text-sm font-medium text-ink-900">以图找样</p>
           <p className="text-xs text-ink-400">
-            上传一张布样照片，按图像向量找同款；结果里的缩略图就是命中的那张样品图。
+            上传一张布样照片，找相似面料；缩略图就是匹配到的样品图。
           </p>
         </div>
         <Button
@@ -153,8 +153,8 @@ export function SampleImageSearch({ onClose }: { onClose: () => void }) {
               {meta.mode === "caption"
                 ? "按图像描述检索"
                 : meta.semantic
-                  ? "真实图向量"
-                  : "演示模式"}
+                ? "看图找相似"
+                : "演示模式"}
             </Badge>
           </span>
         )}

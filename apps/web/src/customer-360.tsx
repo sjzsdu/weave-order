@@ -339,7 +339,7 @@ export function Customer360Panel({
           </div>
         </div>
         <p className="mt-3 border-t border-line pt-2 text-xs text-ink-400">
-          上下文由人工与智能体共同维护，决定增量 {context.decisionDeltas.length} 条；更新于{" "}
+          这份客户资料由你和智能体一起补充，已有 {context.decisionDeltas.length} 条调整；更新于{" "}
           {relativeTime(context.updatedAt)}。
         </p>
       </section>

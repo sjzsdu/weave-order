@@ -246,7 +246,7 @@ export default function TodayPage() {
         }
       })}
 
-      <SectionTitle title="智能体动态" hint="每条都有依据，不只给结论" />
+      <SectionTitle title="智能体动态" hint="每条都能点开看依据" />
       <Card className="card-flat">
         {audit.isLoading && !audit.data ? (
           <Loading />

@@ -135,7 +135,7 @@ function ApprovalsPageContent() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">审批</p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">你只做决定，草稿由智能体准备</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">小织把草稿备好了，你只管点头或打回</h1>
           <p className="mt-1 text-sm text-ink-400">
             快捷键：J/K 切换 · A 批准 · R 驳回 · Esc 关闭详情
           </p>

@@ -102,7 +102,7 @@ approveBtn?.addEventListener("click", sealApproval);
 editBtn?.addEventListener("click", () => {
   if (approved) return;
   editBtn.textContent = "−1% 并重算";
-  editBtn.title = "演示：按客户要求让 1%，内核重算金额";
+  editBtn.title = "演示：按客户要求让 1%，金额自动重算";
   const amount = card?.querySelector(".money");
   const ins = card?.querySelector(".diff ins");
   if (!amount || !ins) return;

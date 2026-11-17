@@ -228,7 +228,7 @@ function TodayPageContent() {
               </h1>
             )}
             <p className="mt-1 text-sm text-ink-400">
-              每一行都能一键展开为决定；智能体说人话，也说得清依据。
+              小织做好的都列在下面，点开就能看依据、做决定。
             </p>
           </div>
           <div className="flex gap-2">

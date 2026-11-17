@@ -319,7 +319,7 @@ export default function QuotePage() {
         });
         await Taro.showModal({
           title: "已存本地",
-          content: "原话、数量与单价已入离线队列，联网后自动生成草稿，并出现在审批里。",
+          content: "你说的话、数量和单价已存好，联网后自动生成报价草稿，会出现在审批里。",
           showCancel: false,
         });
       }
@@ -546,7 +546,7 @@ export default function QuotePage() {
       <View className="page-title">{step === "draft" ? "报价草稿" : "快速报价"}</View>
       <View className="page-sub">
         {step === "draft"
-          ? "改价 = 原地改 + 版本 + diff；批准后经内核 confirm 才生效。"
+          ? "改价直接写在草稿里，你批准之后新价格才生效。"
           : "粘贴客户原话，系统先给「听懂了什么」，错了可改。"}
       </View>
 
@@ -805,7 +805,7 @@ export default function QuotePage() {
                   <Badge tone={draft.status === "DRAFT" ? "warn" : "accent"}>
                     {draft.status === "DRAFT" ? "草稿" : draft.status}
                   </Badge>
-                  <Text className="tiny">v{version} · 金额由内核计算</Text>
+                  <Text className="tiny">v{version} · 金额系统自动算</Text>
                 </View>
                 <View className="list-title" style={{ marginTop: 8 }}>
                   {customer?.name ?? "客户"} · {draft.items.length} 行

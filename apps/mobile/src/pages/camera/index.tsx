@@ -378,8 +378,8 @@ export default function CameraPage() {
           <Badge tone="warn">{findMeta.mode === "caption" ? "按图像描述检索" : "演示模式"}</Badge>
           <View className="muted" style={{ marginTop: 8 }}>
             {findMeta.mode === "caption"
-              ? "图向量服务当前不可用，已改用「看图写描述 → 文本检索」，相似度与图搜图不可直接比较。"
-              : "当前没有配置多模态模型，分数来自本地哈希向量，只用于验证链路，不代表视觉相似度。"}
+              ? "这次按图片描述找相似面料，结果仅供参考。"
+              : "当前是演示模式，结果只用于体验，不代表真实相似度。"}
           </View>
         </Card>
       )}

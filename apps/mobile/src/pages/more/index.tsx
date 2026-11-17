@@ -9,7 +9,6 @@ import { useInstallPrompt } from "../../lib/pwa";
 import { useNetworkStatus, useQueueState, useSyncQueue } from "../../lib/hooks";
 import { formatMoneyShort, relativeTime } from "../../lib/format";
 import {
-  API_BASE_URL,
   IS_MOCK,
   api,
   loadTenantContext,
@@ -394,12 +393,12 @@ export default function MorePage() {
         </View>
         <View className="list-row">
           <View>
-            <View className="list-title">当前端</View>
+            <View className="list-title">当前设备</View>
             <View className="list-sub">
-              {TARO_ENV} · {IS_MOCK ? "mock" : API_BASE_URL}
+              {TARO_ENV === "h5" ? "手机浏览器" : "小程序"} · {IS_MOCK ? "演示数据" : "正式服务"}
             </View>
           </View>
-          <Badge>{TARO_ENV}</Badge>
+          <Badge>{TARO_ENV === "h5" ? "网页版" : "小程序"}</Badge>
         </View>
         <View className="list-row">
           <View>
