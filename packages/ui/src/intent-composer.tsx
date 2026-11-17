@@ -39,6 +39,16 @@ export function IntentComposer({
     if (initialText) inputRef.current?.focus();
   }, [initialText]);
 
+  /*
+   * 同路由软导航（开张清单第③步、客户 360 的快捷动作）不会重新挂载组件，
+   * 只改 `initialText`。少了这一步，`useState` 的初值只在首次渲染生效，
+   * 用户点进来看到的是空输入框、提交也不带 context（WAN-142 R1）。
+   * 用户已经自己改过内容时不覆盖：只有 initialText 真的变化才同步。
+   */
+  useEffect(() => {
+    if (initialText) setText(initialText);
+  }, [initialText]);
+
   const submit = async () => {
     const value = text.trim();
     if (!value || submitting) return;

@@ -5,7 +5,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { createDemoContext, ok, section } from "./followup-demo-lib";
-import { demoWriteContext, ensureDemoIdentity } from "./demo-identity";
+import { demoWriteContext, ensureDemoIdentity } from "../src/dev/demo-identity";
 import type { FollowupStateType } from "../src/agent";
 
 async function main(): Promise<void> {

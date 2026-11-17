@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { sessionMaxAge } from "@/src/session-max-age";
 import { publicOrigin } from "@/src/public-origin";
 import { safeNext } from "@/src/safe-next";
 
@@ -64,13 +65,18 @@ export async function GET(request: NextRequest) {
   if (!token) return fail("身份服务未返回令牌");
 
   const secure = process.env.NODE_ENV === "production";
+  // Cookie 寿命对齐令牌真实 exp：过去写死 8h，而 Casdoor id_token 往往短得多，
+  // 导致「cookie 还在、令牌已死」——middleware 只能靠本地解 exp 抢着删 cookie，
+  // 用户就表现为「点菜单被登出」。现在令牌到期时浏览器自己清 cookie，
+  // 会话失效由控制面验签统一判定，不再有本地猜测与不可逆清除。
+  const maxAge = sessionMaxAge(token);
   const response = NextResponse.redirect(new URL(next, origin));
   response.cookies.set("weave_platform_token", token, {
     httpOnly: true,
     sameSite: "strict",
     secure,
     path: "/",
-    maxAge: 8 * 60 * 60,
+    maxAge,
   });
   response.cookies.delete("weave_platform_oidc_state");
   response.cookies.delete("weave_platform_oidc_verifier");

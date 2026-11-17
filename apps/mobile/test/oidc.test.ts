@@ -112,9 +112,11 @@ describe("移动端 OIDC 登录跳转", () => {
     expect(oidc.getAuthError()).toBeNull();
   });
 
-  it("回调 state 不匹配时不换 token，清掉地址栏里的授权码", async () => {
+  it("回调 state 不匹配时不换 token，清掉地址栏与标记里的授权码", async () => {
     const { location, history, storage } = makeWindow();
-    location.href = `${REDIRECT_URI}?code=fake&state=wrong`;
+    // 模拟 head 同步脚本已固化回调 query，且 Taro 已把 pathname 改写成 '/'
+    location.href = "https://weave-m.example.test/";
+    storage.set("weave.oidc.callback", "code=fake&state=wrong");
     storage.set("weave.oidc.state", "expected");
     storage.set("weave.oidc.verifier", "verifier");
     const fetchMock = vi.fn();
@@ -131,11 +133,13 @@ describe("移动端 OIDC 登录跳转", () => {
     expect(oidc.getAuthError()).toMatch(/state/);
   });
 
-  it("回调成功时用 code_verifier 换 token，令牌只进内存", async () => {
+  it("location 被路由改写后仍凭固化标记识别回调、换 token（线上死循环回归）", async () => {
     const { location, storage } = makeWindow();
     const oidc = await loadOidc();
     const state = "test-state";
-    location.href = `${REDIRECT_URI}?code=test-code&state=${state}`;
+    // location 已是根路径（Taro hash 路由改写结果），绝不是 /auth/callback
+    location.href = "https://weave-m.example.test/";
+    storage.set("weave.oidc.callback", `code=test-code&state=${state}`);
     storage.set("weave.oidc.state", state);
     storage.set("weave.oidc.verifier", "test-verifier");
 
@@ -159,12 +163,11 @@ describe("移动端 OIDC 登录跳转", () => {
     expect(form.get("code")).toBe("test-code");
     expect(form.get("code_verifier")).toBe("test-verifier");
     expect(form.get("redirect_uri")).toBe(REDIRECT_URI);
-    expect(form.get("client_secret")).toBeNull(); // 前端绝不持有密钥
+    expect(form.get("client_secret")).toBeNull();
+    expect(storage.has("weave.oidc.callback")).toBe(false);
     expect(storage.size).toBe(0);
-    expect(location.href).toBe("https://weave-m.example.test/");
 
     const session = await import("../src/lib/session");
-    // oidc 与 runtime 共用同一个 session 模块实例（loadOidc 里 resetModules 后加载）
     expect(session.getAuthToken()).toBe("test-id-token");
   });
 

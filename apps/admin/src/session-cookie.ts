@@ -15,7 +15,7 @@ export type PlatformSessionState = "missing" | "expired" | "dev" | "usable";
 /** 允许 30 秒时钟偏差，避免边界上反复踢登录。 */
 const CLOCK_SKEW_SECONDS = 30;
 
-function jwtPayload(token: string): Record<string, unknown> | null {
+export function jwtPayload(token: string): Record<string, unknown> | null {
   const parts = token.split(".");
   if (parts.length !== 3 || !parts[1]) return null;
   try {

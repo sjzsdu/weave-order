@@ -19,6 +19,8 @@
     "seed": "tsx scripts/import-data.ts",
     "seed:persona": "tsx scripts/seed-persona-fixture.ts",
     "backfill:owner": "tsx scripts/backfill-owner.ts",
+    "control:sync": "tsx scripts/control-sync.ts",
+    "control:reconcile": "tsx scripts/control-reconcile.ts",
     "reindex:samples": "tsx scripts/reindex-samples.ts",
     "reindex:images": "tsx scripts/reindex-images.ts",
     "verify:image-search": "tsx scripts/verify-image-search.ts",

@@ -177,7 +177,18 @@ function PanoramaPageContent() {
               <SampleTile key={sample.id} sample={sample} />
             ))}
             {data.samples.length === 0 && (
-              <EmptyState title="还没有样品" description="导入 Excel 或让 agent 建一个。" />
+              <EmptyState
+                title="还没有样品"
+                description="新建一个样品就能报价；图墙里可以随时补图。"
+                actions={
+                  <Link
+                    href="/panorama/samples?new=1"
+                    className="text-sm text-indigo-600 underline underline-offset-2"
+                  >
+                    去建第一个样品
+                  </Link>
+                }
+              />
             )}
           </div>
         </section>

@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sessionMaxAge } from "@/src/session-max-age";
 import { GET } from "./route";
+
+function jwtWithExp(exp: number): string {
+  const encode = (value: object) =>
+    btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${encode({ alg: "RS256" })}.${encode({ exp })}.sig`;
+}
 
 /**
  * 域名由环境变量注入（容器内 PLATFORM_PUBLIC_URL），测试不写死任何真实域名：
@@ -8,8 +15,7 @@ import { GET } from "./route";
  */
 const PUBLIC_ORIGIN = "https://platform.example.test";
 // 容器内收到的请求 origin 是内部地址，回跳地址必须来自注入的环境变量。
-const internalCallback =
-  "http://localhost:3003/auth/callback?code=test-code&state=test-state";
+const internalCallback = "http://localhost:3003/auth/callback?code=test-code&state=test-state";
 
 function callbackRequest(cookie?: string) {
   return new NextRequest(internalCallback, {
@@ -108,5 +114,25 @@ describe("平台端 OIDC 回调", () => {
     vi.stubEnv("NODE_ENV", "production");
 
     await expect(GET(callbackRequest())).rejects.toThrow(/PLATFORM_PUBLIC_URL/);
+  });
+});
+
+describe("会话 cookie 寿命对齐令牌 exp", () => {
+  const now = 1_700_000_000_000;
+
+  it("JWT exp 决定 cookie 寿命（含 30s 时钟偏差）", () => {
+    expect(sessionMaxAge(jwtWithExp(now / 1000 + 3600), now)).toBe(3630);
+  });
+
+  it("opaque / 非 JWT 令牌退回 8h 默认值", () => {
+    expect(sessionMaxAge("test-id-token", now)).toBe(8 * 60 * 60);
+  });
+
+  it("已过期令牌给最短寿命，由控制面验签最终判定", () => {
+    expect(sessionMaxAge(jwtWithExp(now / 1000 - 100), now)).toBe(60);
+  });
+
+  it("超长 exp 被夹到 24h 上限", () => {
+    expect(sessionMaxAge(jwtWithExp(now / 1000 + 10 * 24 * 3600), now)).toBe(24 * 60 * 60);
   });
 });

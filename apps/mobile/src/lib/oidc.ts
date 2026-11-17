@@ -34,6 +34,8 @@ interface AuthConfig {
 const IS_H5 = process.env.TARO_ENV === "h5";
 const STATE_KEY = "weave.oidc.state";
 const VERIFIER_KEY = "weave.oidc.verifier";
+/** 回调标记：head 内同步脚本在路由改写前固化 code/state，业务层从这里读。 */
+const CALLBACK_KEY = "weave.oidc.callback";
 
 let redirecting = false;
 let lastError: string | null = null;
@@ -116,9 +118,24 @@ export function startLogin(): void {
   });
 }
 
+/**
+ * 回调判定：不能再看 location.pathname。
+ *
+ * Taro H5 用 hash 路由（routerConfig.mode 缺省即 'hash'），启动时把回调地址
+ * `/auth/callback?code=...` 的 pathname 规范化成 '/'，于是 pathname 判断失效 →
+ * ensureAuthenticated() 误判为「未登录」→ startLogin() 再跳 Casdoor → 死循环。
+ *
+ * 改由 index.html 的 head 内同步脚本在路由改写前把回调 query 固化到
+ * sessionStorage[CALLBACK_KEY]（同步脚本先于 defer 的业务 bundle 执行）。这里只
+ * 判断标记是否存在；参数也从该标记读取，全程不依赖已被改写的 location。
+ */
 function isCallbackUrl(): boolean {
-  if (typeof window === "undefined") return false;
-  return new URL(window.location.href).pathname === "/auth/callback";
+  const storage = browserStorage();
+  try {
+    return storage?.getItem(CALLBACK_KEY) != null;
+  } catch {
+    return false;
+  }
 }
 
 /** 清掉地址栏里的 code/state，避免刷新重放或被 Service Worker 缓存。 */
@@ -148,13 +165,17 @@ export async function handleCallback(): Promise<boolean> {
   const storage = browserStorage();
   if (!config || !storage) return false;
 
-  const url = new URL(window.location.href);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
+  // 参数来自 head 脚本固化的原始 query（location 此刻已被 Taro 路由改写）。
+  const rawQuery = storage.getItem(CALLBACK_KEY) ?? "";
+  const params = new URLSearchParams(rawQuery);
+  const code = params.get("code");
+  const state = params.get("state");
   const expectedState = storage.getItem(STATE_KEY);
   const verifier = storage.getItem(VERIFIER_KEY);
-  const error = url.searchParams.get("error_description") ?? url.searchParams.get("error");
+  const error = params.get("error_description") ?? params.get("error");
 
+  // 一次性消费：无论成败都清掉标记与地址栏，避免刷新重放。
+  storage.removeItem(CALLBACK_KEY);
   cleanCallbackUrl();
   storage.removeItem(STATE_KEY);
   storage.removeItem(VERIFIER_KEY);

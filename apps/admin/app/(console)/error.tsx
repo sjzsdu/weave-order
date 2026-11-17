@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 interface ConsoleErrorProps {
@@ -8,12 +9,15 @@ interface ConsoleErrorProps {
 }
 
 /**
- * 控制台路由组的服务端错误边界。
+ * 控制台路由组的服务端错误边界（兜底）。
  *
- * 没有它时，(console) 下任何 page 的 platformFetch 异常（401 会话失效、
- * 403 无权限、控制面 5xx、网络失败）都会冒泡到 Next.js 默认错误页，
- * 用户只看到 "Application error ... Digest: xxx"，既不知道发生了什么，
- * 也没有任何可操作出口。
+ * 会话失效（401）与无权限（403）已在 (console)/layout.tsx 分流到
+ * 登录页 / no-access 页；这里主要接住控制面 5xx、网络抖动等真正的渲染异常。
+ *
+ * 关键：不再把「重新登录」当成首要操作。过去无论什么错误，最醒目的按钮都是
+ * 指向 /auth/logout 的「重新登录」，用户点一下就被清 cookie 登出——
+ * 这正是「点菜单被登出」的体验来源之一。现在「重新登录」降级为次要入口，
+ * 且改用 /login（不主动清 cookie），真正需要清会话时由登录流程覆盖 cookie。
  */
 export default function ConsoleError({ error, reset }: ConsoleErrorProps) {
   useEffect(() => {
@@ -27,14 +31,15 @@ export default function ConsoleError({ error, reset }: ConsoleErrorProps) {
           <p className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}>
             织序 · 内部管理
           </p>
-          <h1>控制台暂时无法显示</h1>
+          <h1>本页暂时无法显示</h1>
           <p className="sub">
-            加载本页所需的控制面数据失败了。常见原因：登录会话已过期、当前账号没有对应权限，或控制面接口暂时不可用。
+            加载这一页时出错了。多数情况是控制面接口暂时不可用，稍后重试即可；
+            这不代表你已退出登录。
           </p>
 
           <div className="alert alert-warn" style={{ marginTop: 12 }}>
-            详细堆栈只写在服务端日志（容器 <span className="mono">weave-admin</span>
-            ），排查时请提供下面的错误编号。
+            如果你是第一次打开这个菜单就看到本页，可能是账号权限问题（而非登录问题）——
+            这种情况下重新登录不会有帮助，请联系平台管理员核对人员名册。
           </div>
 
           {error.digest ? (
@@ -44,16 +49,18 @@ export default function ConsoleError({ error, reset }: ConsoleErrorProps) {
           ) : null}
 
           <div className="btn-row" style={{ marginTop: 16 }}>
-            <a className="btn btn-primary" href="/auth/logout">
-              重新登录
-            </a>
-            <button className="btn" type="button" onClick={() => reset()}>
+            <button className="btn btn-primary" type="button" onClick={() => reset()}>
               重试
             </button>
+            <Link className="btn" href="/">
+              返回总览
+            </Link>
           </div>
 
           <p className="login-foot">
-            「重新登录」会清除本机会话并回到登录页；如果只是控制面短暂抖动，直接重试即可。
+            确认是会话问题才需要重新登录：
+            <Link href="/login">前往登录页</Link>
+            （不会主动清除当前会话，重新登录成功后会覆盖）。
           </p>
         </div>
       </div>

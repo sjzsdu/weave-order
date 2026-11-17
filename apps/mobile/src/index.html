@@ -14,6 +14,25 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
     <title>织序 · 移动</title>
+    <script>
+      // OIDC 回调捕获：必须同步执行，且早于 Taro 的 defer bundle。
+      // Taro H5 默认 hash 路由，启动时会把 /auth/callback?code=... 的 pathname
+      // 规范化成 '/'，业务层再读 location 就拿不到授权码、误判为未登录而重跳登录页。
+      // 这里在路由接管前把原始 query 固化到 sessionStorage，业务层从存储读取。
+      (function () {
+        try {
+          var u = new URL(window.location.href);
+          if (u.pathname !== "/auth/callback") return;
+          var q = u.search.replace(/^\?/, "");
+          if (!q) return;
+          window.sessionStorage.setItem("weave.oidc.callback", q);
+          // 立刻脱离回调 path，避免 Taro 路由把它当成未知页面。
+          window.history.replaceState(null, "", "/");
+        } catch (e) {
+          // 存储不可用时不阻断；业务层会显示可重试的登录错误。
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

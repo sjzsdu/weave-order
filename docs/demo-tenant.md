@@ -72,7 +72,7 @@ flowchart TB
 
 ### 3.1 身份目录：把「演示成员」升级为「角色名单」
 
-现有 `ensureDemoIdentity()` 只保证两个成员。改成一份声明式名单 `DEMO_PERSONAS`（`apps/api/scripts/demo-identity.ts`），seed 幂等写入同一演示租户：
+现有 `ensureDemoIdentity()` 只保证两个成员。改成一份声明式名单 `DEMO_PERSONAS`（`apps/api/src/dev/demo-identity.ts`），seed 幂等写入同一演示租户：
 
 | key | 显示名 | subject | role | dataScope | approvalLimit | 用途 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -376,7 +376,7 @@ export const tenantKindEnum = pgEnum("tenant_kind", ["CUSTOMER", "DEMO", "TEST"]
 | 身份模式枚举与启动守卫 | `apps/api/src/platform/env.ts`、`apps/api/src/platform/runtime-mode.ts` |
 | dev / demo 控制器注册 | `apps/api/src/gateway/gateway.module.ts` |
 | 会话创建与切换 | `apps/api/src/gateway/session.service.ts`、`session-credential.middleware.ts` |
-| persona seed | `apps/api/scripts/demo-identity.ts` |
+| persona seed | `apps/api/src/dev/demo-identity.ts` |
 | 演示数据剧本 | `data/demo-seed/`、`apps/api/scripts/import-data.ts` |
 | 租户类型 | `packages/db/src/schema/enums.ts`、`tenants.ts`、`packages/control-db/src/schema.ts` |
 | 平台开通演示租户 | `apps/platform-api/src/control/tenants.service.ts`、`scripts/seed.ts` |

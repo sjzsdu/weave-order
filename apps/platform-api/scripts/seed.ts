@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { createPlatformDb, resolvePlatformDatabaseUrl } from "@weave-order/control-db";
+import { assertSeedAllowed } from "./seed-guard";
 import {
   featureFlags,
   identitySettings,
@@ -103,6 +104,9 @@ const PRICES = [
 ];
 
 async function main(): Promise<void> {
+  // 生产硬闸门：演示名册与演示租户绝不允许落进生产库。
+  // 放在建连之前，失败时连数据库都不会碰。
+  assertSeedAllowed(process.env);
   const { db, pool } = createPlatformDb(resolvePlatformDatabaseUrl());
   try {
     for (const user of USERS) {

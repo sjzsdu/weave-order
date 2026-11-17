@@ -34,22 +34,22 @@ describe("平台端 middleware 会话守卫", () => {
     expect(location.searchParams.get("error")).toBeNull();
   });
 
-  it("过期 JWT 不进控制台 SSR，并就地清除 cookie", () => {
-    const response = middleware(request("/", `weave_platform_token=${expiredToken}`));
-    expect(response.status).toBe(307);
-    const location = new URL(response.headers.get("location")!);
-    expect(location.pathname).toBe("/login");
-    expect(location.searchParams.get("error")).toContain("会话已失效");
-    expect(response.headers.get("set-cookie") ?? "").toContain("weave_platform_token");
+  it("带任意 cookie（含过期 JWT）一律放行，middleware 不本地判过期、不删 cookie", () => {
+    // 会话有效性由控制面验签判定；middleware 本地解 exp 会因时钟偏差/opaque 令牌/JWKS
+    // 轮转误杀正常会话，且删 cookie 会把可恢复的验签失败升级成不可逆登出。
+    const expired = middleware(request("/", `weave_platform_token=${expiredToken}`));
+    expect(expired.status).toBe(200);
+    expect(expired.headers.get("set-cookie") ?? "").not.toContain("weave_platform_token");
   });
 
   it("未过期 JWT 放行", () => {
     expect(middleware(request("/", `weave_platform_token=${validToken}`)).status).toBe(200);
   });
 
-  it("生产环境拒收 dev 令牌", () => {
-    const response = middleware(request("/", "weave_platform_token=dev:owner"));
-    expect(response.status).toBe(307);
+  it("生产环境带 dev 令牌 cookie 也不在 middleware 拦截（交控制面拒绝）", () => {
+    // dev 令牌在生产应由 platform-api 验签返回 403 → layout 分流到 no-access。
+    // middleware 不再主动清 cookie 或跳登录，避免「点菜单被登出」。
+    expect(middleware(request("/", "weave_platform_token=dev:owner")).status).toBe(200);
   });
 
   it("登录、认证、BFF 与静态资源前缀不拦截", () => {
@@ -59,9 +59,18 @@ describe("平台端 middleware 会话守卫", () => {
       "/api/health",
       "/_next/static/a.js",
       "/favicon.ico",
+      "/brand/logo-mark.svg",
+      "/icon.svg",
+      "/apple-icon.png",
     ]) {
       expect(middleware(request(path)).status).toBe(200);
     }
+  });
+
+  it("未登录时品牌图标直接返回，不重定向到登录页", () => {
+    const response = middleware(request("/brand/logo-mark.svg"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
   });
 
   it("本地 dev 直接放行，无 Casdoor 也能联调", () => {

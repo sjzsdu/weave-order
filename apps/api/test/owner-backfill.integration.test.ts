@@ -5,7 +5,7 @@ import type { Db } from "@weave-order/db";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
 import { applyOwnerBackfill, planOwnerBackfill, rollbackSql } from "../scripts/backfill-owner";
-import { ensureDemoIdentity } from "../scripts/demo-identity";
+import { ensureDemoIdentity } from "../src/dev/demo-identity";
 
 /**
  * 无归属数据（WAN-106）的既定语义（方案 A）：

@@ -50,7 +50,8 @@ export function SampleEditor({
   open: boolean;
   sample: FabricSample | null;
   onClose: () => void;
-  onSaved: () => void;
+  /** 保存成功后回传刚写库的那条样品，调用方据此给「已建 + 下一步」的反馈。 */
+  onSaved: (saved: FabricSample) => void;
 }) {
   const api = useApi();
   const isEdit = sample !== null;
@@ -219,7 +220,7 @@ export function SampleEditor({
       } else if (orderedIds.length > 0) {
         await api.updateSample(base.id, { imageIds: orderedIds, primaryImageId });
       }
-      onSaved();
+      onSaved(base);
       handleClose();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "保存失败";
@@ -228,7 +229,7 @@ export function SampleEditor({
           ? `样品「${created.name}」已创建，但图片上传失败：${message}。可在图墙里点这张卡片补图。`
           : message,
       );
-      if (created) onSaved();
+      if (created) onSaved(created);
     } finally {
       setBusy(false);
     }
