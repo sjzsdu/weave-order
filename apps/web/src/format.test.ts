@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actionLabel,
+  appVersionLabel,
   KIND_LABEL,
   ORDER_STATUS_LABEL,
   plainCents,
@@ -27,6 +28,16 @@ describe("桌面 Web 文案", () => {
 
   it("相对时间对非法输入不崩", () => {
     expect(relativeTime("not-a-date")).toBe("not-a-date");
+  });
+
+  it("页脚版本只显示真实注入的版本号", () => {
+    expect(appVersionLabel("0.1.9")).toBe("v0.1.9");
+    expect(appVersionLabel("v0.1.9")).toBe("v0.1.9");
+    // 构建期没注入 / 本地 sha 构建：不显示，而不是回落到写死的旧版本。
+    expect(appVersionLabel(undefined)).toBeNull();
+    expect(appVersionLabel(" ")).toBeNull();
+    expect(appVersionLabel("77b6ef4abcde")).toBeNull();
+    expect(appVersionLabel("0.1")).toBeNull();
   });
 
   it("整数分转元不做浮点运算", () => {

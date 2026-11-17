@@ -1,3 +1,16 @@
+/**
+ * 页脚版本号：只在构建期注入了语义化版本时才显示。
+ *
+ * 注入值缺失、为空、或不是版本号（本地 sha 构建）时返回 null——宁可不显示，
+ * 也不给用户一个错的版本号：v0.1.0 写死在代码里，发到 v0.1.8 之后页脚还在说
+ * v0.1.0，用户报障时给出的版本就是错的。
+ */
+export function appVersionLabel(raw: string | null | undefined): string | null {
+  const value = (raw ?? "").trim().replace(/^v/i, "");
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)) return null;
+  return `v${value}`;
+}
+
 /** 页面级展示辅助：只做文案与时间格式化，不做金额计算。 */
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
