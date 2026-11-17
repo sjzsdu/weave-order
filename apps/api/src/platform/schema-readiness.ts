@@ -23,7 +23,12 @@ export const EXPECTED_TABLES: readonly string[] = Object.values(dbSchema)
  * 不参与权限检查。名单与 `sql/rls.sql` 的 GRANT 名单互补，由
  * `apps/api/test/rls-grants.test.ts` 双向校对——新增表要么授权，要么在这里声明。
  */
-export const CONTROL_PLANE_TABLES: readonly string[] = ["api_tokens", "device_authorizations"];
+export const CONTROL_PLANE_TABLES: readonly string[] = [
+  "api_tokens",
+  "device_authorizations",
+  // 控制面登记 outbox：与 tenants 同一 owner 连接、同一事务写入，无 tenant_id、不套 RLS。
+  "control_sync_outbox",
+];
 
 const PRIVILEGE_CHECKED = EXPECTED_TABLES.filter((name) => !CONTROL_PLANE_TABLES.includes(name));
 
