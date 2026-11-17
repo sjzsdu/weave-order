@@ -16,6 +16,11 @@ import type { CompressedImage } from "../../lib/media";
 import { api, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { openQuote } from "../../lib/nav";
+import {
+  buildSampleSaveFailureMessage,
+  isMediaUploadError,
+  uploadFailureMessage,
+} from "../../lib/upload-failure";
 
 type Mode = "find" | "waybill" | "signature" | "cargo" | "sample" | "receipt";
 
@@ -153,9 +158,18 @@ export default function CameraPage() {
           setError(caught.message);
           return;
         }
-        // 网络 / 上传失败落离线队列，照片存本地，恢复后按时间序补传。
+        // 在线却失败（CORS / 断网 / 存储拒绝）不能当成「离线待上传」：
+        // 队列只在真正离线时启用，否则用户会误以为照片已经安全落盘。
+        const message = isMediaUploadError(caught)
+          ? `${caught.message} 照片还在本页，可重试。`
+          : caught instanceof TypeError
+            ? "网络连接失败，照片未提交，请检查网络后重试。"
+            : `${uploadFailureMessage(caught, "上传或记录失败")}，请重试。`;
+        setError(message);
+        return;
       }
     }
+    // 只有确认离线才入队：照片落 IndexedDB，联网后按时间序补传。
     const mediaKey = await persistImage(compressed, mediaStore);
     await enqueueOperation(offlineQueue, {
       kind: "shipment.proof",
@@ -172,7 +186,7 @@ export default function CameraPage() {
 
   /** 建样品：先建行 → 图片直传 → confirm 挂图。任何一步失败都显式报错。 */
   const saveSample = async () => {
-    if (!image) return;
+    if (!image || savingSample) return;
     if (!sampleName.trim()) {
       setError("品名必填（其余字段可以之后补）");
       return;
@@ -193,18 +207,39 @@ export default function CameraPage() {
         weight: sampleWeight.trim() || null,
         unit: "meter",
       });
-      const presigned = await api.presignImage({
-        mimeType: image.mimeType,
-        byteSize: image.byteSize,
-        sampleId: created.id,
-      });
-      await uploadImageToPresignedUrl(image, presigned, image.mimeType);
-      await api.confirmImage({
-        objectKey: presigned.objectKey,
-        sortOrder: 0,
-        width: image.width,
-        height: image.height,
-      });
+      try {
+        const presigned = await api.presignImage({
+          mimeType: image.mimeType,
+          byteSize: image.byteSize,
+          sampleId: created.id,
+        });
+        await uploadImageToPresignedUrl(image, presigned, image.mimeType);
+        await api.confirmImage({
+          objectKey: presigned.objectKey,
+          sortOrder: 0,
+          width: image.width,
+          height: image.height,
+        });
+      } catch (caught) {
+        // 样品记录已经建出来了：传图失败就撤销它，避免留下「无图样品」脏数据。
+        const rolledBack = await api
+          .archiveSample(created.id)
+          .then(() => true)
+          .catch(() => false);
+        const reason =
+          caught instanceof ApiError
+            ? caught.message
+            : uploadFailureMessage(caught, "图片上传失败，请重试");
+        setError(
+          buildSampleSaveFailureMessage({
+            reason,
+            rolledBack,
+            name: created.name,
+            code,
+          }),
+        );
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: ["samples"] });
       setResultText(`已建样品「${created.name}」（${code}），图墙里可以补规格。`);
       setSampleName("");
@@ -213,7 +248,13 @@ export default function CameraPage() {
       setImage(null);
       void Taro.showToast({ title: "样品已保存", icon: "success" });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "建样品失败");
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : caught instanceof TypeError
+            ? "网络连接失败，请检查网络后重试（本次未创建样品）"
+            : uploadFailureMessage(caught, "建样品失败"),
+      );
     } finally {
       setSavingSample(false);
     }
@@ -401,7 +442,7 @@ export default function CameraPage() {
                   </View>
                 </View>
                 <View className="row" style={{ gap: 8, alignItems: "center" }}>
-                  {match.matchedImageUrl ?? match.sample.primaryImageUrl ? (
+                  {(match.matchedImageUrl ?? match.sample.primaryImageUrl) ? (
                     <Image
                       // 优先显示命中的那张图：让用户看到「你拍的这张最像这个角度的这张图」。
                       src={(match.matchedImageUrl ?? match.sample.primaryImageUrl)!}

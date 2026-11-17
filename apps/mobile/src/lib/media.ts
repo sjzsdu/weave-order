@@ -2,6 +2,7 @@ import Taro from "@tarojs/taro";
 import type { MobileApi } from "./mobile-api";
 import { MAX_BYTES, QUALITY_LADDER, fitWithin, isWithinBudget, nextQuality } from "./image-math";
 import type { Size } from "./image-math";
+import { toMediaUploadError, uploadHttpError } from "./upload-failure";
 
 /**
  * 图片前置条件：长边 ≤ 1600px、体积 ≤ 1MB，压缩后直传对象存储。
@@ -187,6 +188,20 @@ export async function compressImage(source: string): Promise<CompressedImage> {
   return compressTaro(source);
 }
 
+/**
+ * 浏览器 CORS 与断网都表现为 fetch 抛 TypeError，直接透传会得到英文
+ * 「Failed to fetch」。这里统一转成可读错误，页面才能区分「上传失败」与「离线」。
+ */
+async function uploadWithFetch(url: string, init: RequestInit): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    throw toMediaUploadError(error);
+  }
+  if (!response.ok) throw uploadHttpError(response.status);
+}
+
 /** 直传对象存储；不经过业务 API 的 JSON body。 */
 export async function uploadStoredMedia(
   stored: Blob | string,
@@ -215,29 +230,32 @@ export async function uploadStoredMedia(
       const form = new FormData();
       for (const [key, value] of Object.entries(presign.formData ?? {})) form.append(key, value);
       form.append("file", blob, "upload.jpg");
-      const response = await fetch(presign.uploadUrl, { method: "POST", body: form });
-      if (!response.ok) throw new Error(`上传失败（HTTP ${response.status}）`);
+      await uploadWithFetch(presign.uploadUrl, { method: "POST", body: form });
     } else {
-      const response = await fetch(presign.uploadUrl, {
+      await uploadWithFetch(presign.uploadUrl, {
         method: "PUT",
         headers: presign.headers,
         body: blob,
       });
-      if (!response.ok) throw new Error(`上传失败（HTTP ${response.status}）`);
     }
     return presign.publicUrl;
   }
 
   if (typeof stored !== "string") throw new Error("缺少本地图片路径");
-  const result = await Taro.uploadFile({
-    url: presign.uploadUrl,
-    filePath: stored,
-    name: "file",
-    header: presign.headers,
-    formData: presign.formData,
-  });
+  let result: Awaited<ReturnType<typeof Taro.uploadFile>>;
+  try {
+    result = await Taro.uploadFile({
+      url: presign.uploadUrl,
+      filePath: stored,
+      name: "file",
+      header: presign.headers,
+      formData: presign.formData,
+    });
+  } catch (error) {
+    throw toMediaUploadError(error);
+  }
   if (result.statusCode < 200 || result.statusCode >= 300) {
-    throw new Error(`上传失败（HTTP ${result.statusCode}）`);
+    throw uploadHttpError(result.statusCode);
   }
   return presign.publicUrl;
 }
@@ -259,8 +277,7 @@ export async function uploadImageToPresignedUrl(
 ): Promise<void> {
   const headers = { ...upload.headers, "Content-Type": mimeType };
   if (typeof Blob !== "undefined" && image.blob instanceof Blob) {
-    const response = await fetch(upload.uploadUrl, { method: "PUT", headers, body: image.blob });
-    if (!response.ok) throw new Error(`上传失败（HTTP ${response.status}）`);
+    await uploadWithFetch(upload.uploadUrl, { method: "PUT", headers, body: image.blob });
     return;
   }
   const fileSystem = (
@@ -272,14 +289,19 @@ export async function uploadImageToPresignedUrl(
   ).getFileSystemManager?.();
   if (!fileSystem) throw new Error("当前端不支持读取本地图片");
   const data = fileSystem.readFileSync(image.path);
-  const response = await Taro.request({
-    url: upload.uploadUrl,
-    method: "PUT",
-    header: headers,
-    data,
-  });
+  let response: { statusCode: number };
+  try {
+    response = await Taro.request({
+      url: upload.uploadUrl,
+      method: "PUT",
+      header: headers,
+      data,
+    });
+  } catch (error) {
+    throw toMediaUploadError(error);
+  }
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(`上传失败（HTTP ${response.statusCode}）`);
+    throw uploadHttpError(response.statusCode);
   }
 }
 
