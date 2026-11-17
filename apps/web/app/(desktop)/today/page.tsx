@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   useApprovals,
   useDecideApproval,
@@ -54,29 +55,24 @@ function TodayPageContent() {
   const intentChannel = useIntentChannel(api);
   // 演示剧本深链只属于演示环境：生产态连请求都不发，避免每条访问打一次 404。
   const productionLike = useProductionLike();
+  /*
+   * 用 `useSearchParams()` 而不是在 `useState` 初始化器里读 `window.location`：
+   * 开张清单第③步、客户 360 的快捷动作都是**同路由软导航**（只改 query），
+   * App Router 不会重新挂载页面，初始化器不会再跑 —— 于是 `intent` 取到空值、
+   * 提交也不带 context（WAN-142 R1）。`(desktop)` 布局是 force-dynamic，
+   * 这里用 searchParams 不会触发静态预渲染的 Suspense 限制。
+   */
+  const searchParams = useSearchParams();
   // 演示剧本深链：`/today?scene=approval-pending`。
-  const [sceneKey] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return new URLSearchParams(window.location.search).get("scene");
-  });
+  const sceneKey = searchParams.get("scene");
   const scene = useDemoScene(api, productionLike ? null : sceneKey);
   // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
-  const [initialIntent] = useState(() => {
-    if (typeof window === "undefined") return undefined;
-    return new URLSearchParams(window.location.search).get("intent") ?? undefined;
-  });
+  const initialIntent = searchParams.get("intent") ?? undefined;
   // 开张清单第③步：这次输入带着刚建的客户 + 样品，提交时随意图一起落库。
-  const [onboardingQuote] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return new URLSearchParams(window.location.search).get("onboard") === "quote";
-  });
+  const onboardingQuote = searchParams.get("onboard") === "quote";
   // 客户 360 的快捷动作带上 source=customer-360，意图卡片据此标明来源。
-  const [intentSource] = useState<"today" | "customer-360">(() => {
-    if (typeof window === "undefined") return "today";
-    return new URLSearchParams(window.location.search).get("source") === "customer-360"
-      ? "customer-360"
-      : "today";
-  });
+  const intentSource: "today" | "customer-360" =
+    searchParams.get("source") === "customer-360" ? "customer-360" : "today";
 
   const pending = approvals.data?.items ?? [];
   const stats = panorama.data?.stats;

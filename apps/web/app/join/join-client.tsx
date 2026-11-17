@@ -8,6 +8,20 @@ import { SupportMailto } from "@/support";
 import { track } from "@/analytics";
 
 /**
+ * 把人话之外的技术错误挡在门外。
+ *
+ * 401 这类失败以前会把 `error.message`（`Invalid Compact JWS` 之类）直接渲染给
+ * 用户，既解释不了也没法行动（WAN-148）。这里只做兜底：后端已经给出可读中文
+ * 时原样透传，只有明显是技术串才替换。
+ */
+function readableInviteError(message: string): string {
+  const technical =
+    /Invalid Compact JWS|JWS|JWT|jose|Unexpected|TypeError|ECONN|fetch failed|invalid_grant/i;
+  if (!technical.test(message)) return message;
+  return "这条邀请现在打不开。请让对方重新发一条，或换个浏览器登录后再试。";
+}
+
+/**
  * 接受同事邀请。
  *
  * 与开通链接同一套机制，差别是：这里不建公司，只把自己绑进已有公司。
@@ -34,7 +48,11 @@ export function JoinClient({ code }: { code: string }) {
         if (!cancelled) setPreview(data);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "邀请无效");
+        if (!cancelled) {
+          setError(
+            readableInviteError(cause instanceof Error ? cause.message : "邀请无效，请让对方重新发一条"),
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -54,7 +72,9 @@ export function JoinClient({ code }: { code: string }) {
       if (preview) track("invite_accepted", { role: preview.role });
       window.setTimeout(() => window.location.assign("/today"), 1000);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "加入失败，请重试");
+      setError(
+        readableInviteError(cause instanceof Error ? cause.message : "加入失败，请重试"),
+      );
     } finally {
       setBusy(false);
     }
