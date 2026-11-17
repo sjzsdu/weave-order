@@ -290,6 +290,22 @@ export class AuthService {
     if (token.startsWith("wo_")) {
       throw authError("INVALID_TOKEN", "开通请先登录，再打开开通链接");
     }
+
+    /*
+     * 网关中间件把会话 Cookie 归一成 `Bearer session:<sid>`（见
+     * `session-credential.middleware.ts`）。开通/邀请预览只需要「谁在操作」，
+     * 直接把会话身份交出去即可；把这个内部串丢给 OIDC 验签器会让 jose 抛
+     * `Invalid Compact JWS`，用户看到的是技术错误串（WAN-148）。
+     */
+    const sid = this.sessionCredential(token);
+    if (sid) {
+      const record = await this.sessions.read(sid);
+      if (!record) {
+        throw authError("AUTH_REQUIRED", "登录已过期，请重新登录后再打开链接");
+      }
+      return this.claimsForSession(record);
+    }
+
     return this.verifier.verify(token);
   }
 

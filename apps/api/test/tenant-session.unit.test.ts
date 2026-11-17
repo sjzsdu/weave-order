@@ -193,6 +193,44 @@ describe("租户会话与选择（单元）", () => {
     expect(record?.sub).toBe("sub-1");
   });
 
+  it("verifyClaims 接受会话凭据：不再把 session:<sid> 丢给 OIDC 验签器", async () => {
+    let verifierCalls = 0;
+    const { service, sessions } = build({
+      tenants: [A],
+      memberships: [
+        membership({
+          id: "aaaaaaaa-1111-4111-8111-111111111111",
+          tenantId: TENANT_A,
+          subject: "sub-verify",
+          role: "OWNER",
+        }),
+      ],
+      verifier: () => {
+        verifierCalls += 1;
+        return Promise.reject(new Error("Invalid Compact JWS"));
+      },
+    });
+    const { sid } = await sessions.create({
+      sub: "sub-verify",
+      name: "老板",
+      email: "boss@example.com",
+      tenantId: TENANT_A,
+    });
+
+    // 网关中间件把 Cookie 归一成 `Bearer session:<sid>`；开通/邀请预览直接用它。
+    const claims = await service.verifyClaims(`Bearer session:${sid}`);
+    expect(claims.sub).toBe("sub-verify");
+    expect(claims.email).toBe("boss@example.com");
+    expect(verifierCalls).toBe(0);
+  });
+
+  it("verifyClaims 对失效会话给可读错误，而不是 jose 的技术串", async () => {
+    const { service } = build({ tenants: [A], memberships: [] });
+    await expect(service.verifyClaims("Bearer session:not-a-real-sid")).rejects.toMatchObject({
+      code: "AUTH_REQUIRED",
+    });
+  });
+
   it("选择租户后换一把 sid，旧 sid 立刻失效", async () => {
     const { service, sessions, audits } = build({
       tenants: [A, B],
