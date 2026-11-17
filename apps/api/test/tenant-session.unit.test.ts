@@ -498,3 +498,69 @@ describe("会话 Cookie 与凭据优先级（中间件）", () => {
     expect(readSessionCookie(undefined)).toBeNull();
   });
 });
+
+/**
+ * 生产事故回归（WAN-148）：邀请 / 开通链接在已登录状态下全部 401。
+ *
+ * 浏览器经 BFF 打开链接时，网关把 `weave_sid` Cookie 归一成
+ * `Bearer session:<sid>`；开通端点只认裸 OIDC 令牌，于是 jose 对
+ * `session:...` 报 "Invalid Compact JWS"，并把原文回显给用户。
+ */
+describe("开通 / 邀请链接接受会话凭据（单元）", () => {
+  it("Bearer session:<sid> 解析出会话身份，不送 OIDC 验签", async () => {
+    let verifyCalls = 0;
+    const { service, sessions } = build({
+      tenants: [A],
+      memberships: [
+        membership({
+          id: "aaaaaaaa-1111-4111-8111-111111111111",
+          tenantId: TENANT_A,
+          subject: "sub-1",
+          role: "OWNER",
+        }),
+      ],
+      verifier: () => {
+        verifyCalls += 1;
+        return Promise.reject(new Error("Invalid Compact JWS"));
+      },
+    });
+    const created = await sessions.create({
+      sub: "sub-1",
+      org: "weave-org",
+      name: "老板",
+      email: "boss@example.com",
+      tenantId: TENANT_A,
+    });
+
+    const claims = await service.verifyClaims(`Bearer session:${created.sid}`);
+    expect(claims).toMatchObject({
+      sub: "sub-1",
+      org: "weave-org",
+      name: "老板",
+      email: "boss@example.com",
+    });
+    expect(verifyCalls).toBe(0);
+  });
+
+  it("会话已过期 → AUTH_REQUIRED，提示重新登录", async () => {
+    const { service } = build({ tenants: [A], memberships: [] });
+    const error = await service
+      .verifyClaims("Bearer session:missing")
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AuthError);
+    expect(error).toMatchObject({ code: "AUTH_REQUIRED", status: 401 });
+    expect((error as AuthError).message).toContain("重新登录");
+  });
+
+  it("裸令牌验签失败时不把 jose 原文交给调用方", async () => {
+    const { service } = build({
+      tenants: [A],
+      memberships: [],
+      verifier: () => Promise.reject(new Error("Invalid Compact JWS")),
+    });
+    const error = await service.verifyClaims("Bearer not-a-jws").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AuthError);
+    expect((error as AuthError).code).toBe("AUTH_REQUIRED");
+    expect((error as AuthError).message).not.toContain("JWS");
+  });
+});

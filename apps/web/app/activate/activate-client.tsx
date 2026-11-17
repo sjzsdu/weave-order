@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { OnboardingPreview, OnboardingResult } from "@weave-order/schema";
+import { ApiError } from "@weave-order/core";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { track } from "@/analytics";
 import { TrackedLink } from "@/tracked-link";
+import { linkErrorCopy } from "@/link-errors";
 
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://weaveorder.cn";
 
@@ -22,6 +24,7 @@ export function ActivateClient({ code }: { code: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +43,13 @@ export function ActivateClient({ code }: { code: string }) {
         }
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "链接无效");
+        if (!cancelled) {
+          console.warn("[activate] 开通链接预览失败", cause);
+          setExpired(cause instanceof ApiError && cause.status === 401);
+          setError(
+            linkErrorCopy(cause, "这个开通链接暂时打不开，请稍后重试，或向对接人重新索取。"),
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -59,7 +68,8 @@ export function ActivateClient({ code }: { code: string }) {
       track("activate_completed");
       window.setTimeout(() => window.location.assign("/today"), 900);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "开通失败，请重试");
+      console.warn("[activate] 领取开通链接失败", cause);
+      setError(linkErrorCopy(cause, "开通失败，请稍后重试。"));
     } finally {
       setClaiming(false);
     }
@@ -104,15 +114,21 @@ export function ActivateClient({ code }: { code: string }) {
         <h1 className="mt-2 text-2xl font-semibold text-ink-900">这个开通链接用不了</h1>
         <p className="mt-2 text-sm text-ink-500">{error ?? "链接已失效，请向对接人重新索取。"}</p>
         <div className="mt-6 grid gap-2 text-xs text-ink-500">
-          <p>可能的原因：链接超过 7 天、已被撤回，或登录邮箱与登记邮箱不一致。</p>
-          <p>
-            需要帮助就{" "}
-            <SupportMailto
-              className="text-indigo-600 underline underline-offset-4"
-              label="写信给我们"
-            />
-            ，把这条消息截图发过来。
-          </p>
+          {expired ? (
+            <p>重新登录后会自动回到这个开通链接，不用重新索取。</p>
+          ) : (
+            <>
+              <p>可能的原因：链接超过 7 天、已被撤回，或登录邮箱与登记邮箱不一致。</p>
+              <p>
+                需要帮助就{" "}
+                <SupportMailto
+                  className="text-indigo-600 underline underline-offset-4"
+                  label="写信给我们"
+                />
+                ，把这条消息截图发过来。
+              </p>
+            </>
+          )}
         </div>
         <TrackedLink
           href="/login"

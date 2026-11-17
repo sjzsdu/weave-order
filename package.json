@@ -23,6 +23,7 @@
     "typecheck": "turbo run typecheck && tsc -p e2e/tsconfig.json --noEmit",
     "test": "turbo run test",
     "verify:prod-env": "pnpm --filter @weave-order/api verify:prod-env",
+    "smoke:onboarding": "node scripts/smoke-onboarding.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @weave-order/db generate",

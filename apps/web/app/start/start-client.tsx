@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useApi } from "@/providers";
+import { linkErrorCopy } from "@/link-errors";
 
 /**
  * 自助创建公司。
@@ -33,7 +34,8 @@ export function StartClient() {
       setDone({ tenantName: result.tenantName });
       window.setTimeout(() => window.location.assign("/today"), 1200);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "创建失败，请稍后重试");
+      console.warn("[start] 创建公司失败", cause);
+      setError(linkErrorCopy(cause, "公司没建成，请稍后重试。"));
     } finally {
       setBusy(false);
     }

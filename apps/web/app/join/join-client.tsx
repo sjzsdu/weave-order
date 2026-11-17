@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import type { InvitePreview } from "@weave-order/schema";
 import { memberRoleLabel } from "@weave-order/schema";
+import { ApiError } from "@weave-order/core";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { track } from "@/analytics";
+import { linkErrorCopy } from "@/link-errors";
 
 /**
  * 接受同事邀请。
@@ -20,6 +22,7 @@ export function JoinClient({ code }: { code: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState<{ tenantName: string } | null>(null);
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +37,11 @@ export function JoinClient({ code }: { code: string }) {
         if (!cancelled) setPreview(data);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "邀请无效");
+        if (!cancelled) {
+          console.warn("[join] 邀请预览失败", cause);
+          setExpired(cause instanceof ApiError && cause.status === 401);
+          setError(linkErrorCopy(cause, "这条邀请暂时打不开，请稍后重试，或让邀请人重新发一条。"));
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -54,7 +61,8 @@ export function JoinClient({ code }: { code: string }) {
       if (preview) track("invite_accepted", { role: preview.role });
       window.setTimeout(() => window.location.assign("/today"), 1000);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "加入失败，请重试");
+      console.warn("[join] 接受邀请失败", cause);
+      setError(linkErrorCopy(cause, "加入失败，请稍后重试。"));
     } finally {
       setBusy(false);
     }
@@ -92,14 +100,20 @@ export function JoinClient({ code }: { code: string }) {
         <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">织序 WeaveOrder</p>
         <h1 className="mt-2 text-2xl font-semibold text-ink-900">这条邀请用不了</h1>
         <p className="mt-2 text-sm text-ink-500">{error}</p>
-        <p className="mt-4 text-xs leading-relaxed text-ink-400">
-          可能是邀请超过 7 天、已被接受，或你的登录邮箱和被邀请的邮箱不一致。需要帮助就{" "}
-          <SupportMailto
-            className="text-indigo-600 underline underline-offset-4"
-            label="写信给我们"
-          />
-          。
-        </p>
+        {expired ? (
+          <p className="mt-4 text-xs leading-relaxed text-ink-400">
+            重新登录后会自动回到这条邀请，不用重新找人要链接。
+          </p>
+        ) : (
+          <p className="mt-4 text-xs leading-relaxed text-ink-400">
+            可能是邀请超过 7 天、已被接受，或你的登录邮箱和被邀请的邮箱不一致。需要帮助就{" "}
+            <SupportMailto
+              className="text-indigo-600 underline underline-offset-4"
+              label="写信给我们"
+            />
+            。
+          </p>
+        )}
         <div className="mt-6 flex gap-4 text-xs">
           <a href="/login" className="text-ink-400 underline underline-offset-4">
             换个账号登录

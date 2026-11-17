@@ -22,6 +22,11 @@ export const TENANT_SESSIONS = Symbol("TENANT_SESSIONS");
  */
 export interface SessionRecord {
   sub: string;
+  /**
+   * Casdoor 组织：开通 / 接受邀请时写成员记录需要它。
+   * 老会话（上线本字段之前签发）没有该键，按 null 处理。
+   */
+  org?: string | null;
   name: string | null;
   email: string | null;
   tenantId: string | null;
@@ -111,6 +116,7 @@ export class SessionService {
   /** 新会话：sid 每次登录重新生成，避免会话固定。 */
   async create(input: {
     sub: string;
+    org?: string | null;
     name: string | null;
     email: string | null;
     tenantId: string | null;
@@ -118,6 +124,7 @@ export class SessionService {
     const now = new Date().toISOString();
     const record: SessionRecord = {
       sub: input.sub,
+      org: input.org ?? null,
       name: input.name,
       email: input.email,
       tenantId: input.tenantId,
@@ -155,6 +162,7 @@ export class SessionService {
     if (sid) await this.store.delete(sid);
     return this.create({
       sub: record.sub,
+      org: record.org ?? null,
       name: record.name,
       email: record.email,
       tenantId: patch.tenantId,

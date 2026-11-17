@@ -15,6 +15,7 @@ import {
 import { ApiErrorResponse, OnboardingClaimInput } from "@weave-order/schema";
 import type { OnboardingPreview, OnboardingResult } from "@weave-order/schema";
 import { AuthService } from "../gateway/auth.service";
+import { AuthError } from "../auth/errors";
 import { isKernelError } from "../kernel";
 import { OnboardingTicketError } from "./ticket";
 import { OnboardingService, StartTenantConflict, TeamActionError } from "./onboarding.service";
@@ -27,6 +28,15 @@ function fail(status: number, code: string, message: string): HttpException {
 
 function toHttpError(error: unknown): HttpException {
   if (error instanceof HttpException) return error;
+  if (error instanceof AuthError) {
+    // 与 auth.controller 一致：凭据类错误统一折成 UNAUTHENTICATED。
+    const credential =
+      error.code === "AUTH_REQUIRED" ||
+      error.code === "INVALID_TOKEN" ||
+      error.code === "TOKEN_EXPIRED" ||
+      error.code === "TOKEN_REVOKED";
+    return fail(error.status, credential ? "UNAUTHENTICATED" : error.code, error.message);
+  }
   if (error instanceof TeamActionError) {
     const code =
       error.status === 403
@@ -51,11 +61,10 @@ function toHttpError(error: unknown): HttpException {
       return fail(HttpStatus.FORBIDDEN, "FORBIDDEN", error.message);
     return fail(HttpStatus.CONFLICT, "CONFLICT", error.message);
   }
-  return fail(
-    HttpStatus.UNAUTHORIZED,
-    "UNAUTHENTICATED",
-    error instanceof Error ? error.message : "认证失败",
-  );
+  // 兜底不再回显底层异常（jose 的 "Invalid Compact JWS" 这类技术串只进日志）：
+  // 前端拿到的永远是能直接展示给人看的一句话。
+  console.warn("[onboarding] 未归类的错误", error instanceof Error ? error.message : String(error));
+  return fail(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "登录已过期，请重新登录后再试");
 }
 
 /**

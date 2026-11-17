@@ -1,6 +1,7 @@
 import { HttpException } from "@nestjs/common";
 import type { AuthClaims, OnboardingResult } from "@weave-order/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AuthError } from "../src/auth/errors";
 import type { AuthService } from "../src/gateway/auth.service";
 import { OnboardingController, TeamController } from "../src/onboarding/onboarding.controller";
 import { TeamActionError } from "../src/onboarding/onboarding.service";
@@ -151,5 +152,48 @@ describe("撤销邀请控制器", () => {
     expect((error as HttpException).getResponse()).toMatchObject({
       error: { code: "FORBIDDEN" },
     });
+  });
+});
+
+/**
+ * WAN-148 回归：邀请 / 开通链接的 401 只给人话，不直出 jose 原文。
+ */
+describe("开通链接控制器：错误话术", () => {
+  function setupPreview(rejection: unknown) {
+    const auth = {
+      verifyClaims: vi.fn().mockRejectedValue(rejection),
+    } as unknown as AuthService;
+    const previewInvite = vi.fn();
+    const onboarding = { previewInvite } as unknown as OnboardingService;
+    const limiter = new PublicRateLimitService("onboarding-controller-copy-test", null);
+    limiters.push(limiter);
+    return new OnboardingController(auth, onboarding, limiter);
+  }
+
+  it("AuthError 折成 401 UNAUTHENTICATED，消息可直出", async () => {
+    const controller = setupPreview(new AuthError("AUTH_REQUIRED", "登录已过期，请重新登录"));
+    const error = await controller
+      .previewInvite("Bearer session:abc", "code")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(401);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      error: { code: "UNAUTHENTICATED", message: "登录已过期，请重新登录" },
+    });
+  });
+
+  it("未归类异常兜底不把 Invalid Compact JWS 回显给前端", async () => {
+    const controller = setupPreview(new Error("Invalid Compact JWS"));
+    const error = await controller
+      .previewInvite("Bearer session:abc", "code")
+      .catch((caught: unknown) => caught);
+
+    const body = (error as HttpException).getResponse() as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("UNAUTHENTICATED");
+    expect(body.error.message).not.toContain("JWS");
+    expect(body.error.message).toContain("重新登录");
   });
 });

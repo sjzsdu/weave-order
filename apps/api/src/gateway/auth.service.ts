@@ -16,7 +16,7 @@ import type {
 import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
 import { isKernelError } from "../kernel";
-import { authError } from "../auth/errors";
+import { AuthError, authError } from "../auth/errors";
 import { PersonalAccessService } from "../auth/personal-access.service";
 import type { SessionRecord, SessionService } from "./session.service";
 
@@ -80,7 +80,7 @@ export class AuthService {
   private claimsForSession(record: SessionRecord): AuthClaims {
     return AuthClaims.parse({
       sub: record.sub,
-      org: null,
+      org: record.org ?? null,
       name: record.name,
       email: record.email,
       issuer: "weave-order",
@@ -254,6 +254,7 @@ export class AuthService {
     if (!autoBind) {
       const session = await this.sessions.create({
         sub: claims.sub,
+        org: claims.org,
         name: claims.name,
         email: claims.email,
         tenantId: null,
@@ -266,6 +267,7 @@ export class AuthService {
     const membership = await this.directory.tenancy.resolveSoleMembership(claims.sub, claims.org);
     const session = await this.sessions.create({
       sub: claims.sub,
+      org: claims.org,
       name: claims.name,
       email: claims.email,
       tenantId: membership.tenantId,
@@ -284,13 +286,32 @@ export class AuthService {
    * 唯一用途是开通：新老板第一次进来时业务库里还没有他的 membership，
    * 只要令牌可信就允许他领取开通链接。除开通外不要使用——业务请求必须走
    * `authenticate()` 拿到租户上下文。
+   *
+   * 必须同时接受**租户会话**：浏览器经 BFF 打开邀请 / 开通链接时，
+   * 网关会把 `weave_sid` Cookie 归一成 `Bearer session:<sid>`，裸 OIDC
+   * 令牌根本到不了这里。只认 OIDC 会让所有已登录用户看到 401。
    */
   async verifyClaims(header: string | undefined): Promise<AuthClaims> {
     const token = this.bearer(header);
     if (token.startsWith("wo_")) {
       throw authError("INVALID_TOKEN", "开通请先登录，再打开开通链接");
     }
-    return this.verifier.verify(token);
+    const sid = this.sessionCredential(token);
+    if (sid) {
+      const record = await this.sessions.read(sid);
+      if (!record) {
+        throw authError("AUTH_REQUIRED", "登录已过期，请重新登录后再打开这条链接");
+      }
+      return this.claimsForSession(record);
+    }
+    try {
+      return await this.verifier.verify(token);
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      // 底层是 jose 的 "Invalid Compact JWS" 之类的技术串：只记日志，不回显给人。
+      console.warn("[auth] OIDC 令牌验签失败", error instanceof Error ? error.message : error);
+      throw authError("AUTH_REQUIRED", "登录已过期，请重新登录后再打开这条链接");
+    }
   }
 
   private async chooserBody(
@@ -424,6 +445,7 @@ export class AuthService {
 
     const base: SessionRecord = record ?? {
       sub: subject,
+      org: claims?.org ?? null,
       name: claims?.name ?? null,
       email: claims?.email ?? null,
       tenantId: null,

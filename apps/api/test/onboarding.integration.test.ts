@@ -338,8 +338,11 @@ describe("撤销邀请", () => {
   async function teamInvites(token: string) {
     const response = await api("/api/team/invites", {}, token);
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    return (response.body as { invites: Array<{ membershipId: string; email: string; role: string; status: string }> })
-      .invites;
+    return (
+      response.body as {
+        invites: Array<{ membershipId: string; email: string; role: string; status: string }>;
+      }
+    ).invites;
   }
 
   it("老板撤销待接受的邀请：列表移除、链接立即失效、写审计", async (ctx) => {
@@ -526,5 +529,102 @@ describe("撤销邀请", () => {
     );
     expect(denied.status, JSON.stringify(denied.body)).toBe(403);
     expect(denied.body).toMatchObject({ error: { code: "FORBIDDEN" } });
+  });
+});
+
+/**
+ * WAN-148 回归：生产上已登录用户打开邀请 / 开通链接全部 401 "Invalid Compact JWS"。
+ *
+ * 原因不是 OIDC 配置，而是网关把 `weave_sid` Cookie 归一成
+ * `Bearer session:<sid>` 后，开通端点仍然只拿裸 OIDC 令牌去验签。
+ * 这里完整模拟 Next BFF：同时带 `weave_sid` Cookie 与浏览器里的 OIDC 令牌。
+ */
+describe("已登录浏览器打开邀请 / 开通链接", () => {
+  async function openCompany(subject: string, name: string) {
+    const token = `dev:${subject}:demo`;
+    const started = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name }) },
+      token,
+    );
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    createdTenants.push((started.body as { tenantId: string }).tenantId);
+
+    const me = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(me.status).toBe(200);
+    const cookie = me.headers.getSetCookie().find((value) => value.startsWith("weave_sid="));
+    const sid = cookie?.split(";")[0]?.slice("weave_sid=".length);
+    if (!sid) throw new Error("登录后没有下发 weave_sid");
+    return { sid, token };
+  }
+
+  /** 与 apps/web/app/api/[...path]/route.ts 一致：Cookie + 原始 OIDC 令牌。 */
+  function bff(path: string, session: { sid: string; token: string }, init: RequestInit = {}) {
+    return fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+        Cookie: `weave_sid=${session.sid}`,
+        ...(init.headers ?? {}),
+      },
+    }).then(async (response) => ({
+      status: response.status,
+      body: await response.json().catch(() => null),
+    }));
+  }
+
+  it("开通链接预览、邀请预览、自助开通都接受会话凭据", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const session = await openCompany(`session-boss-${id}`, `会话公司 ${id}`);
+
+    // 1) 开通链接预览：票据本身有效，身份来自会话。
+    const onboardingCode = signOnboardingTicket(
+      {
+        v: 1,
+        slug: `session-slug-${id}`,
+        name: `会话开通 ${id}`,
+        ownerEmail: `boss-${id}@dev.local`,
+      },
+      DEV_ONBOARDING_SECRET,
+    );
+    const preview = await bff(
+      `/api/onboarding/preview?code=${encodeURIComponent(onboardingCode)}`,
+      session,
+    );
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body).toMatchObject({ slug: `session-slug-${id}` });
+
+    // 2) 发一条邀请，再用同一会话打开邀请预览。
+    const invitedEmail = `session-invitee-${id}@dev.local`;
+    const invite = await bff("/api/team/invites", session, {
+      method: "POST",
+      body: JSON.stringify({ email: invitedEmail, role: "SALES" }),
+    });
+    expect(invite.status, JSON.stringify(invite.body)).toBe(201);
+    const inviteCode = new URL((invite.body as { url: string }).url).searchParams.get(
+      "code",
+    ) as string;
+
+    const invitePreview = await bff(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(inviteCode)}`,
+      session,
+    );
+    expect(invitePreview.status, JSON.stringify(invitePreview.body)).toBe(200);
+    expect(invitePreview.body).toMatchObject({ email: invitedEmail, role: "SALES" });
+
+    // 3) 自助开通：会话身份已属于公司，幂等返回既有公司。
+    const again = await bff("/api/onboarding/start", session, {
+      method: "POST",
+      body: JSON.stringify({ name: `会话公司 ${id}` }),
+    });
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
+    expect((again.body as { alreadyActivated: boolean }).alreadyActivated).toBe(true);
   });
 });
