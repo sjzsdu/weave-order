@@ -2,7 +2,7 @@ import { Image, Text, View } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import { useCallback, useState } from "react";
 import type { FabricSample } from "@weave-order/schema";
-import { Badge, Button, Card, Page, Sheet } from "../../components/ui";
+import { Badge, Button, Card, NavBar, Page, Sheet } from "../../components/ui";
 import { api, IS_MOCK } from "../../lib/runtime";
 import { openCamera, openQuote } from "../../lib/nav";
 
@@ -39,7 +39,7 @@ export default function SamplesPage() {
 
   return (
     <Page>
-      <View className="page-title">样品库</View>
+      <NavBar title="样品库" />
       <View className="page-sub">拍照建样品；点开看规格。PC 上图墙更大、可以批量补规格。</View>
 
       <View className="actions" style={{ marginBottom: 12 }}>

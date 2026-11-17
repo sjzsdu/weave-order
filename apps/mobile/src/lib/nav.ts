@@ -1,5 +1,6 @@
 import Taro from "@tarojs/taro";
 import { prefs } from "./runtime";
+import { resolveBackAction } from "./back-nav";
 
 export const ROUTES = {
   today: "/pages/today/index",
@@ -49,6 +50,16 @@ export function openCamera(mode: string): void {
   goTab(ROUTES.camera);
 }
 
-export function back(): void {
-  void Taro.navigateBack();
+/**
+ * 返回上一页；页面栈只有一层（直接打开二级页 / PWA 冷启动）时回退到指定 tab。
+ * navigateBack 在 H5 也可能失败，失败同样落到 tab，保证任何情况下都有出口。
+ */
+export function back(fallbackTab: (typeof ROUTES)[keyof typeof ROUTES] = ROUTES.today): void {
+  const pages = typeof Taro.getCurrentPages === "function" ? Taro.getCurrentPages() : [];
+  const action = resolveBackAction(pages.length, fallbackTab);
+  if (action.kind === "tab") {
+    goTab(action.url);
+    return;
+  }
+  void Taro.navigateBack({ delta: 1, fail: () => goTab(fallbackTab) });
 }

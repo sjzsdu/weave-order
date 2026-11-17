@@ -3,8 +3,29 @@ import type { PropsWithChildren, ReactNode } from "react";
 import type { CSSProperties } from "react";
 import { useEffect } from "react";
 import { sheetTabBar } from "../lib/sheet-tabbar";
+import { back } from "../lib/nav";
 
 /** 移动端基础组件：只对齐 tokens，不复用 DOM 组件（packages/ui 仅桌面）。 */
+
+/**
+ * 二级页导航栏：H5/PWA 没有浏览器返回按钮，必须由页面自己给出口。
+ * 小程序 / RN 有原生导航栏（自带返回），这里不渲染，避免双层标题。
+ */
+export function NavBar({ title, subtitle }: { title: string; subtitle?: string }) {
+  if (process.env.TARO_ENV !== "h5") return null;
+  return (
+    <View className="navbar">
+      <View className="navbar-back" ariaRole="button" ariaLabel="返回" onClick={() => back()}>
+        <View className="navbar-back-arrow" />
+      </View>
+      <View className="navbar-main">
+        <View className="navbar-title">{title}</View>
+        {subtitle && <View className="navbar-sub">{subtitle}</View>}
+      </View>
+      <View className="navbar-side" />
+    </View>
+  );
+}
 
 export function Page({ children, className = "" }: PropsWithChildren<{ className?: string }>) {
   return <View className={`page ${className}`}>{children}</View>;

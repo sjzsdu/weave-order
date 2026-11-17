@@ -99,8 +99,11 @@ test.describe("移动端 H5 关键路径", () => {
     expect(metrics!.scrollWidth).toBeLessThanOrEqual(metrics!.clientWidth);
 
     // 4) 拍照找样：同一张图 → 服务端返回候选 + 命中缩略图
-    // 样品库是 navigateTo 进来的，tabBar 已隐藏：先返回再切 tab。
-    await page.goBack();
+    // 样品库是 navigateTo 进来的，tabBar 已隐藏：用页面内的返回按钮回「更多」再切 tab。
+    // （PWA 安装后没有浏览器返回按钮，这个入口是唯一出口。）
+    await expect(page.locator(".navbar-back")).toBeVisible();
+    await page.locator(".navbar-back").click();
+    await expect(page.getByText("离线队列、身份、安装与隐私")).toBeVisible();
     await openTab(page, "相机");
     await page.getByText("找样", { exact: true }).click();
     const searchResponse = page.waitForResponse(

@@ -51,8 +51,78 @@ body {
 
 .page {
   min-height: 100vh;
-  padding: 20px 24px calc(40px + env(safe-area-inset-bottom));
+  /* 刘海屏 / PWA standalone 下页面从状态栏下开始，避免标题被遮住。 */
+  padding: calc(20px + env(safe-area-inset-top)) 24px calc(40px + env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+
+/*
+ * 二级页导航栏（仅 H5）。负 margin 抵消 .page 的内边距，让吸顶时铺满宽度；
+ * padding-top 带安全区，滚动后导航栏背景仍覆盖状态栏区域。
+ */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  margin: calc(-20px - env(safe-area-inset-top)) -24px 16px;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+  background: rgba(247, 247, 245, 0.94);
+  border-bottom: 1px solid $line;
+  backdrop-filter: blur(12px);
+}
+
+.navbar-back,
+.navbar-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  /* 44pt 固定命中区：rem 不参与 rpx 换算（根字号 16px => 2.75rem = 44px）。 */
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.navbar-back {
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.navbar-back:active {
+  background: $accent-soft;
+}
+
+.navbar-back-arrow {
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  border-left: 4px solid $ink;
+  border-bottom: 4px solid $ink;
+  transform: rotate(45deg);
+}
+
+.navbar-main {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.navbar-title {
+  font-size: 32px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navbar-sub {
+  font-size: 20px;
+  color: $muted;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .page-title {
