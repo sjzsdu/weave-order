@@ -52,6 +52,15 @@ export const memberships = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     subject: varchar("subject", { length: 128 }).notNull(),
+    /**
+     * 可展示的姓名 / 邮箱副本，来自登录时的 OIDC claims。
+     *
+     * 为什么冗余在本地：`subject` 是 SSO 主键（UUID），任何面向人的读取（客户负责人、
+     * 成员表）都需要一个非 UUID 的展示值，而业务读发生在租户会话里、不能回调 Casdoor。
+     * 两个字段都允许为空（老数据 / 对方还没登录过），读取方必须自己兜底，绝不回退到 subject。
+     */
+    displayName: varchar("display_name", { length: 128 }),
+    email: varchar("email", { length: 255 }),
     casdoorOrg: varchar("casdoor_org", { length: 128 }),
     role: memberRoleEnum("role").notNull(),
     dataScope: dataScopeEnum("data_scope").notNull().default("OWN"),

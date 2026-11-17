@@ -146,6 +146,8 @@ describe("客户 360（真连 PG）", () => {
       {
         tenantId: tenant.id,
         subject: `sales-c360-${id}`,
+        displayName: "王销售",
+        email: "sales@example.com",
         casdoorOrg: org,
         role: "SALES",
         dataScope: "OWN",
@@ -254,6 +256,14 @@ describe("客户 360（真连 PG）", () => {
     expect(row!.inTransitSampleCount).toBe(summary.inTransitSampleCount);
     expect(row!.inTransitSampleCount).toBe(2);
     expect(summary.activeOrderCount).toBe(1);
+    // 负责人展示的是姓名副本，不是 membership.subject（WAN-151）。
+    expect(row!.ownerId).toBe(sales.id);
+    expect(row!.ownerName).toBe("王销售");
+    const detail = await kernel.customers.customer360(customer.id, asSales);
+    expect(detail.ownerId).toBe(sales.id);
+    // 客户 360 与列表同口径：姓名/邮箱副本，绝不复用 subject。
+    expect(detail.ownerName).toBe("王销售");
+    expect(detail.ownerName ?? "").not.toBe(sales.subject);
     expect(row!.overdueReceivableCount).toBe(1);
     expect(summary.overdueReceivableCount).toBe(1);
     // 分享快捷动作依赖「最近已发报价」，不能被首屏时间线或筛选影响。

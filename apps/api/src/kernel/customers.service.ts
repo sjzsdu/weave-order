@@ -34,6 +34,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { loadCustomerList, loadCustomerSummary, loadCustomerTimeline } from "./customer-aggregates";
 import { KernelError, isKernelError, isUniqueViolation } from "./errors";
+import { memberDisplayName } from "./member-label";
 import { ownerScopeFilter } from "./data-scope";
 import { currencyOf, toIso } from "./mappers";
 
@@ -351,7 +352,13 @@ export class CustomerService {
     const summary = await this.customerSummary(customerId, ctx);
     const ownerRows = await this.db.execute<{ owner_id: string | null; owner_name: string | null }>(
       sql`
-        SELECT customers.owner_id, memberships.subject AS owner_name
+        SELECT
+          customers.owner_id,
+          -- 负责人只取可展示的姓名/邮箱副本；subject 是 SSO 主键，不能当姓名返回（WAN-151）。
+          COALESCE(
+            NULLIF(BTRIM(memberships.display_name), ''),
+            NULLIF(BTRIM(memberships.email), '')
+          ) AS owner_name
         FROM customers
         LEFT JOIN memberships
           ON memberships.id = customers.owner_id
@@ -363,7 +370,7 @@ export class CustomerService {
     );
     const owner = ownerRows.rows[0];
     const ownerId = owner?.owner_id ?? null;
-    const ownerName = owner?.owner_name ?? null;
+    const ownerName = memberDisplayName(owner?.owner_name);
     return Customer360.parse({ customer, ownerId, ownerName, context, summary });
   }
 

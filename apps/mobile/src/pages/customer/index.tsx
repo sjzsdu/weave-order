@@ -14,7 +14,7 @@ import {
   SectionTitle,
 } from "../../components/ui";
 import { useCustomer360, useCustomerTimeline } from "../../lib/hooks";
-import { formatMoneyShort, maskPhone, relativeTime, shortDate } from "../../lib/format";
+import { formatMoneyShort, maskPhone, ownerLabel, relativeTime, shortDate } from "../../lib/format";
 import { api } from "../../lib/runtime";
 import { openQuote } from "../../lib/nav";
 import type { ShareSummary } from "../../lib/mobile-api";
@@ -112,7 +112,8 @@ export default function CustomerPage() {
     <Page>
       <View className="page-title">{customer.name}</View>
       <View className="page-sub">
-        {customer.code} · {customer.tier} · 负责人 {detail.data?.ownerName ?? "未分配"}
+        {customer.code} · {customer.tier} · 负责人{" "}
+        {ownerLabel(detail.data?.ownerName, detail.data?.ownerId)}
       </View>
 
       <Card>
