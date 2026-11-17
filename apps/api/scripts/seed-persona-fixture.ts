@@ -12,7 +12,7 @@
 import { createDb, customers } from "@weave-order/db";
 import { PERSONAS } from "@weave-order/schema";
 import { and, eq } from "drizzle-orm";
-import { ensureDemoIdentity, demoWriteContext } from "./demo-identity";
+import { ensureDemoIdentity, demoWriteContext } from "../src/dev/demo-identity";
 import { createKernel } from "../src/kernel";
 
 const DATABASE_URL =

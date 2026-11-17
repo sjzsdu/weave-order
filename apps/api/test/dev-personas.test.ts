@@ -7,7 +7,7 @@ import { createDb } from "@weave-order/db";
 import { PERSONAS } from "@weave-order/schema";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { ensureDemoIdentity, demoWriteContext } from "../scripts/demo-identity";
+import { ensureDemoIdentity, demoWriteContext } from "../src/dev/demo-identity";
 import { devPersonasEnabled } from "../src/dev/dev.module";
 import { createKernel } from "../src/kernel";
 
