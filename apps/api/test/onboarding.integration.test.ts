@@ -237,6 +237,44 @@ describe("自助开通与邀请", () => {
     );
     expect(again.status).toBe(201);
     expect(again.body).toMatchObject({ tenantId: company.tenantId, alreadyActivated: true });
+
+    // 已经加入的人再打开同一条链接：不拦，直接告诉他可以进去。
+    const afterAccept = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(code as string)}`,
+      {},
+      employeeToken,
+    );
+    expect(afterAccept.status, JSON.stringify(afterAccept.body)).toBe(200);
+    expect(afterAccept.body).toMatchObject({ alreadyMember: true, tenantSlug: company.tenantSlug });
+
+    // 部署前签发的老票据（不带 membershipId）同样要能看到「你已加入」：
+    // 本人已是成员且登录邮箱就是被邀请邮箱，说明这张票据已被他本人用掉。
+    const legacyCode = signOnboardingTicket(
+      {
+        v: 1,
+        kind: "invite",
+        slug: company.tenantSlug,
+        name: `自助公司 ${id}`,
+        ownerEmail: employeeEmail,
+        role: "SALES",
+      },
+      DEV_ONBOARDING_SECRET,
+    );
+    const legacyPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(legacyCode)}`,
+      {},
+      employeeToken,
+    );
+    expect(legacyPreview.status, JSON.stringify(legacyPreview.body)).toBe(200);
+    expect(legacyPreview.body).toMatchObject({ alreadyMember: true });
+
+    // 但老票据不能因为「看的人是成员」就放宽：老板邮箱与被邀请邮箱不同，必须 410。
+    const legacyBossPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(legacyCode)}`,
+      {},
+      bossToken,
+    );
+    expect(legacyBossPreview.status, JSON.stringify(legacyBossPreview.body)).toBe(410);
   });
 
   it("员工不能邀请人（只有老板/主管可以）", async (ctx) => {
@@ -338,8 +376,11 @@ describe("撤销邀请", () => {
   async function teamInvites(token: string) {
     const response = await api("/api/team/invites", {}, token);
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    return (response.body as { invites: Array<{ membershipId: string; email: string; role: string; status: string }> })
-      .invites;
+    return (
+      response.body as {
+        invites: Array<{ membershipId: string; email: string; role: string; status: string }>;
+      }
+    ).invites;
   }
 
   it("老板撤销待接受的邀请：列表移除、链接立即失效、写审计", async (ctx) => {
@@ -389,7 +430,24 @@ describe("撤销邀请", () => {
       `dev:revoke-emp-${id}:demo`,
     );
     expect(preview.status, JSON.stringify(preview.body)).toBe(410);
-    expect((preview.body as { error: { message: string } }).error.message).toContain("已撤销");
+    expect((preview.body as { error: { message: string } }).error.message).toContain("已失效");
+
+    // 老板自己（已在公司里的成员）打开同一条链接也一样 410：
+    // 预览的有效性只取决于邀请是否还待接受，不看当前登录账号是不是成员。
+    const bossPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(code)}`,
+      {},
+      bossToken,
+    );
+    expect(bossPreview.status, JSON.stringify(bossPreview.body)).toBe(410);
+
+    // 接受也一样失效，不会等到这一步才报 403。
+    const accept = await api(
+      "/api/onboarding/invite/accept",
+      { method: "POST", body: JSON.stringify({ code }) },
+      `dev:revoke-emp-${id}:demo`,
+    );
+    expect(accept.status, JSON.stringify(accept.body)).toBe(410);
 
     // 审计有记录。
     const audit = await pool.query(
@@ -399,6 +457,74 @@ describe("撤销邀请", () => {
     expect(audit.rows).toEqual([
       { action: "MEMBERSHIP_REVOKED", entity_id: pending?.membershipId },
     ]);
+  });
+
+  it("撤销后重新邀请同一个人：旧链接保持失效，新链接可用", async (ctx) => {
+    if (!available || !app) {
+      ctx.skip();
+      return;
+    }
+    const id = suffix();
+    const bossToken = `dev:reinvite-boss-${id}:demo`;
+    const employeeToken = `dev:reinvite-emp-${id}:demo`;
+    const employeeEmail = `reinvite-emp-${id}@dev.local`;
+    const start = await api(
+      "/api/onboarding/start",
+      { method: "POST", body: JSON.stringify({ name: `重发公司 ${id}` }) },
+      bossToken,
+    );
+    expect(start.status, JSON.stringify(start.body)).toBe(201);
+    createdTenants.push((start.body as { tenantId: string }).tenantId);
+
+    const invite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: employeeEmail, role: "SALES" }) },
+      bossToken,
+    );
+    expect(invite.status, JSON.stringify(invite.body)).toBe(201);
+    const oldCode = new URL((invite.body as { url: string }).url).searchParams.get(
+      "code",
+    ) as string;
+    const pending = (await teamInvites(bossToken)).find((item) => item.email === employeeEmail);
+    const revoke = await api(
+      `/api/team/invites/${pending?.membershipId}`,
+      { method: "DELETE" },
+      bossToken,
+    );
+    expect(revoke.status, JSON.stringify(revoke.body)).toBe(200);
+
+    // 同一邮箱重新邀请：拿到一条新链接。
+    const reinvite = await api(
+      "/api/team/invites",
+      { method: "POST", body: JSON.stringify({ email: employeeEmail, role: "SALES" }) },
+      bossToken,
+    );
+    expect(reinvite.status, JSON.stringify(reinvite.body)).toBe(201);
+    const newCode = new URL((reinvite.body as { url: string }).url).searchParams.get(
+      "code",
+    ) as string;
+
+    // 旧链接钉的是被撤销的那条成员行，不会因为重新邀请而复活。
+    const oldPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(oldCode)}`,
+      {},
+      employeeToken,
+    );
+    expect(oldPreview.status, JSON.stringify(oldPreview.body)).toBe(410);
+
+    const newPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(newCode)}`,
+      {},
+      employeeToken,
+    );
+    expect(newPreview.status, JSON.stringify(newPreview.body)).toBe(200);
+
+    const accept = await api(
+      "/api/onboarding/invite/accept",
+      { method: "POST", body: JSON.stringify({ code: newCode }) },
+      employeeToken,
+    );
+    expect(accept.status, JSON.stringify(accept.body)).toBe(201);
   });
 
   it("已接受的成员不能撤销（409），停用是另一条路径", async (ctx) => {

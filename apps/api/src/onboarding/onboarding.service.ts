@@ -368,20 +368,40 @@ export class OnboardingService {
     const kernel = this.kernel();
     const tenant = await kernel.tenancy.findTenantBySlug(ticket.slug);
     if (!tenant) throw new TeamActionError("这间公司不存在或已停用", 410);
-    const existing = await kernel.tenancy.findMembershipForTenant(claims.sub, tenant.id);
-    // 邀请票据是无状态的：撤销即删 membership，票据本身仍然验签通过。
-    // 所以这里必须回查「待接受的邀请」是否还在，否则撤销后的链接看起来仍然有效。
     const email = ticket.ownerEmail?.trim().toLowerCase() ?? "";
-    if (!existing && (!email || !(await kernel.tenancy.findInvitedMembership(tenant.id, email)))) {
-      throw new TeamActionError("这条邀请已被接受或已撤销，请让邀请人重新发一条", 410);
+    // 邀请票据是无状态的：撤销即删 membership，票据本身仍然验签通过。
+    // 所以这里必须回查这条邀请是否还待接受，否则撤销后的链接看起来仍然有效。
+    // 不能因为「当前登录账号已经是成员」就跳过校验——老板打开自己发出的链接
+    // 正是这种情形：预览显示有效，点接受才 403。
+    // 新票据钉住 membershipId（旧票据按邮箱回退）；同一张票据被本人换过之后
+    // 成员行变成 ACTIVE 且 subject 就是本人，仍应展示「已加入」。
+    const row = ticket.membershipId
+      ? await kernel.tenancy.findMembershipById(tenant.id, ticket.membershipId)
+      : email
+        ? await kernel.tenancy.findInvitedMembership(tenant.id, email)
+        : null;
+    const pending =
+      row?.status === "INVITED" && email !== "" && row.subject.trim().toLowerCase() === email;
+    const existing = await kernel.tenancy.findMembershipForTenant(claims.sub, tenant.id);
+    const viewerIsMember =
+      existing !== null && existing.tenantId === tenant.id && existing.status === "ACTIVE";
+    // 新票据：成员行还在且已归到本人名下。
+    // 旧票据（无 membershipId）：本人已是成员，且登录邮箱就是票据上的被邀请邮箱——
+    // 说明这张票据已经被他本人用掉了。只按邮箱相等判定，不退回「是成员就跳过校验」，
+    // 否则老板打开自己被撤销的链接会重新看到 200。
+    const consumedByViewer = ticket.membershipId
+      ? row?.status === "ACTIVE" && row.subject === claims.sub
+      : viewerIsMember && email !== "" && email === (claims.email?.trim().toLowerCase() ?? null);
+    if (!pending && !consumedByViewer) {
+      throw new TeamActionError("这条邀请已失效，请让管理员重新发一条", 410);
     }
     return InvitePreview.parse({
       tenantName: tenant.name,
       tenantSlug: tenant.slug,
-      email: ticket.ownerEmail ?? "",
-      role: ticket.role ?? "SALES",
+      email: email || row?.subject || "",
+      role: row?.role ?? ticket.role ?? "SALES",
       expiresAt: new Date(ticket.exp * 1000).toISOString(),
-      alreadyMember: existing !== null,
+      alreadyMember: consumedByViewer || viewerIsMember,
     });
   }
 
@@ -391,7 +411,7 @@ export class OnboardingService {
     if (ticket.kind !== "invite") throw new TeamActionError("这不是邀请链接", 400);
     const email = ticket.ownerEmail?.trim().toLowerCase() ?? null;
     const actual = claims.email?.trim().toLowerCase() ?? null;
-    if (!email) throw new TeamActionError("邀请链接缺少邮箱，请让邀请人重新发一条", 410);
+    if (!email) throw new TeamActionError("邀请链接缺少邮箱，请让管理员重新发一条", 410);
     if (!actual || actual !== email) {
       throw new TeamActionError("请用被邀请的邮箱登录后再接受邀请，或让邀请人改成你这个邮箱", 403);
     }
@@ -413,9 +433,12 @@ export class OnboardingService {
       });
     }
 
-    const invited = await kernel.tenancy.findInvitedMembership(tenant.id, email);
-    if (!invited) {
-      throw new TeamActionError("这条邀请已被接受或已撤销，请让邀请人重新发一条", 410);
+    // 新票据钉住 membershipId：被撤销、被重发后旧链接不能再接受新的邀请。
+    const invited = ticket.membershipId
+      ? await kernel.tenancy.findMembershipById(tenant.id, ticket.membershipId)
+      : await kernel.tenancy.findInvitedMembership(tenant.id, email);
+    if (!invited || invited.status !== "INVITED") {
+      throw new TeamActionError("这条邀请已失效，请让管理员重新发一条", 410);
     }
     const membership = await kernel.tenancy.activateMembership(
       invited.id,
@@ -446,6 +469,7 @@ export class OnboardingService {
         name,
         ownerEmail: membership.subject,
         role: membership.role,
+        membershipId: membership.id,
       },
       env.ONBOARDING_SECRET,
     );

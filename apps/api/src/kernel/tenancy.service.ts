@@ -476,6 +476,17 @@ export class TenancyService {
     return row ? mapMembership(row) : null;
   }
 
+  /** 按 membershipId 找一条成员行：邀请票据要拿它确认这条邀请仍然待接受。 */
+  async findMembershipById(tenantId: string, membershipId: string): Promise<Membership | null> {
+    const rows = await this.db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.id, membershipId), eq(memberships.tenantId, tenantId)))
+      .limit(1);
+    const row = rows[0];
+    return row ? mapMembership(row) : null;
+  }
+
   /** 接受邀请：把 INVITED 变成 ACTIVE，并把 subject 从邮箱换成真实登录身份。 */
   async activateMembership(
     membershipId: string,

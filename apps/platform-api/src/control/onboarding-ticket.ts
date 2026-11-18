@@ -41,6 +41,7 @@ export function signOnboardingTicket(
     ownerEmail: string | null;
     kind?: "tenant" | "invite";
     role?: OnboardingTicket["role"];
+    membershipId?: string;
     exp?: number;
   },
   secret: string,
