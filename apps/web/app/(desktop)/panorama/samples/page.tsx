@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { SampleEditor } from "@/sample-editor";
+import { SampleImport } from "@/sample-import";
 import { SampleDrawer } from "@/sample-drawer";
 import { SampleImageSearch } from "@/sample-image-search";
+import { SampleSavedToast, toSampleSaveFeedback } from "@/sample-saved-toast";
+import type { SampleSaveFeedback } from "@/sample-saved-toast";
 import { thumbBadge } from "@/sample-image-status";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
@@ -30,16 +33,19 @@ export default function SamplesPage() {
 
 function SamplesWall() {
   const api = useApi();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ACTIVE");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSample, setEditorSample] = useState<FabricSample | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importedCount, setImportedCount] = useState<number | null>(null);
   const [openSampleId, setOpenSampleId] = useState<string | null>(null);
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   // 保存成功后的动作级反馈：带下一步，而不是让图墙悄悄多一格。
-  const [saved, setSaved] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [saved, setSaved] = useState<SampleSaveFeedback | null>(null);
 
   // 搜索防抖：输入停下来再打后端，避免每个按键一次 ILIKE。
   useEffect(() => {
@@ -72,17 +78,26 @@ function SamplesWall() {
     setEditorSample(null);
     setEditorOpen(true);
   };
-  // 深链入口：开张清单与 ⌘K 命令直接打开新建样品。
+  // 深链入口：开张清单、⌘K 命令与全景空状态直接打开新建或导入。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("new") !== "1") return;
-    setEditorSample(null);
-    setEditorOpen(true);
+    if (params.get("new") === "1") {
+      setEditorSample(null);
+      setEditorOpen(true);
+    }
+    if (params.get("import") === "1") setImportOpen(true);
   }, []);
   const openEdit = (sample: FabricSample) => {
     setEditorSample(sample);
     setEditorOpen(true);
   };
+  // 样品数变了，全景的统计也要跟着变，否则切回去还是旧数字。
+  const refreshAll = () => {
+    void list.refetch();
+    void queryClient.invalidateQueries({ queryKey: ["panorama"] });
+  };
+
+  const narrowed = query !== "" || category !== "" || status !== "ACTIVE";
 
   return (
     <div className="grid gap-4">
@@ -108,11 +123,32 @@ function SamplesWall() {
           >
             以图找样
           </Button>
+          <Button variant="secondary" onClick={() => setImportOpen(true)}>
+            导入 CSV
+          </Button>
           <Button onClick={openCreate}>新建样品</Button>
         </div>
       </header>
 
       {imageSearchOpen && <SampleImageSearch onClose={() => setImageSearchOpen(false)} />}
+
+      {importedCount !== null && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-moss-600/30 bg-moss-600/10 px-3 py-2 text-sm text-moss-600"
+        >
+          <span>已导入 {importedCount} 个样品，全部落库。</span>
+          <span className="text-xs text-ink-400">导入不带图，点开卡片可以补图。</span>
+          <button
+            type="button"
+            onClick={() => setImportedCount(null)}
+            aria-label="关闭提示"
+            className="ml-auto text-ink-400 hover:text-ink-900"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <section className="grid gap-2 rounded-lg border border-line bg-surface px-3 py-3 md:grid-cols-[1fr_auto_auto]">
         <input
@@ -159,13 +195,39 @@ function SamplesWall() {
           description={list.error instanceof Error ? list.error.message : "请稍后重试"}
         />
       )}
-      {!list.isLoading && samples.length === 0 && (
-        <EmptyState
-          title="还没有样品"
-          description="新建一个样品就能报价，规格和图之后随时补。"
-          actions={<Button onClick={openCreate}>新建样品</Button>}
-        />
-      )}
+      {!list.isLoading &&
+        samples.length === 0 &&
+        (narrowed ? (
+          <EmptyState
+            title="没有匹配的样品"
+            description="换个关键词，或把筛选清掉。"
+            actions={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSearch("");
+                  setCategory("");
+                  setStatus("ACTIVE");
+                }}
+              >
+                清空筛选
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            title="还没有样品"
+            description="手动建一个，或导入 CSV（可先下载模板）。导入后回来补图。"
+            actions={
+              <>
+                <Button onClick={openCreate}>新建样品</Button>
+                <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                  导入 CSV
+                </Button>
+              </>
+            }
+          />
+        ))}
 
       <ul className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
         {samples.map((sample) => (
@@ -197,14 +259,23 @@ function SamplesWall() {
         open={editorOpen}
         sample={editorSample}
         onClose={() => setEditorOpen(false)}
-        onSaved={(sample) => {
-          void list.refetch();
-          setSaved({ id: sample.id, name: sample.name, code: sample.code });
+        onSaved={(sample, meta) => {
+          refreshAll();
+          setSaved(toSampleSaveFeedback(sample, meta.created));
         }}
       />
+      {importOpen && (
+        <SampleImport
+          onClose={() => setImportOpen(false)}
+          onImported={(count) => {
+            setImportedCount(count);
+            refreshAll();
+          }}
+        />
+      )}
       {saved && (
         <SampleSavedToast
-          sample={saved}
+          feedback={saved}
           onDismiss={() => setSaved(null)}
           onOpen={() => {
             setSaved(null);
@@ -297,48 +368,5 @@ function SampleCard({
         </div>
       )}
     </li>
-  );
-}
-
-/** 动作级 toast：不阻塞，带下一步，而不是让图墙悄悄多一格（WAN-149）。 */
-function SampleSavedToast({
-  sample,
-  onDismiss,
-  onOpen,
-}: {
-  sample: { id: string; name: string; code: string };
-  onDismiss: () => void;
-  onOpen: () => void;
-}) {
-  useEffect(() => {
-    const timer = setTimeout(onDismiss, 8000);
-    return () => clearTimeout(timer);
-  }, [onDismiss]);
-
-  return (
-    <div
-      role="status"
-      className="fixed inset-x-0 top-4 z-50 mx-auto flex w-[min(92vw,640px)] flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-card"
-    >
-      <span className="font-medium text-ink-900">样品「{sample.name}」已建</span>
-      <span className="text-xs text-ink-400">{sample.code}</span>
-      <Link
-        href={`/today?intent=${encodeURIComponent(`用${sample.name}报价：`)}`}
-        className="text-indigo-600 underline underline-offset-2"
-      >
-        用它报价 →
-      </Link>
-      <button type="button" onClick={onOpen} className="text-ink-700 underline underline-offset-2">
-        补图 / 看规格
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="关闭提示"
-        className="ml-auto text-ink-400 hover:text-ink-900"
-      >
-        ✕
-      </button>
-    </div>
   );
 }

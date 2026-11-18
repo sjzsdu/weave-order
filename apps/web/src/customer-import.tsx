@@ -6,6 +6,11 @@ import { MAX_IMPORT_ROWS } from "@weave-order/schema";
 import { Button, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { TIER_LABEL } from "@/format";
+import { CsvImportResultPanel } from "@/csv-import-result";
+import { decodeCsvBytes, downloadCsv, parseCsvRecords } from "@/csv";
+
+// 解析原语由 csv.ts 提供；这里继续导出，旧调用方与测试不用改。
+export { decodeCsvBytes, parseCsvRecords };
 
 /** 模板与表头共用一份定义，避免模板和解析器漂移。 */
 export const CUSTOMER_CSV_COLUMNS = [
@@ -61,55 +66,6 @@ export interface ParsedCustomerCsv {
   error: string | null;
   /** 被忽略的空行数，给用户一个交代。 */
   skippedBlankRows: number;
-}
-
-/** 极简 RFC4180 解析：支持引号、字段内逗号/换行、双引号转义与 BOM。 */
-export function parseCsvRecords(input: string): string[][] {
-  const text = input.replace(/^\uFEFF/, "");
-  const records: string[][] = [];
-  let record: string[] = [];
-  let field = "";
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text.charAt(index);
-    if (quoted) {
-      if (char === '"') {
-        if (text[index + 1] === '"') {
-          field += '"';
-          index += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        field += char;
-      }
-      continue;
-    }
-    if (char === '"') {
-      quoted = true;
-      continue;
-    }
-    if (char === ",") {
-      record.push(field);
-      field = "";
-      continue;
-    }
-    if (char === "\r") continue;
-    if (char === "\n") {
-      record.push(field);
-      records.push(record);
-      record = [];
-      field = "";
-      continue;
-    }
-    field += char;
-  }
-  if (field !== "" || record.length > 0) {
-    record.push(field);
-    records.push(record);
-  }
-  return records;
 }
 
 /** 解析表格文本并按契约字段组装行；空单元格一律省略，交给服务端判「必填」。 */
@@ -176,19 +132,6 @@ export function parseCustomerCsv(text: string): ParsedCustomerCsv {
     };
   }
   return { rows, error: null, skippedBlankRows };
-}
-
-/** 浏览器里 UTF-8 优先，失败时退到 GBK（Excel 另存 CSV 的常见编码）。 */
-export function decodeCsvBytes(bytes: Uint8Array): string {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    try {
-      return new TextDecoder("gbk").decode(bytes);
-    } catch {
-      return new TextDecoder("utf-8").decode(bytes);
-    }
-  }
 }
 
 const FIELD_LABEL: Record<string, string> = {
@@ -297,18 +240,9 @@ export function CustomerImport({
   }
 
   function downloadTemplate() {
-    const blob = new Blob([`\uFEFF${CUSTOMER_CSV_TEMPLATE}`], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "客户导入模板.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("客户导入模板.csv", CUSTOMER_CSV_TEMPLATE);
   }
 
-  const failures = result?.rows.filter((row) => !row.ok) ?? [];
   const preview = parsed?.rows.slice(0, 20) ?? [];
 
   return (
@@ -355,7 +289,13 @@ export function CustomerImport({
             </p>
           )}
 
-          {result && <ImportResultPanel result={result} failures={failures} />}
+          {result && (
+            <CsvImportResultPanel
+              result={result}
+              successText={`已导入 ${result.importedCustomers} 位客户，全部落库。`}
+              rowErrorText={importRowErrorText}
+            />
+          )}
 
           {!result && (
             <>
@@ -484,54 +424,5 @@ export function CustomerImport({
         </footer>
       </div>
     </div>
-  );
-}
-
-function ImportResultPanel({
-  result,
-  failures,
-}: {
-  result: ImportBatchResult;
-  failures: Array<Extract<ImportBatchResult["rows"][number], { ok: false }>>;
-}) {
-  return (
-    <section className="grid gap-3">
-      {result.committed ? (
-        <p className="rounded-md border border-moss-600/30 bg-moss-600/10 px-3 py-2 text-sm text-moss-600">
-          已导入 {result.importedCustomers} 位客户，全部落库。
-        </p>
-      ) : (
-        <div className="rounded-md border border-vermilion-600/40 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">
-          <p className="font-medium">一行都没落库，修好再导。</p>
-          <p className="mt-0.5">
-            共 {result.totalRows} 行，{result.rejectedRows} 行有问题
-            {result.batchError ? `（${result.batchError.message}）` : ""}。
-          </p>
-        </div>
-      )}
-
-      {failures.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead className="bg-paper text-xs text-ink-400">
-              <tr>
-                <th className="px-3 py-2 text-left font-normal">行</th>
-                <th className="px-3 py-2 text-left font-normal">编号</th>
-                <th className="px-3 py-2 text-left font-normal">失败原因</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {failures.map((row) => (
-                <tr key={`${row.kind}-${row.row}`}>
-                  <td className="px-3 py-2 text-xs text-ink-400">第 {row.row + 2} 行</td>
-                  <td className="px-3 py-2 font-mono text-xs">{row.key}</td>
-                  <td className="px-3 py-2 text-vermilion-600">{importRowErrorText(row.error)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
   );
 }

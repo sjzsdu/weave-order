@@ -502,28 +502,40 @@ export function createMockApiClient(): ApiClient {
 
     importBatch: (batch) => {
       const customers = batch.customers ?? [];
+      const samples = batch.samples ?? [];
+      const totalRows = customers.length + samples.length;
+      const keyOf = (row: unknown, index: number) => {
+        const code =
+          typeof row === "object" && row !== null && "code" in row
+            ? (row as { code?: unknown }).code
+            : undefined;
+        // 只接受字符串/数字，避免把对象 stringify 成 "[object Object]"。
+        return typeof code === "string" || typeof code === "number" ? String(code) : `#${index}`;
+      };
       return Promise.resolve({
         committed: true,
         batchError: null,
-        totalRows: customers.length,
-        okRows: customers.length,
+        totalRows,
+        okRows: totalRows,
         rejectedRows: 0,
         importedCustomers: customers.length,
-        importedSamples: 0,
+        importedSamples: samples.length,
         correlationId: null,
-        rows: customers.map((row, index) => {
-          const code =
-            typeof row === "object" && row !== null && "code" in row
-              ? (row as { code?: unknown }).code
-              : undefined;
-          return {
+        // 回执的 row 是「该实体数组内的 0-based 下标」，客户与样品各自从 0 起。
+        rows: [
+          ...customers.map((row, index) => ({
             ok: true as const,
             kind: "customer" as const,
             row: index,
-            // 只接受字符串/数字，避免把对象 stringify 成 "[object Object]"。
-            key: typeof code === "string" || typeof code === "number" ? String(code) : `#${index}`,
-          };
-        }),
+            key: keyOf(row, index),
+          })),
+          ...samples.map((row, index) => ({
+            ok: true as const,
+            kind: "fabric_sample" as const,
+            row: index,
+            key: keyOf(row, index),
+          })),
+        ],
       });
     },
 
@@ -556,6 +568,8 @@ export function createMockApiClient(): ApiClient {
     updateSample: (_id, input) =>
       Promise.resolve({
         ...sample,
+        // 演示模式下 PATCH 也要回传改后的标识，否则编辑 toast 只能验证到旧编码。
+        ...(input.code !== undefined ? { code: input.code } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.composition !== undefined ? { composition: input.composition } : {}),
         ...(input.weight !== undefined ? { weight: input.weight } : {}),
