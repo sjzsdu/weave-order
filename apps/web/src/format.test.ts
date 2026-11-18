@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   actionLabel,
+  appVersionLabel,
+  footerBrandLabel,
   KIND_LABEL,
   ORDER_STATUS_LABEL,
   plainCents,
@@ -27,6 +29,26 @@ describe("桌面 Web 文案", () => {
 
   it("相对时间对非法输入不崩", () => {
     expect(relativeTime("not-a-date")).toBe("not-a-date");
+  });
+
+  it("页脚版本只显示真实注入的版本号", () => {
+    expect(appVersionLabel("0.1.9")).toBe("v0.1.9");
+    expect(appVersionLabel("v0.1.9")).toBe("v0.1.9");
+    // 构建期没注入 / 本地 sha 构建：不显示，而不是回落到写死的旧版本。
+    expect(appVersionLabel(undefined)).toBeNull();
+    expect(appVersionLabel(" ")).toBeNull();
+    expect(appVersionLabel("77b6ef4abcde")).toBeNull();
+    expect(appVersionLabel("0.1")).toBeNull();
+  });
+
+  it("页脚只有可信版本才出现版本，commit 只作附注", () => {
+    expect(footerBrandLabel("v0.1.9", "77b6ef4abcde")).toBe(
+      "织序 WeaveOrder · v0.1.9 (77b6ef4abcde)",
+    );
+    expect(footerBrandLabel("v0.1.9")).toBe("织序 WeaveOrder · v0.1.9");
+    // 没有版本时不留「· v」或「()」，也不拿 commit 顶替版本。
+    expect(footerBrandLabel(null, "77b6ef4abcde")).toBe("织序 WeaveOrder");
+    expect(footerBrandLabel(null, "")).toBe("织序 WeaveOrder");
   });
 
   it("整数分转元不做浮点运算", () => {

@@ -1,3 +1,27 @@
+/**
+ * 页脚版本号：只在构建期注入了语义化版本时才显示。
+ *
+ * 注入值缺失、为空、或不是版本号（本地 sha 构建）时返回 null——宁可不显示，
+ * 也不给用户一个错的版本号：v0.1.0 写死在代码里，发到 v0.1.8 之后页脚还在说
+ * v0.1.0，用户报障时给出的版本就是错的。
+ */
+export function appVersionLabel(raw: string | null | undefined): string | null {
+  const value = (raw ?? "").trim().replace(/^v/i, "");
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)) return null;
+  return `v${value}`;
+}
+
+/**
+ * 页脚品牌行：有可信版本才写版本，commit 只作为版本的附注。
+ * 版本缺失时连「· v」「()」都不留，只剩品牌名——不显示一句错话，也不显示一句废话。
+ */
+export function footerBrandLabel(version: string | null, commit?: string | null): string {
+  const brand = "织序 WeaveOrder";
+  if (!version) return brand;
+  const sha = (commit ?? "").trim();
+  return sha ? `${brand} · ${version} (${sha})` : `${brand} · ${version}`;
+}
+
 /** 页面级展示辅助：只做文案与时间格式化，不做金额计算。 */
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
