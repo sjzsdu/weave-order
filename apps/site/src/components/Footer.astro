@@ -94,6 +94,19 @@ const anchor = (hash: string) => (homeAnchors ? hash : `/index.html${hash}`);
     </div>
     <div class="footer__bottom">
       <span>© 2026 织序 WeaveOrder · 纺织贸易的智能体原生操作系统</span>
+      {/*
+        备案号：国内服务器必须展示。值由 docker/entrypoint.sh 在容器启动时按
+        WEAVE_ICP_LICENSE / WEAVE_PSB_LICENSE 替换；没配置时保持 hidden，
+        本地预览不会露出占位符。
+      */}
+      <span class="footer__legal">
+        <a hidden data-weave-icp href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">
+          __WEAVE_ICP_LICENSE__
+        </a>
+        <span hidden data-weave-psb>
+          __WEAVE_PSB_LICENSE__
+        </span>
+      </span>
       <span>一个人，就是一支队伍。</span>
     </div>
   </div>

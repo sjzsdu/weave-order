@@ -1787,6 +1787,23 @@
     color: var(--color-ink-400);
   }
 
+  .footer__legal {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .footer__legal a {
+    color: inherit;
+  }
+
+  .footer__legal a:hover {
+    color: var(--color-indigo-600);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
   /* --------------------------------------------------------------- reveal */
 
   /* 入场动画只在 JS 可用时启用：无 JS 或脚本失败时内容原样可见 */

@@ -16,6 +16,11 @@
 #   WEAVE_ANALYTICS_DOMAIN    统计站点域名（Plausible 需要）
 #   WEAVE_ANALYTICS_HOST      自建统计地址（留空用官方默认）
 #   WEAVE_ANALYTICS_KEY       PostHog project key
+#   WEAVE_ICP_LICENSE         页脚 ICP 备案号（如「京ICP备2026000000号-1」）
+#   WEAVE_PSB_LICENSE         页脚公安联网备案号（如「京公网安备 11010502xxxxxx号」）
+#   WEAVE_VERIFY_GOOGLE       Google Search Console 的 HTML 标签验证码
+#   WEAVE_VERIFY_BING         Bing Webmaster 的 HTML 标签验证码
+#   WEAVE_VERIFY_BAIDU        百度搜索资源平台的 HTML 标签验证码
 #
 # 渲染方式：先把旧值换成占位符，再把占位符换成新值。
 #   两步走是为了避开「新值恰好等于别人的旧值」这种串扰——
@@ -98,6 +103,26 @@ analytics_domain="${WEAVE_ANALYTICS_DOMAIN:-${ANALYTICS_DOMAIN:-}}"
 analytics_host="${WEAVE_ANALYTICS_HOST:-${ANALYTICS_HOST:-}}"
 analytics_key="${WEAVE_ANALYTICS_KEY:-${ANALYTICS_KEY:-}}"
 
+# 备案号只在页脚展示，属于纯文本；校验仍然要做，值会进 sed 替换串。
+icp_license="${WEAVE_ICP_LICENSE:-}"
+psb_license="${WEAVE_PSB_LICENSE:-}"
+
+# 搜索引擎的 HTML 标签验证码只允许 token 字符集；配错时退化为「不输出 meta」，
+# 不让坏字符写坏整页。
+verify_google="${WEAVE_VERIFY_GOOGLE:-}"
+verify_bing="${WEAVE_VERIFY_BING:-}"
+verify_baidu="${WEAVE_VERIFY_BAIDU:-}"
+for key in google bing baidu; do
+  eval "value=\$verify_$key"
+  case "$value" in
+    "") ;;
+    *[!A-Za-z0-9._-]*)
+      log "警告：WEAVE_VERIFY_$(printf '%s' "$key" | tr 'a-z' 'A-Z') 含非法字符，本次不输出该验证 meta"
+      eval "verify_$key=''"
+      ;;
+  esac
+done
+
 analytics_fallback() {
   log "警告：$1 —— 本次访问统计关闭（provider=none）"
   analytics_provider=none
@@ -131,7 +156,7 @@ case "$analytics_key" in
   *[!A-Za-z0-9_-]*) analytics_fallback "analytics key 含非法字符" ;;
 esac
 
-for value in "$site_new" "$app_new" "$admin_new" "$sso_new" "$email_new"; do
+for value in "$site_new" "$app_new" "$admin_new" "$sso_new" "$email_new" "$icp_license" "$psb_license"; do
   check_value "$value"
 done
 
@@ -207,11 +232,11 @@ log "统一登录 → ${sso_new}"
 log "支持邮箱 → ${email_new}"
 log "已渲染 ${total} 个静态文件"
 
-# 3.5) 访问统计：把 BaseLayout 里的占位符换成部署环境的值。
+# 3.5) 运行期渲染：访问统计、备案号、搜索引擎验证 meta。
 #      用占位符而不是「旧值→新值」：provider 的值很短（none）又是常见词，
 #      直接做全局替换会误伤正文。
-analytics_render="$tmp/analytics.sed"
-: > "$analytics_render"
+html_render="$tmp/html.sed"
+: > "$html_render"
 for pair in \
   "__WEAVE_ANALYTICS_PROVIDER__|${analytics_provider}" \
   "__WEAVE_ANALYTICS_DOMAIN__|${analytics_domain}" \
@@ -220,16 +245,40 @@ for pair in \
 do
   token="${pair%%|*}"
   value="${pair#*|}"
-  printf 's|%s|%s|g\n' "$token" "$(esc_replacement "$value")" >> "$analytics_render"
+  printf 's|%s|%s|g\n' "$token" "$(esc_replacement "$value")" >> "$html_render"
+done
+
+# 备案号：值始终替换（未配置时换成空串），配了才去掉 hidden。
+printf 's|__WEAVE_ICP_LICENSE__|%s|g\n' "$(esc_replacement "$icp_license")" >> "$html_render"
+printf 's|__WEAVE_PSB_LICENSE__|%s|g\n' "$(esc_replacement "$psb_license")" >> "$html_render"
+[ -z "$icp_license" ] || printf 's|<a hidden data-weave-icp|<a data-weave-icp|g\n' >> "$html_render"
+[ -z "$psb_license" ] || printf 's|<span hidden data-weave-psb|<span data-weave-psb|g\n' >> "$html_render"
+
+# 验证 meta：未配置就把 content 换成空串（不能按行删除——Astro 压缩后整个
+# head 可能是一行，删行会把 canonical / OG 一起删掉），配了才替换 token。
+for pair in \
+  "__WEAVE_VERIFY_GOOGLE__|${verify_google}" \
+  "__WEAVE_VERIFY_BING__|${verify_bing}" \
+  "__WEAVE_VERIFY_BAIDU__|${verify_baidu}"
+do
+  token="${pair%%|*}"
+  value="${pair#*|}"
+  printf 's|%s|%s|g\n' "$token" "$(esc_replacement "$value")" >> "$html_render"
 done
 
 find "$SITE_DIR" -type f -name '*.html' | sort > "$tmp/html"
 while IFS= read -r file; do
   [ -n "$file" ] || continue
-  sed -f "$analytics_render" "$file" > "$file.analytics.tmp"
-  mv "$file.analytics.tmp" "$file"
+  sed -f "$html_render" "$file" > "$file.runtime.tmp"
+  mv "$file.runtime.tmp" "$file"
 done < "$tmp/html"
 log "访问统计 → provider=${analytics_provider} domain=${analytics_domain:-<空>} host=${analytics_host:-<默认>}"
+if [ -n "$icp_license" ] || [ -n "$psb_license" ]; then
+  log "备案号   → ICP=${icp_license:-<空>} 公安=${psb_license:-<空>}"
+else
+  log "备案号   → 未配置（页脚不展示）"
+fi
+log "搜索验证 → Google=${verify_google:+已配置} Bing=${verify_bing:+已配置} 百度=${verify_baidu:+已配置}"
 
 # 4) 残留检查：新值里本来就含旧串的情况跳过，只提醒真正没替换掉的硬编码域名。
 all_new="$site_new $app_new $admin_new $sso_new $email_new"
