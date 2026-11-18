@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
  * 详见 apps/admin/tsconfig.json 的 compilerOptions.paths。
  */
 export default defineConfig({
+  // 与 Next/SWC 一致使用 automatic JSX，组件测试里不需要手工 import React。
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),
