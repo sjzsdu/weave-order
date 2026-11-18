@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { BreakGlassRequest, SupportTicket, TenantSummary } from "@weave-order/schema";
 import { date, statusClass } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 import { BreakGlassAccess, BreakGlassForm, TicketForm, TicketStatusSelect } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "支持 / Break-glass" };
 
 export default async function SupportPage({
   searchParams,

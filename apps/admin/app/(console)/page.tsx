@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { Overview } from "@weave-order/schema";
 import { bps, money, percent, wan } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "总览" };
 
 export default async function OverviewPage() {
   const data = await platformFetch<Overview>("/overview");

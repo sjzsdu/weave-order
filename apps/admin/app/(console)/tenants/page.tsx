@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { Plan, TenantSummary } from "@weave-order/schema";
 import { TENANT_STATUS_LABEL, day, money, statusClass } from "@/src/format";
@@ -5,6 +6,7 @@ import { platformFetch } from "@/src/server-api";
 import { ProvisionTenantForm } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "租户" };
 
 const STATUSES = ["", "TRIAL", "ACTIVE", "OVERDUE", "SUSPENDED", "CANCELLED"];
 

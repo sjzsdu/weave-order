@@ -1,8 +1,10 @@
+import type { Metadata } from "next";
 import type { PlatformAuditEntry } from "@weave-order/schema";
 import { date } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "平台审计" };
 
 export default async function AuditPage({
   searchParams,

@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { UsageOverview } from "@weave-order/schema";
 import { money } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "用量" };
 
 export default async function UsagePage() {
   const data = await platformFetch<UsageOverview>("/usage/overview");

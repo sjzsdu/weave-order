@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { ApprovalRequest } from "@weave-order/schema";
 import { APPROVAL_ACTION_LABEL, APPROVAL_STATUS_LABEL, date, statusClass } from "@/src/format";
@@ -5,6 +6,7 @@ import { platformFetch } from "@/src/server-api";
 import { ApprovalDecision } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "待复核" };
 
 export default async function ApprovalsPage({
   searchParams,

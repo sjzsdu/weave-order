@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { FeatureFlag } from "@weave-order/schema";
 import { date } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 import { FeatureFlagCreateForm, FeatureFlagRow } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "设置 · 功能开关" };
 
 export default async function FeatureFlagsPage() {
   const { flags } = await platformFetch<{ flags: FeatureFlag[] }>("/settings/feature-flags");

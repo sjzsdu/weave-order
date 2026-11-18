@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { PlatformIdentitySettings } from "@weave-order/schema";
 import { date } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 import { IdentitySettingsForm } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "设置 · 身份" };
 
 interface IdentityPayload {
   settings: PlatformIdentitySettings;
