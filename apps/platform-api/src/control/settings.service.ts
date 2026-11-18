@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import {
+  FeatureFlagCreateInput,
   FeatureFlagInput,
   PlatformConfig,
   PlatformConfigInput,
@@ -307,26 +308,19 @@ export class SettingsService {
   }
 
   async createFlag(actor: PlatformActor, raw: unknown) {
-    const input = FeatureFlagInput.parse(raw);
-    const key = (raw as { key?: unknown }).key;
-    const name = (raw as { name?: unknown }).name;
-    if (typeof key !== "string" || typeof name !== "string") {
-      throw conflict("创建开关需要 key 与 name");
-    }
+    const input = FeatureFlagCreateInput.parse(raw);
     const rows = await this.db
       .insert(featureFlags)
       .values({
-        key,
-        name,
-        description:
-          typeof (raw as { description?: unknown }).description === "string"
-            ? (raw as { description: string }).description
-            : "",
+        key: input.key,
+        name: input.name,
+        description: input.description ?? "",
         enabled: input.enabled ?? false,
         rolloutPercent: input.rolloutPercent ?? 0,
         tenantIds: input.tenantIds ?? [],
         updatedBy: actor.sub,
       })
+      // 重复 key 不覆盖已有配置：明确报「已存在」，让调用方改用 PATCH。
       .onConflictDoNothing()
       .returning();
     const row = rows[0];
@@ -334,7 +328,7 @@ export class SettingsService {
     await this.audit.record(actor, {
       action: "FEATURE_FLAG_CREATED",
       targetType: "feature_flag",
-      targetId: key,
+      targetId: input.key,
       after: toJson(row),
       reason: "创建功能开关",
     });

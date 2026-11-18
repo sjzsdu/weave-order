@@ -18,6 +18,7 @@ import type {
 import { mutate } from "./client-api";
 import { toFormError, toErrorMessage, type FormError } from "./api-error";
 import { describeJsonError } from "./json-error";
+import { featureFlagPayload, validateFeatureFlagDraft } from "./feature-flag";
 
 type Method = "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -1375,11 +1376,141 @@ export function IdentitySettingsForm({ settings }: { settings: PlatformIdentityS
 
 /* --------------------------- 功能开关 --------------------------- */
 
+/** 空环境必须先能创建第一个开关，否则整页只有一个空表（WAN-171）。 */
+export function FeatureFlagCreateForm({ defaultOpen }: { defaultOpen: boolean }) {
+  const { pending, error, success, submit } = useSubmit();
+  // open 由组件自己持有：创建成功后 router.refresh() 会让 defaultOpen 变 false，
+  // 若直接绑到 props，表单会立刻收起，连「已创建」提示都看不到。
+  const [open, setOpen] = useState(defaultOpen);
+  const [key, setKey] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [enabled, setEnabled] = useState(false);
+  const [rollout, setRollout] = useState("0");
+  const [tenantIds, setTenantIds] = useState("");
+  const [problems, setProblems] = useState<{ label: string; message: string }[]>([]);
+  // 服务端有校验，这里先挡一遍，让用户在不发请求的情况下看到所有问题。
+  const draft = { key, name, description, rollout, tenantIds, enabled };
+
+  return (
+    // 空环境默认展开，已有开关时收起来，避免挤压列表。
+    <details
+      className="card card-toggle"
+      id="new-flag"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span>新建开关</span>
+        <span className="tiny muted">key 创建后不可修改，灰度与租户可在列表中随时调整</span>
+      </summary>
+      <FormShell
+        pending={pending}
+        error={
+          error ??
+          (problems.length > 0
+            ? { message: "请先修正以下内容再提交", fields: problems }
+            : null)
+        }
+        success={success}
+        submitLabel="创建开关"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const found = validateFeatureFlagDraft(draft);
+          setProblems(found);
+          if (found.length > 0) return;
+          submit(
+            "/settings/feature-flags",
+            "POST",
+            featureFlagPayload(draft),
+            `已创建「${name.trim()}」`,
+          );
+        }}
+      >
+        <div className="form row">
+          <div className="field">
+            <label htmlFor="flag-key">
+              开关 Key <span style={{ color: "var(--danger)" }}>*</span>
+            </label>
+            <input
+              id="flag-key"
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+              placeholder="billing.overage_preview"
+              aria-required="true"
+              autoComplete="off"
+            />
+            <span className="hint">服务端网关按此 key 校验，创建后不可修改。</span>
+          </div>
+          <div className="field">
+            <label htmlFor="flag-name">
+              名称 <span style={{ color: "var(--danger)" }}>*</span>
+            </label>
+            <input
+              id="flag-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="超额用量预览"
+              aria-required="true"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="flag-rollout">灰度比例（%）</label>
+            <input
+              id="flag-rollout"
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={rollout}
+              onChange={(event) => setRollout(event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="flag-tenants">指定租户</label>
+            <input
+              id="flag-tenants"
+              value={tenantIds}
+              onChange={(event) => setTenantIds(event.target.value)}
+              placeholder="租户 ID，逗号分隔"
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="flag-description">说明</label>
+          <input
+            id="flag-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="给运营同事看的用途说明"
+          />
+        </div>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => setEnabled(event.target.checked)}
+          />
+          创建后立即启用
+        </label>
+      </FormShell>
+    </details>
+  );
+}
+
 export function FeatureFlagRow({ flag }: { flag: FeatureFlag }) {
   const { pending, error, success, submit } = useSubmit();
   const [enabled, setEnabled] = useState(flag.enabled);
   const [rollout, setRollout] = useState(String(flag.rolloutPercent));
   const [tenantIds, setTenantIds] = useState(flag.tenantIds.join(","));
+  const flagTenantIds = flag.tenantIds.join(",");
+
+  // 保存 / 回滚后 router.refresh() 会带来新 props，本地输入要跟着重置，否则页面显示旧值。
+  useEffect(() => {
+    setEnabled(flag.enabled);
+    setRollout(String(flag.rolloutPercent));
+    setTenantIds(flagTenantIds);
+  }, [flag.key, flag.enabled, flag.rolloutPercent, flagTenantIds]);
 
   return (
     <tr>
@@ -1460,6 +1591,23 @@ export function FeatureFlagRow({ flag }: { flag: FeatureFlag }) {
             }
           >
             {pending ? "保存中…" : "保存"}
+          </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            type="button"
+            disabled={pending}
+            title="立即对全部租户关闭此开关，并清空灰度与指定租户"
+            onClick={() => {
+              if (!window.confirm(`回滚「${flag.name}」会立即对全部租户关闭，确定？`)) return;
+              submit(
+                `/settings/feature-flags/${flag.key}`,
+                "PATCH",
+                { enabled: false, rolloutPercent: 0, tenantIds: [] },
+                "已回滚",
+              );
+            }}
+          >
+            一键回滚
           </button>
         </div>
       </td>

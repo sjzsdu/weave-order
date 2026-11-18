@@ -737,6 +737,27 @@ export const FeatureFlagInput = z
   .strict();
 export type FeatureFlagInput = z.infer<typeof FeatureFlagInput>;
 
+/**
+ * 创建开关：key / name / description 只在创建时出现。
+ * 更新走 FeatureFlagInput，不允许改 key（key 是主键，也是服务端网关的校验名）。
+ */
+export const FeatureFlagCreateInput = z
+  .object({
+    key: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9._-]*$/i),
+    name: z.string().trim().min(1).max(128),
+    description: z.string().trim().max(500).optional(),
+    enabled: z.boolean().optional(),
+    rolloutPercent: z.number().int().min(0).max(100).optional(),
+    tenantIds: z.array(EntityId).optional(),
+  })
+  .strict();
+export type FeatureFlagCreateInput = z.infer<typeof FeatureFlagCreateInput>;
+
 export const PlatformConfigInput = z
   .object({
     key: z.string().min(1).max(128),

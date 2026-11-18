@@ -32,7 +32,10 @@ export class PlatformAuthGuard implements CanActivate {
       ]) ?? [];
     for (const permission of required) {
       if (!actor.permissions.includes(permission)) {
-        throw forbidden(`角色 ${actor.role} 缺少权限 ${permission}`);
+        // 面向运营同事：说明「没有权限」，角色与权限码只作为联系平台 owner 时的线索。
+        throw forbidden(
+          `当前账号的角色（${actor.role}）没有执行此操作的权限，请联系平台 owner 开通（${permission}）`,
+        );
       }
     }
     return true;

@@ -487,6 +487,33 @@ table.table {
   background: var(--line);
   margin: 14px 0;
 }
+.empty {
+  padding: 28px 20px;
+  text-align: center;
+}
+.card-toggle > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.card-toggle > summary::-webkit-details-marker {
+  display: none;
+}
+.card-toggle > summary::before {
+  content: "＋";
+  color: var(--muted);
+  font-weight: 400;
+}
+.card-toggle[open] > summary::before {
+  content: "－";
+}
+.card-toggle[open] > summary {
+  margin-bottom: 14px;
+}
 .kv {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
@@ -655,6 +682,15 @@ table.table {
   }
   .main {
     padding: 18px 16px 48px;
+    /* 网格项默认按内容最小宽度铺开：表格/长 key 会把整页撑出视口。 */
+    min-width: 0;
+  }
+  .card {
+    max-width: 100%;
+  }
+  /* 窄屏表格保留可读列宽，横向滚动交给 .table-wrap，别把每列挤成一字一行。 */
+  table.table {
+    min-width: 640px;
   }
   .grid.cols-2,
   .grid.cols-3,
