@@ -65,6 +65,25 @@ describe("parseCustomerText", () => {
     const parsed = parseCustomerText("青禾服饰的订单", CUSTOMERS);
     expect(parsed.customerName).toBe("青禾服饰");
   });
+
+  it("表单已选客户时不再提示缺客户（WAN-160 B）", () => {
+    const parsed = parseCustomerText("这款 220g 棉的，要 500 米，什么价？", CUSTOMERS, {
+      selectedCustomerId: CUSTOMERS[1]?.id,
+    });
+    expect(parsed.missing).not.toContain("客户");
+    expect(parsed.hits).toContain("客户：华瑞制衣（已选）");
+    // 原话里提到客户时仍以原话为准，不覆盖成已选项。
+    const mentioned = parseCustomerText("青禾要 300 米 涤棉 180g", CUSTOMERS, {
+      selectedCustomerId: CUSTOMERS[1]?.id,
+    });
+    expect(mentioned.customerName).toBe("青禾服饰");
+    expect(mentioned.hits).not.toContain("客户：华瑞制衣（已选）");
+  });
+
+  it("没有已选客户时仍如实提示缺客户", () => {
+    const parsed = parseCustomerText("这款 220g 棉的，要 500 米", CUSTOMERS);
+    expect(parsed.missing).toContain("客户");
+  });
 });
 
 describe("yuanInputToCents", () => {

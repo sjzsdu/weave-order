@@ -154,7 +154,10 @@ export default function QuotePage() {
   }, [paramSampleId]);
 
   const doParse = () => {
-    const result = parseCustomerText(raw, customers.data ?? []);
+    // 表单里已选客户也算「有客户」，避免解析卡片同时显示客户名和「缺：客户」。
+    const result = parseCustomerText(raw, customers.data ?? [], {
+      selectedCustomerId: customerId,
+    });
     setParsed(result);
     if (result.customerId) setCustomerId(result.customerId);
     if (result.quantity) {
@@ -766,7 +769,7 @@ export default function QuotePage() {
                             </Badge>
                           ))
                         ) : (
-                          <Badge tone="info">相机带入</Badge>
+                          <Badge tone="info">带入的样品</Badge>
                         )}
                       </View>
                     </View>

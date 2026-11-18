@@ -1,10 +1,10 @@
 import { Image, Text, View } from "@tarojs/components";
-import Taro, { useDidShow } from "@tarojs/taro";
+import { useDidShow } from "@tarojs/taro";
 import { useCallback, useState } from "react";
 import type { FabricSample } from "@weave-order/schema";
 import { Badge, Button, Card, Page, Sheet } from "../../components/ui";
 import { api, IS_MOCK } from "../../lib/runtime";
-import { openCamera } from "../../lib/nav";
+import { openCamera, openQuote } from "../../lib/nav";
 
 type PageData = Awaited<ReturnType<typeof api.listSamplesPage>>;
 
@@ -174,8 +174,10 @@ export default function SamplesPage() {
                 block
                 variant="ghost"
                 onClick={() => {
+                  const sampleId = selected.id;
                   setSelected(null);
-                  void Taro.navigateTo({ url: "/pages/quote/index" });
+                  // 带上 sampleId：报价页据此预填面料，否则样品库入口等于断链（WAN-160 A）。
+                  openQuote({ sampleId, mode: "paste" });
                 }}
               >
                 用这个样品报价

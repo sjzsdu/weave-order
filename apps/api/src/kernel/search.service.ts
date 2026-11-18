@@ -107,6 +107,30 @@ function ilikeLiteral(column: AnyColumn, pattern: string): SQL {
   return sql`${column} ILIKE ${pattern} ESCAPE '\\'`;
 }
 
+/** 找样检索词覆盖的字段顺序与 `matchedOn` 一致。 */
+const SEARCH_COLUMNS = [samples.code, samples.name, samples.composition, samples.weight] as const;
+
+const QUERY_SEPARATORS = /[\s,，、;；|]+/;
+/** 「聚酯纤维150g」这类中英文数字连写，在中文与数字交界处拆开。 */
+const CJK_DIGIT_BOUNDARY = /(?<=[\u4e00-\u9fff])(?=\d)/;
+
+/**
+ * 把检索词拆成独立词元。
+ *
+ * 真实对话几乎总是「成分 + 克重」一起说（`聚酯纤维 150g`），而整串 ILIKE
+ * 会把两个条件当成一个不可分割的字符串，必然 0 结果（WAN-160 C）。
+ * 拆开后按词元分别匹配，再由调用方决定 AND / OR。
+ */
+export function tokenizeSearchQuery(query: string): string[] {
+  const tokens: string[] = [];
+  for (const part of query.split(QUERY_SEPARATORS)) {
+    for (const piece of part.split(CJK_DIGIT_BOUNDARY)) {
+      const token = piece.trim();
+      if (token) tokens.push(token);
+    }
+  }
+  return [...new Set(tokens)];
+}
 
 /**
  * 找样内核服务（只读）。
@@ -210,7 +234,10 @@ export class SearchService {
     if (pending > 0) getImageIndexWorker()?.requestTenantSweep(this.tenantId);
     try {
       // 查询图与索引图走同一条预处理，才能落在同一个尺度上。
-      const prepared = await resizeForEmbedding(image, this.image.maxEdge ?? DEFAULT_EMBEDDING_MAX_EDGE);
+      const prepared = await resizeForEmbedding(
+        image,
+        this.image.maxEdge ?? DEFAULT_EMBEDDING_MAX_EDGE,
+      );
       const queryVector = await embedder.embedImage(prepared);
       // 多取一些候选：同一样品可能多张图命中，去重后还要凑够 topK。
       const rows = await index.searchByVector(queryVector, Math.min(topK * 5, 200), threshold);
@@ -291,35 +318,46 @@ export class SearchService {
 
   async searchBySpec(input: unknown): Promise<T002SearchFabricBySpecData> {
     const parsed = T002SearchFabricBySpecInput.parse(input);
-    const term = `%${escapeLikePattern(parsed.query)}%`;
-    const conditions = [
-      ilikeLiteral(samples.code, term),
-      ilikeLiteral(samples.name, term),
-      ilikeLiteral(samples.composition, term),
-      ilikeLiteral(samples.weight, term),
-    ];
-    const where =
-      parsed.composition === undefined
-        ? or(...conditions)
-        : and(
-            or(...conditions),
-            ilikeLiteral(samples.composition, `%${escapeLikePattern(parsed.composition)}%`),
-          );
+    const tokens = tokenizeSearchQuery(parsed.query);
+    // 空 token 只可能来自纯空白输入：退回整串匹配，保持旧行为。
+    const terms = tokens.length > 0 ? tokens : [parsed.query];
+    const termConditions = terms.map((term) => {
+      const pattern = `%${escapeLikePattern(term)}%`;
+      return or(...SEARCH_COLUMNS.map((column) => ilikeLiteral(column, pattern))) as SQL;
+    });
 
-    const rows = await this.db
-      .select()
-      .from(samples)
-      .where(and(where, eq(samples.tenantId, this.tenantId)))
-      .orderBy(desc(samples.createdAt))
-      .limit(parsed.limit);
+    const runSearch = async (combine: "all" | "any") => {
+      const filters: SQL[] = [
+        (combine === "all" ? and(...termConditions) : or(...termConditions)) as SQL,
+        eq(samples.tenantId, this.tenantId),
+      ];
+      if (parsed.composition !== undefined) {
+        filters.push(
+          ilikeLiteral(samples.composition, `%${escapeLikePattern(parsed.composition)}%`),
+        );
+      }
+      return this.db
+        .select()
+        .from(samples)
+        .where(and(...filters))
+        .orderBy(desc(samples.createdAt))
+        .limit(parsed.limit);
+    };
+
+    // 先要求每个词元都命中（成分 + 克重同时成立）；全是实词却零结果时，
+    // 再放宽成任一命中，避免多打了修饰词就把整条结果清零。
+    let rows = await runSearch("all");
+    if (rows.length === 0 && terms.length > 1) rows = await runSearch("any");
 
     const matches: SpecMatch[] = rows.map((row) => {
-      const q = parsed.query.toLowerCase();
+      const lowered = terms.map((term) => term.toLowerCase());
       const matchedOn: SpecMatch["matchedOn"] = [];
-      if (row.code.toLowerCase().includes(q)) matchedOn.push("code");
-      if (row.name.toLowerCase().includes(q)) matchedOn.push("name");
-      if ((row.composition ?? "").toLowerCase().includes(q)) matchedOn.push("composition");
-      if ((row.weight ?? "").toLowerCase().includes(q)) matchedOn.push("weight");
+      const matchesAny = (value: string | null) =>
+        lowered.some((term) => (value ?? "").toLowerCase().includes(term));
+      if (matchesAny(row.code)) matchedOn.push("code");
+      if (matchesAny(row.name)) matchedOn.push("name");
+      if (matchesAny(row.composition)) matchedOn.push("composition");
+      if (matchesAny(row.weight)) matchedOn.push("weight");
       return {
         sample: mapSample(row),
         score: matchedOn.length / 4,
