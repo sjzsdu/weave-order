@@ -7,6 +7,8 @@
  */
 export type UploadFailureKind = "network" | "http" | "storage";
 
+const HAS_CHINESE = /[\u4e00-\u9fff]/;
+
 export class MediaUploadError extends Error {
   readonly kind: UploadFailureKind;
   readonly status?: number;
@@ -53,8 +55,8 @@ export function toMediaUploadError(
       { cause: error },
     );
   }
-  if (error instanceof Error && error.message.trim()) {
-    return new MediaUploadError(error.message, "storage", { cause: error });
+  if (error instanceof Error && HAS_CHINESE.test(error.message)) {
+    return new MediaUploadError(error.message.trim(), "storage", { cause: error });
   }
   return new MediaUploadError(fallback, "storage", { cause: error });
 }
@@ -63,7 +65,22 @@ export function toMediaUploadError(
 export function uploadFailureMessage(error: unknown, fallback = "图片上传失败，请重试"): string {
   if (isMediaUploadError(error)) return error.message;
   if (error instanceof TypeError) return toMediaUploadError(error).message;
-  if (error instanceof Error && error.message.trim()) return error.message;
+  return userFacingErrorMessage(error, fallback);
+}
+
+/**
+ * 页面错误的统一出口：任何英文原始异常都不直接展示给用户。
+ *
+ * 上传、找样、建样品走的是不同 API，但浏览器断网 / CORS 都会抛 `TypeError: Failed to fetch`；
+ * 页面各 catch 必须用同一套映射，否则漏一处就会把英文原文打到界面上。
+ */
+export function userFacingErrorMessage(error: unknown, fallback: string): string {
+  if (isMediaUploadError(error)) return error.message;
+  if (error instanceof TypeError) return "网络连接失败，请检查网络后重试";
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (HAS_CHINESE.test(message)) return message;
+  }
   return fallback;
 }
 

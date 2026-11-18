@@ -20,6 +20,7 @@ import {
   buildSampleSaveFailureMessage,
   isMediaUploadError,
   uploadFailureMessage,
+  userFacingErrorMessage,
 } from "../../lib/upload-failure";
 
 type Mode = "find" | "waybill" | "signature" | "cargo" | "sample" | "receipt";
@@ -99,7 +100,11 @@ export default function CameraPage() {
         setResultText(null);
       } else if (mode !== "waybill") await runProof(compressed, mode);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "图片处理失败");
+      setError(
+        caught instanceof Error && /cancel/i.test(caught.message)
+          ? "已取消选择照片"
+          : userFacingErrorMessage(caught, "图片处理失败，请重试"),
+      );
     } finally {
       setBusy(false);
     }
@@ -133,7 +138,7 @@ export default function CameraPage() {
         );
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "找样失败");
+      setError(userFacingErrorMessage(caught, "找样失败，请重试"));
     }
   };
 
@@ -164,7 +169,7 @@ export default function CameraPage() {
           ? `${caught.message} 照片还在本页，可重试。`
           : caught instanceof TypeError
             ? "网络连接失败，照片未提交，请检查网络后重试。"
-            : `${uploadFailureMessage(caught, "上传或记录失败")}，请重试。`;
+            : `${userFacingErrorMessage(caught, "上传或记录失败")}，请重试。`;
         setError(message);
         return;
       }
@@ -253,7 +258,7 @@ export default function CameraPage() {
           ? caught.message
           : caught instanceof TypeError
             ? "网络连接失败，请检查网络后重试（本次未创建样品）"
-            : uploadFailureMessage(caught, "建样品失败"),
+            : userFacingErrorMessage(caught, "建样品失败"),
       );
     } finally {
       setSavingSample(false);
