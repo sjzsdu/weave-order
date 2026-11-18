@@ -100,6 +100,9 @@ export function ConsoleShell({
 
   return (
     <div className={`shell${navOpen ? " nav-open" : ""}`}>
+      <a className="skip-link" href="#main">
+        跳到主内容
+      </a>
       <header className="mobile-bar">
         <button
           ref={toggleRef}
@@ -184,7 +187,9 @@ export function ConsoleShell({
           </div>
         </div>
       </aside>
-      <main className="main">{children}</main>
+      <main id="main" className="main" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   );
 }
