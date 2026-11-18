@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type {
   BreakGlassRequest,
   FeatureFlag,
@@ -16,10 +16,12 @@ import type {
   TenantSummary,
 } from "@weave-order/schema";
 import { mutate } from "./client-api";
+import { toFormError, toErrorMessage, type FormError } from "./api-error";
+import { describeJsonError } from "./json-error";
 
 type Method = "POST" | "PATCH" | "PUT" | "DELETE";
 
-/** 统一动作按钮：成功后刷新服务端组件，失败把控制面错误原样展示。 */
+/** 统一动作按钮：成功后刷新服务端组件，失败展示映射后的中文错误。 */
 export function ActionButton({
   label,
   path,
@@ -43,7 +45,7 @@ export function ActionButton({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
 
   const run = () => {
     if (confirmText && !window.confirm(confirmText)) return;
@@ -55,7 +57,7 @@ export function ActionButton({
         await mutate(path, method, payload);
         router.refresh();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "操作失败");
+        setError(toFormError(cause));
       }
     });
   };
@@ -67,25 +69,35 @@ export function ActionButton({
         className={`btn ${small ? "btn-sm" : ""} ${variant}`.trim()}
         disabled={pending}
         onClick={run}
-        title={error ?? undefined}
+        title={error?.message}
       >
         {pending ? "处理中…" : label}
       </button>
       {error ? (
-        <span className="tiny" style={{ color: "var(--danger)", marginLeft: 6 }}>
-          {error}
+        <span className="tiny" style={{ color: "var(--danger)", marginLeft: 6 }} role="alert">
+          {error.message}
         </span>
       ) : null}
     </span>
   );
 }
 
-function ErrorLine({ error }: { error: string | null }) {
-  return error ? (
-    <p className="alert alert-error" style={{ margin: 0 }}>
-      {error}
-    </p>
-  ) : null;
+function ErrorLine({ error }: { error: FormError | null }) {
+  if (!error) return null;
+  return (
+    <div className="alert alert-error" role="alert" aria-live="polite" style={{ margin: 0 }}>
+      <p style={{ margin: 0 }}>{error.message}</p>
+      {error.fields.length > 0 ? (
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+          {error.fields.map((field) => (
+            <li key={`${field.label}-${field.message}`}>
+              <strong>{field.label}</strong>：{field.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 function FormShell({
@@ -102,21 +114,37 @@ function FormShell({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   submitLabel: string;
   pending: boolean;
-  error: string | null;
+  error: FormError | null;
   success?: string | null;
   /** 前置条件不满足时禁用提交（例如还没有任何套餐）。 */
   disabled?: boolean;
   hint?: string | null;
 }) {
+  // 用户一改输入，旧错误就应该消失：否则改完仍看到过期提示，不知道是否已经改对。
+  const lastError = useRef(error);
+  const [dirtySinceError, setDirtySinceError] = useState(false);
+  useEffect(() => {
+    if (lastError.current !== error) {
+      lastError.current = error;
+      setDirtySinceError(false);
+    }
+  }, [error]);
+  const visibleError = dirtySinceError ? null : error;
+
   return (
-    <form className="form" onSubmit={onSubmit}>
+    <form
+      className="form"
+      onSubmit={onSubmit}
+      onInput={() => setDirtySinceError(true)}
+      onChange={() => setDirtySinceError(true)}
+    >
       {children}
       {hint ? (
         <p className="alert alert-info" style={{ margin: 0 }}>
           {hint}
         </p>
       ) : null}
-      <ErrorLine error={error} />
+      <ErrorLine error={visibleError} />
       {success ? (
         <p className="alert alert-ok" style={{ margin: 0 }}>
           {success}
@@ -134,7 +162,7 @@ function FormShell({
 function useSubmit() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const submit = (path: string, method: Method, body: unknown, message: string) => {
     setError(null);
@@ -145,11 +173,12 @@ function useSubmit() {
         setSuccess(message);
         router.refresh();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "操作失败");
+        setError(toFormError(cause));
       }
     });
   };
-  return { pending, error, success, submit };
+  const clearError = () => setError(null);
+  return { pending, error, success, submit, clearError };
 }
 
 /* --------------------------- 开通公司 --------------------------- */
@@ -852,7 +881,7 @@ export function PricingPreviewForm({ plans }: { plans: Plan[] }) {
     annualTotalCents: number;
     effectiveMonthlyCents: number;
   }>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
   const { pending, startTransition } = useTransitionStore();
 
   if (plans.length === 0) {
@@ -866,35 +895,30 @@ export function PricingPreviewForm({ plans }: { plans: Plan[] }) {
   return (
     <form
       className="form"
+      onInput={() => setError(null)}
+      onChange={() => setError(null)}
       onSubmit={(event) => {
         event.preventDefault();
         setError(null);
         startTransition(async () => {
           try {
-            const response = await fetch("/api/pricing/preview", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                planCode,
-                seats: Number(seats),
-                billingCycle: cycle,
-                monthlyPriceCents: monthly ? Math.round(Number(monthly) * 100) : undefined,
-              }),
-            });
-            const body = (await response.json()) as {
-              error?: { message?: string };
+            const body = await mutate<{
               monthlyTotalCents?: number;
               annualTotalCents?: number;
               effectiveMonthlyCents?: number;
-            };
-            if (!response.ok) throw new Error(body.error?.message ?? "试算失败");
+            }>("/pricing/preview", "POST", {
+              planCode,
+              seats: Number(seats),
+              billingCycle: cycle,
+              monthlyPriceCents: monthly ? Math.round(Number(monthly) * 100) : undefined,
+            });
             setResult({
               monthlyTotalCents: body.monthlyTotalCents ?? 0,
               annualTotalCents: body.annualTotalCents ?? 0,
               effectiveMonthlyCents: body.effectiveMonthlyCents ?? 0,
             });
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "试算失败");
+            setError(toFormError(cause));
           }
         });
       }}
@@ -1252,24 +1276,18 @@ export function LlmTestButton({ baseUrl }: { baseUrl?: string }) {
         onClick={() =>
           startTransition(async () => {
             try {
-              const response = await fetch("/api/settings/llm/test", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ baseUrl }),
-              });
-              const body = (await response.json()) as {
-                ok?: boolean;
-                latencyMs?: number;
-                message?: string;
-                error?: { message?: string };
-              };
+              const body = await mutate<{ ok?: boolean; latencyMs?: number; message?: string }>(
+                "/settings/llm/test",
+                "POST",
+                { baseUrl },
+              );
               setResult(
                 body.ok
                   ? `连接正常 · ${body.latencyMs}ms`
-                  : `失败：${body.message ?? body.error?.message ?? "未知"}`,
+                  : `连接失败：${readableGatewayMessage(body.message)}`,
               );
             } catch (cause) {
-              setResult(cause instanceof Error ? cause.message : "测试失败");
+              setResult(`连接失败：${toErrorMessage(cause)}`);
             }
           })
         }
@@ -1277,12 +1295,24 @@ export function LlmTestButton({ baseUrl }: { baseUrl?: string }) {
         {pending ? "测试中…" : "测试连接"}
       </button>
       {result ? (
-        <div className="tiny muted" style={{ marginTop: 4 }}>
+        <div className="tiny muted" style={{ marginTop: 4 }} role="status">
           {result}
         </div>
       ) : null}
     </div>
   );
+}
+
+/** 网关探测的失败原因由服务端拼接，可能夹带底层英文；只展示可读的中文部分。 */
+function readableGatewayMessage(message?: string): string {
+  if (
+    !message ||
+    !/[\u4e00-\u9fff]/.test(message) ||
+    /\b(econn|enotfound|fetch|json)\b/i.test(message)
+  ) {
+    return "网关不可达，请检查网关地址、白名单与网络";
+  }
+  return message;
 }
 
 /* --------------------------- 身份 --------------------------- */
@@ -1366,7 +1396,11 @@ export function FeatureFlagRow({ flag }: { flag: FeatureFlag }) {
         {tenantIds || "—"}
       </td>
       <td className="tiny">
-        {error ? <span style={{ color: "var(--danger)" }}>{error}</span> : null}
+        {error ? (
+          <span style={{ color: "var(--danger)" }} role="alert">
+            {error.message}
+          </span>
+        ) : null}
         {success ? <span style={{ color: "var(--ok)" }}>{success}</span> : null}
         {!error && !success ? "—" : null}
       </td>
@@ -1441,9 +1475,10 @@ export function ConfigForm() {
   const [scope, setScope] = useState("GLOBAL");
   const [scopeRef, setScopeRef] = useState("");
   const [value, setValue] = useState("{}");
-  const [preview, setPreview] = useState<string | null>(null);
+  const [preview, setPreview] = useState<null | { kind: "ok" | "error"; text: string }>(null);
 
-  const parse = (): unknown => JSON.parse(value);
+  // 改动任意输入就收起旧预览/错误，避免「已经改对了却还看到上一轮报错」。
+  const clearPreview = () => setPreview(null);
 
   return (
     <FormShell
@@ -1455,9 +1490,9 @@ export function ConfigForm() {
         event.preventDefault();
         let parsed: unknown;
         try {
-          parsed = parse();
-        } catch {
-          setPreview("JSON 格式不正确");
+          parsed = JSON.parse(value);
+        } catch (cause) {
+          setPreview({ kind: "error", text: describeJsonError(value, cause) });
           return;
         }
         submit(
@@ -1474,13 +1509,22 @@ export function ConfigForm() {
           <input
             required
             value={key}
-            onChange={(event) => setKey(event.target.value)}
+            onChange={(event) => {
+              setKey(event.target.value);
+              clearPreview();
+            }}
             placeholder="billing.overage_unit_cents"
           />
         </div>
         <div className="field">
           <label>作用域</label>
-          <select value={scope} onChange={(event) => setScope(event.target.value)}>
+          <select
+            value={scope}
+            onChange={(event) => {
+              setScope(event.target.value);
+              clearPreview();
+            }}
+          >
             <option value="GLOBAL">全局</option>
             <option value="PLAN">套餐</option>
             <option value="TENANT">租户</option>
@@ -1490,7 +1534,10 @@ export function ConfigForm() {
           <label>作用域引用</label>
           <input
             value={scopeRef}
-            onChange={(event) => setScopeRef(event.target.value)}
+            onChange={(event) => {
+              setScopeRef(event.target.value);
+              clearPreview();
+            }}
             disabled={scope === "GLOBAL"}
             placeholder="PRO / tenant-id"
           />
@@ -1498,37 +1545,62 @@ export function ConfigForm() {
       </div>
       <div className="field">
         <label>JSON 值</label>
-        <textarea value={value} onChange={(event) => setValue(event.target.value)} />
+        <textarea
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+            clearPreview();
+          }}
+          aria-describedby={preview?.kind === "error" ? "config-json-error" : undefined}
+        />
       </div>
-      {preview ? <div className="alert alert-warn">{preview}</div> : null}
+      {preview ? (
+        <div
+          id={preview.kind === "error" ? "config-json-error" : undefined}
+          className={preview.kind === "error" ? "alert alert-error" : "alert alert-ok"}
+          role={preview.kind === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          {preview.text}
+        </div>
+      ) : null}
       <div className="btn-row">
         <button
           className="btn btn-sm"
           type="button"
           onClick={() => {
             void (async () => {
+              let parsed: unknown;
               try {
-                const response = await fetch("/api/settings/configs/preview", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
+                parsed = JSON.parse(value);
+              } catch (cause) {
+                setPreview({ kind: "error", text: describeJsonError(value, cause) });
+                return;
+              }
+              try {
+                const body = await mutate<{ affectedTenants?: number; before?: unknown }>(
+                  "/settings/configs/preview",
+                  "POST",
+                  {
                     key,
                     scope,
                     scopeRef: scope === "GLOBAL" ? null : scopeRef || null,
-                    value: parse(),
-                  }),
-                });
-                const body = (await response.json()) as {
-                  affectedTenants?: number;
-                  before?: unknown;
-                  error?: { message?: string };
-                };
-                if (!response.ok) throw new Error(body.error?.message ?? "预览失败");
-                setPreview(
-                  `影响租户 ${body.affectedTenants ?? 0} 家 · 变更前：${JSON.stringify(body.before)?.slice(0, 120) ?? "无"}`,
+                    value: parsed,
+                  },
                 );
+                setPreview({
+                  kind: "ok",
+                  text: `影响租户 ${body.affectedTenants ?? 0} 家 · 变更前：${JSON.stringify(body.before)?.slice(0, 120) ?? "无"}`,
+                });
               } catch (cause) {
-                setPreview(cause instanceof Error ? cause.message : "预览失败");
+                const info = toFormError(cause);
+                const detail = info.fields
+                  .map((field) => `${field.label}：${field.message}`)
+                  .join("；");
+                setPreview({
+                  kind: "error",
+                  text: detail ? `${info.message}（${detail}）` : info.message,
+                });
               }
             })();
           }}
@@ -1738,7 +1810,7 @@ export function OnboardingLinkPanel({
   ownerEmail: string | null;
 }) {
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
 
   const generate = () => {
@@ -1751,7 +1823,7 @@ export function OnboardingLinkPanel({
         );
         setLink({ url: result.url, expiresAt: result.expiresAt });
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "生成开通链接失败");
+        setError(toFormError(cause));
       }
     });
   };
@@ -1761,7 +1833,7 @@ export function OnboardingLinkPanel({
     try {
       await navigator.clipboard.writeText(link.url);
     } catch {
-      setError("复制失败，请手动选中链接复制");
+      setError({ message: "复制失败，请手动选中链接复制", fields: [] });
     }
   };
 
@@ -1808,8 +1880,8 @@ export function OnboardingLinkPanel({
       ) : null}
 
       {error ? (
-        <p className="tiny" style={{ color: "var(--danger)", marginTop: 8 }}>
-          {error}
+        <p className="tiny" style={{ color: "var(--danger)", marginTop: 8 }} role="alert">
+          {error.message}
         </p>
       ) : null}
     </div>

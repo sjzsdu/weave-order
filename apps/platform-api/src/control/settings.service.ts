@@ -231,11 +231,16 @@ export class SettingsService {
       await this.recordLlmTest(actor, requested.slice(0, 128), result);
       return result;
     } catch (cause) {
+      // 底层错误（fetch failed / ENOTFOUND）只写日志与审计，页面文案保持中文可读。
+      console.error("[platform-api] LLM 网关探测失败", {
+        target: requested.slice(0, 128),
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
       const result = {
         ok: false,
         status: null,
         latencyMs: Date.now() - started,
-        message: cause instanceof Error ? cause.message : "连接失败",
+        message: "网关不可达，请检查网关地址、白名单与网络",
       };
       await this.recordLlmTest(actor, requested.slice(0, 128), result);
       return result;
