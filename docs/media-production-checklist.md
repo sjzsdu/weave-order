@@ -242,6 +242,12 @@ COS 控制台「安全管理 → 跨域访问 CORS」按同样字段填：
 本地 `http://localhost:*` **只配 dev 桶**，不要进生产规则。只有真用自定义元数据时才加 `x-amz-*`；
 `AllowedHeaders: ["*"]` 不是最小权限。
 
+**移动端 H5 是独立 origin**：`https://weave-m.wnbgj.com` 必须单独列进 AllowedOrigins
+（不能靠 `weave.wnbgj.com` 的通配或兄弟域名继承）。漏配时浏览器直传会在预检阶段被拦，
+前端只看到 `Failed to fetch` / `TypeError`，接口日志里没有任何 PUT 记录。
+走查发现的生产事故即属此类：移动端 H5 全部拍照入口 100% 失败（探针 `OPTIONS` 返回 403，
+无 `Access-Control-Allow-Origin`）。
+
 浏览器预检失败的典型报错（Chrome / Edge）：
 
 ```text
