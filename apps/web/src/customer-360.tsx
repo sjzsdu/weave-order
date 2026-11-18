@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useCustomer360, useCustomerTimeline } from "@weave-order/core";
+import { useAuthContext, useCustomer360, useCustomerTimeline } from "@weave-order/core";
 import { ApiError } from "@weave-order/core";
 import type { CustomerTimelineEvent, CustomerTimelineKind } from "@weave-order/schema";
 import { Badge, Button, CustomerHeader, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SharePanel } from "@/share-panel";
 import { InboundReplyDrawer } from "@/inbound-reply-drawer";
-import { STATUS_LABEL, TIMELINE_KIND_LABEL, actionLabel, relativeTime } from "@/format";
+import { STATUS_LABEL, TIMELINE_KIND_LABEL, actionLabel, ownerLabel, relativeTime } from "@/format";
 
 type TimelineFilter = "all" | CustomerTimelineKind;
 
@@ -115,6 +115,8 @@ export function Customer360Panel({
   embedded?: boolean;
 }) {
   const api = useApi();
+  const me = useAuthContext(api);
+  const myMembershipId = me.data && !("tenants" in me.data) ? me.data.membership.id : null;
   const detail = useCustomer360(api, customerId);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
@@ -197,7 +199,7 @@ export function Customer360Panel({
             customer={customer}
             meta={
               <p className="mt-1 text-xs text-ink-400">
-                负责人 {data.ownerName ?? "未分配"} ·{" "}
+                负责人 {ownerLabel(data.ownerName, data.ownerId, myMembershipId)} ·{" "}
                 {summary.lastContactAt
                   ? `最近往来 ${relativeTime(summary.lastContactAt)}`
                   : "还没有往来记录"}

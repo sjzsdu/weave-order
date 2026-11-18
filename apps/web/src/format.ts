@@ -86,3 +86,23 @@ export function plainCents(amount: number): string {
   const absolute = Math.abs(amount);
   return `${sign}${Math.trunc(absolute / 100)}.${(absolute % 100).toString().padStart(2, "0")}`;
 }
+
+const TECHNICAL_ID_PATTERN =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i;
+
+/**
+ * 客户负责人的展示文案。
+ *
+ * 后端已经只返回姓名/邮箱副本，但历史数据与其它域仍可能把 SSO 主键当名字回传；
+ * 这里再挡一次：像 UUID 的值一律不显示，改成「我 / 同事 / 未分配」（WAN-151）。
+ */
+export function ownerLabel(
+  ownerName: string | null | undefined,
+  ownerId: string | null | undefined,
+  myMembershipId?: string | null,
+): string {
+  const name = ownerName?.trim();
+  if (name && !TECHNICAL_ID_PATTERN.test(name)) return name;
+  if (!ownerId) return "未分配";
+  return myMembershipId && ownerId === myMembershipId ? "我" : "同事";
+}

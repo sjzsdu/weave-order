@@ -6,10 +6,25 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
+import { isTechnicalId } from "./member-label";
 import { toIso } from "./mappers";
 
 type TenantRow = typeof tenants.$inferSelect;
 type MembershipRow = typeof memberships.$inferSelect;
+
+/** 登录 claims 的姓名：空白与 UUID（某些 IdP 会拿 sub 回填 name）都不算展示名。 */
+function cleanProfileName(value: string | null | undefined): string | null {
+  const name = value?.trim();
+  if (!name || isTechnicalId(name)) return null;
+  return name.slice(0, 128);
+}
+
+/** 登录 claims 的邮箱：只有像邮箱的值才落库，避免把用户名塞进 email 列。 */
+function normalizeEmail(value: string | null | undefined): string | null {
+  const email = value?.trim().toLowerCase();
+  if (!email || !email.includes("@")) return null;
+  return email.slice(0, 255);
+}
 
 export function mapTenant(row: TenantRow): Tenant {
   return {
@@ -32,6 +47,8 @@ export function mapMembership(row: MembershipRow): Membership {
     id: row.id,
     tenantId: row.tenantId,
     subject: row.subject,
+    displayName: row.displayName ?? null,
+    email: row.email ?? null,
     casdoorOrg: row.casdoorOrg,
     role: row.role,
     dataScope: row.dataScope,
@@ -124,6 +141,8 @@ export class TenancyService {
           .values({
             tenantId: parsed.tenantId,
             subject: parsed.subject,
+            displayName: parsed.displayName ?? null,
+            email: parsed.email ?? null,
             casdoorOrg: parsed.casdoorOrg ?? null,
             role: parsed.role,
             dataScope: parsed.dataScope,
@@ -405,6 +424,7 @@ export class TenancyService {
           .values({
             tenantId: input.tenantId,
             subject: email,
+            email,
             role: input.role,
             dataScope: input.dataScope ?? "OWN",
             status: "INVITED",
@@ -462,6 +482,7 @@ export class TenancyService {
     subject: string,
     casdoorOrg: string | null,
     ctx: KernelContext,
+    profile?: { displayName?: string | null; email?: string | null },
   ): Promise<Membership> {
     return await this.db.transaction(async (tx) => {
       const before = await tx
@@ -476,7 +497,15 @@ export class TenancyService {
 
       const updated = await tx
         .update(memberships)
-        .set({ subject, casdoorOrg, status: "ACTIVE", updatedAt: new Date() })
+        .set({
+          subject,
+          casdoorOrg,
+          status: "ACTIVE",
+          // 邀请阶段只存了邮箱；接受时把 SSO 姓名补上，成员表与客户负责人从此有名字可显示。
+          displayName: cleanProfileName(profile?.displayName) ?? row.displayName,
+          email: normalizeEmail(profile?.email) ?? row.email,
+          updatedAt: new Date(),
+        })
         .where(and(eq(memberships.id, membershipId), eq(memberships.status, "INVITED")))
         .returning();
       const next = updated[0];
@@ -496,5 +525,42 @@ export class TenancyService {
       );
       return mapMembership(next);
     });
+  }
+
+  /**
+   * 用登录 claims 刷新成员的可展示姓名 / 邮箱。
+   *
+   * 为什么放在登录路径：Casdoor 是唯一持有姓名的系统，业务请求不能回调它；
+   * 每次 `/api/auth/me` 顺带把 claims 落库，读取侧（客户负责人、成员表）才有非 UUID 的展示值。
+   * 只在值真的变化时写，避免每次页面加载都产生一条 UPDATE。
+   */
+  async syncMemberProfile(
+    subject: string,
+    tenantId: string,
+    profile: { displayName?: string | null; email?: string | null },
+  ): Promise<void> {
+    const displayName = cleanProfileName(profile.displayName);
+    const email = normalizeEmail(profile.email);
+    if (!displayName && !email) return;
+    const rows = await this.db
+      .select({ displayName: memberships.displayName, email: memberships.email })
+      .from(memberships)
+      .where(and(eq(memberships.subject, subject), eq(memberships.tenantId, tenantId)))
+      .limit(1);
+    const current = rows[0];
+    if (!current) return;
+    const nextDisplayName = displayName ?? current.displayName ?? null;
+    const nextEmail = email ?? current.email ?? null;
+    // 只在值真的变化时写：`/api/auth/me` 是每次页面加载都会走的路径。
+    if (
+      nextDisplayName === (current.displayName ?? null) &&
+      nextEmail === (current.email ?? null)
+    ) {
+      return;
+    }
+    await this.db
+      .update(memberships)
+      .set({ displayName: nextDisplayName, email: nextEmail, updatedAt: new Date() })
+      .where(and(eq(memberships.subject, subject), eq(memberships.tenantId, tenantId)));
   }
 }

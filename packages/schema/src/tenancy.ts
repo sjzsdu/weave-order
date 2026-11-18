@@ -68,6 +68,10 @@ export const Membership = z
     id: EntityId,
     tenantId: EntityId,
     subject: z.string().min(1).max(128),
+    /** 可展示的姓名；来自登录 claims，可能为空（对方还没登录过）。绝不等于 subject。 */
+    displayName: z.string().max(128).nullable().optional(),
+    /** 可展示的邮箱；来自登录 claims 或邀请邮箱。 */
+    email: z.string().max(255).nullable().optional(),
     casdoorOrg: z.string().min(1).max(128).nullable(),
     role: MemberRole,
     dataScope: DataScope,
@@ -108,6 +112,8 @@ export const CreateMembershipInput = z
   .object({
     tenantId: EntityId,
     subject: z.string().min(1).max(128),
+    displayName: z.string().max(128).nullable().optional(),
+    email: z.string().max(255).nullable().optional(),
     casdoorOrg: z.string().min(1).max(128).nullable().optional(),
     role: MemberRole,
     dataScope: DataScope.default("OWN"),

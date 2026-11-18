@@ -13,6 +13,7 @@ import type { KernelContext } from "./audit";
 import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
 import { ownerScopeFilter } from "./data-scope";
 import { KernelError } from "./errors";
+import { memberDisplayName } from "./member-label";
 import { escapeLikePattern } from "./search.service";
 
 /**
@@ -146,7 +147,8 @@ function mapListItem(row: CustomerListRow): CustomerListItem {
     contactPhone: row.contact_phone,
     contactEmail: row.contact_email,
     ownerId: row.owner_id,
-    ownerName: row.owner_name,
+    // 兜底第二层：SQL 只取姓名/邮箱副本，这里再挡一次 UUID，任何上游回退到 subject 都不会泄漏。
+    ownerName: memberDisplayName(row.owner_name),
     pendingQuoteCount: row.pending_quote_count,
     inTransitSampleCount: row.in_transit_sample_count,
     activeOrderCount: row.active_order_count,
@@ -210,7 +212,11 @@ export async function loadCustomerList(
       customers.contact_phone,
       customers.contact_email,
       customers.owner_id,
-      memberships.subject AS owner_name,
+      -- 负责人只取可展示的姓名/邮箱副本，绝不回退到 subject（那是 SSO 主键 UUID，WAN-151）。
+      COALESCE(
+        NULLIF(BTRIM(memberships.display_name), ''),
+        NULLIF(BTRIM(memberships.email), '')
+      ) AS owner_name,
       ${aggregateColumns()}
     FROM customers
     LEFT JOIN memberships

@@ -221,6 +221,7 @@ export class AuthService {
           record.sub,
           record.tenantId,
         );
+        await this.syncProfile(record, membership.tenantId);
         const next = await this.sessions.read(fromSession);
         return {
           body: await this.contextBody({
@@ -264,6 +265,10 @@ export class AuthService {
       };
     }
     const membership = await this.directory.tenancy.resolveSoleMembership(claims.sub, claims.org);
+    await this.syncProfile(
+      { sub: claims.sub, name: claims.name, email: claims.email },
+      membership.tenantId,
+    );
     const session = await this.sessions.create({
       sub: claims.sub,
       name: claims.name,
@@ -319,6 +324,27 @@ export class AuthService {
       throw authError("NO_MEMBERSHIP", "该账号还没有加入任何公司");
     }
     return this.choicesBody(subject, name, email, choices);
+  }
+
+  /**
+   * 把登录 claims 里的姓名 / 邮箱落到 membership。
+   *
+   * Casdoor 是姓名的唯一来源，而业务读（客户负责人、成员表）发生在租户会话里、
+   * 不能回调 IdP，所以每次 `/api/auth/me` 顺带刷新这份副本（WAN-151）。
+   * 失败只记日志：展示名是副本，读侧已有兜底，不该因为它让登录失败。
+   */
+  private async syncProfile(
+    source: { sub: string; name: string | null; email: string | null },
+    tenantId: string,
+  ): Promise<void> {
+    try {
+      await this.directory.tenancy.syncMemberProfile(source.sub, tenantId, {
+        displayName: source.name,
+        email: source.email,
+      });
+    } catch (error) {
+      console.warn(`[auth] 同步成员展示名失败（不影响登录）：${tenantId}`, error);
+    }
   }
 
   private async contextBody(identity: AuthenticatedIdentity): Promise<AuthContextResponse> {
@@ -437,6 +463,14 @@ export class AuthService {
       membershipId: membership.id,
       result: "ALLOWED",
     });
+    await this.syncProfile(
+      {
+        sub: subject,
+        name: record?.name ?? claims?.name ?? null,
+        email: record?.email ?? claims?.email ?? null,
+      },
+      membership.tenantId,
+    );
 
     const base: SessionRecord = record ?? {
       sub: subject,

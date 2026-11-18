@@ -55,3 +55,16 @@ export function maskPhone(phone: string | null | undefined): string {
   if (digits.length < 7) return "已脱敏";
   return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
 }
+
+const TECHNICAL_ID_PATTERN =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i;
+
+/**
+ * 负责人展示文案：像 UUID 的值绝不显示（WAN-151）。
+ * 后端已只回姓名/邮箱副本，这里挡住历史数据与其它域的回退。
+ */
+export function ownerLabel(ownerName: string | null | undefined, ownerId?: string | null): string {
+  const name = ownerName?.trim();
+  if (name && !TECHNICAL_ID_PATTERN.test(name)) return name;
+  return ownerId ? "同事" : "未分配";
+}

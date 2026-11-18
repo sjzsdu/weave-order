@@ -11,7 +11,7 @@ import { useMounted } from "@/use-mounted";
 import { Customer360Panel } from "@/customer-360";
 import { CustomerForm } from "@/customer-form";
 import { CustomerImport } from "@/customer-import";
-import { TIER_LABEL, relativeTime } from "@/format";
+import { TIER_LABEL, ownerLabel, relativeTime } from "@/format";
 
 const PAGE_SIZE = 100;
 
@@ -27,6 +27,7 @@ function CustomersPageContent() {
   const api = useApi();
   const queryClient = useQueryClient();
   const me = useAuthContext(api);
+  const myMembershipId = me.data && !("tenants" in me.data) ? me.data.membership.id : null;
   // TEAM 范围下「我的」等于本组：后端已按团队过滤，这里把文案对齐。
   const mineLabel =
     me.data && !("tenants" in me.data) && me.data.membership.dataScope === "TEAM" ? "本组" : "我的";
@@ -273,7 +274,9 @@ function CustomersPageContent() {
                       </div>
                     </button>
                   </td>
-                  <td className="px-3 py-2 text-ink-700">{customer.ownerName ?? "未分配"}</td>
+                  <td className="px-3 py-2 text-ink-700">
+                    {ownerLabel(customer.ownerName, customer.ownerId, myMembershipId)}
+                  </td>
                   <td className="px-3 py-2 text-xs text-ink-400">
                     {customer.lastContactAt ? relativeTime(customer.lastContactAt) : "—"}
                   </td>

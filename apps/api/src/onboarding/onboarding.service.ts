@@ -146,6 +146,8 @@ export class OnboardingService {
       {
         tenantId: tenant.id,
         subject: claims.sub,
+        displayName: claims.name,
+        email: claims.email,
         casdoorOrg: claims.org,
         role: "OWNER",
         dataScope: "ALL",
@@ -310,9 +312,8 @@ export class OnboardingService {
         .map((item) => ({
           membershipId: item.id,
           // ACTIVE 成员的 `subject` 是 SSO 主键（UUID），不是邮箱。
-          // 成员表只拿到 membership，没有姓名/邮箱的副本；这里不把 UUID 交给前端，
-          // 由前端用「我 / 已加入的同事」呈现。INVITED 的 subject 才是邮箱。
-          email: item.subject.includes("@") ? item.subject : "",
+          // 优先用登录时落库的 email 副本；INVITED 的 subject 本身就是邮箱。
+          email: item.email ?? (item.subject.includes("@") ? item.subject : ""),
           role: item.role,
           status: item.status === "INVITED" ? "INVITED" : "ACTIVE",
           url: null,
@@ -421,6 +422,7 @@ export class OnboardingService {
       claims.sub,
       claims.org,
       OnboardingService.systemContext(tenant.id),
+      { displayName: claims.name, email: claims.email },
     );
     return OnboardingResult.parse({
       tenantId: tenant.id,
