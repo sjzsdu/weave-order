@@ -47,6 +47,12 @@ a:hover {
   grid-template-columns: 232px minmax(0, 1fr);
   min-height: 100vh;
 }
+/* 移动端专用：顶栏汉堡按钮、抽屉遮罩、抽屉关闭按钮。桌面端全部隐藏。 */
+.mobile-bar,
+.sidebar-backdrop,
+.sidebar-close {
+  display: none;
+}
 .sidebar {
   background: var(--nav);
   color: #cbd5e1;
@@ -147,6 +153,8 @@ a:hover {
   padding: 26px 32px 64px;
   max-width: 1400px;
   width: 100%;
+  /* 网格项默认按内容最小宽度铺开：表格/长 key 会把整页撑出视口。 */
+  min-width: 0;
 }
 .page-head {
   display: flex;
@@ -200,6 +208,9 @@ a:hover {
 .grid {
   display: grid;
   gap: 16px;
+}
+.grid > * {
+  min-width: 0;
 }
 .grid.cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -660,41 +671,185 @@ table.table {
 }
 @media (max-width: 860px) {
   .shell {
-    grid-template-columns: 1fr;
+    display: block;
   }
-  .sidebar {
-    position: relative;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
+
+  /* 顶栏常驻：导航收进抽屉后，页面标题与操作就在首屏。 */
+  .mobile-bar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
     align-items: center;
+    gap: 10px;
+    height: 56px;
+    padding: 0 12px;
+    background: var(--nav);
+    color: #fff;
+    border-bottom: 1px solid #2b3a4d;
+  }
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    padding: 0;
+    border: 1px solid #35485f;
+    border-radius: 9px;
+    background: var(--nav-soft);
+    color: #fff;
+    cursor: pointer;
+  }
+  .nav-toggle:hover {
+    background: #2f4055;
+  }
+  .mobile-bar__brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+  .mobile-bar__brand strong {
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .mobile-bar__brand span {
+    color: #93a3b8;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 侧栏变成左侧抽屉：默认移出视口，点汉堡按钮滑入。 */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 60;
+    width: min(300px, 86vw);
+    height: 100vh;
+    height: 100dvh;
+    padding: 16px 16px 24px;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.22s ease,
+      visibility 0s linear 0.22s;
+    box-shadow: 12px 0 32px rgba(15, 23, 32, 0.28);
+  }
+  .shell.nav-open .sidebar {
+    transform: none;
+    visibility: visible;
+    transition:
+      transform 0.22s ease,
+      visibility 0s linear 0s;
+  }
+  .sidebar-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid #35485f;
+    border-radius: 9px;
+    background: var(--nav-soft);
+    color: #fff;
+    cursor: pointer;
+  }
+  .brand {
+    padding-right: 44px;
+  }
+  /* 遮罩铺满正文，点空白处关闭抽屉。 */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgba(15, 23, 32, 0.52);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+  .shell.nav-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
   }
   .sidebar-foot {
-    margin: 0;
-    border: none;
-  }
-  .nav-group {
-    display: flex;
-    flex-wrap: wrap;
-  }
-  .nav-group .label {
-    display: none;
+    margin-top: auto;
   }
   .main {
     padding: 18px 16px 48px;
-    /* 网格项默认按内容最小宽度铺开：表格/长 key 会把整页撑出视口。 */
-    min-width: 0;
+    max-width: 100%;
   }
   .card {
     max-width: 100%;
+    padding: 16px;
+  }
+  .card-head {
+    flex-wrap: wrap;
+  }
+  .page-head {
+    flex-wrap: wrap;
   }
   /* 窄屏表格保留可读列宽，横向滚动交给 .table-wrap，别把每列挤成一字一行。 */
   table.table {
     min-width: 640px;
   }
+  .table-wrap {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
   .grid.cols-2,
   .grid.cols-3,
   .grid.cols-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 手机竖屏：标题与操作各占一行，筛选表单纵向堆叠，按钮满宽更好点。 */
+@media (max-width: 600px) {
+  .page-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .page-head .btn-row {
+    width: 100%;
+  }
+  .page-head .btn-row .btn {
+    flex: 1 1 auto;
+  }
+  .inline-form {
+    display: grid;
     grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .inline-form .field {
+    min-width: 0;
+  }
+  .inline-form .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .inline-form .btn-row .btn {
+    width: 100%;
+  }
+  .kv {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+  .bar-row .name {
+    width: 84px;
   }
 }

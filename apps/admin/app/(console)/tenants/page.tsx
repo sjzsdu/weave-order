@@ -75,12 +75,14 @@ export default async function TenantsPage({
               ))}
             </select>
           </div>
-          <button className="btn" type="submit">
-            筛选
-          </button>
-          <Link className="btn btn-ghost" href="/tenants">
-            重置
-          </Link>
+          <div className="btn-row">
+            <button className="btn" type="submit">
+              筛选
+            </button>
+            <Link className="btn btn-ghost" href="/tenants">
+              重置
+            </Link>
+          </div>
         </form>
 
         <div className="table-wrap">
