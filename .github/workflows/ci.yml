@@ -1,16 +1,80 @@
 name: ci
 
+# 分钟数预算（2026-11 额度耗尽事故）：私有仓库的 Actions 分钟按 job 累加，
+# 一整套 5 job 流水线约 13 分钟机时。改动不相关的 job 也要占用分钟数，
+# 所以这里按改动范围裁剪；`verify` 仍然每次都跑，是唯一的常驻门禁。
 on:
   push:
     branches: [main]
   pull_request:
+    # 草稿 PR 不跑：agent 分支定稿前每次 push 都会起一整套流水线，
+    # 这是分钟数消耗最快的地方。标为 Ready for review 时才触发（draft 的 push 全部跳过）。
+    types: [opened, synchronize, reopened, ready_for_review]
+    # 纯文档改动不占机器：没有代码面风险，也没有发布门依赖这些提交
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # 改动范围判定：给下游 job 一个「要不要跑」的依据。
+  # 用 git diff 自己算，不引第三方 action（供应链与配额都更省）。
+  changes:
+    name: 改动范围
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    outputs:
+      print_agent: ${{ steps.diff.outputs.print_agent }}
+      db: ${{ steps.diff.outputs.db }}
+      mobile: ${{ steps.diff.outputs.mobile }}
+      lockfile: ${{ steps.diff.outputs.lockfile }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 要与 base 比较，需要该提交对象；浅克隆拿不到
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          ZERO=0000000000000000000000000000000000000000
+          BASE=""
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE="$PR_BASE"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "$ZERO" ] \
+            && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            BASE="$PUSH_BEFORE"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            BASE="$(git rev-parse HEAD~1)"
+          fi
+
+          if [ -n "$BASE" ]; then
+            FILES="$(git diff --name-only "$BASE" HEAD)"
+          else
+            # 没有基线（首个提交）：按「全都改过」处理，宁可多跑一次
+            FILES="$(git ls-files)"
+          fi
+
+          flag() { if printf '%s\n' "$FILES" | grep -Eq "$1"; then echo true; else echo false; fi; }
+          {
+            echo "print_agent=$(flag '^apps/print-agent/|^Cargo\.lock$')"
+            echo "db=$(flag '^packages/db/')"
+            echo "mobile=$(flag '^apps/mobile/|^packages/(core|schema)/|^pnpm-lock\.yaml$')"
+            echo "lockfile=$(flag '^pnpm-lock\.yaml$|^Cargo\.lock$')"
+          } >> "$GITHUB_OUTPUT"
+          echo "基线：${BASE:-（无）}；改动 $(printf '%s\n' "$FILES" | wc -l) 个文件"
+
   verify:
+    # 唯一的常驻门禁：与 changes 并行起跑，不等它（省 30s 排队），草稿 PR 除外
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -116,12 +180,15 @@ jobs:
         run: pnpm lint
 
   # 迁移升级演练（WAN-98）：在「上一个已发布修订」的库上，升级到 PR 头。
+  # 只在动过 packages/db 时跑：没改迁移文件的 PR 没有升级风险。
   # 守卫两件事：
   #   1. migrate:guard —— 已合并的迁移文件与 journal（tag/when/idx）不可改写，
   #      改写 when 会让存量库重放老迁移并卡死（正是 WAN-98 的根因）；
   #   2. 两段式迁移 —— 先按基线的 drizzle/sql 迁移出「旧库」，再恢复 PR 头迁移一次，
   #      新增迁移必须能从旧库增量升级；最后 db:check 验收记录与 journal 一致。
   migrate-upgrade:
+    needs: changes
+    if: needs.changes.outputs.db == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -203,7 +270,10 @@ jobs:
 
   # 打印代理（Tauri 2 + Rust）：此前 10 个 .rs 从不被 CI 编译。
   # 独立作业，不塞进 verify，避免拖慢主链路；无 GUI 环境只需要系统库即可 cargo check/test。
+  # 只在动过 apps/print-agent 或 Cargo.lock 时跑：其余 PR 编译 Rust 纯属浪费分钟数。
   print-agent:
+    needs: changes
+    if: needs.changes.outputs.print_agent == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -241,7 +311,10 @@ jobs:
 
   # 依赖漏洞扫描：只告警，不阻断（存量告警不应该卡住所有 PR）。
   # 报告写到 Job Summary，阈值（critical/high 限期评估）由人按报告推进。
+  # 只在动过锁文件时跑：依赖没变，扫描结果必然和上次一样。
   dependency-audit:
+    needs: changes
+    if: needs.changes.outputs.lockfile == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true
@@ -267,7 +340,10 @@ jobs:
 
   # 移动端 mock 门禁自检：demo 构建（带 mock）必须被 check-prod-bundle 判红，
   # 证明生产构建的「产物无 mock」断言不是永远为真。
+  # 只在动过移动端及其依赖（core/schema）时跑：Taro 构建是全仓最慢的一步。
   mobile-mock-gate:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
