@@ -94,9 +94,13 @@ jobs:
             echo "  （单镜像多进程：API / Web / Admin / Quote / Mobile / 官网静态站）"
             echo ""
             echo "部署时把 \`WEAVE_TAG\` 设为 \`${{ steps.meta.outputs.image_tag }}\`，不要留在 \`latest\`。"
-            if [[ "${{ steps.meta.outputs.image_tag }}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "上线后验收版本（不登录也能查，页脚版本与镜像同源）："
-              echo "\`node scripts/verify_release_version.mjs https://app.wnbgj.com ${{ steps.meta.outputs.image_tag }}\`"
+            # 只有 HEAD 本身是语义化 tag 时才注入版本（规则在 build_push_images.sh），
+            # 这时给出上线后的验收命令；sha 构建没有版本，页脚也不显示，无需验收。
+            VERSION_AT_HEAD="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
+            if [[ "${VERSION_AT_HEAD}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo ""
+              echo "上线后验收版本（不登录也能查，与页脚同源）："
+              echo "\`node scripts/verify_release_version.mjs https://app.wnbgj.com ${VERSION_AT_HEAD}\`"
             fi
             echo "官网是同一个镜像里的一个服务（靠 compose 的 command 选进程），"
             echo "不存在「主镜像推了、官网镜像没推」的中间状态。"

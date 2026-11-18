@@ -11,7 +11,7 @@ import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-orde
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
 import { PersonaBar } from "@/persona-bar";
-import { appVersionLabel } from "@/format";
+import { appVersionLabel, footerBrandLabel } from "@/format";
 import { SUPPORT_EMAIL, SupportMailto } from "@/support";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
 
@@ -421,12 +421,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
-        {/* 版本缺失时不留一个孤零零的「· v」：品牌名单独成句。commit 只跟在版本后面。 */}
-        <span>
-          {APP_VERSION
-            ? `织序 WeaveOrder · ${APP_VERSION}${GIT_COMMIT ? ` (${GIT_COMMIT})` : ""}`
-            : "织序 WeaveOrder"}
-        </span>
+        <span>{footerBrandLabel(APP_VERSION, GIT_COMMIT)}</span>
         <span className="mx-2 text-line">·</span>
         {/* 没配支持邮箱时不留一个孤零零的分隔点：改成一句可执行的兜底说明。 */}
         {SUPPORT_EMAIL ? (

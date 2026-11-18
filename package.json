@@ -18,7 +18,7 @@
     "dev:list": "node scripts/dev.mjs --list",
     "dev:cli": "pnpm --filter @weave-order/cli dev",
     "dev:desktop": "pnpm --filter @weave-order/print-agent dev",
-    "test:scripts": "node --test scripts/dev.test.mjs scripts/test-env.test.mjs scripts/verify_release_version.test.mjs",
+    "test:scripts": "node --test scripts/dev.test.mjs scripts/test-env.test.mjs scripts/verify_release_version.test.mjs scripts/build-version.test.mjs",
     "lint": "turbo run build && node scripts/lint.mjs",
     "typecheck": "turbo run typecheck && tsc -p e2e/tsconfig.json --noEmit",
     "test": "turbo run test",

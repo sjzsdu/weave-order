@@ -11,6 +11,17 @@ export function appVersionLabel(raw: string | null | undefined): string | null {
   return `v${value}`;
 }
 
+/**
+ * 页脚品牌行：有可信版本才写版本，commit 只作为版本的附注。
+ * 版本缺失时连「· v」「()」都不留，只剩品牌名——不显示一句错话，也不显示一句废话。
+ */
+export function footerBrandLabel(version: string | null, commit?: string | null): string {
+  const brand = "织序 WeaveOrder";
+  if (!version) return brand;
+  const sha = (commit ?? "").trim();
+  return sha ? `${brand} · ${version} (${sha})` : `${brand} · ${version}`;
+}
+
 /** 页面级展示辅助：只做文案与时间格式化，不做金额计算。 */
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();

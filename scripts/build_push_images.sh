@@ -26,18 +26,8 @@ cd "$(dirname "$0")/.."
 
 # 版本与 commit：镜像里没有 .git（.dockerignore 排除），必须在有 git 的这里算好，
 # 再经 build-arg 传给 Dockerfile，由 Next 在 pnpm build 时内联进 bundle。
-#
-# 版本只认 HEAD 上的语义化 tag（v0.1.9 / 0.1.9 / v0.1.9-rc.1）：发布必须来自 tag，
-# 页脚才可能与实际部署一致。非 tag 构建（main 的 sha、本地 latest）一律不注入版本，
-# 页脚只显示品牌名——宁可不说，也不说错。commit 始终注入，供页脚附注与排查追溯。
-# 注意：不能用 `TAG` 变量推导版本（它可以是 latest / sha，也可能被手动覆盖），
-# 否则会给一个未经 tag 确认的提交盖上版本号。
-GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
-RAW_VERSION="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
-APP_VERSION=""
-if [[ "${RAW_VERSION}" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
-  APP_VERSION="${BASH_REMATCH[1]}"                   # 去 v 前缀，展示层自己拼 v，避免 vv0.1.8
-fi
+# 推导规则（只认 HEAD 上的语义化 tag，非 tag 构建不注入版本）见 scripts/build-version.sh。
+source "scripts/build-version.sh"
 
 IMAGE_PREFIX="${IMAGE_PREFIX:-sjzsdu}"
 IMAGE_NAME="${IMAGE_NAME:-weave-order}"
@@ -52,7 +42,8 @@ LATEST="${IMAGE_PREFIX}/${IMAGE_NAME}:latest"
 echo "镜像:                 ${IMAGE}"
 echo "镜像:                 ${LATEST}"
 echo "移动端 API 基址(构建期): ${WEAVE_PUBLIC_API_BASE}"
-echo "页脚版本(构建期):       ${APP_VERSION:+v${APP_VERSION}}${APP_VERSION:-（不显示，非 tag 构建）}"
+VERSION_LABEL="${APP_VERSION:+v${APP_VERSION}}"
+echo "页脚版本(构建期):       ${VERSION_LABEL:-（不显示，非 tag 构建）}"
 echo "commit(构建期):         ${GIT_COMMIT}"
 
 docker build \
