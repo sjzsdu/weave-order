@@ -19,7 +19,8 @@
 #   S3_ACCESS_KEY_ID=weave-media S3_SECRET_ACCESS_KEY=weave-media-secret S3_BUCKET=weave-media
 #   STORAGE_HOME=<repo>/.dev-storage       # 二进制、数据、日志、pid 都在这
 #   MINIO_VERSION / MC_VERSION             # 固定版本，避免“最新版”漂移
-#   MINIO_DOWNLOAD_MIRRORS="https://dl.minio.org.cn https://dl.min.io"
+#   MINIO_DOWNLOAD_MIRRORS="https://dl.minio.org.cn"   # 官方 dl.min.io 已 410 下架
+#   MINIO_CURL_UA="..."                    # 默认浏览器 UA，规避 Cloudflare 对 datacenter IP 的 403
 #   ALLOW_UNVERIFIED_DOWNLOAD=1            # 仅在镜像站缺 .sha256sum 时显式放开
 #
 # 退出码：0 就绪；1 失败（原因打印在 stderr，日志在 $STORAGE_HOME/minio.log）。
@@ -56,7 +57,11 @@ S3_BUCKET="${S3_BUCKET:-weave-media}"
 
 MINIO_VERSION="${MINIO_VERSION:-RELEASE.2025-07-23T15-54-02Z}"
 MC_VERSION="${MC_VERSION:-RELEASE.2025-07-21T05-28-08Z}"
-MINIO_DOWNLOAD_MIRRORS="${MINIO_DOWNLOAD_MIRRORS:-https://dl.minio.org.cn https://dl.min.io}"
+# 官方 dl.min.io 归档已整体 410 下架（2026-11 实测全部版本均 410），只保留国内镜像。
+MINIO_DOWNLOAD_MIRRORS="${MINIO_DOWNLOAD_MIRRORS:-https://dl.minio.org.cn}"
+# dl.minio.org.cn 走 Cloudflare，对 datacenter IP + curl 默认 UA 会返回 403；
+# 用浏览器 UA 规避 bot 拦截，CI（GitHub Actions 海外 runner）上必须带。
+MINIO_CURL_UA="${MINIO_CURL_UA:-Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36}"
 ALLOW_UNVERIFIED_DOWNLOAD="${ALLOW_UNVERIFIED_DOWNLOAD:-0}"
 
 MINIO_BIN="$BIN_DIR/minio.$MINIO_VERSION.$MINIO_PLATFORM"
@@ -76,13 +81,13 @@ download_verified() {
     sha_url="$url.sha256sum"
     tmp="$dest.download.$$"
     log "下载 $label <- $url"
-    if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 -o "$tmp" "$url"; then
+    if ! curl -fL -A "$MINIO_CURL_UA" --retry 3 --retry-delay 2 --connect-timeout 10 -o "$tmp" "$url"; then
       rm -f "$tmp"; log "  $mirror 不可用，换下一个"; continue
     fi
-    if expected="$(curl -fsSL --connect-timeout 10 "$sha_url" | awk '{print $1}' | head -n1)" && [ -n "$expected" ]; then
+    if expected="$(curl -fsSL -A "$MINIO_CURL_UA" --connect-timeout 10 "$sha_url" | awk '{print $1}' | head -n1)" && [ -n "$expected" ]; then
       if ! printf '%s  %s\n' "$expected" "$tmp" | sha256sum -c --status -; then
         rm -f "$tmp"
-        err "$label 校验和不匹配（$mirror），拒绝安装"
+        err "${label} 校验和不匹配（${mirror}），拒绝安装"
         return 1
       fi
       log "  校验和 OK（${expected:0:12}…）"
@@ -90,7 +95,7 @@ download_verified() {
       log "  警告：$sha_url 不可用，按 ALLOW_UNVERIFIED_DOWNLOAD=1 跳过校验"
     else
       rm -f "$tmp"
-      err "$label 校验和不可用（$sha_url）；为供应链安全拒绝安装。确认可信可设 ALLOW_UNVERIFIED_DOWNLOAD=1"
+      err "${label} 校验和不可用（${sha_url}）；为供应链安全拒绝安装。确认可信可设 ALLOW_UNVERIFIED_DOWNLOAD=1"
       return 1
     fi
     chmod +x "$tmp"
@@ -157,9 +162,9 @@ cmd_up() {
   local pid
   if pid="$(our_pid)"; then
     if health_ok; then
-      log "已在运行（pid $pid）"
+      log "已在运行（pid ${pid}）"
     else
-      log "进程存在（pid $pid）但健康检查未通过，重启"
+      log "进程存在（pid ${pid}）但健康检查未通过，重启"
       cmd_down
       cmd_up
       return
@@ -170,7 +175,7 @@ cmd_up() {
       err "端口 $MINIO_PORT 上已有其它 MinIO/S3 服务在响应，但不受本脚本管理；先停掉它或设 MINIO_PORT 换端口"
       exit 1
     fi
-    log "启动 MinIO $MINIO_VERSION（数据：$DATA_DIR）"
+    log "启动 MinIO ${MINIO_VERSION}（数据：${DATA_DIR}）"
     # root 凭据直接取 S3_* 变量，保证 API / mc / compose 三方看到的是同一套。
     MINIO_ROOT_USER="$S3_ACCESS_KEY_ID" MINIO_ROOT_PASSWORD="$S3_SECRET_ACCESS_KEY" \
     nohup "$MINIO_BIN" server "$DATA_DIR" \
@@ -209,7 +214,7 @@ cmd_down() {
 cmd_status() {
   local pid
   if pid="$(our_pid)" && health_ok; then
-    log "运行中：pid $pid，$ENDPOINT（console :$MINIO_CONSOLE_PORT）"
+    log "运行中：pid ${pid}，${ENDPOINT}（console :${MINIO_CONSOLE_PORT}）"
     if [ -x "$MC_BIN" ]; then
       "${MC[@]}" ls "weave-local/$S3_BUCKET" >/dev/null 2>&1 \
         && log "bucket 可访问：$S3_BUCKET" \
