@@ -37,7 +37,7 @@ export default async function ConfigPage() {
               <p>{configs.length} 项</p>
             </div>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" role="region" aria-label="当前生效配置表" tabIndex={0}>
             <table className="table">
               <thead>
                 <tr>
@@ -95,7 +95,12 @@ export default async function ConfigPage() {
                 <p>{versions.length} 个历史版本</p>
               </div>
             </div>
-            <div className="table-wrap">
+            <div
+              className="table-wrap"
+              role="region"
+              aria-label={`${config.key} 历史版本表`}
+              tabIndex={0}
+            >
               <table className="table">
                 <thead>
                   <tr>

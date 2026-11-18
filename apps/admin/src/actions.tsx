@@ -678,6 +678,7 @@ export function ApprovalDecision({ id }: { id: string }) {
   return (
     <div className="stack" style={{ gap: 6 }}>
       <input
+        aria-label="复核意见（可选）"
         className="field"
         style={{
           border: "1px solid var(--line)",
@@ -799,8 +800,8 @@ export function PlanForm({ existingCodes }: { existingCodes: string[] }) {
           <input type="number" min={0} value={form.storageGb} onChange={set("storageGb")} />
         </Field>
       </div>
-      <div className="field">
-        <label>功能开关</label>
+      <fieldset className="field">
+        <legend>功能开关</legend>
         <div className="check-row">
           {PLAN_FEATURES.map((feature) => (
             <label key={feature.key} className="check">
@@ -815,7 +816,7 @@ export function PlanForm({ existingCodes }: { existingCodes: string[] }) {
             </label>
           ))}
         </div>
-      </div>
+      </fieldset>
       {existingCodes.length > 0 ? (
         <p className="tiny muted">已有套餐：{existingCodes.join("、")}</p>
       ) : null}
@@ -1007,8 +1008,7 @@ export function PricingPreviewForm({ plans }: { plans: Plan[] }) {
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>套餐</label>
+        <Field label="套餐" name="preview-plan">
           <select value={planCode} onChange={(event) => setPlanCode(event.target.value)}>
             {plans.map((plan) => (
               <option key={plan.code} value={plan.code}>
@@ -1016,25 +1016,22 @@ export function PricingPreviewForm({ plans }: { plans: Plan[] }) {
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>席位</label>
+        </Field>
+        <Field label="席位" name="preview-seats">
           <input
             type="number"
             min={1}
             value={seats}
             onChange={(event) => setSeats(event.target.value)}
           />
-        </div>
-        <div className="field">
-          <label>账期</label>
+        </Field>
+        <Field label="账期" name="preview-cycle">
           <select value={cycle} onChange={(event) => setCycle(event.target.value)}>
             <option value="MONTHLY">月付</option>
             <option value="ANNUAL">年付</option>
           </select>
-        </div>
-        <div className="field">
-          <label>覆盖月价（元/席，可空）</label>
+        </Field>
+        <Field label="覆盖月价（元/席，可空）" name="preview-monthly">
           <input
             type="number"
             min={0}
@@ -1043,7 +1040,7 @@ export function PricingPreviewForm({ plans }: { plans: Plan[] }) {
             onChange={(event) => setMonthly(event.target.value)}
             placeholder="按生效价格表"
           />
-        </div>
+        </Field>
       </div>
       <ErrorLine error={error} />
       {result ? (
@@ -1483,9 +1480,7 @@ export function FeatureFlagCreateForm({ defaultOpen }: { defaultOpen: boolean })
         pending={pending}
         error={
           error ??
-          (problems.length > 0
-            ? { message: "请先修正以下内容再提交", fields: problems }
-            : null)
+          (problems.length > 0 ? { message: "请先修正以下内容再提交", fields: problems } : null)
         }
         success={success}
         submitLabel="创建开关"
@@ -1614,6 +1609,7 @@ export function FeatureFlagRow({ flag }: { flag: FeatureFlag }) {
         <div className="stack" style={{ gap: 6 }}>
           <label className="check">
             <input
+              aria-label={`${flag.name} 启用`}
               type="checkbox"
               checked={enabled}
               onChange={(event) => setEnabled(event.target.checked)}
@@ -1621,6 +1617,7 @@ export function FeatureFlagRow({ flag }: { flag: FeatureFlag }) {
             启用
           </label>
           <input
+            aria-label={`${flag.name} 灰度比例（%）`}
             type="number"
             min={0}
             max={100}
@@ -1634,6 +1631,7 @@ export function FeatureFlagRow({ flag }: { flag: FeatureFlag }) {
             }}
           />
           <input
+            aria-label={`${flag.name} 生效租户 ID（逗号分隔）`}
             value={tenantIds}
             onChange={(event) => setTenantIds(event.target.value)}
             placeholder="租户 ID，逗号分隔"
@@ -1931,6 +1929,7 @@ export function TicketStatusSelect({
   const [pending, startTransition] = useTransition();
   return (
     <select
+      aria-label="工单状态"
       value={status}
       disabled={pending}
       onChange={(event) => {
@@ -2109,10 +2108,9 @@ export function OnboardingLinkPanel({
 
       {link ? (
         <div style={{ marginTop: 12 }}>
-          <div className="field">
-            <label>链接（7 天内有效）</label>
+          <Field label="链接（7 天内有效）" name="onboarding-link">
             <input readOnly value={link.url} onFocus={(event) => event.currentTarget.select()} />
-          </div>
+          </Field>
           <div className="btn-row">
             <button type="button" className="btn btn-sm" onClick={() => void copy()}>
               复制链接

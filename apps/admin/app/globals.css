@@ -1,6 +1,6 @@
 :root {
   --ink: #1c2430;
-  --muted: #6d7787;
+  --muted: #646e7f;
   --paper: #f3f1ec;
   --surface: #fffefb;
   --line: #ddd8ce;
@@ -10,7 +10,7 @@
   --accent-soft: #e6eef5;
   --ok: #2f6b4f;
   --ok-soft: #e8f2ec;
-  --warn: #9a6414;
+  --warn: #96600f;
   --warn-soft: #fbf1df;
   --danger: #a33a2f;
   --danger-soft: #f9eae7;
@@ -96,7 +96,7 @@ a:hover {
   padding: 8px 10px 4px;
   font-size: 10px;
   letter-spacing: 0.14em;
-  color: #6c7c91;
+  color: #7d8da2;
   text-transform: uppercase;
 }
 .nav-link {
@@ -416,7 +416,6 @@ table.table {
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  outline: 2px solid rgba(31, 78, 121, 0.18);
   border-color: var(--accent);
 }
 .field .hint {
@@ -908,4 +907,59 @@ table.table {
   .bar-row .name {
     width: 84px;
   }
+}
+
+/* --------------------------- 无障碍 --------------------------- */
+
+/*
+ * 键盘焦点环：深色侧栏 #17212e 与浅色正文 #fffefb 都要看得见。
+ * 白圈负责深色背景（对比度约 14:1），蓝圈负责浅色背景（约 6:1），
+ * 两层叠在 focus 元素外圈，任何底色上都至少有一层清晰可辨。
+ * 浏览器默认的 1px 黑 outline 在深色侧栏上接近 1:1，实测几乎不可见。
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #0b5fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+/*
+ * 跳过导航：键盘用户不必 Tab 过 14 个侧栏链接才能进入正文。
+ * 平时移出视口，第一次 Tab 时出现。
+ */
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 4px 16px rgba(28, 36, 48, 0.25);
+  transform: translateY(-200%);
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: none;
+}
+/* 跳到正文后 main 会拿到焦点，它是跳转目标而不是可交互控件，不需要再画一圈。 */
+.main:focus {
+  outline: none;
+}
+
+/* 分组控件用 fieldset/legend，去掉浏览器默认边框，视觉与 .field 保持一致。 */
+fieldset.field {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+fieldset.field > legend {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
 }
