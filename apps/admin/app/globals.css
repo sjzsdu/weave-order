@@ -384,6 +384,10 @@ table.table {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   align-items: end;
 }
+/* 出现字段级错误时行高会变化，按底对齐会让相邻字段的标签错位，改为顶部对齐。 */
+.form.row:has(.field-error) {
+  align-items: start;
+}
 .field {
   display: grid;
   gap: 5px;
@@ -418,6 +422,58 @@ table.table {
 .field .hint {
   color: var(--muted);
   font-size: 11px;
+}
+.field-required {
+  color: var(--danger);
+  margin-left: 2px;
+}
+.field-error {
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* 错误字段用红色边框和浅底色标记，错误文案占独立一行，不遮挡相邻字段。 */
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+  background: #fffafa;
+}
+.field input[aria-invalid="true"]:focus,
+.field select[aria-invalid="true"]:focus,
+.field textarea[aria-invalid="true"]:focus {
+  outline-color: rgba(163, 58, 47, 0.24);
+}
+.check-field {
+  display: grid;
+  gap: 4px;
+}
+.check-field .field-error {
+  padding-left: 22px;
+}
+.form-error-summary {
+  display: grid;
+  gap: 6px;
+}
+.form-error-summary ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.form-error-summary .summary-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.form-error-summary .summary-link:hover {
+  color: var(--ink);
 }
 .check {
   display: flex;

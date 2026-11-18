@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import type {
   BreakGlassRequest,
   FeatureFlag,
@@ -19,6 +19,8 @@ import { mutate } from "./client-api";
 import { toFormError, toErrorMessage, type FormError } from "./api-error";
 import { describeJsonError } from "./json-error";
 import { featureFlagPayload, validateFeatureFlagDraft } from "./feature-flag";
+import { CheckboxField, Field, FieldContextProvider } from "./form-field";
+import { collectFormIssues, focusField, summaryText, type FieldIssue } from "./form-validation";
 
 type Method = "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -110,6 +112,7 @@ function FormShell({
   success,
   disabled,
   hint,
+  validate,
 }: {
   children: React.ReactNode;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -120,8 +123,18 @@ function FormShell({
   /** 前置条件不满足时禁用提交（例如还没有任何套餐）。 */
   disabled?: boolean;
   hint?: string | null;
+  /** 原生约束校验之外的表单级规则（日期区间、JSON 解析等）。 */
+  validate?: () => FieldIssue[];
 }) {
-  // 用户一改输入，旧错误就应该消失：否则改完仍看到过期提示，不知道是否已经改对。
+  const idPrefix = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [issues, setIssues] = useState<FieldIssue[]>([]);
+  const errors = useMemo(
+    () => Object.fromEntries(issues.map((issue) => [issue.name, issue.message])),
+    [issues],
+  );
+
+  // 用户一改输入，旧的服务端错误就应该消失：否则改完仍看到过期提示，不知道是否已经改对。
   const lastError = useRef(error);
   const [dirtySinceError, setDirtySinceError] = useState(false);
   useEffect(() => {
@@ -132,31 +145,79 @@ function FormShell({
   }, [error]);
   const visibleError = dirtySinceError ? null : error;
 
+  // 关闭原生校验气泡（noValidate），先收集全部字段错误再决定是否提交，
+  // 这样用户一次能看到所有问题，而不是被逐个字段的原生提示打断。
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const found = [...collectFormIssues(form), ...(validate?.() ?? [])];
+    if (found.length > 0) {
+      setIssues(found);
+      focusField(form, found[0]!.name);
+      return;
+    }
+    setIssues([]);
+    onSubmit(event);
+  };
+
+  // 用户修正某个字段后立即清掉它的错误，避免旧提示一直挂着。
+  const handleChange = (event: React.FormEvent<HTMLFormElement>) => {
+    setDirtySinceError(true);
+    const name = (event.target as HTMLInputElement | null)?.name;
+    if (!name) return;
+    setIssues((current) =>
+      current.some((issue) => issue.name === name)
+        ? current.filter((issue) => issue.name !== name)
+        : current,
+    );
+  };
+
   return (
-    <form
-      className="form"
-      onSubmit={onSubmit}
-      onInput={() => setDirtySinceError(true)}
-      onChange={() => setDirtySinceError(true)}
-    >
-      {children}
-      {hint ? (
-        <p className="alert alert-info" style={{ margin: 0 }}>
-          {hint}
-        </p>
-      ) : null}
-      <ErrorLine error={visibleError} />
-      {success ? (
-        <p className="alert alert-ok" style={{ margin: 0 }}>
-          {success}
-        </p>
-      ) : null}
-      <div className="btn-row">
-        <button className="btn btn-primary" type="submit" disabled={pending || disabled}>
-          {pending ? "提交中…" : submitLabel}
-        </button>
-      </div>
-    </form>
+    <FieldContextProvider idPrefix={idPrefix} errors={errors}>
+      <form
+        ref={formRef}
+        className="form"
+        noValidate
+        onSubmit={handleSubmit}
+        onChange={handleChange}
+      >
+        {issues.length > 0 ? (
+          <div className="alert alert-error form-error-summary" role="alert">
+            <strong>{summaryText(issues.length)}</strong>
+            <ul>
+              {issues.map((issue) => (
+                <li key={issue.name}>
+                  <button
+                    type="button"
+                    className="summary-link"
+                    onClick={() => focusField(formRef.current, issue.name)}
+                  >
+                    {issue.message}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {children}
+        {hint ? (
+          <p className="alert alert-info" style={{ margin: 0 }}>
+            {hint}
+          </p>
+        ) : null}
+        <ErrorLine error={visibleError} />
+        {success ? (
+          <p className="alert alert-ok" style={{ margin: 0 }}>
+            {success}
+          </p>
+        ) : null}
+        <div className="btn-row">
+          <button className="btn btn-primary" type="submit" disabled={pending || disabled}>
+            {pending ? "提交中…" : submitLabel}
+          </button>
+        </div>
+      </form>
+    </FieldContextProvider>
   );
 }
 
@@ -237,23 +298,38 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>公司名称</label>
+        <Field label="公司名称" name="name" required>
           <input required value={form.name} onChange={set("name")} placeholder="例如：青禾纺织" />
-        </div>
-        <div className="field">
-          <label>租户标识（slug）</label>
+        </Field>
+        <Field
+          label="租户标识（slug）"
+          name="slug"
+          required
+          hint="2–64 位小写字母、数字或连字符，创建后不可修改。"
+        >
           <input
             required
+            minLength={2}
+            maxLength={64}
             pattern="[a-z0-9-]+"
+            title="只允许小写字母、数字和连字符"
             value={form.slug}
             onChange={set("slug")}
             placeholder="qinghe"
           />
-        </div>
-        <div className="field">
-          <label>套餐</label>
-          <select value={form.planCode} onChange={set("planCode")} disabled={noPlans}>
+        </Field>
+        <Field
+          label="套餐"
+          name="planCode"
+          required={!noPlans}
+          hint={noPlans ? "请先在「套餐与价格」创建套餐。" : undefined}
+        >
+          <select
+            value={form.planCode}
+            onChange={set("planCode")}
+            disabled={noPlans}
+            required={!noPlans}
+          >
             {noPlans ? <option value="">暂无可用套餐</option> : null}
             {plans.map((plan) => (
               <option key={plan.code} value={plan.code}>
@@ -261,21 +337,24 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
               </option>
             ))}
           </select>
-          {noPlans ? <span className="hint">请先在「套餐与价格」创建套餐。</span> : null}
-        </div>
-        <div className="field">
-          <label>席位数</label>
-          <input type="number" min={1} value={form.seats} onChange={set("seats")} />
-        </div>
-        <div className="field">
-          <label>账期</label>
+        </Field>
+        <Field label="席位数" name="seats" required>
+          <input
+            type="number"
+            min={1}
+            max={10000}
+            value={form.seats}
+            onChange={set("seats")}
+            required
+          />
+        </Field>
+        <Field label="账期" name="billingCycle">
           <select value={form.billingCycle} onChange={set("billingCycle")}>
             <option value="MONTHLY">月付</option>
             <option value="ANNUAL">年付</option>
           </select>
-        </div>
-        <div className="field">
-          <label>试用天数</label>
+        </Field>
+        <Field label="试用天数" name="trialDays">
           <input
             type="number"
             min={0}
@@ -283,42 +362,37 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
             value={form.trialDays}
             onChange={set("trialDays")}
           />
-        </div>
-        <div className="field">
-          <label>隔离模式</label>
+        </Field>
+        <Field label="隔离模式" name="isolationMode">
           <select value={form.isolationMode} onChange={set("isolationMode")}>
             <option value="SHARED_RLS">共享库 + RLS</option>
             <option value="SCHEMA">独立 schema</option>
             <option value="DATABASE">独立数据库</option>
           </select>
-        </div>
-        <div className="field">
-          <label>区域</label>
+        </Field>
+        <Field label="区域" name="region">
           <select value={form.region} onChange={set("region")}>
             <option value="cn-east">华东</option>
             <option value="cn-north">华北</option>
             <option value="cn-south">华南</option>
             <option value="hk">香港</option>
           </select>
-        </div>
-        <div className="field">
-          <label>联系人</label>
+        </Field>
+        <Field label="联系人" name="contactName">
           <input value={form.contactName} onChange={set("contactName")} placeholder="王经理" />
-        </div>
-        <div className="field">
-          <label>联系邮箱</label>
+        </Field>
+        <Field label="联系邮箱" name="contactEmail">
           <input
             type="email"
             value={form.contactEmail}
             onChange={set("contactEmail")}
             placeholder="contact@example.com"
           />
-        </div>
+        </Field>
       </div>
-      <div className="field">
-        <label>备注</label>
+      <Field label="备注" name="notes">
         <textarea value={form.notes} onChange={set("notes")} placeholder="仅平台内部可见" />
-      </div>
+      </Field>
     </FormShell>
   );
 }
@@ -367,8 +441,7 @@ export function SubscriptionForm({
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>套餐</label>
+        <Field label="套餐" name="planCode">
           <select value={planCode} onChange={(event) => setPlanCode(event.target.value)}>
             {plans.map((plan) => (
               <option key={plan.code} value={plan.code}>
@@ -376,27 +449,30 @@ export function SubscriptionForm({
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>席位</label>
+        </Field>
+        <Field label="席位" name="seats" required>
           <input
             type="number"
             min={1}
+            max={10000}
             value={seats}
             onChange={(event) => setSeats(event.target.value)}
+            required
           />
-        </div>
-        <div className="field">
-          <label>账期</label>
+        </Field>
+        <Field label="账期" name="billingCycle">
           <select value={cycle} onChange={(event) => setCycle(event.target.value)}>
             <option value="MONTHLY">月付</option>
             <option value="ANNUAL">年付</option>
           </select>
-        </div>
+        </Field>
       </div>
       <div className="form row">
-        <div className="field">
-          <label>强制定价（元/席/月，可空）</label>
+        <Field
+          label="强制定价（元/席/月，可空）"
+          name="forcePrice"
+          hint="填写后不会立即生效，会创建 owner 双人复核。"
+        >
           <input
             type="number"
             min={0}
@@ -405,16 +481,14 @@ export function SubscriptionForm({
             onChange={(event) => setForcePrice(event.target.value)}
             placeholder="留空按标准价"
           />
-          <span className="hint">填写后不会立即生效，会创建 owner 双人复核。</span>
-        </div>
-        <div className="field">
-          <label>合同价原因</label>
+        </Field>
+        <Field label="合同价原因" name="forceReason">
           <input
             value={forceReason}
             onChange={(event) => setForceReason(event.target.value)}
             placeholder="三年锁价 / 试点价"
           />
-        </div>
+        </Field>
       </div>
     </FormShell>
   );
@@ -531,6 +605,11 @@ export function InvoiceCreateForm({
       error={error}
       success={success}
       submitLabel="生成账单草稿"
+      validate={() =>
+        periodStart && periodEnd && periodEnd < periodStart
+          ? [{ name: "periodEnd", message: "「账期结束」不能早于账期开始" }]
+          : []
+      }
       onSubmit={(event) => {
         event.preventDefault();
         submit(
@@ -548,42 +627,45 @@ export function InvoiceCreateForm({
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>租户</label>
-          <select value={tenantId} onChange={(event) => setTenantId(event.target.value)} required>
+        <Field label="租户" name="tenantId" required>
+          <select
+            value={tenantId}
+            onChange={(event) => setTenantId(event.target.value)}
+            required
+            data-error-message={
+              tenants.length === 0 ? "尚无租户，请先到「租户」开通公司" : undefined
+            }
+          >
             {tenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>账期开始</label>
+        </Field>
+        <Field label="账期开始" name="periodStart" required>
           <input
             type="date"
             value={periodStart}
             onChange={(event) => setPeriodStart(event.target.value)}
             required
           />
-        </div>
-        <div className="field">
-          <label>账期结束</label>
+        </Field>
+        <Field label="账期结束" name="periodEnd" required>
           <input
             type="date"
             value={periodEnd}
             onChange={(event) => setPeriodEnd(event.target.value)}
             required
           />
-        </div>
-        <div className="field">
-          <label>备注</label>
+        </Field>
+        <Field label="备注" name="notes">
           <input
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             placeholder="可选"
           />
-        </div>
+        </Field>
       </div>
     </FormShell>
   );
@@ -681,44 +763,41 @@ export function PlanForm({ existingCodes }: { existingCodes: string[] }) {
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>套餐代码</label>
+        <Field
+          label="套餐代码"
+          name="code"
+          required
+          hint="大写字母、数字和下划线；创建后不可修改。"
+        >
           <input
             required
             value={form.code}
             onChange={set("code")}
             placeholder="GROWTH"
             pattern="[A-Za-z][A-Za-z0-9_]*"
+            title="以字母开头，只允许字母、数字和下划线"
           />
-          <span className="hint">大写字母、数字和下划线；创建后不可修改。</span>
-        </div>
-        <div className="field">
-          <label>套餐名称</label>
+        </Field>
+        <Field label="套餐名称" name="name" required>
           <input required value={form.name} onChange={set("name")} placeholder="成长版 Growth" />
-        </div>
-        <div className="field">
-          <label>档位</label>
+        </Field>
+        <Field label="档位" name="tier" hint="数值越大档位越高，用于排序与功能分层。">
           <input type="number" min={0} max={9} value={form.tier} onChange={set("tier")} />
-          <span className="hint">数值越大档位越高，用于排序与功能分层。</span>
-        </div>
+        </Field>
       </div>
       <div className="form row">
-        <div className="field">
-          <label>内含席位</label>
+        <Field label="内含席位" name="seatMin">
           <input type="number" min={0} value={form.seatMin} onChange={set("seatMin")} />
-        </div>
-        <div className="field">
-          <label>席位上限定（留空不限）</label>
+        </Field>
+        <Field label="席位上限定（留空不限）" name="seatMax">
           <input type="number" min={1} value={form.seatMax} onChange={set("seatMax")} />
-        </div>
-        <div className="field">
-          <label>每月 credits</label>
+        </Field>
+        <Field label="每月 credits" name="credits">
           <input type="number" min={0} value={form.credits} onChange={set("credits")} />
-        </div>
-        <div className="field">
-          <label>存储（GB）</label>
+        </Field>
+        <Field label="存储（GB）" name="storageGb">
           <input type="number" min={0} value={form.storageGb} onChange={set("storageGb")} />
-        </div>
+        </Field>
       </div>
       <div className="field">
         <label>功能开关</label>
@@ -814,6 +893,8 @@ export function PriceBookForm({ plans, base }: { plans: Plan[]; base?: PriceBook
                 <td>{plan.name}</td>
                 <td>
                   <input
+                    name={`${plan.code}-monthly`}
+                    aria-label={`${plan.name} 月付单价`}
                     type="number"
                     min={0}
                     step="0.01"
@@ -829,6 +910,8 @@ export function PriceBookForm({ plans, base }: { plans: Plan[]; base?: PriceBook
                 </td>
                 <td>
                   <input
+                    name={`${plan.code}-annual`}
+                    aria-label={`${plan.name} 年付单价`}
                     type="number"
                     min={0}
                     step="0.01"
@@ -847,14 +930,13 @@ export function PriceBookForm({ plans, base }: { plans: Plan[]; base?: PriceBook
           </tbody>
         </table>
       </div>
-      <div className="field">
-        <label>版本说明</label>
+      <Field label="版本说明" name="notes">
         <input
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           placeholder="例如：2027 年调价，仅影响新合同"
         />
-      </div>
+      </Field>
     </FormShell>
   );
 }
@@ -1027,16 +1109,14 @@ export function InvoiceSettingsForm({ settings }: { settings: InvoiceSettings })
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>发票类型</label>
+        <Field label="发票类型" name="invoiceType">
           <select value={form.invoiceType} onChange={set("invoiceType")}>
             <option value="VAT_SPECIAL">电子增值税专用发票</option>
             <option value="VAT_NORMAL">增值税普通发票</option>
             <option value="E_INVOICE">数电票</option>
           </select>
-        </div>
-        <div className="field">
-          <label>税率（基点，600 = 6%）</label>
+        </Field>
+        <Field label="税率（基点，600 = 6%）" name="taxRateBp">
           <input
             type="number"
             min={0}
@@ -1044,44 +1124,39 @@ export function InvoiceSettingsForm({ settings }: { settings: InvoiceSettings })
             value={form.taxRateBp}
             onChange={set("taxRateBp")}
           />
-        </div>
-        <div className="field">
-          <label>价格展示</label>
+        </Field>
+        <Field label="价格展示" name="priceDisplay">
           <select value={form.priceDisplay} onChange={set("priceDisplay")}>
             <option value="TAX_EXCLUSIVE">价税分离</option>
             <option value="TAX_INCLUSIVE">含税价</option>
           </select>
-        </div>
+        </Field>
       </div>
       <div className="form row">
-        <div className="field">
-          <label>开票主体</label>
+        <Field label="开票主体" name="issuerEntity">
           <input value={form.issuerEntity} onChange={set("issuerEntity")} />
-        </div>
-        <div className="field">
-          <label>开票时机</label>
+        </Field>
+        <Field label="开票时机" name="issueTiming">
           <select value={form.issueTiming} onChange={set("issueTiming")}>
             <option value="AFTER_PAYMENT_3D">收款后 3 个工作日</option>
             <option value="AFTER_PAYMENT">收款后</option>
             <option value="BEFORE_PAYMENT">先票后款（需审批）</option>
           </select>
-        </div>
-        <div className="field">
-          <label>红冲规则</label>
+        </Field>
+        <Field label="红冲规则" name="redFlushRule">
           <select value={form.redFlushRule} onChange={set("redFlushRule")}>
             <option value="FINANCE_REVIEW">财务审核</option>
             <option value="OWNER_REVIEW">Owner 审核</option>
           </select>
-        </div>
+        </Field>
       </div>
-      <div className="field">
-        <label>变更原因（改税必填）</label>
+      <Field label="变更原因（改税必填）" name="reason">
         <input
           value={form.reason}
           onChange={set("reason")}
           placeholder="财务确认按 SaaS 服务 6% 开票"
         />
-      </div>
+      </Field>
     </FormShell>
   );
 }
@@ -1126,44 +1201,38 @@ export function LlmSettingsForm({ settings }: { settings: PlatformLlmSettings })
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>Provider</label>
+        <Field label="Provider" name="provider">
           <input value={form.provider} onChange={set("provider")} />
-        </div>
-        <div className="field">
-          <label>网关地址</label>
+        </Field>
+        <Field label="网关地址" name="baseUrl">
           <input
             value={form.baseUrl}
             onChange={set("baseUrl")}
             placeholder="http://localhost:4000"
           />
-        </div>
-        <div className="field">
-          <label>默认模型</label>
+        </Field>
+        <Field label="默认模型" name="defaultModel">
           <input value={form.defaultModel} onChange={set("defaultModel")} />
-        </div>
-        <div className="field">
-          <label>Key 引用（环境变量名）</label>
+        </Field>
+        <Field label="Key 引用（环境变量名）" name="keyRef">
           <input value={form.keyRef} onChange={set("keyRef")} placeholder="LITELLM_MASTER_KEY" />
-        </div>
-        <div className="field">
-          <label>日 token 预算</label>
+        </Field>
+        <Field label="日 token 预算" name="dailyTokenBudget">
           <input
             type="number"
             min={0}
             value={form.dailyTokenBudget}
             onChange={set("dailyTokenBudget")}
           />
-        </div>
-        <div className="field">
-          <label>月 token 预算</label>
+        </Field>
+        <Field label="月 token 预算" name="monthlyTokenBudget">
           <input
             type="number"
             min={0}
             value={form.monthlyTokenBudget}
             onChange={set("monthlyTokenBudget")}
           />
-        </div>
+        </Field>
       </div>
     </FormShell>
   );
@@ -1204,28 +1273,32 @@ export function LlmOverrideForm({
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>租户</label>
-          <select value={tenantId} onChange={(event) => setTenantId(event.target.value)}>
+        <Field label="租户" name="tenantId" required>
+          <select
+            value={tenantId}
+            onChange={(event) => setTenantId(event.target.value)}
+            required
+            data-error-message={
+              tenants.length === 0 ? "尚无租户，请先到「租户」开通公司" : undefined
+            }
+          >
             {tenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>默认模型</label>
+        </Field>
+        <Field label="默认模型" name="defaultModel">
           <input value={model} onChange={(event) => setModel(event.target.value)} />
-        </div>
-        <div className="field">
-          <label>专用网关（可空）</label>
+        </Field>
+        <Field label="专用网关（可空）" name="baseUrl">
           <input
             value={baseUrl}
             onChange={(event) => setBaseUrl(event.target.value)}
             placeholder={existing?.baseUrl ?? "继承全局"}
           />
-        </div>
+        </Field>
       </div>
       <div className="table-wrap">
         <table className="table">
@@ -1346,27 +1419,29 @@ export function IdentitySettingsForm({ settings }: { settings: PlatformIdentityS
         );
       }}
     >
-      <label className="check">
-        <input type="checkbox" checked={mfa} onChange={(event) => setMfa(event.target.checked)} />{" "}
-        强制 MFA（平台端不可关闭的唯一例外是本地 dev）
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={sso} onChange={(event) => setSso(event.target.checked)} />{" "}
-        允许企业 SSO（Pro 及以上）
-      </label>
-      <div className="field">
-        <label>Casdoor 组织模板</label>
+      <CheckboxField
+        name="mfaRequired"
+        checked={mfa}
+        onChange={(event) => setMfa(event.target.checked)}
+        label="强制 MFA（平台端不可关闭的唯一例外是本地 dev）"
+      />
+      <CheckboxField
+        name="ssoEnabled"
+        checked={sso}
+        onChange={(event) => setSso(event.target.checked)}
+        label="允许企业 SSO（Pro 及以上）"
+      />
+      <Field label="Casdoor 组织模板" name="casdoorOrgTemplate">
         <input value={template} onChange={(event) => setTemplate(event.target.value)} />
-      </div>
-      <div className="field">
-        <label>会话最长时长（小时）</label>
+      </Field>
+      <Field label="会话最长时长（小时）" name="sessionMaxHours">
         <input
           type="number"
           min={1}
           value={hours}
           onChange={(event) => setHours(event.target.value)}
         />
-      </div>
+      </Field>
       <div className="alert alert-warn">
         社交登录在控制面被硬编码禁止（前后端双重校验），不提供开关。
       </div>
@@ -1634,6 +1709,14 @@ export function ConfigForm() {
       error={error}
       success={success}
       submitLabel="发布新版本"
+      validate={() => {
+        try {
+          JSON.parse(value);
+          return [];
+        } catch (cause) {
+          return [{ name: "value", message: describeJsonError(value, cause) }];
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         let parsed: unknown;
@@ -1652,8 +1735,7 @@ export function ConfigForm() {
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>配置 Key</label>
+        <Field label="配置 Key" name="key" required>
           <input
             required
             value={key}
@@ -1663,9 +1745,8 @@ export function ConfigForm() {
             }}
             placeholder="billing.overage_unit_cents"
           />
-        </div>
-        <div className="field">
-          <label>作用域</label>
+        </Field>
+        <Field label="作用域" name="scope">
           <select
             value={scope}
             onChange={(event) => {
@@ -1677,9 +1758,12 @@ export function ConfigForm() {
             <option value="PLAN">套餐</option>
             <option value="TENANT">租户</option>
           </select>
-        </div>
-        <div className="field">
-          <label>作用域引用</label>
+        </Field>
+        <Field
+          label="作用域引用"
+          name="scopeRef"
+          hint={scope === "GLOBAL" ? "全局配置不需要引用。" : "套餐代码或租户 ID。"}
+        >
           <input
             value={scopeRef}
             onChange={(event) => {
@@ -1689,10 +1773,9 @@ export function ConfigForm() {
             disabled={scope === "GLOBAL"}
             placeholder="PRO / tenant-id"
           />
-        </div>
+        </Field>
       </div>
-      <div className="field">
-        <label>JSON 值</label>
+      <Field label="JSON 值" name="value">
         <textarea
           value={value}
           onChange={(event) => {
@@ -1701,7 +1784,7 @@ export function ConfigForm() {
           }}
           aria-describedby={preview?.kind === "error" ? "config-json-error" : undefined}
         />
-      </div>
+      </Field>
       {preview ? (
         <div
           id={preview.kind === "error" ? "config-json-error" : undefined}
@@ -1797,34 +1880,42 @@ export function TicketForm({
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>租户</label>
-          <select value={tenantId} onChange={(event) => setTenantId(event.target.value)}>
+        <Field
+          label="租户"
+          name="tenantId"
+          required
+          hint={tenants.length === 0 ? "尚无租户，请先到「租户」开通公司。" : undefined}
+        >
+          <select
+            value={tenantId}
+            onChange={(event) => setTenantId(event.target.value)}
+            required
+            data-error-message={
+              tenants.length === 0 ? "尚无租户，请先到「租户」开通公司" : undefined
+            }
+          >
             {tenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>优先级</label>
+        </Field>
+        <Field label="优先级" name="priority">
           <select value={priority} onChange={(event) => setPriority(event.target.value)}>
             <option value="LOW">低</option>
             <option value="NORMAL">普通</option>
             <option value="HIGH">高</option>
             <option value="URGENT">紧急</option>
           </select>
-        </div>
-        <div className="field">
-          <label>标题</label>
+        </Field>
+        <Field label="标题" name="title" required>
           <input required value={title} onChange={(event) => setTitle(event.target.value)} />
-        </div>
+        </Field>
       </div>
-      <div className="field">
-        <label>描述</label>
+      <Field label="描述" name="body" required>
         <textarea required value={body} onChange={(event) => setBody(event.target.value)} />
-      </div>
+      </Field>
     </FormShell>
   );
 }
@@ -1892,43 +1983,52 @@ export function BreakGlassForm({
       }}
     >
       <div className="form row">
-        <div className="field">
-          <label>租户</label>
-          <select value={tenantId} onChange={(event) => setTenantId(event.target.value)}>
+        <Field
+          label="租户"
+          name="tenantId"
+          required
+          hint={tenants.length === 0 ? "尚无租户，请先到「租户」开通公司。" : undefined}
+        >
+          <select
+            value={tenantId}
+            onChange={(event) => setTenantId(event.target.value)}
+            required
+            data-error-message={
+              tenants.length === 0 ? "尚无租户，请先到「租户」开通公司" : undefined
+            }
+          >
             {tenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>工单号</label>
+        </Field>
+        <Field label="工单号" name="ticketNo" required>
           <input
             required
             value={ticketNo}
             onChange={(event) => setTicketNo(event.target.value)}
             placeholder="TCK-2026-001"
           />
-        </div>
+        </Field>
       </div>
-      <div className="field">
-        <label>原因</label>
+      <Field label="原因" name="reason" required>
         <textarea
           required
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           placeholder="客户反馈报价单金额异常，需要核对单据"
         />
-      </div>
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(event) => setConsent(event.target.checked)}
-        />{" "}
-        租户管理员已在应用内 / 工单中明确同意（没有同意不能申请业务数据授权）
-      </label>
+      </Field>
+      <CheckboxField
+        name="tenantConsent"
+        required
+        checked={consent}
+        onChange={(event) => setConsent(event.target.checked)}
+        label="租户管理员已在应用内 / 工单中明确同意（没有同意不能申请业务数据授权）"
+        errorMessage="请先取得租户同意再申请只读授权"
+      />
     </FormShell>
   );
 }
