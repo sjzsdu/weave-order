@@ -7,6 +7,7 @@ import type { Db } from "@weave-order/db";
 import { createKernel, errorChainMessage } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
 import type { ObjectBytes, ObjectHead, ObjectStorage } from "../src/platform/storage";
+import { LocalStubEmbeddingProvider } from "../src/platform/embedding";
 
 /**
  * 内核集成测试：需要本地 PostgreSQL（docker compose up -d && pnpm db:migrate）。
@@ -489,6 +490,43 @@ describe("确定性内核（集成）", () => {
     const codeIds = byCode.matches.map((match) => match.sample.id);
     expect(codeIds).toContain(percentCode.id);
     expect(codeIds).not.toContain(plainCode.id);
+  }, 20_000);
+
+  it("找样 T-002 回归：成分 + 克重组合按词元匹配，不再整串 0 结果（WAN-160 C）", async (ctx) => {
+    if (!available) ctx.skip();
+    // 隔离租户 + local-stub：结果集只由本用例决定，语义分支不参与（哈希分数无意义）。
+    const tenant = await isolatedTenant(suffix());
+    const kernel = createKernel(db!, new LocalStubEmbeddingProvider(), { tenantId: tenant.id });
+    const id = suffix();
+    const target = await kernel.samples.create(
+      {
+        code: `IT-COMBO-${id}`,
+        name: "组合检索回归布",
+        composition: "100%聚酯纤维",
+        weight: "150g/m",
+        unit: "meter",
+      },
+      HUMAN,
+    );
+    const decoy = await kernel.samples.create(
+      {
+        code: `IT-COMBO-D-${id}`,
+        name: "同克重异成分回归布",
+        composition: "100%棉",
+        weight: "150g/m",
+        unit: "meter",
+      },
+      HUMAN,
+    );
+
+    for (const query of ["聚酯纤维 150g", "聚酯纤维150g"]) {
+      const result = await kernel.search.searchBySpec({ query, limit: 20 });
+      const ids = result.matches.map((match) => match.sample.id);
+      expect(ids).toContain(target.id);
+      expect(ids).not.toContain(decoy.id);
+      const hit = result.matches.find((match) => match.sample.id === target.id);
+      expect(hit?.matchedOn).toEqual(expect.arrayContaining(["composition", "weight"]));
+    }
   }, 20_000);
 
   it("审计日志：数据库层面禁止 UPDATE / DELETE", async (ctx) => {

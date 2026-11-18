@@ -127,9 +127,24 @@ function matchCustomer(text: string, customers: Customer[]): Customer | null {
   return best;
 }
 
-export function parseCustomerText(raw: string, customers: Customer[] = []): ParsedSlots {
+export interface ParseCustomerContext {
+  /**
+   * 表单上已经选中的客户。
+   * 原话里没提客户不代表缺客户：缺什么以表单最终状态为准（WAN-160 B）。
+   */
+  selectedCustomerId?: string | null;
+}
+
+export function parseCustomerText(
+  raw: string,
+  customers: Customer[] = [],
+  context: ParseCustomerContext = {},
+): ParsedSlots {
   const text = raw.trim();
   const customer = matchCustomer(text, customers);
+  const selectedCustomer =
+    customers.find((entry) => entry.id === context.selectedCustomerId) ?? null;
+  const effectiveCustomer = customer ?? selectedCustomer;
   const composition = matchComposition(text);
   const weight = matchWeight(text);
   const quantityHit = matchQuantity(text);
@@ -140,16 +155,17 @@ export function parseCustomerText(raw: string, customers: Customer[] = []): Pars
   const query = queryParts.join(" ").trim() || text.slice(0, 30);
 
   const missing: string[] = [];
-  if (!customer) missing.push("客户");
+  if (!effectiveCustomer) missing.push("客户");
   if (!quantityHit) missing.push("数量");
   if (!composition && !weight) missing.push("规格");
   if (price === null) missing.push("单价（可让报价助手建议）");
 
-  const found = [customer, composition, weight, quantityHit, price].filter(Boolean).length;
+  const found = [effectiveCustomer, composition, weight, quantityHit, price].filter(Boolean).length;
   const confidence: ParseConfidence = found >= 4 ? "high" : found >= 2 ? "medium" : "low";
 
   const hits: string[] = [];
   if (customer) hits.push(`客户：${customer.name}`);
+  else if (selectedCustomer) hits.push(`客户：${selectedCustomer.name}（已选）`);
   if (composition) hits.push(`成分：${composition}`);
   if (weight) hits.push(`克重：${weight}`);
   if (quantityHit) hits.push(`数量：${quantityHit.hit}`);
