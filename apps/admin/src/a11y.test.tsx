@@ -117,6 +117,17 @@ async function axeViolations(container: HTMLElement) {
 }
 
 beforeEach(() => {
+  // jsdom 没有 matchMedia；侧栏抽屉据此判断移动端断点，测试按桌面端处理。
+  window.matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  });
   for (const container of mounted) container.remove();
   mounted = [];
 });

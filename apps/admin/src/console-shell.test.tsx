@@ -35,6 +35,6 @@ describe("ConsoleShell 移动端导航", () => {
   });
 
   it("正文仍在 main 里，抽屉不遮挡初始渲染", () => {
-    expect(html).toContain('<main class="main"><p>正文</p></main>');
+    expect(html).toContain('<main id="main" class="main" tabindex="-1"><p>正文</p></main>');
   });
 });

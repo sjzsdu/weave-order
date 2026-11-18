@@ -1,6 +1,6 @@
 :root {
   --ink: #1c2430;
-  --muted: #6d7787;
+  --muted: #646e7f;
   --paper: #f3f1ec;
   --surface: #fffefb;
   --line: #ddd8ce;
@@ -10,7 +10,7 @@
   --accent-soft: #e6eef5;
   --ok: #2f6b4f;
   --ok-soft: #e8f2ec;
-  --warn: #9a6414;
+  --warn: #96600f;
   --warn-soft: #fbf1df;
   --danger: #a33a2f;
   --danger-soft: #f9eae7;
@@ -96,7 +96,7 @@ a:hover {
   padding: 8px 10px 4px;
   font-size: 10px;
   letter-spacing: 0.14em;
-  color: #6c7c91;
+  color: #7d8da2;
   text-transform: uppercase;
 }
 .nav-link {
