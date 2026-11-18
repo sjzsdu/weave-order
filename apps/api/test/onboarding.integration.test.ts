@@ -246,6 +246,35 @@ describe("自助开通与邀请", () => {
     );
     expect(afterAccept.status, JSON.stringify(afterAccept.body)).toBe(200);
     expect(afterAccept.body).toMatchObject({ alreadyMember: true, tenantSlug: company.tenantSlug });
+
+    // 部署前签发的老票据（不带 membershipId）同样要能看到「你已加入」：
+    // 本人已是成员且登录邮箱就是被邀请邮箱，说明这张票据已被他本人用掉。
+    const legacyCode = signOnboardingTicket(
+      {
+        v: 1,
+        kind: "invite",
+        slug: company.tenantSlug,
+        name: `自助公司 ${id}`,
+        ownerEmail: employeeEmail,
+        role: "SALES",
+      },
+      DEV_ONBOARDING_SECRET,
+    );
+    const legacyPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(legacyCode)}`,
+      {},
+      employeeToken,
+    );
+    expect(legacyPreview.status, JSON.stringify(legacyPreview.body)).toBe(200);
+    expect(legacyPreview.body).toMatchObject({ alreadyMember: true });
+
+    // 但老票据不能因为「看的人是成员」就放宽：老板邮箱与被邀请邮箱不同，必须 410。
+    const legacyBossPreview = await api(
+      `/api/onboarding/invite/preview?code=${encodeURIComponent(legacyCode)}`,
+      {},
+      bossToken,
+    );
+    expect(legacyBossPreview.status, JSON.stringify(legacyBossPreview.body)).toBe(410);
   });
 
   it("员工不能邀请人（只有老板/主管可以）", async (ctx) => {
