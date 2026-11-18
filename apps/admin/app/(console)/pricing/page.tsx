@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { Plan, PriceBook, PriceBookDetail } from "@weave-order/schema";
 import { date, money, statusClass } from "@/src/format";
@@ -5,6 +6,7 @@ import { platformFetch } from "@/src/server-api";
 import { ActivatePriceBook, PlanForm, PriceBookForm, PricingPreviewForm } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "套餐与价格" };
 
 export default async function PricingPage({
   searchParams,

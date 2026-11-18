@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { LogoutForm } from "@/src/logout-form";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "无访问权限" };
 
 /**
  * 会话有效、但当前账号没有平台控制台权限时落这里。

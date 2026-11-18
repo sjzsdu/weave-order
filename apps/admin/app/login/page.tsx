@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import { LogoutForm } from "@/src/logout-form";
 import { safeNext } from "@/src/safe-next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "登录" };
 
 export default async function LoginPage({
   searchParams,

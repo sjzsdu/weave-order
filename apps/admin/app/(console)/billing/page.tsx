@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { Invoice, TenantSummary } from "@weave-order/schema";
 import { INVOICE_STATUS_LABEL, date, money, statusClass } from "@/src/format";
@@ -5,6 +6,7 @@ import { platformFetch } from "@/src/server-api";
 import { InvoiceActions, InvoiceCreateForm } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "订阅账单" };
 
 const STATUSES = ["", "DRAFT", "ISSUED", "PAID", "OVERDUE", "RED_FLUSH"];
 

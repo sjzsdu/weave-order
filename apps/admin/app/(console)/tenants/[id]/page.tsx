@@ -15,6 +15,18 @@ import { OnboardingLinkPanel, SubscriptionForm, TenantStatusActions } from "@/sr
 
 export const dynamic = "force-dynamic";
 
+/** 详情页标题带租户名，多标签同时开着几个租户时也能区分。 */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    const { tenant } = await platformFetch<TenantDetail>(`/tenants/${id}`);
+    return { title: `${tenant.name} · 租户` };
+  } catch {
+    // 标题取不到不该让整页变成错误页：回落到通用标题，页面自己会处理 404/5xx。
+    return { title: "租户详情" };
+  }
+}
+
 export default async function TenantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let detail: TenantDetail;

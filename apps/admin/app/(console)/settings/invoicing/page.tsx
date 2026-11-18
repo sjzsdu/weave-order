@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { InvoiceSettings } from "@weave-order/schema";
 import { bps, date } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 import { InvoiceSettingsForm } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "设置 · 开票设置" };
 
 export default async function InvoicingSettingsPage() {
   const settings = await platformFetch<InvoiceSettings>("/settings/invoicing");

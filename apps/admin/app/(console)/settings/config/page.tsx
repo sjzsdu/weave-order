@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { PlatformConfig } from "@weave-order/schema";
 import { date } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 import { ConfigForm, ConfigRollback } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "设置 · 配置中心" };
 
 export default async function ConfigPage() {
   const { configs } = await platformFetch<{ configs: PlatformConfig[] }>("/settings/configs");

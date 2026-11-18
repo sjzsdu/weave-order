@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { PlatformLlmSettings, TenantSummary } from "@weave-order/schema";
 import { money } from "@/src/format";
 import { platformFetch } from "@/src/server-api";
 import { LlmOverrideForm, LlmSettingsForm, LlmTestButton } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "设置 · LLM 设置" };
 
 interface LlmStats {
   period: string;
