@@ -45,6 +45,13 @@ describe("控制面错误 → 中文文案", () => {
     expect(error.message).toBe("价格表版本已生效，不能重复提交");
   });
 
+  it("400 INVALID_INPUT 带具体中文原因时原样展示，不退化为通用文案", () => {
+    const reason = "没有生效价格，请先启用价格表或显式传价格";
+    const error = toFormError(new ApiError(400, "INVALID_INPUT", reason));
+    expect(error.message).toBe(reason);
+    expect(error.fields).toEqual([]);
+  });
+
   it("未映射的英文技术文案被替换成可执行提示", () => {
     const error = toFormError(new ApiError(500, "INTERNAL", "connect ECONNREFUSED 10.0.0.1:5432"));
     expect(error.message).toBe("服务暂时不可用，请稍后重试");
@@ -60,6 +67,7 @@ describe("控制面错误 → 中文文案", () => {
 describe("字段路径与 Zod issue 翻译", () => {
   it("数组下标转成人类可读的项号", () => {
     expect(fieldLabel("prices.0.monthlyPriceCents")).toBe("价格表 第 1 项 月付价格");
+    expect(fieldLabel("prices.0")).toBe("价格表 第 1 项");
     expect(fieldLabel("contactEmail")).toBe("联系邮箱");
     expect(fieldLabel([])).toBe("请求内容");
   });

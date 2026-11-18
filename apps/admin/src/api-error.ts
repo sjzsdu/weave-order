@@ -144,6 +144,8 @@ export function fieldLabel(path: string | string[]): string {
   const group = groupKey ? (FIELD_LABELS[groupKey] ?? humanizeKey(groupKey)) : "";
   const ordinal = indexAt === -1 ? "" : `第 ${Number(parts[indexAt]) + 1} 项`;
   const keys = indexAt === -1 ? parts : parts.slice(indexAt + 1);
+  // 数组项自身的错误（如 prices.0）没有更末级的 key，避免输出「价格表 第 1 项 价格表」。
+  if (keys.length === 0) return [group, ordinal].filter(Boolean).join(" ") || "请求内容";
   const leafKey = keys[keys.length - 1] ?? groupKey ?? "";
   const leaf = FIELD_LABELS[leafKey] ?? humanizeKey(leafKey);
   return [group, ordinal, leaf].filter(Boolean).join(" ") || "请求内容";
@@ -229,11 +231,10 @@ function isFriendlyServerMessage(message: string | undefined): message is string
  */
 export function toFormError(cause: unknown): FormError {
   if (cause instanceof ApiError) {
-    const main =
-      isFriendlyServerMessage(cause.message) && cause.code !== "INVALID_INPUT"
-        ? cause.message.trim()
-        : (CODE_MESSAGES[cause.code] ??
-          (cause.status >= 500 ? "服务暂时不可用，请稍后重试" : "操作失败，请检查填写内容后重试"));
+    const main = isFriendlyServerMessage(cause.message)
+      ? cause.message.trim()
+      : (CODE_MESSAGES[cause.code] ??
+        (cause.status >= 500 ? "服务暂时不可用，请稍后重试" : "操作失败，请检查填写内容后重试"));
     const fields = cause.issues
       .slice(0, 12)
       .map((issue) => ({ label: fieldLabel(issue.path), message: describeIssue(issue) }))
