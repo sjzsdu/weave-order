@@ -11,6 +11,8 @@ import { SampleEditor } from "@/sample-editor";
 import { SampleImport } from "@/sample-import";
 import { SampleDrawer } from "@/sample-drawer";
 import { SampleImageSearch } from "@/sample-image-search";
+import { SampleSavedToast, toSampleSaveFeedback } from "@/sample-saved-toast";
+import type { SampleSaveFeedback } from "@/sample-saved-toast";
 import { thumbBadge } from "@/sample-image-status";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
@@ -43,7 +45,7 @@ function SamplesWall() {
   const [openSampleId, setOpenSampleId] = useState<string | null>(null);
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   // 保存成功后的动作级反馈：带下一步，而不是让图墙悄悄多一格。
-  const [saved, setSaved] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [saved, setSaved] = useState<SampleSaveFeedback | null>(null);
 
   // 搜索防抖：输入停下来再打后端，避免每个按键一次 ILIKE。
   useEffect(() => {
@@ -257,9 +259,9 @@ function SamplesWall() {
         open={editorOpen}
         sample={editorSample}
         onClose={() => setEditorOpen(false)}
-        onSaved={(sample) => {
+        onSaved={(sample, meta) => {
           refreshAll();
-          setSaved({ id: sample.id, name: sample.name, code: sample.code });
+          setSaved(toSampleSaveFeedback(sample, meta.created));
         }}
       />
       {importOpen && (
@@ -273,7 +275,7 @@ function SamplesWall() {
       )}
       {saved && (
         <SampleSavedToast
-          sample={saved}
+          feedback={saved}
           onDismiss={() => setSaved(null)}
           onOpen={() => {
             setSaved(null);
@@ -366,48 +368,5 @@ function SampleCard({
         </div>
       )}
     </li>
-  );
-}
-
-/** 动作级 toast：不阻塞，带下一步，而不是让图墙悄悄多一格（WAN-149）。 */
-function SampleSavedToast({
-  sample,
-  onDismiss,
-  onOpen,
-}: {
-  sample: { id: string; name: string; code: string };
-  onDismiss: () => void;
-  onOpen: () => void;
-}) {
-  useEffect(() => {
-    const timer = setTimeout(onDismiss, 8000);
-    return () => clearTimeout(timer);
-  }, [onDismiss]);
-
-  return (
-    <div
-      role="status"
-      className="fixed inset-x-0 top-4 z-50 mx-auto flex w-[min(92vw,640px)] flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-card"
-    >
-      <span className="font-medium text-ink-900">样品「{sample.name}」已建</span>
-      <span className="text-xs text-ink-400">{sample.code}</span>
-      <Link
-        href={`/today?intent=${encodeURIComponent(`用${sample.name}报价：`)}`}
-        className="text-indigo-600 underline underline-offset-2"
-      >
-        用它报价 →
-      </Link>
-      <button type="button" onClick={onOpen} className="text-ink-700 underline underline-offset-2">
-        补图 / 看规格
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="关闭提示"
-        className="ml-auto text-ink-400 hover:text-ink-900"
-      >
-        ✕
-      </button>
-    </div>
   );
 }

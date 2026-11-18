@@ -568,6 +568,8 @@ export function createMockApiClient(): ApiClient {
     updateSample: (_id, input) =>
       Promise.resolve({
         ...sample,
+        // 演示模式下 PATCH 也要回传改后的标识，否则编辑 toast 只能验证到旧编码。
+        ...(input.code !== undefined ? { code: input.code } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.composition !== undefined ? { composition: input.composition } : {}),
         ...(input.weight !== undefined ? { weight: input.weight } : {}),

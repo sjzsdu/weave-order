@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
  * 详见 apps/web/tsconfig.json 的 compilerOptions.paths。
  */
 export default defineConfig({
+  // 组件测试用 react-dom/server 直接渲染；Next 用 automatic runtime，vitest 需对齐。
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

@@ -50,8 +50,8 @@ export function SampleEditor({
   open: boolean;
   sample: FabricSample | null;
   onClose: () => void;
-  /** 保存成功后回传刚写库的那条样品，调用方据此给「已建 + 下一步」的反馈。 */
-  onSaved: (saved: FabricSample) => void;
+  /** 保存成功后回传刚写库的那条样品，调用方据此给「已建 / 已更新 + 下一步」的反馈。 */
+  onSaved: (saved: FabricSample, meta: { created: boolean }) => void;
 }) {
   const api = useApi();
   const isEdit = sample !== null;
@@ -163,6 +163,8 @@ export function SampleEditor({
     if (costFloor === undefined) return setError("成本底线必须是数字（元）");
     setBusy(true);
     let created: FabricSample | null = null;
+    // 编辑走 PATCH，返回的是保存后的实体；新建则复用刚创建的那条。
+    let saved: FabricSample | null = null;
     try {
       const base: FabricSample =
         isEdit && sample
@@ -205,7 +207,8 @@ export function SampleEditor({
       const primaryImageId =
         orderedIds.length > 0 ? orderedIds[Math.min(primaryIndex, orderedIds.length - 1)] : null;
       if (isEdit) {
-        await api.updateSample(base.id, {
+        // 用服务端回的实体，不用编辑前的 base：否则失败/编辑态会把旧品名喂给 toast。
+        saved = await api.updateSample(base.id, {
           code: code.trim(),
           name: name.trim(),
           composition: composition.trim() || null,
@@ -220,7 +223,7 @@ export function SampleEditor({
       } else if (orderedIds.length > 0) {
         await api.updateSample(base.id, { imageIds: orderedIds, primaryImageId });
       }
-      onSaved(base);
+      onSaved(saved ?? base, { created: !isEdit });
       handleClose();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "保存失败";
@@ -229,7 +232,7 @@ export function SampleEditor({
           ? `样品「${created.name}」已创建，但图片上传失败：${message}。可在图墙里点这张卡片补图。`
           : message,
       );
-      if (created) onSaved(created);
+      if (created) onSaved(created, { created: true });
     } finally {
       setBusy(false);
     }
