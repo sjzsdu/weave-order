@@ -187,7 +187,6 @@ export class FeatureFlagsController {
   @Post()
   @RequirePermission("flag:write")
   async create(@Req() request: PlatformRequest, @Body() body: unknown) {
-    FeatureFlagInput.parse(body);
     return { flag: await this.settings.createFlag(actorOf(request), body) };
   }
 
