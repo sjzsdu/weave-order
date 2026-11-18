@@ -78,6 +78,15 @@ const jsonLdText = jsonLd ? renderJsonLd(jsonLd) : null;
       </>
     )}
     <link rel="alternate" type="text/plain" href="/llms.txt" title="给 AI 助手的产品摘要" />
+    {/*
+      搜索引擎验证：值由 docker/entrypoint.sh 在容器启动时按
+      WEAVE_VERIFY_GOOGLE / WEAVE_VERIFY_BING / WEAVE_VERIFY_BAIDU 替换。
+      没配置时 content 渲染为空串，搜索引擎会忽略空验证码。
+      优先用 DNS TXT 验证；HTML 标签验证只是备用，换域名时要重新获取 token。
+    */}
+    <meta name="google-site-verification" content="__WEAVE_VERIFY_GOOGLE__" />
+    <meta name="msvalidate.01" content="__WEAVE_VERIFY_BING__" />
+    <meta name="baidu-site-verification" content="__WEAVE_VERIFY_BAIDU__" />
     <script is:inline>
       document.documentElement.classList.add("js");
     </script>

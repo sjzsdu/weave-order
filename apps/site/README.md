@@ -132,8 +132,15 @@ sections: # 本页目录
 | `WEAVE_ANALYTICS_DOMAIN`   | `analytics.domain`   | Plausible 统计的站点域名 | 空 |
 | `WEAVE_ANALYTICS_HOST`     | `analytics.host`     | 自建统计地址（必须是 https，本地回环除外） | 官方默认 |
 | `WEAVE_ANALYTICS_KEY`      | `analytics.key`      | PostHog project key | 空 |
+| `WEAVE_ICP_LICENSE`        | —（页脚）            | ICP 备案号，如 `京ICP备2026000001号-1` | 不展示 |
+| `WEAVE_PSB_LICENSE`        | —（页脚）            | 公安联网备案号 | 不展示 |
+| `WEAVE_VERIFY_GOOGLE`      | —（head meta）       | GSC HTML 标签验证码（优先用 DNS 验证） | 空 |
+| `WEAVE_VERIFY_BING`        | —（head meta）       | Bing Webmaster 验证码 | 空 |
+| `WEAVE_VERIFY_BAIDU`       | —（head meta）       | 百度搜索资源平台验证码 | 空 |
 
 deploy 仓库的 compose 已经按这套变量传参，`.env` 里改域名 + `docker compose up -d` 即可。
+完整的上线步骤（部署、核查、三家搜索平台、统计、回滚、上线记录）见
+[`docs/site-launch-runbook.md`](../../docs/site-launch-runbook.md)。
 
 当前默认值（部署时按实际环境覆盖）：
 
@@ -149,7 +156,8 @@ deploy 仓库的 compose 已经按这套变量传参，`.env` 里改域名 + `do
 
 1. **应用侧两个环境变量**：`apps/web` 的 `NEXT_PUBLIC_MARKETING_URL`（登录页指向官网）与 `NEXT_PUBLIC_SUPPORT_EMAIL`；统一登录地址直接复用 `CASDOOR_ISSUER`。
 2. **Casdoor 应用回调**：`weave-order-web` 的 redirect URI 必须包含 `<应用域名>/auth/callback`。应用本身不要求固定域名：没设 `PUBLIC_APP_URL` 时按请求来源推导。
-3. **备案号**：若部署在国内服务器，页脚需要补 ICP 备案号与公安备案号。
+3. **备案号**：国内服务器用 `WEAVE_ICP_LICENSE` / `WEAVE_PSB_LICENSE` 注入，
+   容器启动时渲染进页脚；没配就保持隐藏，不会露出占位符。
 
 ## 开通：现在怎么走
 
@@ -330,6 +338,9 @@ weave-site:
 | `WEAVE_ADMIN_URL`     | `admin`    | 平台管理入口               |
 | `WEAVE_SSO_URL`       | `sso`      | 统一登录地址               |
 | `WEAVE_SUPPORT_EMAIL` | `email`    | 支持邮箱（留空则沿用默认） |
+| `WEAVE_ICP_LICENSE`   | —          | 页脚 ICP 备案号（国内必填） |
+| `WEAVE_PSB_LICENSE`   | —          | 页脚公安联网备案号         |
+| `WEAVE_VERIFY_GOOGLE` / `_BING` / `_BAIDU` | — | 搜索平台 HTML 标签验证码 |
 
 `docker/start.sh` 做两件事：
 
@@ -349,7 +360,25 @@ weave-site:
 
 - **Vercel / Netlify / Cloudflare Pages**：构建命令 `pnpm --filter @weave-order/site build`，输出目录 `apps/site/dist`。
 - **自有 nginx**：`root /var/www/weaveorder;`，`index.html` 设 `Cache-Control: no-cache`，静态资源长缓存，`error_page 404 /404.html;`。
-- 需要国内备案域名时，记得补页脚备案号。
+- 纯静态托管不做运行期渲染：构建前要先把 `src/site.config.json` 改成正式域名（或用容器的渲染链路），备案号与验证码也要直接写进页面。国内备案域名记得补页脚。
+
+### 上线核查
+
+域名生效后跑一遍自动核查（跳转、canonical、robots、sitemap、llms、OG 图、
+404、缓存头、压缩、TTFB）：
+
+```bash
+pnpm --filter @weave-order/site launch:check --site https://正式域名
+```
+
+百度主动推送（备案后拿到 token 再跑，没配 token 会跳过并返回 0）：
+
+```bash
+BAIDU_PUSH_TOKEN=xxx pnpm --filter @weave-order/site baidu:push --site https://正式域名
+```
+
+完整的上线清单、三家搜索平台步骤、统计配置与上线记录表见
+[`docs/site-launch-runbook.md`](../../docs/site-launch-runbook.md)。
 
 ## 字体
 
