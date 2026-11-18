@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { BreakGlassRequest, SupportTicket, TenantSummary } from "@weave-order/schema";
-import { date, statusClass } from "@/src/format";
+import { statusClass } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { BreakGlassAccess, BreakGlassForm, TicketForm, TicketStatusSelect } from "@/src/actions";
 
@@ -64,7 +65,9 @@ export default async function SupportPage({
                     </td>
                     <td>
                       <TicketStatusSelect id={ticket.id} status={ticket.status} />
-                      <div className="tiny muted">{date(ticket.updatedAt)}</div>
+                      <div className="tiny muted">
+                        <Time value={ticket.updatedAt} />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -112,7 +115,9 @@ export default async function SupportPage({
                       <span className={statusClass(request.status)}>{request.status}</span>
                     </td>
                     <td className="tiny">{request.tenantConsent ? "已同意" : "未同意"}</td>
-                    <td className="tiny">{date(request.expiresAt)}</td>
+                    <td className="tiny">
+                      <Time value={request.expiresAt} />
+                    </td>
                     <td>
                       {request.status === "ACTIVE" ? (
                         <BreakGlassAccess id={request.id} />

@@ -5,11 +5,10 @@ import {
   APPROVAL_STATUS_LABEL,
   INVOICE_STATUS_LABEL,
   TENANT_STATUS_LABEL,
-  date,
-  day,
   money,
   statusClass,
 } from "@/src/format";
+import { Time } from "@/src/time";
 import { PlatformApiError, platformFetch } from "@/src/server-api";
 import { OnboardingLinkPanel, SubscriptionForm, TenantStatusActions } from "@/src/actions";
 
@@ -97,9 +96,11 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
         <div className="stat">
           <div className="label">下次扣费</div>
           <div className="value" style={{ fontSize: 20 }}>
-            {day(tenant.nextDueAt)}
+            <Time value={tenant.nextDueAt} mode="day" />
           </div>
-          <div className="hint">开通于 {day(tenant.createdAt)}</div>
+          <div className="hint">
+            开通于 <Time value={tenant.createdAt} mode="day" />
+          </div>
         </div>
       </div>
 
@@ -210,7 +211,9 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
                       </span>
                     </td>
                     <td className="num">{money(invoice.totalCents)}</td>
-                    <td className="tiny">{date(invoice.issuedAt)}</td>
+                    <td className="tiny">
+                      <Time value={invoice.issuedAt} />
+                    </td>
                   </tr>
                 ))}
                 {invoices.length === 0 ? (
@@ -285,8 +288,12 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
                     <td>{override.planCode}</td>
                     <td className="num">{money(override.monthlyPriceCents)}</td>
                     <td className="tiny">
-                      {day(override.effectiveFrom)} →{" "}
-                      {override.effectiveTo ? day(override.effectiveTo) : "长期"}
+                      <Time value={override.effectiveFrom} mode="day" /> →{" "}
+                      {override.effectiveTo ? (
+                        <Time value={override.effectiveTo} mode="day" />
+                      ) : (
+                        "长期"
+                      )}
                     </td>
                     <td>
                       <span className={statusClass(override.status)}>

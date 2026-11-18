@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { PlatformConfig } from "@weave-order/schema";
-import { date } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { ConfigForm, ConfigRollback } from "@/src/actions";
 
@@ -60,7 +60,9 @@ export default async function ConfigPage() {
                     <td className="tiny mono" style={{ maxWidth: 260 }}>
                       {JSON.stringify(config.value).slice(0, 160)}
                     </td>
-                    <td className="tiny">{date(config.createdAt)}</td>
+                    <td className="tiny">
+                      <Time value={config.createdAt} />
+                    </td>
                   </tr>
                 ))}
                 {configs.length === 0 ? (
@@ -119,7 +121,9 @@ export default async function ConfigPage() {
                       <td className="tiny mono" style={{ maxWidth: 420 }}>
                         {JSON.stringify(version.value).slice(0, 200)}
                       </td>
-                      <td className="tiny">{date(version.createdAt)}</td>
+                      <td className="tiny">
+                        <Time value={version.createdAt} />
+                      </td>
                       <td>
                         {version.status === "SUPERSEDED" ? (
                           <ConfigRollback id={version.id} />

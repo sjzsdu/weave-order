@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { InvoiceSettings } from "@weave-order/schema";
-import { bps, date } from "@/src/format";
+import { bps } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { InvoiceSettingsForm } from "@/src/actions";
 
@@ -18,7 +19,7 @@ export default async function InvoicingSettingsPage() {
           <p>发票类型、税率、开票主体、时机与红冲规则。改税率需 owner + finance 双人复核。</p>
         </div>
         <div className="muted small">
-          当前版本 v{settings.version} · {date(settings.updatedAt)}
+          当前版本 v{settings.version} · <Time value={settings.updatedAt} />
         </div>
       </div>
 

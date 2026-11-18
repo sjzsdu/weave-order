@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { FeatureFlag } from "@weave-order/schema";
-import { date } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { FeatureFlagCreateForm, FeatureFlagRow } from "@/src/actions";
 
@@ -56,7 +56,14 @@ export default async function FeatureFlagsPage() {
             </div>
             <div className="divider" />
             <p className="small muted" style={{ margin: 0 }}>
-              最近更新：{flags[0] ? `${flags[0].key} · ${date(flags[0].updatedAt)}` : "—"}
+              最近更新：
+              {flags[0] ? (
+                <>
+                  {flags[0].key} · <Time value={flags[0].updatedAt} />
+                </>
+              ) : (
+                "—"
+              )}
               。灰度百分比与指定租户同时成立时取并集。
             </p>
           </>

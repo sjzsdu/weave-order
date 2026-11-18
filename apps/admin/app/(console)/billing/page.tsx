@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { Invoice, TenantSummary } from "@weave-order/schema";
-import { INVOICE_STATUS_LABEL, date, money, statusClass } from "@/src/format";
+import { INVOICE_STATUS_LABEL, money, statusClass } from "@/src/format";
+import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
 import { InvoiceActions, InvoiceCreateForm } from "@/src/actions";
 
@@ -118,7 +119,9 @@ export default async function BillingPage({
                 <tr key={invoice.id}>
                   <td className="mono">
                     {invoice.number}
-                    <div className="tiny muted">{date(invoice.createdAt)}</div>
+                    <div className="tiny muted">
+                      <Time value={invoice.createdAt} />
+                    </div>
                   </td>
                   <td>
                     <Link href={`/tenants/${invoice.tenantId}`}>{invoice.tenantName}</Link>
@@ -129,8 +132,12 @@ export default async function BillingPage({
                     </span>
                   </td>
                   <td className="tiny">
+                    {/* 账期是 UTC 日历日：起 00:00Z / 止 23:59:59Z，按字符串切日才能首尾同日，
+                        换成北京时间会把 23:59:59Z 推到次日。到期日是真实时刻，走 Time。 */}
                     {invoice.periodStart.slice(0, 10)} → {invoice.periodEnd.slice(0, 10)}
-                    <div className="muted">到期 {invoice.dueAt?.slice(0, 10) ?? "—"}</div>
+                    <div className="muted">
+                      到期 <Time value={invoice.dueAt} mode="day" />
+                    </div>
                   </td>
                   <td className="num">{money(invoice.subtotalCents)}</td>
                   <td className="num">
