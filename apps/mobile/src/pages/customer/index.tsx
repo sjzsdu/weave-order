@@ -10,6 +10,7 @@ import {
   Card,
   EmptyState,
   Loading,
+  NavBar,
   Page,
   SectionTitle,
 } from "../../components/ui";
@@ -85,6 +86,7 @@ export default function CustomerPage() {
   if (detail.isLoading && !detail.data) {
     return (
       <Page>
+        <NavBar title="客户 360" />
         <Loading />
       </Page>
     );
@@ -94,6 +96,7 @@ export default function CustomerPage() {
     const notFound = detail.error instanceof ApiError && detail.error.status === 404;
     return (
       <Page>
+        <NavBar title="客户 360" />
         <EmptyState
           title={notFound ? "客户不存在" : "客户 360 暂时不可用"}
           desc={
@@ -110,10 +113,9 @@ export default function CustomerPage() {
 
   return (
     <Page>
-      <View className="page-title">{customer.name}</View>
+      <NavBar title={customer.name} subtitle={customer.code} />
       <View className="page-sub">
-        {customer.code} · {customer.tier} · 负责人{" "}
-        {ownerLabel(detail.data?.ownerName, detail.data?.ownerId)}
+        {customer.tier} · 负责人 {ownerLabel(detail.data?.ownerName, detail.data?.ownerId)}
       </View>
 
       <Card>

@@ -3,7 +3,7 @@ import Taro, { useRouter } from "@tarojs/taro";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "@weave-order/core";
 import type { FabricSample, QuoteDraft, QuoteStatus, SpecMatch, Unit } from "@weave-order/schema";
-import { Amount, Badge, Button, Card, Page, Sheet } from "../../components/ui";
+import { Amount, Badge, Button, Card, NavBar, Page, Sheet } from "../../components/ui";
 import { useCustomers } from "../../lib/hooks";
 import {
   centsToYuanInput,
@@ -546,7 +546,7 @@ export default function QuotePage() {
 
   return (
     <Page>
-      <View className="page-title">{step === "draft" ? "报价草稿" : "快速报价"}</View>
+      <NavBar title={step === "draft" ? "报价草稿" : "快速报价"} />
       <View className="page-sub">
         {step === "draft"
           ? "改价直接写在草稿里，你批准之后新价格才生效。"
