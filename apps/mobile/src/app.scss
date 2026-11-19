@@ -953,6 +953,50 @@ body {
 }
 
 /*
+ * 报价候选：横向卡片墙。
+ * 竖排大卡会让「选面料」多一次滚动和一次「下一步」，横排一屏看到 2 张、点一张直接出草稿。
+ */
+.candidate-strip {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.candidate-card {
+  flex: 0 0 300px;
+  margin-bottom: 0;
+}
+
+.candidate-thumb {
+  width: 100%;
+  height: 220px;
+  border-radius: 12px;
+  background: $bg;
+}
+
+.candidate-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #d8d3c8;
+  color: #9a9385;
+  font-size: 24px;
+}
+
+.candidate-card .list-title {
+  margin-top: 16px;
+}
+
+.candidate-cta {
+  margin-top: 12px;
+  color: $accent;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+/*
  * Taro H5 的 tabbar 文案是组件内置的固定 10px，不跟根字号缩放；
  * 补到 12.5px（24px 设计稿）并加高容器，避免文字挤压。
  */
@@ -963,4 +1007,20 @@ body {
 
 taro-tabbar.taro-tabbar__tabbar {
   height: 60PX;
+}
+
+/*
+ * Taro H5 的内层 textarea 自带 `height: 20px; overflow: hidden` 的行内样式，
+ * 长原话会被裁成一行（外层看着很高、里面只有一行可见）。外层已经定高，
+ * 让内层填满并允许垂直滚动，客户原话才能完整看到。
+ */
+taro-textarea-core.textarea {
+  height: 220px;
+}
+
+taro-textarea-core.textarea .taro-textarea,
+taro-textarea-core.textarea textarea {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
 }

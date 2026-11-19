@@ -76,7 +76,7 @@ export default function CustomersPage() {
               </Text>
               <Text
                 className="link"
-                onClick={() => openQuote({ customerId: customer.id, mode: "paste" })}
+                onClick={() => openQuote({ mode: "customer", customerId: customer.id })}
               >
                 快速报价
               </Text>

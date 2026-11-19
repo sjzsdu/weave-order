@@ -482,7 +482,7 @@ export default function CameraPage() {
               <View className="actions">
                 <Button
                   small
-                  onClick={() => openQuote({ sampleId: match.sample.id, mode: "paste" })}
+                  onClick={() => openQuote({ mode: "sample", sampleId: match.sample.id })}
                 >
                   用这个报价
                 </Button>

@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { queryKeys } from "@weave-order/core";
 import type {
   ApprovalQueue,
+  Capability,
   Customer,
   Customer360,
   CustomerTimelinePage,
@@ -218,4 +219,27 @@ export function useOfflineBanner(): { show: boolean; text: string } {
   if (queue.conflicts > 0)
     return { show: true, text: `${queue.conflicts} 条离线操作与服务端版本冲突，去「更多」确认` };
   return { show: false, text: "" };
+}
+
+/**
+ * 当前成员的能力（服务端 `/api/auth/me` 算好的 `capabilities`）。
+ *
+ * 页面只按它显隐，不在前端从角色推导权限：报价「批准并分享 / 提交审批」
+ * 这类分支一旦各写一份，迟早与后端白名单不一致。
+ * 未就绪（加载中 / 待选租户 / 无成员）返回空数组，界面按「无权限」保守显示。
+ */
+export function useCapabilities(): Capability[] {
+  const query = useQuery({
+    queryKey: queryKeys.me,
+    queryFn: () => api.me(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const data = query.data;
+  if (!data || !("capabilities" in data)) return [];
+  return data.capabilities;
+}
+
+export function useCanApproveQuote(): boolean {
+  return useCapabilities().includes("quote.approve");
 }

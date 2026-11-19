@@ -25,7 +25,7 @@ import { useVoiceNote } from "../../lib/recorder";
 import { api, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { copyText } from "../../lib/clipboard";
-import { openCustomer } from "../../lib/nav";
+import { openCustomer, openQuote } from "../../lib/nav";
 
 interface UndoState {
   item: ApprovalItem;
@@ -319,11 +319,7 @@ export default function ApprovalsPage() {
                     <Button
                       variant="ghost"
                       small
-                      onClick={() =>
-                        void Taro.navigateTo({
-                          url: `/pages/quote/index?quoteId=${encodeURIComponent(item.id)}`,
-                        })
-                      }
+                      onClick={() => openQuote({ mode: "edit", quoteId: item.id })}
                     >
                       改价
                     </Button>
@@ -483,9 +479,7 @@ export default function ApprovalsPage() {
             )}
           </View>
         )}
-        {!shareUrl && (
-          <View className="footnote">客户链接需要联网生成，离线时不会保存。</View>
-        )}
+        {!shareUrl && <View className="footnote">客户链接需要联网生成，离线时不会保存。</View>}
       </Sheet>
 
       <View className="footnote">
