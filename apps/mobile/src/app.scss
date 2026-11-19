@@ -570,37 +570,76 @@ body {
   margin-top: 6px;
 }
 
-.quick {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+/* 待办首屏的结论句：一眼看到「今天几件事、多少钱卡住」。 */
+.headline {
+  margin: 12px 0 20px;
+  line-height: 1.4;
 }
 
-.quick-item {
-  flex-shrink: 0;
-  min-width: 140px;
-  background: $surface;
-  border: 1px solid $line;
-  border-radius: 16px;
-  padding: 18px;
-  text-align: center;
+.headline-main {
+  font-size: 36px;
+  font-weight: 650;
 }
 
-.quick-label {
-  font-size: 24px;
-  margin-top: 4px;
+.headline-amount {
+  font-size: 30px;
+  color: $warn;
+  font-variant-numeric: tabular-nums;
 }
 
-.role-chip {
+/* 离线积压 / 冲突提示：只在存在时出现，点击去「我的」。 */
+.queue-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  min-height: 44PX;
+  margin-top: 12px;
+  padding: 4px 18px;
+  border-radius: 999px;
+  background: $warn-soft;
+  border: 1px solid rgba(178, 106, 0, 0.3);
+  color: $warn;
+  font-size: 24px;
+}
+
+/* 「小织今天做了 N 件事」：默认折叠成一行，点开才看明细。 */
+.collapse-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44PX;
+  margin: 28px 0 12px;
+  padding: 10px 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 999px;
-  padding: 8px 18px;
-  font-size: 24px;
+  border-radius: 14px;
+  font-size: 26px;
+}
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 26px;
+}
+
+.pending-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pending-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .swipe-wrap {
@@ -717,7 +756,8 @@ body {
   position: fixed;
   left: 24px;
   right: 24px;
-  bottom: calc(32px + env(safe-area-inset-bottom));
+  /* 审批页不是 tab 页：留 50px 给拇指，不贴屏幕底边。 */
+  bottom: calc(50px + env(safe-area-inset-bottom));
   background: #16181d;
   color: #fff;
   border-radius: 16px;
@@ -727,6 +767,11 @@ body {
   align-items: center;
   font-size: 24px;
   z-index: 900;
+}
+
+/* tab 页（待办）的撤销条要落在 60PX 高的 tabbar 之上，否则被遮住。 */
+.undo-bar-tab {
+  bottom: calc(76PX + env(safe-area-inset-bottom));
 }
 
 .undo-action {
@@ -959,6 +1004,14 @@ body {
 .weui-tabbar .weui-tabbar__label {
   font-size: 24px;
   line-height: 1.6;
+}
+
+/*
+ * Taro 用这个变量算 tab 页的可视高度（max-height: 100vh - var(...)），
+ * 默认 50px 比实际 tabbar 矮 10px，页面最后一段会被挡住。
+ */
+:root {
+  --taro-tabbar-height: 60PX;
 }
 
 taro-tabbar.taro-tabbar__tabbar {

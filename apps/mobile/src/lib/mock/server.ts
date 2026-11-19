@@ -851,8 +851,30 @@ export function createMockServer(options: MockServerOptions): MockServer {
 
     if (method === "GET" && path === "/api/samples") {
       const limit = Number(search.get("limit") ?? 50);
+      const size = Number.isFinite(limit) && limit > 0 ? Math.min(50, Math.round(limit)) : 50;
+      // 图墙（listSamplesPage）会带 status / cursor 等参数并期望分页字段；
+      // 老调用点（listSamples，只带 limit）仍返回 `{ samples }`，两份契约都不放宽。
+      const wantsPage =
+        search.has("status") ||
+        search.has("cursor") ||
+        search.has("query") ||
+        search.has("category");
+      if (!wantsPage) return jsonResponse(200, { samples: MOCK_SAMPLES.slice(0, size) });
+      const status = search.get("status") ?? "ACTIVE";
+      const matched = MOCK_SAMPLES.filter((sample) => sample.status === status);
+      const cursor = Number(search.get("cursor") ?? 0);
+      const offset = Number.isFinite(cursor) && cursor > 0 ? Math.round(cursor) : 0;
+      const page = matched.slice(offset, offset + size);
+      const hasMore = offset + size < matched.length;
       return jsonResponse(200, {
-        samples: MOCK_SAMPLES.slice(0, Number.isFinite(limit) ? limit : 50),
+        samples: page,
+        nextCursor: hasMore ? String(offset + size) : null,
+        hasMore,
+        total: matched.length,
+        remaining: Math.max(0, matched.length - offset - page.length),
+        categories: [...new Set(matched.map((sample) => sample.category ?? ""))]
+          .filter((category) => category.length > 0)
+          .sort(),
       });
     }
 
