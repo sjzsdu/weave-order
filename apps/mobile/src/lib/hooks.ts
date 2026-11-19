@@ -7,6 +7,7 @@ import type {
   Capability,
   Customer,
   Customer360,
+  CustomerListItem,
   CustomerTimelinePage,
   PanoramaSnapshot,
 } from "@weave-order/schema";
@@ -74,6 +75,47 @@ export function useCustomers(limit = 50) {
     queryFn: async () => {
       const data = await api.listCustomers(limit);
       writeCache(`customers.${limit}`, data);
+      return data;
+    },
+    ...(cached
+      ? { initialData: cached.data, initialDataUpdatedAt: Date.parse(cached.savedAt) }
+      : {}),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * 当前身份的能力清单（服务端按 capabilities.ts 算好）。
+ * 只用于显隐入口，真正的拦截永远在服务端；拿不到时按「全部隐藏」处理。
+ */
+export function useCapabilities(): {
+  capabilities: Capability[];
+  has: (capability: Capability) => boolean;
+} {
+  const { data } = useQuery({
+    queryKey: ["me", "capabilities"],
+    queryFn: () => api.me(),
+    staleTime: 300_000,
+  });
+  const capabilities = data && "capabilities" in data ? data.capabilities : [];
+  return {
+    capabilities,
+    has: (capability) => capabilities.includes(capability),
+  };
+}
+
+/**
+ * 客户列表（带聚合数字）：排序交给服务端，页面拿到什么顺序就显示什么顺序。
+ * `followup` = 待跟进优先（未决报价 / 逾期应收）→ 最近往来倒序 → 等级。
+ */
+export function useCustomerList(sort: "recent" | "followup" = "followup", limit = 100) {
+  const cacheKey = `customerList.${sort}.${limit}`;
+  const cached = readCache<CustomerListItem[]>(cacheKey);
+  return useQuery({
+    queryKey: queryKeys.customerList({ sort, limit }),
+    queryFn: async () => {
+      const data = await api.customerList({ sort, limit });
+      writeCache(cacheKey, data);
       return data;
     },
     ...(cached

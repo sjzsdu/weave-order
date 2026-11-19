@@ -23,6 +23,10 @@ export default defineConfig({
     "process.env.TARO_APP_API_BASE": JSON.stringify(
       process.env.TARO_APP_API_BASE ?? "http://localhost:3000",
     ),
+    // 构建期写入版本号，供「我的 → 设备与关于」展示；没传时显示「开发版」。
+    "process.env.TARO_APP_VERSION": JSON.stringify(
+      process.env.TARO_APP_VERSION ?? process.env.APP_VERSION ?? "",
+    ),
   },
   // PWA 壳：manifest / service worker / icons 直接落到 dist 根目录。
   copy: {
