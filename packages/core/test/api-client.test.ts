@@ -50,6 +50,42 @@ describe("API client（契约解析 + 令牌）", () => {
     await expect(client.listCustomers()).rejects.toThrow();
   });
 
+  it("样品筛选透传成分与克重档位，并解析档位选项", async () => {
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        jsonResponse({
+          samples: [],
+          nextCursor: null,
+          hasMore: false,
+          total: 0,
+          remaining: 0,
+          categories: ["针织"],
+          compositions: ["100% 棉"],
+          weights: ["220g/m²", "320g/m²"],
+        }),
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl,
+    });
+
+    const page = await client.listSamplesPage({
+      composition: "棉",
+      weights: ["220g/m²", "320g/m²"],
+      status: "ACTIVE",
+    });
+    expect(page.compositions).toEqual(["100% 棉"]);
+    expect(page.weights).toEqual(["220g/m²", "320g/m²"]);
+
+    const [url] = fetchImpl.mock.calls[0] ?? [];
+    const params = new URL(url as string).searchParams;
+    expect(params.get("composition")).toBe("棉");
+    expect(params.get("weights")).toBe("220g/m²,320g/m²");
+    expect(params.get("status")).toBe("ACTIVE");
+  });
+
   it("错误响应映射成 ApiError(code/message)", async () => {
     const client = createApiClient({
       baseUrl: "http://api.test",
