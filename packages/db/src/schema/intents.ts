@@ -18,8 +18,8 @@ import { intentSourceEnum, intentStatusEnum } from "./enums";
  * 且「同一次提交」要能被幂等去重（`tenant_id + client_request_id` 唯一）。
  *
  * 状态机由 `kernel/intents.service.ts` 收口：
- * QUEUED → RUNNING → SUCCEEDED | FAILED，任何非终态可 CANCELLED，
- * RUNNING 超过 60 秒改写为 TIMEOUT。
+ * QUEUED → RUNNING → SUCCEEDED | NEEDS_INPUT | FAILED，任何非终态可 CANCELLED，
+ * RUNNING 超过 60 秒改写为 TIMEOUT。NEEDS_INPUT = 报价还缺阻断项，不是失败。
  */
 export const intents = pgTable(
   "intents",
@@ -34,8 +34,8 @@ export const intents = pgTable(
     context: jsonb("context").$type<JsonValue>(),
     status: intentStatusEnum("status").notNull().default("QUEUED"),
     /**
-     * 执行器接线状态。当前产品没有接入真实的意图拆解执行器，
-     * 新建行一律是 NOT_CONNECTED —— 界面据此说「尚未接入」而不是假成功。
+     * 执行器接线状态。桌面「意图 → 报价 agent」执行器已接通（WAN-172），
+     * 新提交会立刻转成 CONNECTED + RUNNING；历史 NOT_CONNECTED 行保持「待受理」文案。
      */
     executorState: varchar("executor_state", { length: 32 }).notNull().default("NOT_CONNECTED"),
     /** 失败 / 超时的人话原因。 */

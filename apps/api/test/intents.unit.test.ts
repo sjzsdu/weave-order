@@ -33,14 +33,14 @@ describe("状态机", () => {
   });
 
   it("RUNNING 可以走向成功 / 失败 / 超时 / 撤销", () => {
-    for (const to of ["SUCCEEDED", "FAILED", "TIMEOUT", "CANCELLED"] as const) {
+    for (const to of ["SUCCEEDED", "NEEDS_INPUT", "FAILED", "TIMEOUT", "CANCELLED"] as const) {
       expect(canTransitionIntent("RUNNING", to)).toBe(true);
     }
     expect(canTransitionIntent("RUNNING", "QUEUED")).toBe(false);
   });
 
   it("终态不再变化", () => {
-    for (const status of ["SUCCEEDED", "FAILED", "CANCELLED", "TIMEOUT"] as const) {
+    for (const status of ["SUCCEEDED", "NEEDS_INPUT", "FAILED", "CANCELLED", "TIMEOUT"] as const) {
       expect(isTerminalIntentStatus(status)).toBe(true);
       expect(canTransitionIntent(status, "RUNNING")).toBe(false);
       expect(canTransitionIntent(status, "CANCELLED")).toBe(false);
@@ -100,6 +100,16 @@ describe("状态文案", () => {
     expect(
       intentNotice({ status: "TIMEOUT", executorState: "CONNECTED", failureReason: null }),
     ).toContain("超过 60 秒");
+  });
+
+  it("缺信息不是失败：保留具体缺失项并提示可重试", () => {
+    const notice = intentNotice({
+      status: "NEEDS_INPUT",
+      executorState: "CONNECTED",
+      failureReason: "还差：客户（请选择这条询价属于哪个客户）。原话已保留，补齐后重试即可。",
+    });
+    expect(notice).toContain("还差：客户");
+    expect(notice).toContain("原话已保留");
   });
 
   it("成功态不再附加说明（草稿卡片本身承载后续动作）", () => {

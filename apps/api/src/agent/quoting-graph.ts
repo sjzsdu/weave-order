@@ -142,13 +142,18 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
 
     try {
       const intent = await llm.extractQuoteIntent({ text: input.rawText });
+      const fallback = llm.lastFallback ?? null;
       return {
         intent,
         provider: intent.provider,
         usage: llm.lastUsage,
+        // 降级事实必须跟着结果走：用户看到的是「报价出来了 + 模型暂时降级」，
+        // 而不是一个静默的假成功。
+        notice: fallback ? `模型网关不可用：${fallback.reason}。本次已用本地规则整理。` : null,
         stage: advanceQuoting(state.stage, "INTENT_PARSED"),
         steps: [
           `parseIntent: ${intent.provider} 抽取槽位（成分=${intent.slots.composition ?? "-"}，克重=${intent.slots.weight ?? "-"}，数量=${intent.slots.quantity ? `${intent.slots.quantity.value}${intent.slots.quantity.unit}` : "-"}）`,
+          ...(fallback ? [`parseIntent: 已回退本地规则（${fallback.reason}）`] : []),
         ],
       };
     } catch (error) {
@@ -378,7 +383,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
       : "暂未生成草稿：补齐阻断项后可再次发起。";
     return {
       stage: advanceQuoting(state.stage, "DONE"),
-      explanation: `${draftText} 候选样品 ${state.candidates.length} 个。${missingText}`,
+      explanation: `${state.notice ? `${state.notice} ` : ""}${draftText} 候选样品 ${state.candidates.length} 个。${missingText}`,
       steps: ["finalize: DONE"],
     };
   };
@@ -428,6 +433,7 @@ export function toQuoteAgentResult(state: QuoteAgentStateType): Result {
     draft: state.draft,
     missingFields: state.missingFields,
     explanation: state.explanation,
+    notice: state.notice,
     provider: state.provider,
     usage: state.usage,
     failure: state.failure,

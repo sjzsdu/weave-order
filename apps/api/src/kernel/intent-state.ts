@@ -8,6 +8,7 @@ import { KernelError } from "./errors";
  *
  *   QUEUED ──► RUNNING ──► SUCCEEDED
  *     │           ├──► FAILED
+ *     │           ├──► NEEDS_INPUT（报价 agent 缺客户/数量等阻断项）
  *     │           └──► TIMEOUT（RUNNING 超过 60 秒）
  *     └──► CANCELLED（10 分钟内）
  */
@@ -20,8 +21,9 @@ export const INTENT_CANCEL_WINDOW_MS = 10 * 60_000;
 
 const TRANSITIONS: Record<IntentStatus, readonly IntentStatus[]> = {
   QUEUED: ["RUNNING", "CANCELLED"],
-  RUNNING: ["SUCCEEDED", "FAILED", "TIMEOUT", "CANCELLED"],
+  RUNNING: ["SUCCEEDED", "NEEDS_INPUT", "FAILED", "TIMEOUT", "CANCELLED"],
   SUCCEEDED: [],
+  NEEDS_INPUT: [],
   FAILED: [],
   CANCELLED: [],
   TIMEOUT: [],
@@ -31,6 +33,7 @@ export const INTENT_STATUS_LABEL: Record<IntentStatus, string> = {
   QUEUED: "待受理",
   RUNNING: "小织正在整理",
   SUCCEEDED: "草稿已生成",
+  NEEDS_INPUT: "还差一点信息",
   FAILED: "没整理出来",
   CANCELLED: "已撤销",
   TIMEOUT: "超时未完成",
@@ -91,6 +94,10 @@ export function intentNotice(input: {
   }
   if (input.status === "FAILED") {
     return input.failureReason ?? "小织这次没整理出来，原话还在，可以重试。";
+  }
+  // 「缺信息」不是失败：原话保留，补上缺失项就能重来。
+  if (input.status === "NEEDS_INPUT") {
+    return input.failureReason ?? "还差一些信息才能出报价草稿，补齐后重试即可。";
   }
   if (input.status === "TIMEOUT") {
     return "超过 60 秒还没整理出来，小织这次没完成。原话已保留，可以重试。";

@@ -8,7 +8,7 @@ import {
 import type { Quantity } from "@weave-order/schema";
 import type { Kernel, KernelContext } from "../kernel";
 import { scopeWindowOf } from "../kernel";
-import { createLlmProvider } from "../platform/llm";
+import { createResilientLlmProvider } from "../platform/llm";
 import type { LlmProvider } from "../platform/llm";
 import { loadEnv } from "../platform/env";
 import { createTools } from "../tools";
@@ -185,6 +185,6 @@ export class InboundIntakeService {
       env.LLM_PROVIDER === "openai-compatible" && settings.allowExternal
         ? "openai-compatible"
         : "local-rule";
-    return createLlmProvider(name, { settings, usage: kernel.usage, env });
+    return createResilientLlmProvider(name, { settings, usage: kernel.usage, env });
   }
 }

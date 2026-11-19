@@ -59,6 +59,8 @@ export const QuoteAgentState = Annotation.Root({
   draft: Annotation<QuoteDraft | null>({ reducer: (_p, n) => n, default: () => null }),
   missingFields: Annotation<MissingField[]>({ reducer: (_p, n) => n, default: () => [] }),
   explanation: Annotation<string>({ reducer: (_p, n) => n, default: () => "" }),
+  /** 模型网关降级说明（人话）；未降级时为 null。 */
+  notice: Annotation<string | null>({ reducer: (_p, n) => n, default: () => null }),
   provider: Annotation<string>({ reducer: (_p, n) => n, default: () => "local-rule-v1" }),
   usage: Annotation<LlmCallReceipt | null>({ reducer: (_p, n) => n, default: () => null }),
   failure: Annotation<QuoteAgentFailure | null>({ reducer: (_p, n) => n, default: () => null }),

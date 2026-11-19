@@ -13,13 +13,15 @@ export const IntentSource = z.enum(["today", "command-bar", "customer-360"]);
 export type IntentSource = z.infer<typeof IntentSource>;
 
 /**
- * 状态机：QUEUED → RUNNING → SUCCEEDED | FAILED；任何时候可 CANCELLED；
- * RUNNING 超过 60 秒由服务端改写为 TIMEOUT。
+ * 状态机：QUEUED → RUNNING → SUCCEEDED | NEEDS_INPUT | FAILED；任何时候可 CANCELLED；
+ * RUNNING 超过 60 秒由服务端改写为 TIMEOUT。NEEDS_INPUT 表示报价草稿还缺阻断项
+ * （客户 / 样品 / 数量），不是失败，补齐后重试即可。
  */
 export const IntentStatus = z.enum([
   "QUEUED",
   "RUNNING",
   "SUCCEEDED",
+  "NEEDS_INPUT",
   "FAILED",
   "CANCELLED",
   "TIMEOUT",
