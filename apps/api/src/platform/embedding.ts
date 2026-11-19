@@ -79,6 +79,12 @@ export const DASHSCOPE_EMBEDDING_MAX_BATCH = 10;
 export interface DashScopeEmbeddingOptions {
   apiKey: string;
   baseUrl?: string;
+  /**
+   * Complete multimodal embedding endpoint. When set it is used verbatim
+   * (e.g. the one-api gateway route); otherwise the provider falls back to
+   * baseUrl + the native DashScope suffix.
+   */
+  endpoint?: string;
   model?: string;
   dimension?: number;
   timeoutMs?: number;
@@ -124,6 +130,32 @@ function isFiniteVector(value: unknown, dimension: number): value is number[] {
     value.length === dimension &&
     value.every((item) => typeof item === "number" && Number.isFinite(item))
   );
+}
+
+/**
+ * 把上游失败响应转成一眼能看懂的一句话。
+ *
+ * 直连百炼返回 `{code, message}`，one-api 网关返回 `{error:{message,type,code}}`；
+ * 直接截断原始 JSON 会把真正的原因（如「该令牌无权使用模型」）埋在大括号之间。
+ * 解析失败时退回原文截断，保证任何响应都有可读信息。
+ */
+function describeUpstreamError(status: number, statusText: string, body: string): string {
+  const raw = body.trim();
+  let detail = "";
+  if (raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw) as {
+        error?: { message?: unknown };
+        message?: unknown;
+      };
+      const message = parsed.error?.message ?? parsed.message;
+      if (typeof message === "string") detail = message.trim();
+    } catch {
+      // JSON 被截断或不是合法 JSON：保留原文
+    }
+  }
+  const text = detail || raw.slice(0, 300);
+  return `HTTP ${status} ${statusText}：${text || "无响应体"}`;
 }
 
 /**
@@ -251,11 +283,11 @@ export class DashScopeTextEmbeddingProvider implements EmbeddingProvider {
     }
 
     if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      const body = await response.text().catch(() => "");
       // 4xx（除 429）是配置/输入问题，重试没有意义。
       const retryable = response.status === 429 || response.status >= 500;
       throw new EmbeddingRequestError(
-        `HTTP ${response.status} ${response.statusText}：${detail || "无响应体"}`,
+        describeUpstreamError(response.status, response.statusText, body),
         retryable,
       );
     }
@@ -291,6 +323,7 @@ export class DashScopeTextEmbeddingProvider implements EmbeddingProvider {
 
 export interface EmbeddingProviderOptions {
   baseUrl?: string;
+  endpoint?: string;
   apiKey?: string;
   model?: string;
   dimension?: number;
@@ -427,6 +460,8 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
   readonly maxImagesPerRequest: number;
   private readonly model: string;
   private readonly baseUrl: string;
+  /** Full endpoint used by requests; see DashScopeEmbeddingOptions.endpoint. */
+  private readonly endpoint: string;
   private readonly apiKey: string;
   private readonly maxAttempts: number;
   private readonly retryBaseMs: number;
@@ -436,7 +471,8 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
   constructor(options: DashScopeEmbeddingOptions) {
     if (!options.apiKey.trim()) {
       throw new Error(
-        "IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl 需要 IMAGE_EMBEDDING_API_KEY（或 DASHSCOPE_API_KEY）；" +
+        "IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl 需要 IMAGE_EMBEDDING_API_KEY" +
+          "（直连百炼时可用 DASHSCOPE_API_KEY；走 one-api 网关时填网关令牌）；" +
           "没有 key 时请用 local-stub，不要静默降级。",
       );
     }
@@ -445,6 +481,12 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
     this.dimension = options.dimension ?? DEFAULT_IMAGE_EMBEDDING_DIMENSION;
     if (this.dimension <= 0) throw new Error(`IMAGE_EMBEDDING_DIMENSION 非法：${this.dimension}`);
     this.baseUrl = (options.baseUrl ?? DEFAULT_IMAGE_EMBEDDING_BASE_URL).replace(/\/+$/, "");
+    // IMAGE_EMBEDDING_ENDPOINT wins when provided (one-api gateway route).
+    // The fallback uses a single suffix segment; the old double suffix only
+    // worked because the upstream router happened to tolerate it.
+    this.endpoint =
+      options.endpoint?.trim() ||
+      `${this.baseUrl}/services/embeddings/multimodal-embedding`;
     this.apiKey = options.apiKey;
     this.maxImagesPerRequest = Math.max(
       1,
@@ -497,32 +539,27 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     let response: Response;
     try {
-      response = await this.fetchImpl(
-        `${this.baseUrl}/services/embeddings/multimodal-embedding/multimodal-embedding`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: this.model,
-            input: {
-              contents: images.map((image) => ({
-                image: `data:${image.mimeType};base64,${image.base64}`,
-              })),
-            },
-            parameters: { dimension: this.dimension },
-          }),
-          signal: controller.signal,
+      response = await this.fetchImpl(this.endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.apiKey}`,
         },
-      );
+        body: JSON.stringify({
+          model: this.model,
+          input: {
+            contents: images.map((image) => ({
+              image: `data:${image.mimeType};base64,${image.base64}`,
+            })),
+          },
+          parameters: { dimension: this.dimension },
+        }),
+        signal: controller.signal,
+      });
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError";
       throw new EmbeddingRequestError(
-        aborted
-          ? `请求超时（${this.timeoutMs}ms）：${this.baseUrl}/services/embeddings/multimodal-embedding`
-          : `网络错误：${error instanceof Error ? error.message : String(error)}`,
+        aborted ? `请求超时（${this.timeoutMs}ms）：${this.endpoint}` : `网络错误：${error instanceof Error ? error.message : String(error)}`,
         true,
       );
     } finally {
@@ -530,11 +567,11 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
     }
 
     if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      const body = await response.text().catch(() => "");
       // 400 常见于「维度不支持 / base64 非法 / 单批超限」——重试不会变好。
       const retryable = response.status === 429 || response.status >= 500;
       throw new EmbeddingRequestError(
-        `HTTP ${response.status} ${response.statusText}：${detail || "无响应体"}`,
+        describeUpstreamError(response.status, response.statusText, body),
         retryable,
       );
     }
@@ -573,6 +610,7 @@ export interface ImageEmbeddingEnv {
   IMAGE_EMBEDDING_MODEL: string;
   IMAGE_EMBEDDING_DIMENSION: number;
   IMAGE_EMBEDDING_BASE_URL: string;
+  IMAGE_EMBEDDING_ENDPOINT?: string;
   IMAGE_EMBEDDING_API_KEY?: string;
   IMAGE_EMBEDDING_TIMEOUT_MS: number;
   IMAGE_EMBEDDING_MAX_ATTEMPTS: number;
@@ -585,6 +623,7 @@ export function createImageEmbeddingProviderFromEnv(
 ): ImageEmbeddingProvider {
   return createImageEmbeddingProvider(env.IMAGE_EMBEDDING_PROVIDER, {
     baseUrl: env.IMAGE_EMBEDDING_BASE_URL,
+    endpoint: env.IMAGE_EMBEDDING_ENDPOINT,
     apiKey: env.IMAGE_EMBEDDING_API_KEY ?? fallbackApiKey,
     model: env.IMAGE_EMBEDDING_MODEL,
     dimension: env.IMAGE_EMBEDDING_DIMENSION,
@@ -602,6 +641,7 @@ export function createImageEmbeddingProvider(
     return new DashScopeMultiModalEmbeddingProvider({
       apiKey: options.apiKey ?? "",
       baseUrl: options.baseUrl,
+      endpoint: options.endpoint,
       model: options.model,
       dimension: options.dimension,
       timeoutMs: options.timeoutMs,

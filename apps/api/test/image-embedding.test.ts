@@ -77,7 +77,7 @@ describe("DashScopeMultiModalEmbeddingProvider", () => {
     await provider.embedImage(IMG);
 
     expect(requests[0]?.url).toBe(
-      "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+      "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding",
     );
     const body = JSON.parse(requests[0]?.body ?? "{}") as {
       model: string;
@@ -88,6 +88,40 @@ describe("DashScopeMultiModalEmbeddingProvider", () => {
     expect(body.parameters.dimension).toBe(1024);
     expect(body.input.contents[0]?.image).toBe(`data:image/jpeg;base64,${IMG.base64}`);
     expect(requests[0]?.authorization).toBe("Bearer sk-test");
+  });
+
+  it("IMAGE_EMBEDDING_ENDPOINT 有值时原样使用完整端点（网关路由）", async () => {
+    const urls: string[] = [];
+    const fetchImpl = vi.fn((input: string | URL | Request) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      urls.push(url);
+      return Promise.resolve(jsonResponse(embeddingsBody(1)));
+    });
+    const endpoint = "https://oneapi.wnbgj.com/v1/multimodal/embeddings";
+    const provider = new DashScopeMultiModalEmbeddingProvider({
+      apiKey: "sk-gateway-token",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      endpoint,
+      fetchImpl,
+    });
+    await provider.embedImage(IMG);
+    expect(urls).toEqual([endpoint]);
+  });
+
+  it("网关错误信封 {error:{message}} 还原为可读原因，且 4xx 不重试", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({ error: { message: "该令牌无权使用模型：qwen3-vl-embedding" } }, 403),
+      ),
+    );
+    const provider = new DashScopeMultiModalEmbeddingProvider({
+      apiKey: "sk-gateway-token",
+      endpoint: "https://oneapi.wnbgj.com/v1/multimodal/embeddings",
+      fetchImpl,
+    });
+    await expect(provider.embedImage(IMG)).rejects.toThrow(/该令牌无权使用模型/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("超过单批上限（10 张）时切片发送，且顺序与入参一致", async () => {

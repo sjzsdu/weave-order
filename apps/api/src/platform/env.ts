@@ -102,6 +102,11 @@ const EnvSchema = z.object({
   IMAGE_EMBEDDING_DIMENSION: z.coerce.number().int().positive().default(1024),
   /** DashScope 原生多模态端点（不是 OpenAI 兼容端点）。 */
   IMAGE_EMBEDDING_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/api/v1"),
+  /**
+   * 完整的多模态向量端点。设置后原样使用（例如 one-api 网关的
+   * /v1/multimodal/embeddings）；未设置才回落到 BASE_URL + 单段后缀。
+   */
+  IMAGE_EMBEDDING_ENDPOINT: z.string().url().optional(),
   /** 图像 embedding key；缺省回落到 DASHSCOPE_API_KEY。 */
   IMAGE_EMBEDDING_API_KEY: z.string().min(1).optional(),
   IMAGE_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
@@ -291,6 +296,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   ) {
     throw new Error(
       "EMBEDDING_PROVIDER=dashscope-text-v3 需要 EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY；" +
+        "走 one-api 网关时填与 LLM_API_KEY 同一枚令牌；" +
         "没有 key 请改回 local-stub（哈希向量不携带语义，不能用于语义检索）。",
     );
   }
@@ -307,6 +313,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   ) {
     throw new Error(
       "IMAGE_EMBEDDING_PROVIDER=dashscope-qwen3-vl 需要 IMAGE_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY；" +
+        "走 one-api 网关（IMAGE_EMBEDDING_ENDPOINT=/v1/multimodal/embeddings）时填同一枚网关令牌；" +
         "没有 key 请改回 local-stub（哈希向量不携带视觉语义，不能用于以图找样）。",
     );
   }
