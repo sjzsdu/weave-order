@@ -4,6 +4,10 @@ import {
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
+  AuditExportJobResponse,
+  AuditLogDetail,
+  AuditLogListResponse,
+  AuditLogSummary,
   AuthMeResponse,
   AuthContextResponse,
   ContactExportResult,
@@ -118,6 +122,20 @@ export interface SampleListParams {
   category?: string | null;
   status?: SampleStatus | "ALL" | null;
   cursor?: string | null;
+  limit?: number;
+}
+
+/** 操作日志列表筛选：与 `/api/audit/log` 的查询参数一一对应。 */
+export interface AuditLogListParams {
+  from?: string | null;
+  to?: string | null;
+  actorId?: string | null;
+  actor?: string | null;
+  actions?: string[];
+  entityType?: string | null;
+  keyword?: string | null;
+  highRisk?: boolean;
+  cursor?: number | null;
   limit?: number;
 }
 
@@ -694,6 +712,43 @@ export function createApiClient(options: ApiClientOptions) {
     audit: async (limit = 50) =>
       AuditResponse.parse(await request(`/api/audit?limit=${limit}`)).entries,
 
+    /** 操作日志列表：筛选与游标都交给服务端（服务端同时决定 ALL/OWN 范围）。 */
+    auditLog: async (params: AuditLogListParams = {}) =>
+      AuditLogListResponse.parse(
+        await request(`/api/audit/log?${new URLSearchParams(auditQuery(params)).toString()}`),
+      ),
+
+    /** 单条详情：before/after 由服务端按查看者能力裁剪。 */
+    auditLogDetail: async (seq: number) =>
+      z.object({ entry: AuditLogDetail }).parse(await request(`/api/audit/log/${seq}`)).entry,
+
+    auditLogSummary: async (range: string) =>
+      AuditLogSummary.parse(
+        await request(`/api/audit/log/summary?range=${encodeURIComponent(range)}`),
+      ),
+
+    createAuditExport: async (params: AuditLogListParams = {}) =>
+      AuditExportJobResponse.parse(
+        await request(`/api/audit/log/export`, {
+          method: "POST",
+          body: JSON.stringify({
+            from: params.from ?? undefined,
+            to: params.to ?? undefined,
+            actorId: params.actorId ?? undefined,
+            actor: params.actor ?? undefined,
+            action: params.actions,
+            entityType: params.entityType ?? undefined,
+            keyword: params.keyword ?? undefined,
+            highRisk: params.highRisk,
+          }),
+        }),
+      ).job,
+
+    auditExportJob: async (jobId: string) =>
+      AuditExportJobResponse.parse(
+        await request(`/api/audit/log/export/${encodeURIComponent(jobId)}`),
+      ).job,
+
     generateQuoteDraft: async (input: z.input<typeof T004GenerateQuoteDraftInput>) =>
       T004GenerateQuoteDraftResult.parse(
         await toolPost("/api/tools/generate-quote-draft", T004GenerateQuoteDraftInput.parse(input)),
@@ -992,3 +1047,19 @@ export function createApiClient(options: ApiClientOptions) {
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
+
+/** 只把有值的筛选拼进查询串；空字符串会让后端误当成筛选条件。 */
+function auditQuery(params: AuditLogListParams): Record<string, string> {
+  const query: Record<string, string> = {};
+  if (params.from) query.from = params.from;
+  if (params.to) query.to = params.to;
+  if (params.actorId) query.actorId = params.actorId;
+  if (params.actor) query.actor = params.actor;
+  if (params.actions && params.actions.length > 0) query.action = params.actions.join(",");
+  if (params.entityType) query.entityType = params.entityType;
+  if (params.keyword) query.keyword = params.keyword;
+  if (params.highRisk) query.highRisk = "1";
+  if (params.cursor) query.cursor = String(params.cursor);
+  if (params.limit) query.limit = String(params.limit);
+  return query;
+}

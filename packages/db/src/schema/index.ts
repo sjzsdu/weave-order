@@ -13,6 +13,7 @@ export * from "./pricing";
 export * from "./decision-deltas";
 export * from "./shares";
 export * from "./audit";
+export * from "./audit-export-jobs";
 export * from "./auth";
 export * from "./embeddings";
 export * from "./sample-text-embeddings";

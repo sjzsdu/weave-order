@@ -12,7 +12,7 @@ import type {
   Unit,
 } from "@weave-order/schema";
 import { ApiError } from "./api-client";
-import type { ApiClient } from "./api-client";
+import type { ApiClient, AuditLogListParams } from "./api-client";
 
 /** 统一的 query key，避免各端自造字符串。 */
 export const queryKeys = {
@@ -31,6 +31,9 @@ export const queryKeys = {
   approvalQueue: (limit: number) => ["approvals", "queue", limit] as const,
   approvalDetail: (id: string, kind: ApprovalKind) => ["approvals", id, kind] as const,
   audit: (limit: number) => ["audit", limit] as const,
+  auditLog: (filters: unknown) => ["audit", "log", filters] as const,
+  auditLogDetail: (seq: number) => ["audit", "log", seq, "detail"] as const,
+  auditLogSummary: (range: string) => ["audit", "log", "summary", range] as const,
   orders: (limit: number) => ["orders", limit] as const,
   orderList: (filters: unknown) => ["orders", "list", filters] as const,
   orderFunnel: (filters: unknown) => ["orders", "funnel", filters] as const,
@@ -558,4 +561,41 @@ export function useOnboardingState(client: ApiClient) {
     updating: mutation.isPending,
     saveError: mutation.error,
   };
+}
+
+/**
+ * 操作日志列表：游标分页 + 服务端筛选。
+ * 返回 `scope`（ALL/OWN）由服务端决定，前端只负责在标题上标「我的操作」。
+ */
+export function useAuditLog(client: ApiClient, filters: Omit<AuditLogListParams, "cursor">) {
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.auditLog(filters),
+    queryFn: ({ pageParam }) => client.auditLog({ ...filters, cursor: pageParam }),
+    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  return {
+    ...query,
+    items,
+    scope: query.data?.pages[0]?.scope ?? null,
+    hasMore: query.hasNextPage,
+  };
+}
+
+/** 点开某一行才拉 before/after：列表接口不吐 jsonb。 */
+export function useAuditLogDetail(client: ApiClient, seq: number | null) {
+  return useQuery({
+    queryKey: queryKeys.auditLogDetail(seq ?? 0),
+    queryFn: () => client.auditLogDetail(seq as number),
+    enabled: seq !== null,
+  });
+}
+
+export function useAuditLogSummary(client: ApiClient, range: string) {
+  return useQuery({
+    queryKey: queryKeys.auditLogSummary(range),
+    queryFn: () => client.auditLogSummary(range),
+    staleTime: 60_000,
+  });
 }

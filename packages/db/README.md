@@ -144,3 +144,27 @@ pnpm db:check       # 应通过：8/8 与 journal 一致
 - 存量库：`pnpm db:repair -- --apply` 后 `pnpm db:migrate` 成功、`pnpm db:check` 通过、新迁移对象（如 `print_jobs`）齐备；
 - 全新库：`pnpm db:migrate` 一次到位（38 张迁移表）、`pnpm db:check` 通过；
 - PR：`migrate-upgrade` job 绿；改写已合并迁移或写坏新迁移时必须红。
+
+## 审计日志分区与 24 个月保留（WAN-179）
+
+`audit_log` 按月 RANGE 分区（`created_at`），迁移会建好历史分区 + 未来 3 个月 + 一个
+`audit_log_default` 兜底分区。部署环境每天或每周跑一次维护：
+
+```bash
+pnpm --filter @weave-order/api maintain:audit
+```
+
+它调用 SQL 函数 `weave_audit_log_maintain(24, 3)`：
+
+- 建本月与未来 3 个月的分区；漏跑期间写入的行先落在 default 分区，补建时自动搬回正确分区；
+- drop 整月都早于「今天 − 24 个月」的分区。**分区一旦 drop，数据不可恢复**，这是保留策略的既定后果。
+
+手工核对：
+
+```sql
+SELECT inhrelid::regclass, pg_get_expr(c.relpartbound, c.oid)
+FROM pg_inherits JOIN pg_class c ON c.oid = inhrelid
+WHERE inhparent = 'audit_log'::regclass ORDER BY 1;
+```
+
+回滚（人工执行，不参与 drizzle 自动迁移）：`packages/db/sql/rollback/0027_audit_partition_export.sql`。

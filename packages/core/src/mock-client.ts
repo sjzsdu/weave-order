@@ -883,6 +883,56 @@ export function createMockApiClient(): ApiClient {
 
     audit: () => Promise.resolve(audit),
 
+    auditLog: () => {
+      const items = audit.map((entry) => ({
+        seq: entry.seq,
+        createdAt: entry.createdAt,
+        actorType: entry.actorType,
+        actorId: entry.actorId,
+        actorName: null,
+        actorRole: null,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        entityLabel: null,
+        highRisk: false,
+        summary: `${entry.action} · ${entry.entityType}`,
+      }));
+      return Promise.resolve({ scope: "ALL" as const, items, nextCursor: null });
+    },
+    auditLogDetail: (seq) => {
+      const entry = audit.find((item) => item.seq === seq) ?? audit[0]!;
+      return Promise.resolve({
+        seq: entry.seq,
+        createdAt: entry.createdAt,
+        actorType: entry.actorType,
+        actorId: entry.actorId,
+        actorName: null,
+        actorRole: null,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        entityLabel: null,
+        highRisk: false,
+        summary: `${entry.action} · ${entry.entityType}`,
+        before: entry.before,
+        after: entry.after,
+        maskedFields: [],
+        correlationId: entry.correlationId,
+      });
+    },
+    auditLogSummary: (range) =>
+      Promise.resolve({
+        scope: "ALL" as const,
+        range: range as "30d",
+        total: audit.length,
+        highRiskCount: 0,
+        days: [{ date: NOW.slice(0, 10), count: audit.length }],
+        actorTypes: [{ actorType: "AGENT" as const, count: audit.length }],
+      }),
+    createAuditExport: () => Promise.reject(new Error("演示模式不支持导出操作日志，请用真实账号")),
+    auditExportJob: () => Promise.reject(new Error("演示模式不支持导出操作日志，请用真实账号")),
+
     searchBySpec: () =>
       Promise.resolve(
         T002SearchFabricBySpecResult.parse({
