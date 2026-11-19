@@ -12,10 +12,12 @@ import {
   DraftRevision,
   QuoteApprovalView,
   QuoteDetail,
+  QuoteListResponse,
   ReviseQuoteDraftInput,
   RevisionDiff,
   T004GenerateQuoteDraftInput,
   approvalLevelRank,
+  hasCapability,
   roleApprovalLevel,
 } from "@weave-order/schema";
 import type {
@@ -28,11 +30,12 @@ import type {
   QuoteConfirmation,
   QuoteDraft,
   QuoteLineItem,
+  QuoteListFilter,
   QuoteRevisionData,
   ResolvedPricingValue,
   Unit,
 } from "@weave-order/schema";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
@@ -44,6 +47,7 @@ import {
   computeRequirement,
   resolveApprovalPolicies,
 } from "./approval-policy";
+import { decodeCursor, encodeCursor, parseApprovalCursor } from "./cursor";
 import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
@@ -1280,6 +1284,91 @@ export class QuoteService {
       );
     });
     return { status: "REJECTED" };
+  }
+
+  /**
+   * 报价工作台列表（WAN-175）：状态 / 关键词 / 客户筛选 + 游标分页。
+   *
+   * 与 `list()` 的区别：这里给的是「工作台需要的摘要」（客户名、行数、金额、
+   * 有效期），不是审批项；明细留给 `GET /api/quotes/:id` 懒加载。
+   * 数据范围与筛选同样先于分页在 SQL 里完成，翻页不会忽多忽少。
+   */
+  async listWorkbench(query: QuoteListFilter, ctx: KernelContext): Promise<QuoteListResponse> {
+    if (!ctx.actor.role || !hasCapability(ctx.actor.role, "quote.workbench.view")) {
+      throw new KernelError("PERMISSION_DENIED", "当前角色没有报价工作台权限", {
+        reason: "QUOTE_WORKBENCH_FORBIDDEN",
+      });
+    }
+    const cursor = parseApprovalCursor(decodeCursor(query.cursor));
+    const conditions: SQL[] = [eq(quotes.tenantId, this.tenantId)];
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) conditions.push(scope);
+    if (query.status) conditions.push(eq(quotes.status, query.status));
+    if (query.customerId) conditions.push(eq(quotes.customerId, query.customerId));
+    if (query.query) {
+      const pattern = `%${query.query.replace(/[%_]/g, (match) => "\\" + match)}%`;
+      conditions.push(
+        or(
+          ilike(customers.name, pattern),
+          sql`exists (
+            select 1 from quote_items qi
+            where qi.quote_id = ${quotes.id}
+              and qi.description ilike ${pattern}
+          )`,
+        )!,
+      );
+    }
+    if (cursor) {
+      const at = new Date(cursor.createdAt);
+      conditions.push(
+        or(lt(quotes.createdAt, at), and(eq(quotes.createdAt, at), lt(quotes.id, cursor.id)))!,
+      );
+    }
+
+    const rows = await this.db
+      .select({ quote: quotes, customerName: customers.name })
+      .from(quotes)
+      .innerJoin(customers, eq(customers.id, quotes.customerId))
+      .where(and(...conditions))
+      .orderBy(desc(quotes.createdAt), desc(quotes.id))
+      .limit(query.limit + 1);
+
+    const hasMore = rows.length > query.limit;
+    const page = hasMore ? rows.slice(0, query.limit) : rows;
+    const ids = page.map((entry) => entry.quote.id);
+    const itemRows =
+      ids.length === 0
+        ? []
+        : await this.db
+            .select({ quoteId: quoteItems.quoteId })
+            .from(quoteItems)
+            .where(inArray(quoteItems.quoteId, ids));
+    const countBy = new Map<string, number>();
+    for (const item of itemRows) {
+      countBy.set(item.quoteId, (countBy.get(item.quoteId) ?? 0) + 1);
+    }
+
+    const last = page[page.length - 1]?.quote;
+    return QuoteListResponse.parse({
+      items: page.map(({ quote, customerName }) => ({
+        id: quote.id,
+        customerId: quote.customerId,
+        customerName,
+        status: quote.status,
+        currency: currencyOf(quote.currency),
+        total: { amount: quote.totalAmount, currency: currencyOf(quote.currency) },
+        version: quote.version,
+        itemCount: countBy.get(quote.id) ?? 0,
+        expiresAt: toIso(quote.expiresAt),
+        createdAt: toIso(quote.createdAt),
+        updatedAt: toIso(quote.updatedAt),
+        pendingApproval: quote.status === "DRAFT",
+      })),
+      nextCursor:
+        hasMore && last
+          ? encodeCursor({ createdAt: toIso(last.createdAt), id: last.id })
+          : null,
+    });
   }
 
   /**

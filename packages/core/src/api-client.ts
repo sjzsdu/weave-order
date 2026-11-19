@@ -71,9 +71,13 @@ import {
   PublishPrintTemplateInput,
   PublishPrintTemplateVersionInput,
   PickScanInput,
+  QuoteDetail,
+  QuoteListResponse,
   QuoteShareStats,
   ResolveFieldValueResponse,
   QuoteShareStatsList,
+  ReviseQuoteDraftInput,
+  ReviseQuoteDraftResult,
   RegisterPrintAgentInput,
   Receivable,
   ReceivableListResponse,
@@ -91,6 +95,9 @@ import {
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
   T005CreateSampleShipmentResult,
+  T006SuggestLinePriceInput,
+  T006SuggestLinePriceResult,
+  UpdateTeamMemberInput,
   SubmitIntentInput,
   SwitchTenantInput,
   TenantChoicesResponse,
@@ -315,6 +322,9 @@ export function createApiClient(options: ApiClientOptions) {
   const put = (path: string, body: unknown) =>
     request(path, { method: "PUT", body: JSON.stringify(body) });
 
+  const patch = (path: string, body: unknown) =>
+    request(path, { method: "PATCH", body: JSON.stringify(body) });
+
   /** 工具 / 审批面：4xx 的业务失败按契约对象交回。 */
   const toolPost = (path: string, body: unknown) =>
     request(path, { method: "POST", body: JSON.stringify(body) }, { toolFailure: true });
@@ -390,6 +400,15 @@ export function createApiClient(options: ApiClientOptions) {
 
     /** 待接受与已加入的同事。 */
     listTeam: async () => TeamInviteList.parse(await request("/api/team/invites")).invites,
+
+    /** 修改成员角色 / 数据范围 / 审批额度（能力 `member.invite`，服务端二次校验）。 */
+    updateTeamMember: async (membershipId: string, input: z.input<typeof UpdateTeamMemberInput>) =>
+      TeamInvite.parse(
+        await patch(
+          `/api/team/members/${encodeURIComponent(membershipId)}`,
+          UpdateTeamMemberInput.parse(input),
+        ),
+      ),
 
     /** 本月 credits 用量：1 credit = 1,000 tokens。 */
     creditsUsage: async () =>
@@ -752,6 +771,45 @@ export function createApiClient(options: ApiClientOptions) {
     generateQuoteDraft: async (input: z.input<typeof T004GenerateQuoteDraftInput>) =>
       T004GenerateQuoteDraftResult.parse(
         await toolPost("/api/tools/generate-quote-draft", T004GenerateQuoteDraftInput.parse(input)),
+      ),
+
+    /**
+     * 报价工作台列表：状态 / 关键词 / 客户筛选 + 游标分页。
+     * 返回项只带摘要；逐行明细由 `quote()` 懒加载。
+     */
+    quotes: async (
+      options: {
+        status?: string | null;
+        query?: string | null;
+        customerId?: string | null;
+        cursor?: string | null;
+        limit?: number;
+      } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (options.status && options.status !== "ALL") params.set("status", options.status);
+      if (options.query) params.set("query", options.query);
+      if (options.customerId) params.set("customerId", options.customerId);
+      if (options.cursor) params.set("cursor", options.cursor);
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      const qs = params.toString();
+      return QuoteListResponse.parse(await request(`/api/quotes${qs ? `?${qs}` : ""}`));
+    },
+
+    /** 单据详情（草稿手改前先读版本号，避免覆盖别人的修改）。 */
+    quote: async (quoteId: string) =>
+      QuoteDetail.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`)),
+
+    /** 建议单价（T-006）：成本在服务端，桌面端同样只负责回填可编辑输入框。 */
+    suggestLinePrice: async (input: z.input<typeof T006SuggestLinePriceInput>) =>
+      T006SuggestLinePriceResult.parse(
+        await toolPost("/api/tools/suggest-line-price", T006SuggestLinePriceInput.parse(input)),
+      ),
+
+    /** 人类改稿：版本 +1、重算金额、写审计；改幅超阈值自动升级审批。 */
+    reviseQuote: async (input: z.input<typeof ReviseQuoteDraftInput>) =>
+      ReviseQuoteDraftResult.parse(
+        await post("/api/quotes/revise", ReviseQuoteDraftInput.parse(input)),
       ),
 
     searchBySpec: async (input: z.input<typeof T002SearchFabricBySpecInput>) =>

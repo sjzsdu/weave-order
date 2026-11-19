@@ -16,11 +16,15 @@ import {
   PrintLogList,
   PrintTemplateList,
   PanoramaSnapshot,
+  QuoteDetail,
+  QuoteListResponse,
   QuoteShareStats,
   QuoteShareStatsList,
+  ReviseQuoteDraftResult,
   ShipmentView,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
+  T006SuggestLinePriceResult,
   IntentView,
   roleCapabilities,
 } from "@weave-order/schema";
@@ -489,6 +493,8 @@ export function createMockApiClient(): ApiClient {
     previewInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     acceptInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     listTeam: () => Promise.resolve([]),
+    updateTeamMember: () =>
+      Promise.reject(new Error("演示模式不支持调整成员权限，请用真实账号")),
     creditsUsage: () =>
       Promise.resolve({
         period: "2026-11",
@@ -951,6 +957,76 @@ export function createMockApiClient(): ApiClient {
 
     generateQuoteDraft: (_input: Parameters<ApiClient["generateQuoteDraft"]>[0]) =>
       Promise.resolve(T004GenerateQuoteDraftResult.parse({ ok: true, data: { draft } })),
+
+    quotes: () =>
+      Promise.resolve(
+        QuoteListResponse.parse({
+          items: [
+            {
+              id: QUOTE_ID,
+              customerId: draft.customerId,
+              customerName: customer.name,
+              status: "DRAFT",
+              currency: draft.currency,
+              total: draft.total,
+              version: 1,
+              itemCount: draft.items.length,
+              expiresAt: draft.expiresAt,
+              createdAt: draft.createdAt,
+              updatedAt: draft.createdAt,
+              pendingApproval: true,
+            },
+          ],
+          nextCursor: null,
+        }),
+      ),
+
+    quote: (id) => {
+      if (id !== QUOTE_ID) return Promise.reject(new Error("NOT_FOUND"));
+      return Promise.resolve(
+        QuoteDetail.parse({ draft, version: 1, status: "DRAFT" }),
+      );
+    },
+
+    suggestLinePrice: (input) =>
+      Promise.resolve(
+        T006SuggestLinePriceResult.parse({
+          ok: true,
+          data: {
+            pricing: {
+              customerId: input.customerId,
+              fabricSampleId: input.fabricSampleId,
+              currency: input.currency,
+              quantity: input.quantity,
+              costFloor: null,
+              markupRateBps: 0,
+              suggestedUnitPrice: draft.items[0]?.unitPrice ?? {
+                amount: 0,
+                currency: input.currency,
+              },
+              components: [
+                {
+                  kind: "POLICY",
+                  label: "演示建议价",
+                  amount: draft.items[0]?.unitPrice ?? { amount: 0, currency: input.currency },
+                  rateBps: null,
+                  source: "demo",
+                  note: null,
+                },
+              ],
+              computedBy: "KERNEL",
+            },
+          },
+        }),
+      ),
+
+    reviseQuote: () =>
+      Promise.resolve(
+        ReviseQuoteDraftResult.parse({
+          ok: false,
+          error: { code: "INVALID_INPUT", message: "演示模式不支持改价，请用真实账号" },
+        }),
+      ),
 
     decideApproval: (input) => {
       current = toDetail(input, input.decision === "APPROVE" ? "SENT" : "REJECTED");

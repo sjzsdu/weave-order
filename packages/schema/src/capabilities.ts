@@ -39,6 +39,8 @@ export const Capability = z.enum([
   "pricing.policy.edit",
   "pricing.policy.edit.company",
   "member.invite",
+  /** 授予 / 调整 OWNER 成员：只有老板能改老板，避免主管互相提权。 */
+  "member.owner.grant",
   "settings.edit",
   "print.template.publish.html",
   "receivable.read",
@@ -76,6 +78,7 @@ export const CAPABILITY_ROLES: Readonly<Record<Capability, readonly MemberRole[]
   "pricing.policy.edit": ["OWNER", "MANAGER"],
   "pricing.policy.edit.company": ["OWNER"],
   "member.invite": ["OWNER", "MANAGER"],
+  "member.owner.grant": ["OWNER"],
   "settings.edit": ["OWNER", "MANAGER"],
   "print.template.publish.html": ["OWNER"],
   "receivable.read": ["OWNER", "MANAGER", "SALES", "FINANCE", "VIEWER"],
