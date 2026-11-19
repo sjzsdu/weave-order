@@ -45,9 +45,11 @@ interface CustomerListRow {
   contact_name: string | null;
   contact_phone: string | null;
   contact_email: string | null;
+  contact_wechat: string | null;
   owner_id: string | null;
   owner_name: string | null;
   pending_quote_count: number;
+  pending_quote_amount: Array<{ amount: string | number; currency: string }>;
   in_transit_sample_count: number;
   active_order_count: number;
   receivable_balance: Array<{ amount: string | number; currency: string }>;
@@ -99,6 +101,17 @@ function aggregateColumns(): SQL {
       WHERE quotes.tenant_id = customers.tenant_id
         AND quotes.customer_id = customers.id
         AND quotes.status = 'DRAFT') AS pending_quote_count,
+    COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('amount', b.amount, 'currency', b.currency) ORDER BY b.currency)
+      FROM (
+        SELECT quotes.currency::text AS currency, sum(quotes.total_amount)::bigint AS amount
+        FROM quotes
+        WHERE quotes.tenant_id = customers.tenant_id
+          AND quotes.customer_id = customers.id
+          AND quotes.status = 'DRAFT'
+        GROUP BY quotes.currency
+      ) AS b
+    ), '[]'::jsonb) AS pending_quote_amount,
     (SELECT count(*)::int FROM sample_shipments
       WHERE sample_shipments.tenant_id = customers.tenant_id
         AND sample_shipments.customer_id = customers.id
@@ -160,11 +173,13 @@ function mapListItem(row: CustomerListRow, role?: MemberRole): CustomerListItem 
     // 兜底第二层：SQL 只取姓名/邮箱副本，这里再挡一次 UUID，任何上游回退到 subject 都不会泄漏。
     ownerName: memberDisplayName(row.owner_name),
     pendingQuoteCount: row.pending_quote_count,
+    pendingQuoteAmount: balancesOf(row.pending_quote_amount),
     inTransitSampleCount: row.in_transit_sample_count,
     activeOrderCount: row.active_order_count,
     receivableBalance: balancesOf(row.receivable_balance),
     overdueReceivableCount: row.overdue_receivable_count,
     lastContactAt: isoOf(row.last_contact_at),
+    contactWechat: row.contact_wechat,
   });
 }
 
@@ -222,39 +237,61 @@ export async function loadCustomerList(
 
   const where = sql.join(conditions, sql` AND `);
   const limit = options.limit ?? 50;
+  // 待跟进排序要按聚合列（未决报价 / 逾期应收）分组，PG 不允许在 ORDER BY 的
+  // 表达式里引用输出列别名，所以先在子查询里算好聚合，再在外层排序。
+  // 等级方向：VIP > 常规 > 新客 > 沉睡；自定义等级排在最后，与等级值是自由文本一致。
+  const orderBy =
+    options.sort === "followup"
+      ? sql`(pending_quote_count > 0 OR overdue_receivable_count > 0) DESC,
+          last_contact_at DESC NULLS LAST,
+          CASE listed.tier
+            WHEN 'VIP' THEN 3
+            WHEN 'REGULAR' THEN 2
+            WHEN 'NEW' THEN 1
+            WHEN 'COLD' THEN 0
+            ELSE 0
+          END DESC,
+          listed.created_at DESC,
+          listed.id DESC`
+      : sql`listed.created_at DESC, listed.id DESC`;
   const result = await db.execute<CustomerListRow>(sql`
-    SELECT
-      customers.id,
-      customers.tenant_id,
-      customers.code,
-      customers.name,
-      customers.tier,
-      pc.name AS contact_name,
-      pc.phone AS contact_phone,
-      pc.email AS contact_email,
-      customers.owner_id,
-      -- 负责人只取可展示的姓名/邮箱副本，绝不回退到 subject（那是 SSO 主键 UUID，WAN-151）。
-      COALESCE(
-        NULLIF(BTRIM(memberships.display_name), ''),
-        NULLIF(BTRIM(memberships.email), '')
-      ) AS owner_name,
-      ${aggregateColumns()}
-    FROM customers
-    -- 主联系人投影：优先 is_primary，缺失时取最近创建的未归档联系人（只读回退）。
-    LEFT JOIN LATERAL (
-      SELECT cc.name, cc.phone, cc.email
-      FROM customer_contacts cc
-      WHERE cc.tenant_id = customers.tenant_id
-        AND cc.customer_id = customers.id
-        AND cc.archived_at IS NULL
-      ORDER BY cc.is_primary DESC, cc.created_at DESC
-      LIMIT 1
-    ) pc ON TRUE
-    LEFT JOIN memberships
-      ON memberships.id = customers.owner_id
-     AND memberships.tenant_id = customers.tenant_id
-    WHERE ${where}
-    ORDER BY customers.created_at DESC, customers.id DESC
+    SELECT *
+    FROM (
+      SELECT
+        customers.id,
+        customers.tenant_id,
+        customers.code,
+        customers.name,
+        customers.tier,
+        pc.name AS contact_name,
+        pc.phone AS contact_phone,
+        pc.email AS contact_email,
+        pc.wechat AS contact_wechat,
+        customers.owner_id,
+        customers.created_at,
+        -- 负责人只取可展示的姓名/邮箱副本，绝不回退到 subject（那是 SSO 主键 UUID，WAN-151）。
+        COALESCE(
+          NULLIF(BTRIM(memberships.display_name), ''),
+          NULLIF(BTRIM(memberships.email), '')
+        ) AS owner_name,
+        ${aggregateColumns()}
+      FROM customers
+      -- 主联系人投影：优先 is_primary，缺失时取最近创建的未归档联系人（只读回退）。
+      LEFT JOIN LATERAL (
+        SELECT cc.name, cc.phone, cc.email, cc.wechat
+        FROM customer_contacts cc
+        WHERE cc.tenant_id = customers.tenant_id
+          AND cc.customer_id = customers.id
+          AND cc.archived_at IS NULL
+        ORDER BY cc.is_primary DESC, cc.created_at DESC
+        LIMIT 1
+      ) pc ON TRUE
+      LEFT JOIN memberships
+        ON memberships.id = customers.owner_id
+       AND memberships.tenant_id = customers.tenant_id
+      WHERE ${where}
+    ) AS listed
+    ORDER BY ${orderBy}
     LIMIT ${limit}
   `);
   return result.rows.map((row) => mapListItem(row, ctx?.actor.role));

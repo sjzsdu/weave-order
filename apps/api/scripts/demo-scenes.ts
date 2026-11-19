@@ -88,11 +88,13 @@ async function main(): Promise<void> {
         ownerId: identity.salesMembershipId,
         ownerName: null,
         pendingQuoteCount: 0,
+        pendingQuoteAmount: [],
         inTransitSampleCount: 0,
         activeOrderCount: 0,
         receivableBalance: [],
         overdueReceivableCount: 0,
         lastContactAt: null,
+        contactWechat: null,
       };
       console.log(`✔ 客户已创建：${CUSTOMER_CODE}`);
     } else {

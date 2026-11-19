@@ -18,6 +18,12 @@ export const CustomerListOptions = z
     /** 等级 code（不是 label）；筛选项来自 `field_options(customer.tier)`。 */
     tier: CustomerTierCode.optional(),
     overdueOnly: z.boolean().optional(),
+    /**
+     * `followup`：待跟进优先（有未决报价或逾期应收）→ 最近往来倒序 → 等级。
+     * `recent` / 不传：保持原有「新建倒序」，供旧调用方使用。
+     * 排序只在服务端做：前端拿到什么顺序就显示什么顺序，不再二次排序。
+     */
+    sort: z.enum(["recent", "followup"]).optional(),
     limit: z.number().int().min(1).max(200).optional(),
   })
   .strict();
@@ -36,6 +42,8 @@ export const CustomerListItem = Customer.extend({
   ownerName: z.string().nullable(),
   /** 未决报价：status = DRAFT。 */
   pendingQuoteCount: z.number().int().nonnegative(),
+  /** 未决报价金额（DRAFT 合计），按币种分组；列表「未决金额」直接读它。 */
+  pendingQuoteAmount: MoneyByCurrency,
   /** 在途寄样：CONFIRMED / SHIPPED（已确认但未签收）。 */
   inTransitSampleCount: z.number().int().nonnegative(),
   /** 有效订单：非 DRAFT / CANCELLED。 */
@@ -46,6 +54,8 @@ export const CustomerListItem = Customer.extend({
   overdueReceivableCount: z.number().int().nonnegative(),
   /** 最近往来：报价 / 寄样 / 订单里最新的一次；没有真实往来为 null。 */
   lastContactAt: Timestamp.nullable(),
+  /** 主联系人微信；点「微信」时复制，列表不展示完整号码以外的东西。 */
+  contactWechat: z.string().max(255).nullable(),
 }).strict();
 export type CustomerListItem = z.infer<typeof CustomerListItem>;
 

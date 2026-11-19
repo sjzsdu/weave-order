@@ -31,10 +31,7 @@ import { CustomerListOptions, CustomerTimelineKind } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { ZodError } from "zod";
 import { createApprovalService } from "../approval";
-import {
-  AuditExportNotFoundError,
-  AuditLogNotFoundError,
-} from "../kernel/audit-log.service";
+import { AuditExportNotFoundError, AuditLogNotFoundError } from "../kernel/audit-log.service";
 import type { AuditLogQuery } from "../kernel/audit-log.service";
 import { isKernelError } from "../kernel";
 import { narrowPricingContext } from "../kernel/pricing-scope";
@@ -219,14 +216,21 @@ export class CatalogController {
     @Query("owner") owner?: string,
     @Query("tier") tier?: string,
     @Query("overdue") overdue?: string,
+    @Query("sort") sort?: string,
     @Headers("authorization") authorization?: string,
   ) {
+    // 排序是白名单而不是自由文本：拼 SQL 前必须收敛到枚举，非法值直接 400。
+    const customerSort = nonEmpty(sort);
+    if (customerSort && customerSort !== "recent" && customerSort !== "followup") {
+      throw new BadRequestException(`未知客户排序：${customerSort}`);
+    }
     const options = CustomerListOptions.parse({
       limit: clampLimit(limit, 50, 200),
       ...(query ? { query } : {}),
       ...(owner === "mine" || owner === "all" ? { owner } : {}),
       ...(tier ? { tier } : {}),
       ...(overdue === "1" || overdue === "true" ? { overdueOnly: true } : {}),
+      ...(customerSort ? { sort: customerSort } : {}),
     });
     return this.human.run(
       authorization,

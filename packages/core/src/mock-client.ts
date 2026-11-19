@@ -126,12 +126,61 @@ const customerListItem = CustomerListItem.parse({
   ownerId: MEMBERSHIP_ID,
   ownerName: "孙巨中",
   pendingQuoteCount: 1,
+  pendingQuoteAmount: [{ amount: 760000, currency: "CNY" }],
   inTransitSampleCount: 2,
   activeOrderCount: 3,
   receivableBalance: [{ amount: 1280000, currency: "CNY" }],
   overdueReceivableCount: 1,
   lastContactAt: NOW,
+  contactWechat: "zhoumin_wechat",
 });
+
+/**
+ * 演示模式多给两位客户：列表排版与「待跟进优先」排序在本地就跑得出来。
+ * 顺序即服务端 `sort=followup` 的结果：有未决/逾期的在前，再按最近往来倒序。
+ */
+const otherCustomerListItems = [
+  CustomerListItem.parse({
+    ...customer,
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    code: "KH-022",
+    name: "绍兴华瑞制衣",
+    tier: "REGULAR",
+    contactName: "陈立",
+    contactPhone: "139****2087",
+    contactEmail: null,
+    ownerId: MEMBERSHIP_ID,
+    ownerName: "孙巨中",
+    pendingQuoteCount: 2,
+    pendingQuoteAmount: [{ amount: 2140000, currency: "CNY" }],
+    inTransitSampleCount: 0,
+    activeOrderCount: 1,
+    receivableBalance: [],
+    overdueReceivableCount: 0,
+    lastContactAt: "2026-11-16T09:20:00.000Z",
+    contactWechat: null,
+  }),
+  CustomerListItem.parse({
+    ...customer,
+    id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    code: "KH-031",
+    name: "宁波恒达针织",
+    tier: "NEW",
+    contactName: "王倩",
+    contactPhone: "137****4410",
+    contactEmail: null,
+    ownerId: null,
+    ownerName: null,
+    pendingQuoteCount: 0,
+    pendingQuoteAmount: [],
+    inTransitSampleCount: 1,
+    activeOrderCount: 0,
+    receivableBalance: [],
+    overdueReceivableCount: 0,
+    lastContactAt: "2026-10-28T02:10:00.000Z",
+    contactWechat: "wangqian_nb",
+  }),
+];
 
 const customer360 = Customer360.parse({
   customer,
@@ -173,6 +222,41 @@ const customer360 = Customer360.parse({
     lastContactAt: NOW,
   },
 });
+
+/** 演示客户 360：数字直接取列表行的聚合值，避免 mock 里再算第二套口径。 */
+function buildMockCustomer360(item: CustomerListItem) {
+  return {
+    customer: {
+      id: item.id,
+      tenantId: item.tenantId,
+      code: item.code,
+      name: item.name,
+      tier: item.tier,
+      contactName: item.contactName,
+      contactPhone: item.contactPhone,
+      contactEmail: item.contactEmail,
+    },
+    ownerId: item.ownerId,
+    ownerName: item.ownerName,
+    contacts: [],
+    context: {
+      ...customer360.context,
+      customerId: item.id,
+      preferenceNotes: [],
+      decisionDeltas: [],
+    },
+    summary: {
+      customerId: item.id,
+      pendingQuoteCount: item.pendingQuoteCount,
+      inTransitSampleCount: item.inTransitSampleCount,
+      activeOrderCount: item.activeOrderCount,
+      receivableBalance: item.receivableBalance,
+      overdueReceivableCount: item.overdueReceivableCount,
+      latestShareableQuoteId: null,
+      lastContactAt: item.lastContactAt,
+    },
+  };
+}
 
 const customerTimeline = CustomerTimelinePage.parse({
   events: [
@@ -550,8 +634,7 @@ export function createMockApiClient(): ApiClient {
     previewInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     acceptInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     listTeam: () => Promise.resolve([]),
-    updateTeamMember: () =>
-      Promise.reject(new Error("演示模式不支持调整成员权限，请用真实账号")),
+    updateTeamMember: () => Promise.reject(new Error("演示模式不支持调整成员权限，请用真实账号")),
     creditsUsage: () =>
       Promise.resolve({
         period: "2026-11",
@@ -597,12 +680,16 @@ export function createMockApiClient(): ApiClient {
 
     listCustomers: () => Promise.resolve([customer]),
 
-    customerList: () => Promise.resolve([customerListItem]),
+    customerList: () => Promise.resolve([customerListItem, ...otherCustomerListItems]),
 
     customer360: (id) =>
       id === CUSTOMER_ID
         ? Promise.resolve(customer360)
-        : Promise.reject(new Error("CUSTOMER_NOT_FOUND")),
+        : (() => {
+            const item = otherCustomerListItems.find((entry) => entry.id === id);
+            if (!item) return Promise.reject(new Error("CUSTOMER_NOT_FOUND"));
+            return Promise.resolve(Customer360.parse(buildMockCustomer360(item)));
+          })(),
 
     customerContacts: () => Promise.resolve([contact]),
 
@@ -643,7 +730,11 @@ export function createMockApiClient(): ApiClient {
       }),
 
     exportContacts: () =>
-      Promise.resolve({ csv: "客户编号,客户名称,姓名\nKH-018,杭州青禾服饰,周敏", rowCount: 1, masked: false }),
+      Promise.resolve({
+        csv: "客户编号,客户名称,姓名\nKH-018,杭州青禾服饰,周敏",
+        rowCount: 1,
+        masked: false,
+      }),
 
     createCustomer: (input) =>
       Promise.resolve({
@@ -1067,9 +1158,7 @@ export function createMockApiClient(): ApiClient {
 
     quote: (id) => {
       if (id !== QUOTE_ID) return Promise.reject(new Error("NOT_FOUND"));
-      return Promise.resolve(
-        QuoteDetail.parse({ draft, version: 1, status: "DRAFT" }),
-      );
+      return Promise.resolve(QuoteDetail.parse({ draft, version: 1, status: "DRAFT" }));
     },
 
     suggestLinePrice: (input) =>
