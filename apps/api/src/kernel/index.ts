@@ -20,6 +20,7 @@ import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
 import { UsageService } from "./usage.service";
 import { CustomerService } from "./customers.service";
+import { FieldOptionsService } from "./field-options.service";
 import { ImportService } from "./import.service";
 import { InboundRepliesService } from "./inbound-replies.service";
 import { IntentService } from "./intents.service";
@@ -79,7 +80,8 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const activeImageEmbedder =
     options.imageEmbedder ??
     createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
-  const customers = new CustomerService(db, tenantId);
+  const fieldOptions = new FieldOptionsService(db, tenantId);
+  const customers = new CustomerService(db, tenantId, fieldOptions);
   const storage = options.storage ?? createObjectStorageFromEnv(env);
   const sampleImages = new SampleImageService(db, tenantId, storage, env);
   const thumbs = new SampleThumbService(db, tenantId, storage);
@@ -163,6 +165,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   return {
     tenantId,
     access,
+    fieldOptions,
     customers,
     samples,
     sampleIndex,

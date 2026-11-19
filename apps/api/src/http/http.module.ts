@@ -35,6 +35,7 @@ import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
+import { FieldOptionsController } from "./field-options.controllers";
 import { InboundController } from "./inbound.controllers";
 import { IntentController } from "./intents.controllers";
 import { OnboardingStateController } from "./onboarding-state.controller";
@@ -120,6 +121,7 @@ const providers: Provider[] = [
     PrintController,
     PrintAgentController,
     MediaController,
+    FieldOptionsController,
     InboundController,
     IntentController,
     OnboardingStateController,

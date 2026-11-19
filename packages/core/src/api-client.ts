@@ -24,11 +24,16 @@ import {
   DemoSceneListResponse,
   DemoSceneResponse,
   FabricSample,
+  FieldOption,
+  FieldOptionListResponse,
+  FieldOptionMergePreview,
   InboundIntakeInput,
   InboundReplyList,
   InboundReplyResult,
   ImportBatch,
   ImportBatchResult,
+  MergeFieldOptionsInput,
+  MergeFieldOptionsResult,
   IntentListResponse,
   IntentView,
   OnboardingState,
@@ -58,6 +63,7 @@ import {
   PublishPrintTemplateVersionInput,
   PickScanInput,
   QuoteShareStats,
+  ResolveFieldValueResponse,
   QuoteShareStatsList,
   RegisterPrintAgentInput,
   Receivable,
@@ -80,7 +86,13 @@ import {
   UpdateSampleInput,
   VerifyScanInput,
 } from "@weave-order/schema";
-import type { ApprovalKind, PersonaKey, ReprintReason, SampleStatus } from "@weave-order/schema";
+import type {
+  ApprovalKind,
+  FieldKey,
+  PersonaKey,
+  ReprintReason,
+  SampleStatus,
+} from "@weave-order/schema";
 
 /**
  * 前端唯一 API 入口。
@@ -416,6 +428,69 @@ export function createApiClient(options: ApiClientOptions) {
     /** 批量导入（整批原子）：逐行回执由服务端给出，前端只展示。 */
     importBatch: async (batch: z.input<typeof ImportBatch>) =>
       ImportBatchResult.parse(await post("/api/import", ImportBatch.parse(batch))),
+
+    /**
+     * 字段选项列表。
+     *
+     * 默认连已停用项一起返回：历史客户/样品的 label 要靠它解析，
+     * 只显示下拉建议的地方自己按 `active` 过滤。
+     */
+    listFieldOptions: async (
+      field: FieldKey,
+      options: { includeInactive?: boolean; usage?: boolean } = {},
+    ) => {
+      const params = new URLSearchParams({ field });
+      if (options.includeInactive === false) params.set("includeInactive", "0");
+      if (options.usage) params.set("usage", "1");
+      return FieldOptionListResponse.parse(await request(`/api/field-options?${params.toString()}`))
+        .options;
+    },
+
+    /** 解析一个候选值：导入/智能体共用同一套归一化规则。 */
+    resolveFieldValue: async (field: FieldKey, value: string) => {
+      const params = new URLSearchParams({ field, value });
+      return ResolveFieldValueResponse.parse(
+        await request(`/api/field-options/resolve?${params.toString()}`),
+      );
+    },
+
+    /** 创建（幂等）：同名归一化后已存在时返回已有选项。 */
+    createFieldOption: async (field: FieldKey, label: string) =>
+      z
+        .object({ option: FieldOption })
+        .parse(await post("/api/field-options", { fieldKey: field, label })).option,
+
+    renameFieldOption: async (id: string, label: string) =>
+      z.object({ option: FieldOption }).parse(
+        await request(`/api/field-options/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ label }),
+        }),
+      ).option,
+
+    deleteFieldOption: async (id: string) => {
+      await request(`/api/field-options/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
+
+    restoreFieldOption: async (id: string) =>
+      z
+        .object({ option: FieldOption })
+        .parse(await post(`/api/field-options/${encodeURIComponent(id)}/restore`, {})).option,
+
+    reorderFieldOptions: async (field: FieldKey, ids: string[]) =>
+      FieldOptionListResponse.parse(
+        await post("/api/field-options/reorder", { fieldKey: field, ids }),
+      ).options,
+
+    previewFieldOptionMerge: async (sourceId: string, targetId: string) =>
+      FieldOptionMergePreview.parse(
+        await post("/api/field-options/merge/preview", { sourceId, targetId }),
+      ),
+
+    mergeFieldOptions: async (input: z.input<typeof MergeFieldOptionsInput>) =>
+      MergeFieldOptionsResult.parse(
+        await post("/api/field-options/merge", MergeFieldOptionsInput.parse(input)),
+      ),
 
     /** 客户时间线（游标分页）。 */
     customerTimeline: async (

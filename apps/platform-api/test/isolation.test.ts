@@ -13,6 +13,7 @@ const FORBIDDEN_PACKAGE = "@weave-order/db";
 const BUSINESS_TABLES = [
   "customers",
   "customer_contexts",
+  "field_options",
   "samples",
   "sample_embeddings",
   "sample_shipments",

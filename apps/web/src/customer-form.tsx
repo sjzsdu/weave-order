@@ -6,7 +6,9 @@ import type { Customer, CustomerTierCode } from "@weave-order/schema";
 import { ApiError } from "@weave-order/core";
 import { Button } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { useFieldOptions } from "@/field-options-manager";
 
+/** 选项接口失败时的兜底：预置四项仍可选，不把新建客户卡死。 */
 export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTierCode; label: string }> = [
   { value: "NEW", label: "新客" },
   { value: "REGULAR", label: "常规" },
@@ -82,6 +84,7 @@ export function CustomerForm({
   onCreated: (customer: Customer) => void;
 }) {
   const api = useApi();
+  const { options: tierOptions, error: tierError } = useFieldOptions("customer.tier");
   const [draft, setDraft] = useState<CustomerDraft>(EMPTY_CUSTOMER_DRAFT);
   const [errors, setErrors] = useState<CustomerDraftErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -91,6 +94,16 @@ export function CustomerForm({
     setDraft((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
+
+  const activeTiers = tierOptions.filter((option) => option.active);
+  // 兜底 + 保证当前值一定在下拉里（自定义等级或接口失败时不会变成空白选项）。
+  const tierChoices =
+    activeTiers.length > 0
+      ? activeTiers.map((option) => ({ value: option.code, label: option.label }))
+      : CUSTOMER_TIER_OPTIONS;
+  const choicesWithCurrent = tierChoices.some((choice) => choice.value === draft.tier)
+    ? tierChoices
+    : [{ value: draft.tier, label: draft.tier }, ...tierChoices];
 
   async function submit() {
     if (busy) return;
@@ -174,12 +187,15 @@ export function CustomerForm({
               onChange={(event) => update("tier", event.target.value)}
               className={FIELD_CLASS}
             >
-              {CUSTOMER_TIER_OPTIONS.map((option) => (
+              {choicesWithCurrent.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
+            {tierError && (
+              <p className="mt-1 text-xs text-amber-700">等级选项没加载出来，先用默认四项。</p>
+            )}
           </Field>
 
           <Field label="联系人" error={errors.contactName}>

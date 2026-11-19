@@ -6,6 +6,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
+import { seedFieldOptions } from "./field-options.service";
 import { isTechnicalId } from "./member-label";
 import { toIso } from "./mappers";
 
@@ -93,6 +94,9 @@ export class TenancyService {
             reason: "INSERT_RETURNED_NO_ROW",
           });
         }
+        // 新公司的等级/品类/成分/联系人角色预置项：与租户同事务，避免「新公司打开下拉是空的」。
+        // 0024/0025 迁移只覆盖迁移时刻已存在的租户。
+        await seedFieldOptions(tx, row.id);
         await appendAudit(
           tx,
           ctx,
