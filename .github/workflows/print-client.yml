@@ -348,12 +348,14 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           UPDATER: ${{ needs.prepare.outputs.updater }}
           WIN_THUMBPRINT: ${{ steps.wincert.outputs.thumbprint }}
+          RUNNER_OS: ${{ runner.os }}
         run: |
           set -euo pipefail
-          # 覆盖配置只做三件事：
+          # 覆盖配置只做四件事：
           #   1. 把版本钉到 tag（安装包名、latest.json、About 里的版本都跟它走）；
           #   2. 没有签名密钥时关掉 updater 产物（否则打包会直接失败）；
-          #   3. Windows 有证书时挂上签名指纹。
+          #   3. Windows 有证书时挂上签名指纹；
+          #   4. 非 macOS 平台改用 ASCII 产品名。
           CONFIG_PATH="$(echo "$RUNNER_TEMP" | tr '\\' '/')/tauri-release.json"
           export CONFIG_PATH
           node -e '
@@ -362,6 +364,14 @@ jobs:
               version: process.env.VERSION,
               bundle: { createUpdaterArtifacts: process.env.UPDATER === "signed" },
             };
+            // 中文产品名会让 Windows 打包失败：WiX 生成的 main.wxs 用 codepage 1252，
+            // 不含 CJK，light.exe 报 LGHT0311；Linux 侧 rpm/deb 的包名也不允许非 ASCII
+            // 开头（invalid name "...": must start with an alphanumeric character）。
+            // 因此 Windows / Linux 用 ASCII 产品名出包，macOS 保持中文，
+            // 安装包与访达显示不变；应用窗口标题仍由 app.windows[].title 控制。
+            if (process.env.RUNNER_OS !== "macOS") {
+              cfg.productName = "WeavePrintAgent";
+            }
             if (process.env.WIN_THUMBPRINT) {
               cfg.bundle.windows = {
                 certificateThumbprint: process.env.WIN_THUMBPRINT,
