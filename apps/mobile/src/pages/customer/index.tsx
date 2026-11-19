@@ -47,7 +47,7 @@ export default function CustomerPage() {
   const id = router.params.id ?? "";
   const detail = useCustomer360(id);
   const timeline = useCustomerTimeline(id);
-  const caps = useCapabilities();
+  const capabilities = useCapabilities();
   const [revealPhone, setRevealPhone] = useState(false);
   const [shares, setShares] = useState<ShareSummary[]>([]);
   const [shareError, setShareError] = useState<string | null>(null);
@@ -127,9 +127,9 @@ export default function CustomerPage() {
       <CustomerNowActions
         customerId={customer.id}
         customerName={customer.name}
-        canQuote={caps.has("quote.write")}
-        canShip={caps.has("sample.write")}
-        canCollect={caps.has("receivable.read")}
+        canQuote={capabilities.includes("quote.write")}
+        canShip={capabilities.includes("sample.write")}
+        canCollect={capabilities.includes("receivable.read")}
         onQuote={() => enterQuote({ mode: "customer", customerId: customer.id })}
       />
 

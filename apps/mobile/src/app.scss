@@ -21,7 +21,7 @@ $info-soft: #eaeffd;
  * 19/24 用大写 PX：postcss-pxtransform 只匹配小写 px，避免它们被二次换算成 rem。
  */
 html {
-  font-size: clamp(19px, 5.3333vw, 24px);
+  font-size: clamp(19PX, 5.3333vw, 24PX);
 }
 
 /* 启动门禁覆盖层：children 始终挂载，加载/错误只是盖在上面的层，避免卸载首屏 Page。 */
@@ -90,8 +90,8 @@ body {
   display: flex;
   align-items: center;
   /* 44pt 固定命中区：用 PX 跳过 rpx 换算，根字号变化后仍是 44px。 */
-  width: 44px;
-  height: 44px;
+  width: 44PX;
+  height: 44PX;
 }
 
 .navbar-back {
@@ -283,7 +283,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: max(2.2rem, 44px);
+  min-height: max(2.2rem, 44PX);
   padding: 0 32px;
   border-radius: 14px;
   font-size: 28px;
@@ -297,7 +297,7 @@ body {
 }
 
 .btn-small {
-  min-height: max(2.1rem, 44px);
+  min-height: max(2.1rem, 44PX);
   padding: 0 20px;
   font-size: 24px;
   border-radius: 10px;
@@ -776,8 +776,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 44PX;
+  min-height: 44PX;
   padding: 8px;
   box-sizing: border-box;
 }
@@ -949,7 +949,7 @@ body {
   /* 视觉不变，命中区补到 44px：现在「全部」「360」这类链接只有一行字的高度。 */
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  min-height: 44PX;
   padding: 0 0.3rem;
   margin: 0 -0.3rem;
 }
@@ -1098,7 +1098,7 @@ body {
 }
 
 taro-tabbar.taro-tabbar__tabbar {
-  height: 60px;
+  height: 60PX;
 }
 
 /*
