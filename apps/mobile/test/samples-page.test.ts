@@ -25,6 +25,11 @@ describe("样品图墙分页契约", () => {
     expect(typeof page.remaining).toBe("number");
     expect(Array.isArray(page.categories)).toBe(true);
     expect(page.categories.every((category) => category.length > 0)).toBe(true);
+    // WAN-187 的筛选档位：不能因为 183 的 mock 分页实现把这两个字段丢掉。
+    expect(Array.isArray(page.compositions)).toBe(true);
+    expect(Array.isArray(page.weights)).toBe(true);
+    expect(page.compositions.length).toBeGreaterThan(0);
+    expect(page.weights.length).toBeGreaterThan(0);
     expect(typeof page.hasMore).toBe("boolean");
   });
 
@@ -45,5 +50,21 @@ describe("样品图墙分页契约", () => {
     });
     const firstIds = new Set(first.samples.map((sample) => sample.id));
     expect(second.samples.some((sample) => firstIds.has(sample.id))).toBe(false);
+  });
+
+  it("档位不跟随已选条件变化，选中一个 chip 不会让它自己消失", async () => {
+    const api = buildApi();
+    const unfiltered = await api.listSamplesPage({ status: "ACTIVE", limit: 20 });
+    const composed = unfiltered.compositions[0];
+    if (!composed) throw new Error("mock 里至少要有一种成分");
+    const filtered = await api.listSamplesPage({
+      status: "ACTIVE",
+      limit: 20,
+      composition: composed,
+    });
+    expect(filtered.compositions).toEqual(unfiltered.compositions);
+    expect(filtered.samples.some((sample) => (sample.composition ?? "").includes(composed))).toBe(
+      true,
+    );
   });
 });

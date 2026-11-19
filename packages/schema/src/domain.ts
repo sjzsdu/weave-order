@@ -227,6 +227,35 @@ export const FabricSample = z.object({
 });
 export type FabricSample = z.infer<typeof FabricSample>;
 
+/** `GET /api/samples` 筛选参数上限；HTTP 层与图墙选项共用同一组数字。 */
+export const SAMPLE_FILTER_MAX_COMPOSITION_LENGTH = 64;
+export const SAMPLE_FILTER_MAX_WEIGHT_TIERS = 10;
+export const SAMPLE_FILTER_MAX_TIER_LENGTH = 64;
+/** 图墙筛选器的选项条数上限；按出现次数倒序截断。 */
+export const SAMPLE_FILTER_TIER_LIMIT = 24;
+
+/**
+ * 样品图墙筛选 query（`GET /api/samples`）。
+ * `weights` 是逗号分隔的克重档位原文，拆分与中文错误文案在 HTTP 层做，
+ * 这里只约束「允许出现哪些键」，避免客户端和服务端各写一份形状。
+ */
+export const SampleListQuery = z.object({
+  composition: z.string().max(SAMPLE_FILTER_MAX_COMPOSITION_LENGTH).optional(),
+  weights: z.string().optional(),
+});
+export type SampleListQuery = z.infer<typeof SampleListQuery>;
+
+/**
+ * 图墙筛选器的选项，与 `categories` 同层返回。
+ * 选项只来自当前租户 + 当前状态，不跟随 query / 已选 chip，
+ * 否则选中一项会让它自己从选项里消失。
+ */
+export const SampleFilterTiers = z.object({
+  compositions: z.array(z.string()),
+  weights: z.array(z.string()),
+});
+export type SampleFilterTiers = z.infer<typeof SampleFilterTiers>;
+
 /** 寄样单状态。智能体只能产出 DRAFT，人类确认后才进入 CONFIRMED。 */
 export const SampleShipmentStatus = z.enum([
   "DRAFT",

@@ -858,10 +858,46 @@ export function createMockServer(options: MockServerOptions): MockServer {
         search.has("status") ||
         search.has("cursor") ||
         search.has("query") ||
-        search.has("category");
+        search.has("category") ||
+        search.has("composition") ||
+        search.has("weights");
       if (!wantsPage) return jsonResponse(200, { samples: MOCK_SAMPLES.slice(0, size) });
       const status = search.get("status") ?? "ACTIVE";
-      const matched = MOCK_SAMPLES.filter((sample) => sample.status === status);
+      const scope = MOCK_SAMPLES.filter((sample) => sample.status === status);
+      // 档位只来自 status 范围，不跟随已选条件（WAN-187：选中一个 chip 不能让它自己消失）。
+      const facet = (values: Array<string | null | undefined>) =>
+        [...values.reduce((counts, value) => {
+          if (!value) return counts;
+          counts.set(value, (counts.get(value) ?? 0) + 1);
+          return counts;
+        }, new Map<string, number>()).entries()]
+          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+          .slice(0, 24)
+          .map(([value]) => value);
+      const compositions = facet(scope.map((sample) => sample.composition));
+      const weights = facet(scope.map((sample) => sample.weight));
+      const query = (search.get("query") ?? "").trim().toLowerCase();
+      const category = search.get("category");
+      const composition = (search.get("composition") ?? "").trim().toLowerCase();
+      const weightFilters = (search.get("weights") ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      const matched = scope.filter((sample) => {
+        if (
+          query &&
+          !sample.name.toLowerCase().includes(query) &&
+          !sample.code.toLowerCase().includes(query)
+        ) {
+          return false;
+        }
+        if (category && sample.category !== category) return false;
+        if (composition && !(sample.composition ?? "").toLowerCase().includes(composition)) {
+          return false;
+        }
+        if (weightFilters.length > 0 && !weightFilters.includes(sample.weight ?? "")) return false;
+        return true;
+      });
       const cursor = Number(search.get("cursor") ?? 0);
       const offset = Number.isFinite(cursor) && cursor > 0 ? Math.round(cursor) : 0;
       const page = matched.slice(offset, offset + size);
@@ -875,6 +911,8 @@ export function createMockServer(options: MockServerOptions): MockServer {
         categories: [...new Set(matched.map((sample) => sample.category ?? ""))]
           .filter((category) => category.length > 0)
           .sort(),
+        compositions,
+        weights,
       });
     }
 

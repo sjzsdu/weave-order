@@ -131,6 +131,16 @@ export function takeQuoteEntry(query: Record<string, string | undefined> = {}): 
   return resolveQuoteEntry(stored, query);
 }
 
+/**
+ * 只有确实暂存过入口时才返回（tab 复用时用来区分「新入口」与「点了 tabbar」）。
+ * `takeQuoteEntry` 永远给默认值，适合首次挂载；这个给 `useDidShow` 用。
+ */
+export function consumeQuoteEntry(query: Record<string, string | undefined> = {}): QuoteEntryParams | null {
+  const stored = prefs.takeQuoteEntry();
+  if (stored === null) return null;
+  return resolveQuoteEntry(stored, query);
+}
+
 /** 相机不是 tab 页了：`navigateTo` 带不了参数，模式和以前一样放 prefs，页面 `useDidShow` 取一次。 */
 export function enterCamera(params: CameraEntryParams): void {
   const parsed = cameraEntrySchema.safeParse(params);

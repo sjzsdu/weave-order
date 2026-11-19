@@ -1,10 +1,19 @@
 import { Image, Input, Text, Textarea, View } from "@tarojs/components";
 import Taro, { useDidShow, useRouter } from "@tarojs/taro";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ApiError } from "@weave-order/core";
-import type { FabricSample, QuoteDraft, QuoteStatus, SpecMatch, Unit } from "@weave-order/schema";
-import { Amount, Badge, Button, Card, Page, Sheet } from "../../components/ui";
-import { useCustomers } from "../../lib/hooks";
+import type { FabricSample, QuoteDraft, Unit } from "@weave-order/schema";
+import {
+  Amount,
+  Badge,
+  Button,
+  Card,
+  Field,
+  Loading,
+  Page,
+  Sheet,
+} from "../../components/ui";
+import { useCanApproveQuote, useCustomers } from "../../lib/hooks";
 import {
   centsToYuanInput,
   parseCustomerText,
@@ -17,10 +26,22 @@ import type { QuoteNotice } from "../../lib/quote-notice";
 import { verifyLargeAmount } from "../../lib/biometric";
 import { api, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
-import { copyText } from "../../lib/clipboard";
-import { takeQuoteEntry } from "../../routes";
+import { copyText, readClipboardText, shareText } from "../../lib/clipboard";
+import { useVoiceNote } from "../../lib/recorder";
+import { consumeQuoteEntry, enterCamera, takeQuoteEntry } from "../../routes";
+import {
+  INITIAL_QUOTE_STATE,
+  missingForDraft,
+  primaryAction,
+  transition,
+} from "../../domain/quote/quote-flow";
 
-type Step = "input" | "candidates" | "draft";
+/**
+ * 报价页 = 一条链的四屏：输入原话 → 候选面料 → 草稿 → 已批准（原地分享）。
+ *
+ * 业务判断（能不能生成、能不能批、下一步是什么）都在 `domain/quote/quote-flow.ts`；
+ * 这里只渲染 phase 并把点击翻译成事件，避免再出现「今日 / 审批 / 报价」三份批准逻辑。
+ */
 
 const UNIT_LABEL: Record<Unit, string> = {
   meter: "米",
@@ -42,341 +63,356 @@ const EXAMPLES = [
   "上次那块亚麻，再来 200 码，尽快",
 ];
 
+type Slot = "customer" | "composition" | "weight" | "quantity";
+
+const CLIPBOARD_MESSAGE: Record<string, string> = {
+  empty: "剪贴板是空的：先在微信里复制客户原话，再点这里",
+  denied: "浏览器没给剪贴板权限：长按输入框手势粘贴即可",
+  unsupported: "当前浏览器不支持读剪贴板：请手动粘贴到输入框",
+};
+
 export default function QuotePage() {
   const router = useRouter();
-  // 报价是 tab 页，入口参数由 routes.enterQuote 暂存后在这里取一次（深链 query 仍兼容）。
-  const [entry, setEntry] = useState(() => takeQuoteEntry(router.params));
-  const quoteId = entry.quoteId ?? "";
-  const paramCustomerId = entry.customerId ?? "";
-  const paramSampleId = entry.sampleId ?? "";
-
-  useDidShow(() => {
-    const next = takeQuoteEntry();
-    // 只有带 id 的入口需要重新载入；从 tabbar 直接进来（默认 paste）不打断当前输入。
-    if (next.quoteId || next.sampleId || next.customerId) setEntry(next);
-  });
-
+  const [state, dispatch] = useReducer(transition, INITIAL_QUOTE_STATE);
+  const canApprove = useCanApproveQuote();
   const customers = useCustomers(100);
-  const [step, setStep] = useState<Step>("input");
-  const [raw, setRaw] = useState("");
-  const [parsed, setParsed] = useState<ParsedSlots | null>(null);
-  const [customerId, setCustomerId] = useState(paramCustomerId);
-  const [quantity, setQuantity] = useState("500");
-  const [unit, setUnit] = useState<Unit>("meter");
-  const [matches, setMatches] = useState<SpecMatch[]>([]);
-  const [preset, setPreset] = useState<FabricSample | null>(null);
-  const [draft, setDraft] = useState<QuoteDraft | null>(null);
-  const [status, setStatus] = useState<QuoteStatus>("DRAFT");
-  const [version, setVersion] = useState(1);
-  const [prices, setPrices] = useState<Record<string, string>>({});
-  const [revisionNote, setRevisionNote] = useState<string | null>(null);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const voice = useVoiceNote();
+
   const [customerSheet, setCustomerSheet] = useState(false);
   const [customerFilter, setCustomerFilter] = useState("");
-  /** 生成草稿前的单价（元/单位）：客户原话里提过就预填，否则由报价助手建议。 */
-  const [unitPrice, setUnitPrice] = useState("");
-  const [priceError, setPriceError] = useState<string | null>(null);
-  const [priceHint, setPriceHint] = useState<string | null>(null);
-  const [suggesting, setSuggesting] = useState(false);
+  const [editSlot, setEditSlot] = useState<Slot | null>(null);
+  const [slotDraft, setSlotDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<QuoteNotice | null>(null);
-  /** 出错时记住是哪块面料，提示里的「建议单价」可以直接作用于它。 */
-  const [failedSample, setFailedSample] = useState<FabricSample | null>(null);
+  const [parsed, setParsed] = useState<ParsedSlots | null>(null);
+  const [preset, setPreset] = useState<FabricSample | null>(null);
+  const [suggestions, setSuggestions] = useState<Record<string, number>>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const entered = useRef(false);
+
+  // 入口只在首次渲染时解析一次，后续 state 由事件驱动。
+  // 报价是 tab 页，`switchTab` 带不了 query：参数由 routes.enterQuote 暂存，这里取一次即清。
+  useEffect(() => {
+    if (entered.current) return;
+    entered.current = true;
+    dispatch({ type: "enter", params: takeQuoteEntry(router.params) });
+  }, [router.params]);
+
+  // tab 复用时从其它入口再进来：只有确实暂存过参数才重置，点 tabbar 不打断当前输入。
+  useDidShow(() => {
+    const next = consumeQuoteEntry();
+    if (!next) return;
+    dispatch({ type: "enter", params: next });
+    setParsed(null);
+    setPreset(null);
+    setNotice(null);
+  });
 
   const customer = useMemo(
-    () => (customers.data ?? []).find((entry) => entry.id === customerId) ?? null,
-    [customers.data, customerId],
+    () => (customers.data ?? []).find((entry) => entry.id === state.customerId) ?? null,
+    [customers.data, state.customerId],
   );
-
-  const filteredCustomers = useMemo(() => {
-    const list = customers.data ?? [];
-    const trimmed = customerFilter.trim();
-    if (!trimmed) return list;
-    return list.filter(
-      (entry) =>
-        entry.name.includes(trimmed) || entry.code.toLowerCase().includes(trimmed.toLowerCase()),
-    );
-  }, [customers.data, customerFilter]);
-
-  useEffect(() => {
-    if (!customerId && customers.data?.[0]) setCustomerId(customers.data[0].id);
-  }, [customerId, customers.data]);
-
-  // 从客户行 / 客户 360 再次进入报价页（页面已挂载）时，带上新的客户。
-  useEffect(() => {
-    if (paramCustomerId) setCustomerId(paramCustomerId);
-  }, [paramCustomerId]);
 
   useEffect(() => {
     if (!customer) return;
     void Taro.setNavigationBarTitle({ title: `报价 · ${customer.name}` });
   }, [customer]);
 
-  // 从审批卡 / 客户 360 进来：直接加载草稿，进入改价 / 批准。
+  // 最近 5 个客户 + 全量搜索：打开选择器先看到最可能的那几个。
+  const recentCustomers = useMemo(() => (customers.data ?? []).slice(0, 5), [customers.data]);
+  const filteredCustomers = useMemo(() => {
+    const list = customers.data ?? [];
+    const trimmed = customerFilter.trim();
+    if (!trimmed) return recentCustomers;
+    return list.filter(
+      (entry) =>
+        entry.name.includes(trimmed) || entry.code.toLowerCase().includes(trimmed.toLowerCase()),
+    );
+  }, [customers.data, customerFilter, recentCustomers]);
+
+  // 改价入口：加载既有草稿，直接落在草稿屏。
   useEffect(() => {
-    if (!quoteId) return;
+    if (!state.quoteId || state.draft) return;
     let cancelled = false;
-    const load = async () => {
-      setBusy(true);
-      try {
-        const detail = await api.getQuote(quoteId);
+    setBusy(true);
+    void api
+      .getQuote(state.quoteId)
+      .then((detail) => {
         if (cancelled) return;
-        setDraft(detail.draft);
-        setStatus(detail.status);
-        setVersion(detail.version);
-        setCustomerId(detail.draft.customerId);
-        setPrices(
+        dispatch({ type: "draftLoaded", detail });
+        setSuggestions(
           Object.fromEntries(
-            detail.draft.items.map((item) => [
-              item.fabricSampleId,
-              centsToYuanInput(item.unitPrice.amount),
-            ]),
+            detail.draft.items.map((item) => [item.fabricSampleId, item.unitPrice.amount]),
           ),
         );
-        setStep("draft");
-      } catch (caught) {
+      })
+      .catch((caught: unknown) => {
         if (!cancelled) setNotice(requestNotice(caught, "报价加载失败"));
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setBusy(false);
-      }
-    };
-    void load();
+      });
     return () => {
       cancelled = true;
     };
-  }, [quoteId]);
+  }, [state.quoteId, state.draft]);
 
-  // 从相机找样进来：带入样品，补数量即可生成草稿。
+  // 样品 / 相机入口：带入面料，直接进候选（用户只需要确认）。
   useEffect(() => {
-    if (!paramSampleId) return;
+    if (!state.sampleId || preset || state.mode === "edit") return;
     let cancelled = false;
-    const load = async () => {
-      try {
-        const samples = await api.listSamples(100);
-        const sample = samples.find((entry) => entry.id === paramSampleId);
-        if (cancelled || !sample) return;
+    void api
+      .listSamples(100)
+      .then((samples) => {
+        if (cancelled) return;
+        const sample = samples.find((entry) => entry.id === state.sampleId);
+        if (!sample) return;
         setPreset(sample);
-        setStep("candidates");
-      } catch {
-        // 相机带入失败不影响手工粘贴流程。
-      }
-    };
-    void load();
+        dispatch({ type: "samplePreset" });
+      })
+      .catch(() => {
+        // 带入失败不影响手工粘贴流程。
+      });
     return () => {
       cancelled = true;
     };
-  }, [paramSampleId]);
+  }, [state.sampleId, state.mode, preset]);
 
-  const doParse = () => {
-    // 表单里已选客户也算「有客户」，避免解析卡片同时显示客户名和「缺：客户」。
-    const result = parseCustomerText(raw, customers.data ?? [], {
-      selectedCustomerId: customerId,
+  // 语音转写：用户停止后把文字放进原话框，不覆盖他已经输入的内容。
+  useEffect(() => {
+    if (!voice.transcript) return;
+    dispatch({ type: "rawChanged", raw: voice.transcript });
+  }, [voice.transcript]);
+
+  const candidateSamples = useMemo(() => {
+    const list = [preset, ...state.matches.map((match) => match.sample)].filter(
+      (sample): sample is FabricSample => Boolean(sample),
+    );
+    const seen = new Set<string>();
+    return list.filter((sample) => {
+      if (seen.has(sample.id)) return false;
+      seen.add(sample.id);
+      return true;
     });
-    setParsed(result);
-    if (result.customerId) setCustomerId(result.customerId);
-    if (result.quantity) {
-      setQuantity(String(result.quantity.value));
-      setUnit(result.quantity.unit);
+  }, [preset, state.matches]);
+
+  // 候选卡上的「建议单价」：只给前 3 张算，避免一次打 8 个内核请求。
+  useEffect(() => {
+    if (state.phase !== "candidates" || !state.customerId) return;
+    const quantity = Number(state.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+    const targets = candidateSamples
+      .filter((sample) => suggestions[sample.id] === undefined)
+      .slice(0, 3);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      targets.map(async (sample) => {
+        try {
+          const result = await api.suggestLinePrice({
+            customerId: state.customerId as string,
+            fabricSampleId: sample.id,
+            quantity: { value: quantity, unit: state.unit },
+            currency: "CNY",
+          });
+          if (!result.ok) return null;
+          return [sample.id, result.data.pricing.suggestedUnitPrice.amount] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((pairs) => {
+      if (cancelled) return;
+      const found = pairs.filter((pair): pair is readonly [string, number] => pair !== null);
+      if (found.length > 0) {
+        setSuggestions((current) => ({
+          ...current,
+          ...Object.fromEntries(found),
+        }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.phase, state.customerId, state.quantity, state.unit, candidateSamples, suggestions]);
+
+  const describeNotice = (caught: unknown, fallback: string): void => {
+    if (caught instanceof ApiError) {
+      setNotice(requestNotice(caught, fallback));
+      return;
     }
-    // 客户原话里提过价格就预填；没提则留空，等报价助手给合规建议价。
-    if (result.targetPriceCents !== null) {
-      setUnitPrice(centsToYuanInput(result.targetPriceCents));
-      setPriceError(null);
-    }
-    return result;
+    setNotice({ title: fallback, detail: "网络不稳，稍后重试；已填内容不会丢。" });
   };
 
-  const findSamples = async () => {
-    setNotice(null);
-    const slots = doParse();
-    setBusy(true);
-    try {
-      const result = await api.searchBySpec({ query: slots.query, limit: 8 });
-      if (!result.ok) {
-        setNotice(quoteToolNotice(result.error));
+  /** 解析原话 + 找样。自动带上已选客户，避免「有客户名还提示缺客户」。 */
+  const runSearch = useCallback(
+    async (rawOverride?: string) => {
+      const rawText = (rawOverride ?? state.raw).trim();
+      if (!rawText) {
+        setNotice({ title: "还没有原话", detail: "粘贴客户微信原话，或点语音说一句。" });
         return;
       }
-      setMatches(result.data.matches);
-      if (result.data.matches.length === 0) {
-        setNotice({
-          title: "没有匹配的面料",
-          detail: "换个说法（成分 / 克重 / 编号），或去相机拍照找样。",
-        });
+      if (rawOverride !== undefined) dispatch({ type: "rawChanged", raw: rawOverride });
+      dispatch({ type: "parseStarted" });
+      setNotice(null);
+      setBusy(true);
+      const slots = parseCustomerText(rawText, customers.data ?? [], {
+        ...(state.customerId ? { selectedCustomerId: state.customerId } : {}),
+      });
+      setParsed(slots);
+      if (slots.customerId && !state.customerId) {
+        dispatch({ type: "customerSelected", customerId: slots.customerId });
       }
-      setStep("candidates");
-    } catch (caught) {
-      setNotice(requestNotice(caught, "找样失败"));
-    } finally {
-      setBusy(false);
+      const query =
+        [state.composition, state.weight]
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .join(" ") || slots.query;
+      try {
+        const result = await api.searchBySpec({ query, limit: 8 });
+        if (!result.ok) {
+          dispatch({ type: "parseFailed", error: quoteToolNotice(result.error).title });
+          return;
+        }
+        dispatch({
+          type: "parseSucceeded",
+          matches: result.data.matches,
+          composition: slots.composition,
+          weight: slots.weight,
+          deliveryHint: slots.deliveryHint,
+          quantity: slots.quantity,
+        });
+        if (result.data.matches.length === 0) {
+          setNotice({
+            title: "没有匹配的面料",
+            detail: "换个说法（成分 / 克重 / 编号），或点「拍布找样」用图片找。",
+          });
+        }
+      } catch (caught) {
+        describeNotice(caught, "找样失败");
+        dispatch({ type: "parseFailed", error: "找样失败，请重试" });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [state.raw, state.customerId, state.composition, state.weight, customers.data],
+  );
+
+  const fillFromClipboard = async () => {
+    const result = await readClipboardText();
+    if (!result.ok) {
+      await Taro.showToast({
+        title: CLIPBOARD_MESSAGE[result.reason] ?? "读取剪贴板失败",
+        icon: "none",
+      });
+      return;
     }
+    // 填入后直接解析：少一次点击，也少一次「以为没反应」。
+    await runSearch(result.text);
   };
 
-  /** 把输入框里的「元」转成分；不合规时把错误标在字段上，不发请求。 */
   const readUnitPrice = (): number | null => {
-    const cents = yuanInputToCents(unitPrice);
-    if (cents === null || cents <= 0) {
-      setPriceError(
-        `请填写单价（元/${UNIT_LABEL[unit]}）。不知道报多少，可以点「建议单价」让报价助手算一个合规价。`,
-      );
-      setNotice(null);
-      return null;
-    }
-    setPriceError(null);
+    const cents = yuanInputToCents(state.unitPrice);
+    if (cents === null || cents <= 0) return null;
     return cents;
   };
 
-  /**
-   * 建议单价（T-006）：成本在服务端，手机端算不出来，只能请内核给建议价。
-   * 结果回填到可编辑输入框，业务员仍然可以自己改。
-   */
-  const suggestPrice = async (sample?: FabricSample | null) => {
-    const target = sample ?? preset ?? matches[0]?.sample ?? null;
-    if (!target) {
-      setNotice({
-        title: "先找一块面料",
-        detail: "建议单价要绑定具体面料（成本不同），请先点「找样」。",
-      });
+  /** 点候选卡 → 价格（用户填的 > 建议价）→ 草稿。不要求「先选择再下一步」。 */
+  const chooseCandidate = async (sample: FabricSample) => {
+    const blocked = missingForDraft(state);
+    if (blocked) {
+      setNotice({ title: "先补一项", detail: blocked });
+      if (!state.customerId) setCustomerSheet(true);
       return;
     }
-    if (!customerId) {
-      setCustomerSheet(true);
-      await Taro.showToast({ title: "先选客户", icon: "none" });
-      return;
-    }
-    const quantityValue = Number(quantity);
-    if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
-      await Taro.showToast({ title: "数量要大于 0", icon: "none" });
-      return;
-    }
-    setSuggesting(true);
-    setNotice(null);
-    setPriceError(null);
-    try {
-      const result = await api.suggestLinePrice({
-        customerId,
-        fabricSampleId: target.id,
-        quantity: { value: quantityValue, unit },
-        currency: "CNY",
-      });
-      if (!result.ok) {
-        setNotice(quoteToolNotice(result.error, { unitLabel: UNIT_LABEL[target.unit] }));
+    let cents = readUnitPrice();
+    if (cents === null) {
+      let suggested = suggestions[sample.id];
+      if (suggested === undefined) {
+        setBusy(true);
+        try {
+          const result = await api.suggestLinePrice({
+            customerId: state.customerId as string,
+            fabricSampleId: sample.id,
+            quantity: { value: Number(state.quantity), unit: state.unit },
+            currency: "CNY",
+          });
+          if (result.ok) suggested = result.data.pricing.suggestedUnitPrice.amount;
+        } catch {
+          // 建议价失败下面统一提示。
+        } finally {
+          setBusy(false);
+        }
+      }
+      if (suggested === undefined) {
+        setNotice({
+          title: "需要单价才能出草稿",
+          detail: "内核会拦截低于成本底线的报价。请在候选区填写单价后重试。",
+        });
         return;
       }
-      const next = result.data.pricing;
-      setUnitPrice(centsToYuanInput(next.suggestedUnitPrice.amount));
-      const basis = next.components.map((component) => component.label).join(" + ");
-      setPriceHint(
-        `报价助手建议 ${formatUnitPrice(next.suggestedUnitPrice.amount)}/${UNIT_LABEL[target.unit]}（${basis}，内核算出，可改）`,
-      );
-    } catch (caught) {
-      setNotice(requestNotice(caught, "报价助手暂时给不出建议价"));
-    } finally {
-      setSuggesting(false);
+      cents = suggested;
+      dispatch({ type: "unitPriceChanged", unitPrice: centsToYuanInput(cents) });
     }
+    await generate(sample, cents);
   };
 
-  const generate = async (sample: FabricSample) => {
-    if (!customerId) {
-      setCustomerSheet(true);
-      await Taro.showToast({ title: "先选客户", icon: "none" });
-      return;
-    }
-    const quantityValue = Number(quantity);
-    if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
-      await Taro.showToast({ title: "数量要大于 0", icon: "none" });
-      return;
-    }
-    const unitPriceCents = readUnitPrice();
-    if (unitPriceCents === null) return;
-    setBusy(true);
-    setFailedSample(sample);
-    setNotice(null);
+  const generate = async (sample: FabricSample, unitPriceCents: number) => {
+    if (!state.customerId) return;
     const payload = {
-      customerId,
+      customerId: state.customerId,
       items: [
         {
           fabricSampleId: sample.id,
-          quantity: { value: quantityValue, unit },
+          quantity: { value: Number(state.quantity), unit: state.unit },
           unitPrice: { amount: unitPriceCents, currency: "CNY" as const },
-          ...(parsed?.deliveryHint ? { notes: `交期：${parsed.deliveryHint}` } : {}),
+          ...(state.deliveryHint ? { notes: `交期：${state.deliveryHint}` } : {}),
         },
       ],
       currency: "CNY" as const,
       validityDays: 14,
-      ...(raw ? { remarks: raw.slice(0, 2000) } : {}),
+      ...(state.raw ? { remarks: state.raw.slice(0, 2000) } : {}),
     };
+    setBusy(true);
+    setNotice(null);
     try {
       const result = await api.generateQuoteDraft(payload);
       if (!result.ok) {
-        setNotice(
-          quoteToolNotice(result.error, {
-            unitLabel: UNIT_LABEL[sample.unit],
-          }),
-        );
+        setNotice(quoteToolNotice(result.error, { unitLabel: UNIT_LABEL[sample.unit] }));
         return;
       }
-      const next = result.data.draft;
-      setDraft(next);
-      setStatus("DRAFT");
-      setVersion(1);
-      setPrices(
-        Object.fromEntries(
-          next.items.map((item) => [item.fabricSampleId, centsToYuanInput(item.unitPrice.amount)]),
-        ),
-      );
-      setStep("draft");
+      dispatch({
+        type: "draftCreated",
+        draft: result.data.draft,
+        unitPrice: centsToYuanInput(unitPriceCents),
+      });
     } catch (caught) {
       if (caught instanceof ApiError) {
         setNotice(requestNotice(caught, "生成草稿失败"));
-      } else {
-        await enqueueOperation(offlineQueue, {
-          kind: "quote.compose",
-          opId: `compose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          payload,
-        });
-        await Taro.showModal({
-          title: "已存本地",
-          content: "你说的话、数量和单价已存好，联网后自动生成报价草稿，会出现在审批里。",
-          showCancel: false,
-        });
+        return;
       }
+      await enqueueOperation(offlineQueue, {
+        kind: "quote.compose",
+        opId: `compose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        payload,
+      });
+      dispatch({
+        type: "offlineQueued",
+        note: "已存本地：联网后自动生成草稿，并出现在有审批权同事的待办里。",
+      });
     } finally {
       setBusy(false);
     }
   };
 
-  const applyLocalPrice = (sampleId: string, amount: number) => {
-    setDraft((current) => {
-      if (!current) return current;
-      const items = current.items.map((item) =>
-        item.fabricSampleId === sampleId
-          ? {
-              ...item,
-              unitPrice: { amount, currency: current.currency },
-              lineTotal: {
-                amount: Math.round(amount * item.quantity.value),
-                currency: current.currency,
-              },
-            }
-          : item,
-      );
-      const total = items.reduce((sum, item) => sum + item.lineTotal.amount, 0);
-      return {
-        ...current,
-        items,
-        subtotal: { amount: total, currency: current.currency },
-        total: { amount: total, currency: current.currency },
-      };
-    });
-    setVersion((current) => current + 1);
-  };
-
+  /** 改价：走 revision 审计，不直接改草稿版本。 */
   const submitPrice = async (sampleId: string) => {
+    const draft = state.draft;
     if (!draft) return;
-    const input = prices[sampleId] ?? "";
-    const amount = yuanInputToCents(input);
     const line = draft.items.find((item) => item.fabricSampleId === sampleId);
     if (!line) return;
+    const amount = yuanInputToCents(state.unitPrice);
     if (amount === null || amount <= 0) {
       await Taro.showToast({ title: "单价格式不对（最多两位小数）", icon: "none" });
       return;
@@ -393,10 +429,11 @@ export default function QuotePage() {
       patch: {
         items: [{ fabricSampleId: sampleId, unitPrice: { amount, currency: draft.currency } }],
       },
-      baseVersion: version,
+      baseVersion: state.version,
     };
     setBusy(true);
     setNotice(null);
+    const before = line.unitPrice.amount;
     try {
       const revision = await api.createRevision(revisionPayload);
       await api.decideRevision({
@@ -405,39 +442,25 @@ export default function QuotePage() {
         note: "移动端本人改价",
       });
       const detail = await api.getQuote(draft.id);
-      const before = line.unitPrice.amount;
-      setDraft(detail.draft);
-      setVersion(detail.version);
-      setPrices(
-        Object.fromEntries(
-          detail.draft.items.map((item) => [
-            item.fabricSampleId,
-            centsToYuanInput(item.unitPrice.amount),
-          ]),
-        ),
-      );
-      setRevisionNote(
-        `${formatUnitPrice(before)} → ${formatUnitPrice(amount)} · v${detail.version}（已写审计）`,
-      );
+      dispatch({
+        type: "repriceApplied",
+        draft: detail.draft,
+        version: detail.version,
+        note: `${formatUnitPrice(before)} → ${formatUnitPrice(amount)} · v${detail.version}（已写审计）`,
+      });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         await Taro.showModal({
           title: "报价已在其他端更新",
-          content: "服务端版本已变化。已重新拉取最新版本，请确认后重新改价。",
+          content: "服务端版本已变化，已重新拉取最新版本，请确认后重新改价。",
           showCancel: false,
         });
         try {
           const detail = await api.getQuote(draft.id);
-          setDraft(detail.draft);
-          setVersion(detail.version);
-          setPrices(
-            Object.fromEntries(
-              detail.draft.items.map((item) => [
-                item.fabricSampleId,
-                centsToYuanInput(item.unitPrice.amount),
-              ]),
-            ),
-          );
+          dispatch({
+            type: "draftLoaded",
+            detail,
+          });
         } catch {
           // 拉取失败保留原页面，用户可重试。
         }
@@ -447,20 +470,48 @@ export default function QuotePage() {
         await enqueueOperation(offlineQueue, {
           kind: "quote.revise",
           opId: `revise-${draft.id}-${Date.now()}`,
-          baseVersion: version,
+          baseVersion: state.version,
           payload: revisionPayload,
         });
-        applyLocalPrice(sampleId, amount);
-        setRevisionNote("已存本地：联网后按时间序提交；冲突会让你选择保留哪一版");
-        await Taro.showToast({ title: "已存本地，联网后提交", icon: "none" });
+        dispatch({
+          type: "offlineQueued",
+          note: "改价已存本地：联网后按时间序提交，冲突会让你选择保留哪一版。",
+        });
       }
     } finally {
       setBusy(false);
     }
   };
 
+  const generateShare = async (quoteId: string) => {
+    try {
+      const result = await api.createQuoteShare({
+        quoteId,
+        expiresInDays: 14,
+        requirePhoneTail: true,
+        allowPdf: true,
+      });
+      dispatch({ type: "shareReady", url: result.url });
+      const copied = await copyText(result.url);
+      await Taro.showToast({
+        title: copied ? "链接已复制，转发即可" : "链接已生成，请点复制",
+        icon: copied ? "success" : "none",
+      });
+    } catch (caught) {
+      dispatch({
+        type: "shareFailed",
+        error:
+          caught instanceof ApiError
+            ? requestNotice(caught, "分享链接没有生成").title
+            : "分享链接需要联网生成，可稍后重试",
+      });
+    }
+  };
+
   const approve = async () => {
+    const draft = state.draft;
     if (!draft) return;
+    dispatch({ type: "approveStarted" });
     setBusy(true);
     setNotice(null);
     try {
@@ -469,6 +520,7 @@ export default function QuotePage() {
         prefs.getLargeApprovalThresholdCents(),
       );
       if (!verified.verified) {
+        dispatch({ type: "approvalFailed", error: "二次验证未通过，本次没有提交。" });
         await Taro.showModal({
           title: "需要二次验证",
           content: verified.message ?? "未通过验证，本次未提交。",
@@ -478,21 +530,21 @@ export default function QuotePage() {
       }
       const result = await api.decideApproval({ id: draft.id, kind: "quote", decision: "APPROVE" });
       if (!result.ok) {
-        setNotice(quoteToolNotice(result.error));
+        dispatch({ type: "approvalFailed", error: quoteToolNotice(result.error).title });
         return;
       }
-      setStatus("SENT");
-      await Taro.showToast({ title: "已批准，可分享链接", icon: "success" });
+      dispatch({ type: "approved" });
+      // 原地生成链接并复制：不再弹第二个全屏分享 Sheet。
+      await generateShare(draft.id);
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.status === 409) {
-          await Taro.showModal({
-            title: "已被其他端处理",
-            content: "服务端版本已变化，请返回审批队列刷新。",
-            showCancel: false,
-          });
+          dispatch({ type: "approvalFailed", error: "已被其他端处理，请返回审批队列刷新。" });
         } else {
-          setNotice(requestNotice(caught, "批准没有提交成功"));
+          dispatch({
+            type: "approvalFailed",
+            error: requestNotice(caught, "批准没有提交成功").title,
+          });
         }
       } else {
         await enqueueOperation(offlineQueue, {
@@ -500,101 +552,141 @@ export default function QuotePage() {
           opId: `decide-${draft.id}-${Date.now()}`,
           payload: { id: draft.id, kind: "quote", decision: "APPROVE" },
         });
-        await Taro.showToast({ title: "已存本地，联网后提交", icon: "none" });
+        dispatch({
+          type: "approvalQueued",
+          note: "批准已存本地：联网后自动提交，不会重复批准。",
+        });
       }
     } finally {
       setBusy(false);
     }
   };
 
-  const createShare = async () => {
-    if (!draft) return;
-    setBusy(true);
-    try {
-      const result = await api.createQuoteShare({
-        quoteId: draft.id,
-        expiresInDays: 14,
-        requirePhoneTail: true,
-        allowPdf: true,
-      });
-      setShareUrl(result.url);
-      const copied = await copyText(result.url);
-      await Taro.showToast({
-        title: copied ? "链接已复制" : "链接已生成，请手动复制",
-        icon: copied ? "success" : "none",
-      });
-    } catch (caught) {
-      if (caught instanceof ApiError) setNotice(requestNotice(caught, "分享链接没有生成"));
-      else await Taro.showToast({ title: "分享链接需要联网生成", icon: "none" });
-    } finally {
-      setBusy(false);
+  /** 无审批权：草稿生成即进审批队列，提交不需要额外写操作。 */
+  const submitForApproval = async () => {
+    setSubmitted(true);
+    await Taro.showModal({
+      title: "已提交审批",
+      content: "草稿已在审批队列里，有审批权的同事会在待办中看到它。",
+      showCancel: false,
+    });
+  };
+
+  const action = primaryAction(state, { canApprove });
+
+  const openSlotEditor = (slot: Slot) => {
+    if (slot === "customer") {
+      setCustomerSheet(true);
+      return;
     }
+    setSlotDraft(
+      slot === "composition"
+        ? state.composition
+        : slot === "weight"
+          ? state.weight
+          : slot === "quantity"
+            ? state.quantity
+            : "",
+    );
+    setEditSlot(slot);
   };
 
-  const reset = () => {
-    setStep("input");
-    setDraft(null);
-    setStatus("DRAFT");
-    setMatches([]);
-    setPreset(null);
+  const commitSlot = () => {
+    if (editSlot === "composition" || editSlot === "weight") {
+      const value = slotDraft.trim();
+      // 成分 / 克重影响检索词，改完重新找样才生效。
+      if (editSlot === "composition")
+        dispatch({ type: "parseSucceeded", matches: state.matches, composition: value });
+      else dispatch({ type: "parseSucceeded", matches: state.matches, weight: value });
+    } else if (editSlot === "quantity") {
+      dispatch({ type: "quantityChanged", quantity: slotDraft.trim() });
+    }
+    setEditSlot(null);
+  };
+
+  const resetAll = () => {
+    dispatch({ type: "reset" });
     setParsed(null);
-    setRevisionNote(null);
-    setShareUrl(null);
+    setPreset(null);
     setNotice(null);
-    setUnitPrice("");
-    setPriceError(null);
-    setPriceHint(null);
-    setFailedSample(null);
+    setSuggestions({});
+    setSubmitted(false);
+    voice.reset();
   };
 
-  const candidateList = preset
-    ? [{ sample: preset, score: 1, matchedOn: [] as SpecMatch["matchedOn"] }, ...matches]
-    : matches;
+  const title =
+    state.phase === "input" ? "开报价" : state.phase === "candidates" ? "选面料" : "报价草稿";
 
-  const draftPriceCents = yuanInputToCents(unitPrice);
-  const draftQuantityValue = Number(quantity);
-  const estimatedSubtotal =
-    draftPriceCents && Number.isFinite(draftQuantityValue) && draftQuantityValue > 0
-      ? draftPriceCents * draftQuantityValue
-      : null;
+  const subtitle =
+    state.phase === "input"
+      ? "粘贴客户原话，系统先告诉你「听懂了什么」。"
+      : state.phase === "candidates"
+        ? "点一张面料就出草稿，不用再点「下一步」。"
+        : "草稿一屏放全：客户、面料、数量、单价、有效期。";
 
   return (
     <Page>
-      <View className="page-title">{step === "draft" ? "报价草稿" : "开报价"}</View>
-      <View className="page-sub">
-        {step === "draft"
-          ? "改价直接写在草稿里，你批准之后新价格才生效。"
-          : "粘贴客户原话，系统先给「听懂了什么」，错了可改。"}
-      </View>
+      <View className="page-title">{title}</View>
+      <View className="page-sub">{subtitle}</View>
 
-      {notice && (
-        <View className="error-banner">
-          <View className="error-banner-title">{notice.title}</View>
-          {notice.detail && <View className="error-banner-detail">{notice.detail}</View>}
-          {notice.action?.kind === "suggest-price" && (
-            <View className="error-banner-action" onClick={() => void suggestPrice(failedSample)}>
-              {notice.action.label} →
-            </View>
-          )}
+      {state.offlineQueued && state.offlineNote && (
+        <View className="offline-banner">
+          <Text className="offline-dot" />
+          <Text>{state.offlineNote}</Text>
         </View>
       )}
 
-      {step === "input" && (
+      {(notice || state.error) && (
+        <View className="error-banner">
+          <View className="error-banner-title">{notice?.title ?? state.error}</View>
+          {notice?.detail && <View className="error-banner-detail">{notice.detail}</View>}
+          <View
+            className="error-banner-action"
+            onClick={() => {
+              setNotice(null);
+              dispatch({ type: "errorDismissed" });
+            }}
+          >
+            知道了
+          </View>
+        </View>
+      )}
+
+      {state.phase === "input" && (
         <View>
           <Card>
             <View className="label" style={{ marginTop: 0 }}>
-              客户原话（微信 / 语音转写）
+              客户原话（微信 / 语音）
             </View>
             <Textarea
               className="textarea"
-              value={raw}
+              value={state.raw}
               maxlength={2000}
               placeholder="例如：这款 220g 棉的，要 500 米，什么价？"
-              onInput={(event) => setRaw(event.detail.value)}
+              onInput={(event) => dispatch({ type: "rawChanged", raw: event.detail.value })}
             />
+            <View className="actions">
+              <Button variant="soft" onClick={() => void fillFromClipboard()}>
+                从剪贴板填入
+              </Button>
+              <Button
+                variant={voice.recording ? "danger" : "ghost"}
+                loading={voice.recording && voice.seconds === 0}
+                onClick={() => (voice.recording ? voice.stop() : void voice.start())}
+              >
+                {voice.recording ? `停止 · ${voice.seconds}s` : "语音说一句"}
+              </Button>
+            </View>
+            {voice.error && <View className="field-error">{voice.error}（可直接用文字输入）</View>}
+            {voice.transcript && <View className="footnote">转写：{voice.transcript}</View>}
+
             <View className="tag-row">
               {EXAMPLES.map((example) => (
-                <View key={example} className="badge" onClick={() => setRaw(example)}>
+                <View
+                  key={example}
+                  className="badge"
+                  onClick={() => dispatch({ type: "rawChanged", raw: example })}
+                >
                   {example.slice(0, 14)}…
                 </View>
               ))}
@@ -602,26 +694,30 @@ export default function QuotePage() {
 
             <View className="list-row" onClick={() => setCustomerSheet(true)}>
               <View>
-                <View className="list-title">{customer?.name ?? "选择客户"}</View>
+                <View className="list-title">{customer?.name ?? "客户：未选"}</View>
                 <View className="list-sub">
-                  {customer ? `${customer.code} · ${customer.tier}` : "报价必须归属一个客户"}
+                  {customer
+                    ? `${customer.code} · ${customer.tier}`
+                    : "不会自动用第一个客户，请选择"}
                 </View>
               </View>
-              <Text className="link">切换</Text>
+              <Text className="link">选择</Text>
             </View>
 
             <View className="actions">
-              <Button variant="ghost" onClick={() => setParsed(doParse())}>
-                解析原话
-              </Button>
-              <Button onClick={() => void findSamples()} loading={busy}>
-                找样
+              {state.mode === "camera" && (
+                <Button variant="ghost" onClick={() => enterCamera({ mode: "find" })}>
+                  拍布找样
+                </Button>
+              )}
+              <Button onClick={() => void runSearch()} loading={busy}>
+                解析并找样
               </Button>
             </View>
           </Card>
 
           {parsed && (
-            <Card className="card-draft">
+            <Card className="card-flat">
               <View className="row">
                 <View className="list-title">系统听懂了什么</View>
                 <Badge
@@ -654,263 +750,284 @@ export default function QuotePage() {
               </View>
               {parsed.deliveryHint && (
                 <View className="footnote">
-                  交期：{parsed.deliveryHint}（会写进报价备注，不当作承诺）
+                  交期：{parsed.deliveryHint}（写进备注，不当作承诺）
                 </View>
               )}
-
-              <View className="label">数量</View>
-              <View className="row">
-                <Input
-                  className="input"
-                  type="digit"
-                  value={quantity}
-                  onInput={(event) => setQuantity(event.detail.value)}
-                />
-                <View
-                  className="badge"
-                  onClick={() => setUnit(unit === "meter" ? "yard" : "meter")}
-                >
-                  {UNIT_LABEL[unit]}
-                </View>
-              </View>
-
-              <View className="label">检索词（可改）</View>
-              <View className="muted">{parsed.query}</View>
             </Card>
           )}
         </View>
       )}
 
-      {step === "candidates" && (
+      {(state.phase === "candidates" || state.phase === "parsing") && (
         <View>
-          <Card className="card-flat">
-            <View className="row">
-              <View>
-                <View className="list-title">
-                  {customer?.name ?? "未选客户"} · {quantity} {UNIT_LABEL[unit]}
-                </View>
-                <View className="list-sub">候选来自 T-002；每条都带命中理由</View>
-              </View>
-              <Text className="link" onClick={() => setStep("input")}>
-                改原话
-              </Text>
-            </View>
-          </Card>
-
-          {/* 单价是生成草稿的硬门槛：内核会拦低于成本底线的报价，所以先在这里让用户给价。 */}
           <Card className="card-draft">
             <View className="row">
-              <View className="list-title">这一单的单价</View>
-              <Badge tone={draftPriceCents ? "accent" : "warn"}>
-                {draftPriceCents ? "已填写" : "还没填"}
+              <View className="list-title">听懂了，错了点一下改</View>
+              <Badge tone={state.customerId ? "accent" : "warn"}>
+                {state.customerId ? "客户已选" : "客户未选"}
               </Badge>
             </View>
-            <View className="label">单价（元 / {UNIT_LABEL[unit]}）</View>
+            <View className="tag-row">
+              <Text className="badge badge-accent" onClick={() => openSlotEditor("customer")}>
+                客户：{customer?.name ?? "未选"}
+              </Text>
+              <Text className="badge" onClick={() => openSlotEditor("composition")}>
+                成分：{state.composition || "未提"}
+              </Text>
+              <Text className="badge" onClick={() => openSlotEditor("weight")}>
+                克重：{state.weight || "未提"}
+              </Text>
+              <Text className="badge" onClick={() => openSlotEditor("quantity")}>
+                数量：{state.quantity}
+              </Text>
+              <Text className="badge" onClick={() => dispatch({ type: "unitToggled" })}>
+                单位：{UNIT_LABEL[state.unit]}（点击切换）
+              </Text>
+            </View>
+
+            {editSlot && editSlot !== "customer" && (
+              <View className="stack" style={{ marginTop: 16 }}>
+                <Input
+                  className="input"
+                  type={editSlot === "quantity" ? "digit" : "text"}
+                  value={slotDraft}
+                  focus
+                  onInput={(event) => setSlotDraft(event.detail.value)}
+                />
+                <View className="actions">
+                  <Button small variant="ghost" onClick={() => setEditSlot(null)}>
+                    取消
+                  </Button>
+                  <Button small onClick={commitSlot}>
+                    确定
+                  </Button>
+                </View>
+              </View>
+            )}
+
+            {!customer && (
+              <Button block small variant="soft" onClick={() => setCustomerSheet(true)}>
+                先选客户（草稿必须归属一个客户）
+              </Button>
+            )}
+          </Card>
+
+          {busy && candidateSamples.length === 0 && <View className="loading">正在找面料…</View>}
+
+          {!busy && candidateSamples.length === 0 && (
+            <Card className="card-flat">
+              <View className="muted">
+                {state.emptyReason === "INDEXING"
+                  ? "还有样品在索引，稍后重试。"
+                  : "确实没有匹配：换一种说法（成分 / 克重 / 编号），或拍一张布样。"}
+              </View>
+              <View className="actions">
+                <Button variant="ghost" onClick={() => dispatch({ type: "back" })}>
+                  改原话
+                </Button>
+                <Button variant="soft" onClick={() => enterCamera({ mode: "find" })}>
+                  拍布找样
+                </Button>
+              </View>
+            </Card>
+          )}
+
+          {candidateSamples.length > 0 && (
+            <View className="candidate-strip">
+              {candidateSamples.map((sample) => {
+                const match = state.matches.find((entry) => entry.sample.id === sample.id);
+                const suggested = suggestions[sample.id];
+                const unitMismatch = sample.unit !== state.unit;
+                return (
+                  <Card
+                    key={sample.id}
+                    className="candidate-card"
+                    onClick={unitMismatch ? undefined : () => void chooseCandidate(sample)}
+                  >
+                    {sample.primaryImageUrl ? (
+                      <Image
+                        className="candidate-thumb"
+                        src={sample.primaryImageUrl}
+                        mode="aspectFill"
+                      />
+                    ) : (
+                      <View className="candidate-thumb candidate-thumb-empty">待补图</View>
+                    )}
+                    <View className="list-title">{sample.name}</View>
+                    <View className="list-sub">
+                      {match ? `相似度 ${(match.score * 100).toFixed(0)}%` : "带入的样品"}
+                      {sample.composition ? ` · ${sample.composition}` : ""}
+                    </View>
+                    <View className="tag-row">
+                      {(match?.matchedOn ?? []).map((field) => (
+                        <Badge key={field} tone="accent">
+                          {MATCH_LABEL[field] ?? field}
+                        </Badge>
+                      ))}
+                      {unitMismatch ? (
+                        <Badge tone="warn">按{UNIT_LABEL[sample.unit]}计价</Badge>
+                      ) : (
+                        <Badge tone={suggested === undefined ? "info" : "accent"}>
+                          {suggested === undefined
+                            ? "建议价计算中"
+                            : `建议 ${formatUnitPrice(suggested)}/${UNIT_LABEL[sample.unit]}`}
+                        </Badge>
+                      )}
+                    </View>
+                    {unitMismatch ? (
+                      <View className="footnote">
+                        当前按{UNIT_LABEL[state.unit]}下单，点上方「单位」切到
+                        {UNIT_LABEL[sample.unit]}再用。
+                      </View>
+                    ) : (
+                      <View className="candidate-cta">点这张 → 出草稿</View>
+                    )}
+                  </Card>
+                );
+              })}
+            </View>
+          )}
+
+          <Card className="card-flat">
+            <View className="label">数量与单价</View>
             <View className="row" style={{ marginTop: 0 }}>
               <Input
                 className="input"
                 type="digit"
-                value={unitPrice}
-                placeholder="如 15.00"
+                value={state.quantity}
                 style={{ flex: 1, minWidth: 0 }}
-                onInput={(event) => {
-                  setUnitPrice(event.detail.value);
-                  setPriceError(null);
-                }}
+                onInput={(event) =>
+                  dispatch({ type: "quantityChanged", quantity: event.detail.value })
+                }
               />
-              <Button small variant="soft" loading={suggesting} onClick={() => void suggestPrice()}>
-                建议单价
+              <Text className="badge" onClick={() => dispatch({ type: "unitToggled" })}>
+                {UNIT_LABEL[state.unit]}
+              </Text>
+            </View>
+            <View className="row">
+              <Input
+                className="input"
+                type="digit"
+                value={state.unitPrice}
+                placeholder="留空则用建议单价"
+                style={{ flex: 1, minWidth: 0 }}
+                onInput={(event) =>
+                  dispatch({ type: "unitPriceChanged", unitPrice: event.detail.value })
+                }
+              />
+            </View>
+            <View className="footnote">
+              单价留空时点候选卡会直接用「建议单价」；内核会拦低于成本底线的报价。
+            </View>
+            <View className="actions">
+              <Button variant="ghost" onClick={() => dispatch({ type: "back" })}>
+                改原话
+              </Button>
+              <Button variant="ghost" onClick={resetAll}>
+                重来
               </Button>
             </View>
-            {priceError && <View className="field-error">{priceError}</View>}
-            {priceHint && <View className="footnote">{priceHint}</View>}
-            {!priceHint && !priceError && (
-              <View className="footnote">
-                客户原话里提到价格会预填；没提就点「建议单价」，由报价助手按成本底线和默认毛利给一个合规价。
-              </View>
-            )}
-            {estimatedSubtotal !== null && (
-              <View className="footnote">
-                预计小计 {formatMoneyShort(estimatedSubtotal)}（最终金额由内核重算）
-              </View>
-            )}
           </Card>
-
-          {candidateList.length === 0 ? (
-            <Card className="card-flat">
-              <View className="muted">没有候选。回上一步换检索词，或去相机拍照找样。</View>
-            </Card>
-          ) : (
-            candidateList.map((match) => (
-              <Card key={match.sample.id}>
-                <View className="row">
-                  <View className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-                    {match.sample.primaryImageUrl ? (
-                      <Image
-                        src={match.sample.primaryImageUrl}
-                        mode="aspectFill"
-                        style={{ width: 48, height: 48, borderRadius: 6, flexShrink: 0 }}
-                      />
-                    ) : (
-                      <View
-                        className="tiny"
-                        style={{
-                          width: 48,
-                          height: 48,
-                          borderRadius: 6,
-                          border: "1px dashed #d8d3c8",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#9a9385",
-                          flexShrink: 0,
-                        }}
-                      >
-                        待补图
-                      </View>
-                    )}
-                    <View>
-                      <View className="list-title">{match.sample.name}</View>
-                      <View className="list-sub">
-                        {match.sample.code} · {match.sample.composition ?? "成分未填"} ·{" "}
-                        {match.sample.weight ?? ""}
-                      </View>
-                      <View className="tag-row">
-                        {match.matchedOn.length > 0 ? (
-                          match.matchedOn.map((field) => (
-                            <Badge key={field} tone="accent">
-                              {MATCH_LABEL[field] ?? field}
-                            </Badge>
-                          ))
-                        ) : (
-                          <Badge tone="info">带入的样品</Badge>
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                  <Badge tone="accent">{(match.score * 100).toFixed(0)}</Badge>
-                </View>
-                <View className="actions">
-                  <Button
-                    block
-                    small
-                    disabled={match.sample.unit !== unit}
-                    onClick={() => void generate(match.sample)}
-                    loading={busy}
-                  >
-                    用这个面料生成草稿
-                  </Button>
-                </View>
-                {match.sample.unit !== unit && (
-                  <View className="footnote">
-                    这块面料按{UNIT_LABEL[match.sample.unit]}计价，当前数量单位是
-                    {UNIT_LABEL[unit]}；请点「改原话」把单位改过来再生成。
-                  </View>
-                )}
-              </Card>
-            ))
-          )}
         </View>
       )}
 
-      {step === "draft" && draft && (
-        <View>
-          <Card className="card-draft">
-            <View className="row">
-              <View>
-                <View className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
-                  <Badge tone={draft.status === "DRAFT" ? "warn" : "accent"}>
-                    {draft.status === "DRAFT" ? "草稿" : draft.status}
-                  </Badge>
-                  <Text className="tiny">v{version} · 金额系统自动算</Text>
-                </View>
-                <View className="list-title" style={{ marginTop: 8 }}>
-                  {customer?.name ?? "客户"} · {draft.items.length} 行
-                </View>
-              </View>
-              <Amount size="lg">{formatMoneyShort(draft.total.amount, draft.currency)}</Amount>
-            </View>
-            <View className="footnote">
-              有效期 {draft.validityDays} 天 · 到期{" "}
-              {new Date(draft.expiresAt).toLocaleDateString("zh-CN")}
-            </View>
-          </Card>
+      {!state.draft && (state.phase === "draft" || state.phase === "approving") && (
+        <Loading label="正在加载报价…" />
+      )}
 
-          {draft.items.map((item) => (
-            <Card key={item.fabricSampleId}>
-              <View className="row">
-                <View>
-                  <View className="list-title">{item.description}</View>
-                  <View className="list-sub">
-                    {item.quantity.value} {UNIT_LABEL[item.quantity.unit]} · 小计{" "}
-                    {formatMoneyShort(item.lineTotal.amount, draft.currency)}
-                  </View>
-                </View>
-              </View>
-              <View className="label">单价（元 / {UNIT_LABEL[item.quantity.unit]}）</View>
-              <View className="row" style={{ marginTop: 0 }}>
-                <Input
-                  className="input"
-                  type="digit"
-                  value={prices[item.fabricSampleId] ?? ""}
-                  style={{ flex: 1, minWidth: 0 }}
-                  onInput={(event) =>
-                    setPrices((current) => ({
-                      ...current,
-                      [item.fabricSampleId]: event.detail.value,
-                    }))
-                  }
-                />
-                <Button
-                  small
-                  variant="soft"
-                  loading={busy}
-                  onClick={() => void submitPrice(item.fabricSampleId)}
-                >
-                  改价
-                </Button>
-              </View>
-            </Card>
-          ))}
+      {state.draft &&
+        (state.phase === "draft" ||
+          state.phase === "approving" ||
+          state.phase === "approved" ||
+          state.phase === "sharing") && (
+          <View>
+            <DraftCard state={state} customerName={customer?.name ?? "客户"} />
 
-          {revisionNote && (
-            <Card className="card-flat">
-              <View className="muted">{revisionNote}</View>
-            </Card>
-          )}
+            {state.revisionNote && (
+              <Card className="card-flat">
+                <View className="muted">{state.revisionNote}</View>
+              </Card>
+            )}
 
-          <Card>
-            {status === "DRAFT" ? (
-              <View>
-                <View className="need-row">
-                  <View className="list-title">批准后才会生效</View>
-                  <View className="list-sub">
-                    改幅超过 10% 或金额超阈值会升级审批；本单会记录二次验证结果。
-                  </View>
+            {state.phase === "draft" && (
+              <Card>
+                <View className="label">改价（写审计，不覆盖历史）</View>
+                <View className="row" style={{ marginTop: 0 }}>
+                  <Input
+                    className="input"
+                    type="digit"
+                    value={state.unitPrice}
+                    style={{ flex: 1, minWidth: 0 }}
+                    onInput={(event) =>
+                      dispatch({ type: "unitPriceChanged", unitPrice: event.detail.value })
+                    }
+                  />
+                  <Button
+                    small
+                    variant="soft"
+                    loading={busy}
+                    onClick={() => {
+                      const sampleId = state.draft?.items[0]?.fabricSampleId;
+                      if (sampleId) void submitPrice(sampleId);
+                    }}
+                  >
+                    改价
+                  </Button>
                 </View>
                 <View className="actions">
-                  <Button variant="ghost" onClick={reset}>
+                  <Button variant="ghost" onClick={resetAll}>
                     重来
                   </Button>
-                  <Button onClick={() => void approve()} loading={busy}>
-                    批准报价
+                  <Button
+                    loading={busy}
+                    onClick={() => {
+                      if (action.kind === "submit") void submitForApproval();
+                      else void approve();
+                    }}
+                  >
+                    {action.label}
                   </Button>
                 </View>
-              </View>
-            ) : (
-              <View>
-                <View className="list-title">已批准 · 生成客户链接</View>
-                <View className="list-sub">只有已批准的报价能分享；链接指向当前版本快照。</View>
-                {shareUrl ? (
-                  <View style={{ marginTop: 12 }}>
-                    <View className="share-box">{shareUrl}</View>
+                <View className="footnote">{action.hint}</View>
+                {submitted && (
+                  <View className="footnote">已提交：草稿在审批队列里，等待有审批权的同事。</View>
+                )}
+              </Card>
+            )}
+
+            {(state.phase === "approving" ||
+              state.phase === "approved" ||
+              state.phase === "sharing") && (
+              <Card>
+                {state.phase === "approving" && <View className="loading">正在批准…</View>}
+                {state.phase === "approved" && (
+                  <View>
+                    <View className="list-title">已批准 · 正在生成客户链接</View>
+                    <View className="list-sub">{action.hint}</View>
+                    {state.shareError && (
+                      <View className="actions">
+                        <Button
+                          onClick={() => {
+                            if (state.draft) void generateShare(state.draft.id);
+                          }}
+                        >
+                          重新生成链接
+                        </Button>
+                      </View>
+                    )}
+                  </View>
+                )}
+                {state.phase === "sharing" && state.shareUrl && (
+                  <View>
+                    <View className="list-title">链接已生成 · 直接转发</View>
+                    <View className="share-box">{state.shareUrl}</View>
                     <View className="actions">
                       <Button
                         variant="ghost"
                         onClick={() =>
-                          void copyText(shareUrl).then((copied) =>
+                          void copyText(state.shareUrl as string).then((copied) =>
                             Taro.showToast({
-                              title: copied ? "已复制" : "复制失败，请手动选择",
+                              title: copied ? "已复制" : "复制失败，请长按选择",
                               icon: "none",
                             }),
                           )
@@ -918,30 +1035,38 @@ export default function QuotePage() {
                       >
                         复制链接
                       </Button>
-                      <Button onClick={() => void createShare()} loading={busy}>
-                        再生成一条
+                      <Button
+                        onClick={() =>
+                          void shareText(state.shareUrl as string, "织序报价").then((shared) =>
+                            Taro.showToast({
+                              title: shared ? "已转发" : "复制失败，请长按选择",
+                              icon: "none",
+                            }),
+                          )
+                        }
+                      >
+                        转发
                       </Button>
                     </View>
-                  </View>
-                ) : (
-                  <View className="actions">
-                    <Button block onClick={() => void createShare()} loading={busy}>
-                      生成分享链接（有效期 14 天 · 尾号验证）
-                    </Button>
+                    <View className="footnote">有效期 14 天 · 客户需验证手机尾号。</View>
                   </View>
                 )}
+                <View className="actions">
+                  <Button variant="ghost" onClick={resetAll}>
+                    再报一单
+                  </Button>
+                </View>
                 <View className="footnote">
                   接受 ≠ 合同：客户接受只产生成交意向，转订单仍需人工确认。
                 </View>
-              </View>
+              </Card>
             )}
-          </Card>
 
-          <View className="footnote">
-            客户看到的是只读快照，绝不包含成本 / 毛利 / 内部备注；token 明文只在生成时出现一次。
+            <View className="footnote">
+              客户看到的是只读快照，不含成本 / 毛利 / 内部备注；token 明文只在生成时出现一次。
+            </View>
           </View>
-        </View>
-      )}
+        )}
 
       <Sheet open={customerSheet} title="选择客户" onClose={() => setCustomerSheet(false)}>
         <Input
@@ -950,12 +1075,13 @@ export default function QuotePage() {
           placeholder="搜客户名 / 编号"
           onInput={(event) => setCustomerFilter(event.detail.value)}
         />
+        {!customerFilter.trim() && <View className="label">最近 5 个</View>}
         {filteredCustomers.map((entry) => (
           <View
             key={entry.id}
             className="list-row"
             onClick={() => {
-              setCustomerId(entry.id);
+              dispatch({ type: "customerSelected", customerId: entry.id });
               setCustomerSheet(false);
             }}
           >
@@ -965,10 +1091,74 @@ export default function QuotePage() {
                 {entry.code} · {entry.tier}
               </View>
             </View>
-            {entry.id === customerId && <Badge tone="accent">已选</Badge>}
+            {entry.id === state.customerId && <Badge tone="accent">已选</Badge>}
           </View>
         ))}
+        {filteredCustomers.length === 0 && <View className="muted">没有匹配的客户</View>}
       </Sheet>
     </Page>
+  );
+}
+
+/** 草稿一屏：客户、面料、数量、单价、有效期、毛利、交期缺什么。 */
+function DraftCard({
+  state,
+  customerName,
+}: {
+  state: ReturnType<typeof transition>;
+  customerName: string;
+}) {
+  const draft = state.draft as QuoteDraft;
+  const requirement = draft.approvalRequirement;
+  const first = draft.items[0];
+  const unitLabel = first ? UNIT_LABEL[first.quantity.unit] : UNIT_LABEL[state.unit];
+  return (
+    <Card className="card-draft">
+      <View className="row">
+        <View>
+          <View className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
+            <Badge tone={state.status === "DRAFT" ? "warn" : "accent"}>
+              {state.status === "DRAFT" ? "草稿" : "已批准"}
+            </Badge>
+            <Text className="tiny">v{state.version}</Text>
+          </View>
+          <View className="list-title" style={{ marginTop: 8 }}>
+            {customerName}
+          </View>
+        </View>
+        <Amount size="lg">{formatMoneyShort(draft.total.amount, draft.currency)}</Amount>
+      </View>
+
+      <Field label="面料" value={first?.description ?? "未选"} />
+      <Field
+        label="数量"
+        value={first ? `${first.quantity.value} ${UNIT_LABEL[first.quantity.unit]}` : "—"}
+      />
+      <Field
+        label="单价"
+        value={first ? `${formatUnitPrice(first.unitPrice.amount)} / ${unitLabel}` : "—"}
+        hint="改价走 revision，新价格在批准后生效"
+      />
+      <Field
+        label="有效期"
+        value={`${draft.validityDays} 天 · 到 ${new Date(draft.expiresAt).toLocaleDateString("zh-CN")}`}
+      />
+      <Field label="毛利" value="内核按成本核算（不向手机暴露成本明细）" />
+      <Field
+        label="交期"
+        value={state.deliveryHint ?? "原话里没提"}
+        hint={state.deliveryHint ? "写进备注，不当作承诺" : "批准前请向客户确认交期"}
+      />
+      {requirement && (
+        <Field
+          label="审批要求"
+          value={
+            requirement.escalated
+              ? `需 ${requirement.role} 复核（${requirement.reasons.length} 条风险）`
+              : "本人可直接批准"
+          }
+        />
+      )}
+    </Card>
   );
 }

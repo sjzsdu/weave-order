@@ -1,6 +1,11 @@
 import { samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
-import { CreateSampleInput, UpdateSampleInput, hasCapability } from "@weave-order/schema";
+import {
+  CreateSampleInput,
+  SAMPLE_FILTER_TIER_LIMIT,
+  UpdateSampleInput,
+  hasCapability,
+} from "@weave-order/schema";
 import type { FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
 import { and, asc, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
@@ -82,6 +87,10 @@ export function presentSample(row: SampleRow, role?: MemberRole): FabricSample {
 export interface SampleListFilters {
   query?: string | null;
   category?: string | null;
+  /** 成分子串（`ILIKE`，已由 HTTP 层 trim 并限制长度）。 */
+  composition?: string | null;
+  /** 克重档位原文，精确匹配 `samples.weight`。 */
+  weights?: string[] | null;
   status?: SampleStatus | "ALL" | null;
   cursor?: string | null;
   limit?: number;
@@ -97,6 +106,10 @@ export interface SamplePage {
   remaining: number;
   /** 当前租户已有的品类，给筛选器做选项。 */
   categories: string[];
+  /** 成分选项：真实数据里的非空值，按出现次数倒序。 */
+  compositions: string[];
+  /** 克重档位选项：真实数据里的非空原文，按出现次数倒序。 */
+  weights: string[];
 }
 
 type SamplePageCursor = { createdAt: string; id: string };
@@ -459,6 +472,14 @@ export class SampleService {
     const status = filters.status ?? "ACTIVE";
     if (status !== "ALL") conditions.push(eq(samples.status, status));
     if (filters.category) conditions.push(eq(samples.category, filters.category));
+    if (filters.composition) {
+      const pattern = `%${escapeLikePattern(filters.composition.trim())}%`;
+      const literal = sql`${pattern} ESCAPE '\\'`;
+      conditions.push(sql`${samples.composition} ILIKE ${literal}`);
+    }
+    if (filters.weights && filters.weights.length > 0) {
+      conditions.push(inArray(samples.weight, filters.weights));
+    }
     if (filters.query) {
       const pattern = `%${escapeLikePattern(filters.query.trim())}%`;
       const literal = sql`${pattern} ESCAPE '\\'`;
@@ -510,6 +531,13 @@ export class SampleService {
       .map((entry) => entry.category)
       .filter((value): value is string => typeof value === "string" && value.length > 0);
 
+    // 档位选项不跟随 query / category / composition / weights：选中一个 chip 不能
+    // 让它自己从选项里消失。只跟随租户 + 状态，与 categories 的已知行为一致。
+    const [compositions, weights] = await Promise.all([
+      this.listTierOptions(samples.composition, status),
+      this.listTierOptions(samples.weight, status),
+    ]);
+
     return {
       samples: pageRows.map((row) => presentSample(row, ctx?.actor.role)),
       nextCursor,
@@ -517,7 +545,35 @@ export class SampleService {
       total,
       remaining,
       categories,
+      compositions,
+      weights,
     };
+  }
+
+  /**
+   * 某个文本列的真实取值档位：非空、按出现次数倒序、同次数按字面升序。
+   * 返回原文而不是 trim 后的值 —— `weights` 要用它做精确 `IN`，改写会选出空结果。
+   */
+  private async listTierOptions(
+    column: typeof samples.composition | typeof samples.weight,
+    status: SampleStatus | "ALL",
+  ): Promise<string[]> {
+    const conditions = [
+      eq(samples.tenantId, this.tenantId),
+      sql`${column} IS NOT NULL`,
+      sql`btrim(${column}) <> ''`,
+    ];
+    if (status !== "ALL") conditions.push(eq(samples.status, status));
+    const rows = await this.db
+      .select({ value: column, occurrences: count() })
+      .from(samples)
+      .where(and(...conditions))
+      .groupBy(column)
+      .orderBy(desc(count()), asc(column))
+      .limit(SAMPLE_FILTER_TIER_LIMIT);
+    return rows
+      .map((entry) => entry.value)
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
   }
 
   /** 工具内部使用：按 ID 批量取样品。 */

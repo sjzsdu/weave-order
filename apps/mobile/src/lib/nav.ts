@@ -1,3 +1,5 @@
+import { enterCamera as enterCameraRoute, parseCameraMode } from "../routes";
+
 /**
  * 导航兼容层（仅为历史 import 保留）。
  *
@@ -9,6 +11,7 @@ export {
   ROUTE_PATHS,
   TAB_ROUTES,
   back,
+  consumeQuoteEntry,
   enterCamera,
   enterQuote,
   goTab,
@@ -29,3 +32,16 @@ export type {
   RoutePath,
   TabPath,
 } from "../routes";
+
+/** 兼容旧调用名：报价入口只有 `enterQuote` 一份实现。 */
+export { enterQuote as openQuote } from "../routes";
+
+/** @deprecated 用 `enterCamera({ mode })`：相机不是 tab 了，要带参数打开。 */
+export function openCamera(mode: string): void {
+  const parsed = parseCameraMode(mode);
+  if (!parsed) {
+    console.error(`[nav] 未知的相机模式：${mode}`);
+    return;
+  }
+  enterCameraRoute({ mode: parsed });
+}
