@@ -102,6 +102,10 @@ beforeAll(async () => {
     url.pathname = `/${dbName}`;
     targetUrl = url.toString();
     target = new Pool({ connectionString: targetUrl, max: 5 });
+    // pg-pool 的 end() 不等 socket 关闭；紧接着的 DROP DATABASE ... WITH (FORCE)
+    // 会踢掉仍在关闭的后端连接（57P01）。没有监听器时这会变成 unhandled error，
+    // 让全绿的套件假红灯（WAN-180 返工项）。
+    target.on("error", () => undefined);
     await target.query("SELECT 1");
     available = true;
   } catch {
