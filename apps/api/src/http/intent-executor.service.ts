@@ -1,6 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { IntentDraft, JsonValue, QuoteAgentResult } from "@weave-order/schema";
 import type { Kernel } from "../kernel";
+import { EXECUTION_FAILURE_REASON } from "../platform/execution-error";
 import { humanizeLlmError } from "../platform/llm";
 import { HumanActorService } from "./human-actor.service";
 import type { QuoteAgentService } from "./quote-agent.service";
@@ -107,6 +108,8 @@ export function intentOutcomeFromQuoteResult(result: QuoteAgentResult): IntentOu
 
 @Injectable()
 export class IntentExecutorService {
+  private readonly logger = new Logger(IntentExecutorService.name);
+
   constructor(
     @Inject(QUOTE_AGENT) private readonly quoteAgent: QuoteAgentService,
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
@@ -116,9 +119,15 @@ export class IntentExecutorService {
   /** 不阻塞 HTTP 响应；所有异常都在内部落 FAILED。 */
   start(authorization: string | undefined, input: IntentExecutionInput): void {
     void this.run(authorization, input).catch(async (error) => {
+      // 走到这里说明报价 agent 连结果都没产出（组合根 / 数据库 / 进程异常），
+      // 模型可能没被调用过：不能把它说成「模型服务暂时不可用」（WAN-180）。
+      this.logger.error(
+        `意图执行失败 intentId=${input.intentId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
       await this.finish(authorization, input.intentId, {
         status: "FAILED",
-        reason: clamp(humanizeLlmError(error)),
+        reason: EXECUTION_FAILURE_REASON,
       });
     });
   }
