@@ -59,6 +59,8 @@ function CustomersPageContent() {
     // 深链入口：开张清单与 ⌘K 命令直接落到「新建客户 / 导入 CSV」，少两次点击。
     if (params.get("new") === "1") setFormOpen(true);
     if (params.get("import") === "1") setImportOpen(true);
+    // 设置页「客户与字段」直接打开等级治理弹层。
+    if (params.get("manageTiers") === "1") setManageTierOpen(true);
   }, []);
 
   // 搜索走防抖，避免每敲一个字打一次后端。
