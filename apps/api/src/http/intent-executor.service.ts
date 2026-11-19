@@ -38,9 +38,7 @@ function clamp(reason: string): string {
 }
 
 function asRecord(value: JsonValue | undefined): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value
-    : {};
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function customerIdOf(context: JsonValue | undefined): string | undefined {
@@ -63,6 +61,10 @@ function failureReasonOf(result: QuoteAgentResult): string {
   const message = result.failure?.message ?? result.explanation;
   if (!result.failure) return clamp(message);
   if (/HTTP \d{3}|request id|企业模型网关/i.test(message)) {
+    return clamp(humanizeLlmError(new Error(message)));
+  }
+  // 结构化校验错误（Zod JSON）不是人话：给可重试的通用原因，不把内部字段名抛给用户。
+  if (/^\s*[[{]/.test(message) || message.includes('"path"')) {
     return clamp(humanizeLlmError(new Error(message)));
   }
   return clamp(message);

@@ -128,6 +128,10 @@ export function humanizeLlmError(error: unknown): string {
     // 这些错误本身就是写给人看的配置提示，不含密钥与请求 id。
     return raw.slice(0, 200);
   }
+  // Zod / 上游 SDK 的 JSON 报错：原样透出只会是噪音，统一收成一句实话。
+  if (/^\s*[[{]/.test(raw) || raw.includes('"path"')) {
+    return "这次请求没能被正确处理，原话还在，可以重试";
+  }
   return "模型服务暂时不可用";
 }
 
@@ -303,7 +307,9 @@ function parseQuantity(text: string): QuoteIntentSlots["quantity"] {
     );
   if (!match) return null;
   const value = Number(match[1]);
-  if (!Number.isFinite(value) || value <= 0) return null;
+  // 超出契约上界（Quantity max = 1e9）时视为没听懂数量，交给「缺数量」提示，
+  // 而不是让 ZodError 变成用户可见的失败文案（WAN-172 本地复现发现）。
+  if (!Number.isFinite(value) || value <= 0 || value > 1_000_000_000) return null;
   const rawUnit = match[2] ?? "";
   const unit = UNIT_ALIASES.find((entry) => entry.pattern.test(rawUnit))?.unit ?? "meter";
   return { value, unit };

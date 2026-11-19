@@ -53,6 +53,22 @@ describe("报价槽位抽取降级", () => {
     expect(new FallbackLlmProvider(failingPrimary()).lastFallback).toBeNull();
   });
 
+  it("结构化校验错误也不把内部 JSON 透给用户", () => {
+    const reason = humanizeLlmError(
+      new Error('[{"code":"too_big","maximum":1000000000,"path":["slots","quantity"]}]'),
+    );
+    expect(reason).not.toContain("too_big");
+    expect(reason).not.toContain("path");
+    expect(reason).toContain("可以重试");
+  });
+
+  it("超出契约上界的数量按「没听懂」处理，不抛 ZodError", async () => {
+    const intent = await new LocalRuleLlmProvider().extractQuoteIntent({
+      text: "要 999999999999 米",
+    });
+    expect(intent.slots.quantity).toBeNull();
+  });
+
   it("主 provider 正常时不降级、不记录原因", async () => {
     const okPrimary = {
       name: "openai-compatible",
