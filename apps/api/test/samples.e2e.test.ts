@@ -47,6 +47,37 @@ afterAll(async () => {
 const uniqueCode = () =>
   `HTTP-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
+const uniqueToken = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+interface SampleListBody {
+  samples: { id: string; composition: string | null; weight: string | null; code: string }[];
+  total: number;
+  remaining: number;
+  hasMore: boolean;
+  nextCursor?: string | null;
+  categories: string[];
+  compositions: string[];
+  weights: string[];
+}
+
+async function createSample(input: Record<string, unknown>): Promise<{ id: string }> {
+  const response = await fetch(`${baseUrl}/api/samples`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: uniqueCode(), unit: "meter", ...input }),
+  });
+  expect([200, 201]).toContain(response.status);
+  const body = (await response.json()) as { sample: { id: string } };
+  return body.sample;
+}
+
+async function listSamples(search: Record<string, string> = {}): Promise<SampleListBody> {
+  const qs = new URLSearchParams(search).toString();
+  const response = await fetch(`${baseUrl}/api/samples${qs ? `?${qs}` : ""}`);
+  expect(response.status).toBe(200);
+  return (await response.json()) as SampleListBody;
+}
+
 describe("样品 HTTP（e2e）", () => {
   it("创建 → 详情 → 编辑 → 归档；无图时 images=[] 且 primaryImageUrl=null", async (ctx) => {
     if (!available) ctx.skip();
@@ -143,6 +174,121 @@ describe("样品 HTTP（e2e）", () => {
       }),
     });
     expect(response.status).toBe(400);
+  });
+
+  it("成分 + 克重档位 + 品类组合筛选同时生效", async (ctx) => {
+    if (!available) ctx.skip();
+    const token = uniqueToken();
+    const composition = `棉-${token}`;
+    const category = `针织-${token}`;
+    const weightA = `220g/m²-${token}`;
+    const weightB = `320g/m²-${token}`;
+    const otherCategory = `梭织-${token}`;
+    const otherComposition = `涤纶-${token}`;
+
+    const hit = await createSample({ composition, category, weight: weightA, name: "组合筛选命中" });
+    const wrongWeight = await createSample({
+      composition,
+      category,
+      weight: weightB,
+      name: "克重不符",
+    });
+    const wrongCategory = await createSample({
+      composition,
+      category: otherCategory,
+      weight: weightA,
+      name: "品类不符",
+    });
+    const wrongComposition = await createSample({
+      composition: otherComposition,
+      category,
+      weight: weightA,
+      name: "成分不符",
+    });
+
+    const body = await listSamples({ composition, weights: weightA, category });
+    const ids = body.samples.map((sample) => sample.id);
+    expect(ids).toContain(hit.id);
+    expect(ids).not.toContain(wrongWeight.id);
+    expect(ids).not.toContain(wrongCategory.id);
+    expect(ids).not.toContain(wrongComposition.id);
+    expect(body.samples.every((sample) => sample.composition === composition)).toBe(true);
+    expect(body.samples.every((sample) => sample.weight === weightA)).toBe(true);
+  });
+
+  it("组合筛选命中 0 条返回空数组与 hasMore=false，而不是 400", async (ctx) => {
+    if (!available) ctx.skip();
+    const composition = `无结果-${uniqueToken()}`;
+    const response = await fetch(
+      `${baseUrl}/api/samples?composition=${encodeURIComponent(composition)}&weights=${encodeURIComponent("999g/m²")}`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as SampleListBody;
+    expect(body.samples).toEqual([]);
+    expect(body.hasMore).toBe(false);
+    expect(body.total).toBe(0);
+    expect(body.nextCursor ?? null).toBeNull();
+  });
+
+  it("非法筛选参数返回 400：项数超限 / 单项超长 / 成分超长", async (ctx) => {
+    if (!available) ctx.skip();
+    const tooMany = Array.from({ length: 11 }, (_, index) => `w${index}`).join(",");
+    const tooLongTier = "x".repeat(65);
+    const tooLongComposition = "y".repeat(65);
+
+    const cases = [
+      `weights=${encodeURIComponent(tooMany)}`,
+      `weights=${encodeURIComponent(tooLongTier)}`,
+      `composition=${encodeURIComponent(tooLongComposition)}`,
+    ];
+    for (const query of cases) {
+      const response = await fetch(`${baseUrl}/api/samples?${query}`);
+      expect(response.status, query).toBe(400);
+      const body = (await response.json()) as { message?: string | { message?: string } };
+      const message =
+        typeof body.message === "string" ? body.message : body.message?.message;
+      expect(message).toBeTruthy();
+      expect(message).toMatch(/[成分克重]/);
+    }
+  });
+
+  it("档位选项稳定：不跟随已选筛选，只统计当前状态的非空值", async (ctx) => {
+    if (!available) ctx.skip();
+    const token = uniqueToken();
+    const activeComposition = `稳定-${token}`;
+    const archivedComposition = `归档-${token}`;
+    const archivedWeight = `500g/m²-${token}`;
+    await createSample({
+      name: "稳定档位在售",
+      composition: activeComposition,
+      weight: `180g/m²-${token}`,
+    });
+    await createSample({
+      name: "稳定档位归档",
+      composition: archivedComposition,
+      weight: archivedWeight,
+      status: "ARCHIVED",
+    });
+
+    const baseline = await listSamples();
+    const filtered = await listSamples({ composition: activeComposition });
+    expect(filtered.compositions).toEqual(baseline.compositions);
+    expect(filtered.weights).toEqual(baseline.weights);
+
+    // ACTIVE 默认：归档样品的新档位不出现；status=ALL 才出现。
+    expect(baseline.compositions).not.toContain(archivedComposition);
+    expect(baseline.weights).not.toContain(archivedWeight);
+    const all = await listSamples({ status: "ALL" });
+    expect(all.compositions).toContain(archivedComposition);
+    expect(all.weights).toContain(archivedWeight);
+
+    // 档位来自真实数据：任选一个都能选出结果；且数组里没有空字符串。
+    expect(baseline.compositions.every((value) => value.length > 0)).toBe(true);
+    expect(baseline.weights.every((value) => value.length > 0)).toBe(true);
+    for (const weight of baseline.weights) {
+      const page = await listSamples({ weights: weight });
+      expect(page.total, weight).toBeGreaterThan(0);
+    }
   });
 
   it("内核 PERMISSION_DENIED 映射为 HTTP 403（sales 写样品）", () => {

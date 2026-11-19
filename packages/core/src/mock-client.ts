@@ -47,6 +47,9 @@ import type { ApiClient } from "./api-client";
 const TENANT_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_ID = "22222222-2222-4222-8222-222222222222";
 const SAMPLE_ID = "33333333-3333-4333-8333-333333333333";
+const SAMPLE_ID_2 = "33333333-3333-4333-8333-333333333334";
+const SAMPLE_ID_3 = "33333333-3333-4333-8333-333333333335";
+const SAMPLE_ID_4 = "33333333-3333-4333-8333-333333333336";
 const QUOTE_ID = "44444444-4444-4444-8444-444444444444";
 const MEMBERSHIP_ID = "55555555-5555-4555-8555-555555555555";
 const AUDIT_ID = "66666666-6666-4666-8666-666666666666";
@@ -214,6 +217,7 @@ const sample = {
   code: "FM-220",
   name: "32S 精梳棉汗布 220g",
   composition: "100% 棉",
+  category: "针织",
   weight: "220g/m²",
   unit: "meter" as const,
   costFloor: { amount: 1420, currency: "CNY" as const },
@@ -222,6 +226,59 @@ const sample = {
   primaryImageUrl: null,
   createdAt: NOW,
 };
+
+/**
+ * 图墙的演示样本：至少 2 个成分、3 个克重档位，否则本地跑不出筛选效果。
+ * 顺序就是真实服务端的「创建时间倒序」近似，供 mock 分页稳定取前 N 条。
+ */
+const mockSamples = [
+  sample,
+  {
+    ...sample,
+    id: SAMPLE_ID_2,
+    code: "FM-320",
+    name: "32S 棉毛布 320g",
+    composition: "100% 棉",
+    category: "毛圈",
+    weight: "320g/m²",
+    costFloor: { amount: 1860, currency: "CNY" as const },
+  },
+  {
+    ...sample,
+    id: SAMPLE_ID_3,
+    code: "FM-180",
+    name: "涤棉交织布 180g",
+    composition: "65% 涤纶 35% 棉",
+    category: "梭织",
+    weight: "180g/m²",
+    costFloor: { amount: 980, currency: "CNY" as const },
+  },
+  {
+    ...sample,
+    id: SAMPLE_ID_4,
+    code: "FM-240",
+    name: "粘胶弹力汗布 240g",
+    composition: "95% 粘胶 5% 氨纶",
+    category: "针织",
+    weight: "240g/m²",
+    costFloor: { amount: 1580, currency: "CNY" as const },
+  },
+];
+
+/** 档位按出现次数倒序、同次数按字面升序，只统计当前状态且非空的值。 */
+function mockTiers(status: "ACTIVE" | "ARCHIVED" | "ALL", key: "composition" | "weight") {
+  const counts = new Map<string, number>();
+  for (const item of mockSamples) {
+    if (status !== "ALL" && item.status !== status) continue;
+    const value = item[key];
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 24)
+    .map(([value]) => value);
+}
 
 const item = {
   id: QUOTE_ID,
@@ -720,17 +777,44 @@ export function createMockApiClient(): ApiClient {
 
     mergeFieldOptions: () => Promise.resolve({ affected: 0 }),
 
-    listSamples: () => Promise.resolve([sample]),
+    listSamples: (limit = 50) => Promise.resolve(mockSamples.slice(0, limit)),
 
-    listSamplesPage: () =>
-      Promise.resolve({
-        samples: [sample],
+    listSamplesPage: (params = {}) => {
+      const status = params.status ?? "ACTIVE";
+      const query = params.query?.trim().toLowerCase() ?? "";
+      const composition = params.composition?.trim().toLowerCase() ?? "";
+      let samples = mockSamples.filter(
+        (item) =>
+          (status === "ALL" || item.status === status) &&
+          (!params.category || item.category === params.category) &&
+          (!query ||
+            item.code.toLowerCase().includes(query) ||
+            item.name.toLowerCase().includes(query) ||
+            (item.composition ?? "").toLowerCase().includes(query)) &&
+          (!composition || (item.composition ?? "").toLowerCase().includes(composition)) &&
+          (!params.weights || params.weights.length === 0 || params.weights.includes(item.weight)),
+      );
+      const limit = params.limit ?? 24;
+      const total = samples.length;
+      samples = samples.slice(0, limit);
+      return Promise.resolve({
+        samples,
         nextCursor: null,
-        hasMore: false,
-        total: 1,
-        remaining: 0,
-        categories: sample.composition ? ["针织"] : [],
-      }),
+        hasMore: total > samples.length,
+        total,
+        remaining: Math.max(0, total - samples.length),
+        categories: [
+          ...new Set(
+            mockSamples
+              .filter((item) => status === "ALL" || item.status === status)
+              .map((item) => item.category)
+              .filter((value): value is string => Boolean(value)),
+          ),
+        ].sort(),
+        compositions: mockTiers(status, "composition"),
+        weights: mockTiers(status, "weight"),
+      });
+    },
 
     getSample: () => Promise.resolve(sample),
 

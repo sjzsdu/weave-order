@@ -84,6 +84,7 @@ import {
   ReceivablePaymentView,
   ReceivableStatement,
   ScanResult,
+  SampleFilterTiers,
   SampleImage,
   Shipment,
   ShipmentView,
@@ -127,6 +128,10 @@ export interface ApiClientOptions {
 export interface SampleListParams {
   query?: string | null;
   category?: string | null;
+  /** 成分子串；服务端做 `ILIKE '%v%'`。 */
+  composition?: string | null;
+  /** 克重档位原文（来自响应的 `weights`），服务端精确匹配。 */
+  weights?: string[] | null;
   status?: SampleStatus | "ALL" | null;
   cursor?: string | null;
   limit?: number;
@@ -197,6 +202,7 @@ const SamplePageResponse = z
     total: z.number().int().nonnegative(),
     remaining: z.number().int().nonnegative(),
     categories: z.array(z.string()),
+    ...SampleFilterTiers.shape,
   })
   .strict();
 const SampleResponse = z.object({ sample: FabricSample }).strict();
@@ -616,6 +622,10 @@ export function createApiClient(options: ApiClientOptions) {
       const search = new URLSearchParams();
       if (params.query) search.set("query", params.query);
       if (params.category) search.set("category", params.category);
+      if (params.composition) search.set("composition", params.composition);
+      if (params.weights && params.weights.length > 0) {
+        search.set("weights", params.weights.join(","));
+      }
       if (params.status) search.set("status", params.status);
       if (params.cursor) search.set("cursor", params.cursor);
       if (params.limit !== undefined) search.set("limit", String(params.limit));

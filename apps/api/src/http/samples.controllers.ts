@@ -11,6 +11,11 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import {
+  SAMPLE_FILTER_MAX_COMPOSITION_LENGTH,
+  SAMPLE_FILTER_MAX_TIER_LENGTH,
+  SAMPLE_FILTER_MAX_WEIGHT_TIERS,
+} from "@weave-order/schema";
 import type { FabricSample } from "@weave-order/schema";
 import type { Kernel } from "../kernel";
 import type { MediaService } from "../media/media.service";
@@ -35,6 +40,43 @@ function parseLimit(raw: string | undefined): number | undefined {
   return parsed;
 }
 
+/** 空串等同于不传；超长一律 400，不做静默截断（否则筛选结果看起来像 bug）。 */
+function parseComposition(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  if (Array.isArray(raw)) throw new BadRequestException("成分筛选参数只能出现一次");
+  const value = raw.trim();
+  if (value === "") return null;
+  if (value.length > SAMPLE_FILTER_MAX_COMPOSITION_LENGTH) {
+    throw new BadRequestException(
+      `成分筛选最多 ${SAMPLE_FILTER_MAX_COMPOSITION_LENGTH} 个字符`,
+    );
+  }
+  return value;
+}
+
+/**
+ * `weights` 是逗号分隔的档位原文：每项 trim 后精确匹配 `samples.weight`。
+ * 选项来自真实数据，所以这里不做任何模糊化（不改大小写、不抽数字）。
+ */
+function parseWeights(raw: string | undefined): string[] | null {
+  if (raw === undefined) return null;
+  if (Array.isArray(raw)) throw new BadRequestException("克重档位参数只能出现一次");
+  if (raw.trim() === "") return null;
+  const items = raw.split(",").map((item) => item.trim());
+  if (items.some((item) => item === "")) {
+    throw new BadRequestException("克重档位不能为空");
+  }
+  if (items.length > SAMPLE_FILTER_MAX_WEIGHT_TIERS) {
+    throw new BadRequestException(`克重档位最多选 ${SAMPLE_FILTER_MAX_WEIGHT_TIERS} 个`);
+  }
+  if (items.some((item) => item.length > SAMPLE_FILTER_MAX_TIER_LENGTH)) {
+    throw new BadRequestException(
+      `单个克重档位最多 ${SAMPLE_FILTER_MAX_TIER_LENGTH} 个字符`,
+    );
+  }
+  return [...new Set(items)];
+}
+
 /**
  * 样品 HTTP 面：图墙列表（游标分页）+ 详情 + 新建 / 编辑 / 归档。
  *
@@ -53,6 +95,8 @@ export class SampleController {
   async list(
     @Query("query") query?: string,
     @Query("category") category?: string,
+    @Query("composition") composition?: string,
+    @Query("weights") weights?: string,
     @Query("status") status?: string,
     @Query("cursor") cursor?: string,
     @Query("limit") limit?: string,
@@ -67,6 +111,8 @@ export class SampleController {
             {
               query: query?.trim() || null,
               category: category?.trim() || null,
+              composition: parseComposition(composition),
+              weights: parseWeights(weights),
               status: parseStatus(status),
               cursor: cursor ?? null,
               limit: parseLimit(limit),
