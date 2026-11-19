@@ -444,9 +444,11 @@ export class LocalStubImageEmbeddingProvider implements ImageEmbeddingProvider {
  * 通义多模态向量（`qwen3-vl-embedding`）。
  *
  * 为什么直连 DashScope 原生端点而不是 OpenAI 兼容端点：
- * 多模态向量的**独立向量**（一张图一个向量）只在原生
- * `/api/v1/services/embeddings/multimodal-embedding` 上提供，
- * 兼容端点只能做对话，没有 image embedding 入口。
+ * 多模态向量的**独立向量**（一张图一个向量）只在原生端点上提供，兼容端点
+ * 只能做对话，没有 image embedding 入口。真实路径是两段重复的
+ * `/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding`；
+ * 单段 `/api/v1/services/embeddings/multimodal-embedding` 是任务提交端点，
+ * 会返回 400 "task can not be null"（2026-11-19 真实 key 实测）。
  *
  * 实测约束（2026-11-14，用真实 key）：
  * - 单请求最多 10 张图 / 20 个 content；
@@ -482,11 +484,12 @@ export class DashScopeMultiModalEmbeddingProvider implements ImageEmbeddingProvi
     if (this.dimension <= 0) throw new Error(`IMAGE_EMBEDDING_DIMENSION 非法：${this.dimension}`);
     this.baseUrl = (options.baseUrl ?? DEFAULT_IMAGE_EMBEDDING_BASE_URL).replace(/\/+$/, "");
     // IMAGE_EMBEDDING_ENDPOINT wins when provided (one-api gateway route).
-    // The fallback uses a single suffix segment; the old double suffix only
-    // worked because the upstream router happened to tolerate it.
+    // The doubled segment is the REAL DashScope endpoint (verified 2026-11-19):
+    // the single-segment path is a task-submission endpoint and returns
+    // 400 "task can not be null". Do not collapse the duplicate.
     this.endpoint =
       options.endpoint?.trim() ||
-      `${this.baseUrl}/services/embeddings/multimodal-embedding`;
+      `${this.baseUrl}/services/embeddings/multimodal-embedding/multimodal-embedding`;
     this.apiKey = options.apiKey;
     this.maxImagesPerRequest = Math.max(
       1,

@@ -77,7 +77,7 @@ describe("DashScopeMultiModalEmbeddingProvider", () => {
     await provider.embedImage(IMG);
 
     expect(requests[0]?.url).toBe(
-      "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding",
+      "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
     );
     const body = JSON.parse(requests[0]?.body ?? "{}") as {
       model: string;
