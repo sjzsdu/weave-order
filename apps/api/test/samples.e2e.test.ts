@@ -4,7 +4,7 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { ForbiddenException } from "@nestjs/common";
 import { createDb } from "@weave-order/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module";
 import { rethrowHttp } from "../src/http/controllers";
 import { KernelError } from "../src/kernel";
@@ -60,6 +60,9 @@ interface SampleListBody {
   weights: string[];
 }
 
+/** 每个用例创建的样品在结束后删掉：档位选项按真实数据聚合，残留会污染后续运行。 */
+const createdSampleIds: string[] = [];
+
 async function createSample(input: Record<string, unknown>): Promise<{ id: string }> {
   const response = await fetch(`${baseUrl}/api/samples`, {
     method: "POST",
@@ -68,8 +71,23 @@ async function createSample(input: Record<string, unknown>): Promise<{ id: strin
   });
   expect([200, 201]).toContain(response.status);
   const body = (await response.json()) as { sample: { id: string } };
+  createdSampleIds.push(body.sample.id);
   return body.sample;
 }
+
+async function deleteSamples(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const handle = createDb(DATABASE_URL);
+  try {
+    await handle.pool.query("delete from samples where id = any($1::uuid[])", [ids]);
+  } finally {
+    await handle.pool.end();
+  }
+}
+
+afterEach(async () => {
+  await deleteSamples(createdSampleIds.splice(0));
+});
 
 async function listSamples(search: Record<string, string> = {}): Promise<SampleListBody> {
   const qs = new URLSearchParams(search).toString();
@@ -275,12 +293,16 @@ describe("样品 HTTP（e2e）", () => {
     expect(filtered.compositions).toEqual(baseline.compositions);
     expect(filtered.weights).toEqual(baseline.weights);
 
-    // ACTIVE 默认：归档样品的新档位不出现；status=ALL 才出现。
+    // 归档样品不进入 ACTIVE 的档位列表。
     expect(baseline.compositions).not.toContain(archivedComposition);
     expect(baseline.weights).not.toContain(archivedWeight);
-    const all = await listSamples({ status: "ALL" });
-    expect(all.compositions).toContain(archivedComposition);
-    expect(all.weights).toContain(archivedWeight);
+
+    // 档位列表有 24 条截断，不能靠 `status=ALL` 里「出现归档值」来断言；
+    // 改用精确 weights 过滤：ACTIVE 下 0 条，ARCHIVED 下命中，证明状态范围生效。
+    expect((await listSamples({ weights: archivedWeight })).total).toBe(0);
+    expect(
+      (await listSamples({ weights: archivedWeight, status: "ARCHIVED" })).total,
+    ).toBeGreaterThan(0);
 
     // 档位来自真实数据：任选一个都能选出结果；且数组里没有空字符串。
     expect(baseline.compositions.every((value) => value.length > 0)).toBe(true);
