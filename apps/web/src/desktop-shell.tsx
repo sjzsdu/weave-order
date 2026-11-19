@@ -8,7 +8,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useApprovals, useIntentChannel, useTenantContext } from "@weave-order/core";
 import type { TenantChoice } from "@weave-order/schema";
 import { BUSINESS_NAV, PRIMARY_NAV, visibleNav } from "@weave-order/schema";
-import type { NavItem } from "@weave-order/schema";
 import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
