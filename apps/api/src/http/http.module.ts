@@ -37,6 +37,7 @@ import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
 import { InboundController } from "./inbound.controllers";
 import { IntentController } from "./intents.controllers";
+import { IntentExecutorService } from "./intent-executor.service";
 import { OnboardingStateController } from "./onboarding-state.controller";
 import { DemoScenesController } from "../demo/scenes.controller";
 import { demoScenesEnabled } from "../demo/scene-catalog";
@@ -73,6 +74,7 @@ const providers: Provider[] = [
     useExisting: AgentActorService,
   },
   QuoteAgentService,
+  IntentExecutorService,
   InboundIntakeService,
   PrintAgentAuthService,
   PrintAgentHub,

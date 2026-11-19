@@ -29,6 +29,9 @@ export function IntentRunCard({
   const [copied, setCopied] = useState(false);
   const waiting = intent.status === "QUEUED" || intent.status === "RUNNING";
   const failed = intent.status === "FAILED" || intent.status === "TIMEOUT";
+  // 缺信息不是失败：草稿还差几个阻断项，补齐后重试即可。
+  const needsInput = intent.status === "NEEDS_INPUT";
+  const needsAttention = failed || needsInput;
   const notConnected = intent.executorState === "NOT_CONNECTED";
 
   const tone =
@@ -36,11 +39,13 @@ export function IntentRunCard({
       ? "success"
       : failed
         ? "danger"
-        : waiting && notConnected
+        : needsInput
           ? "warning"
-          : waiting
-            ? "info"
-            : "neutral";
+          : waiting && notConnected
+            ? "warning"
+            : waiting
+              ? "info"
+              : "neutral";
 
   // 失败后的人才兜底：不额外造一条「转人工」单据，先把原话送到用户手上。
   const escalate = async () => {
@@ -58,9 +63,10 @@ export function IntentRunCard({
         "rounded-lg border bg-surface px-4 py-3",
         intent.status === "SUCCEEDED" && "border-moss-600/40",
         failed && "border-vermilion-600/40",
+        needsInput && "border-amber-600/40",
         waiting && notConnected && "border-amber-600/40",
         waiting && !notConnected && "border-indigo-600/30",
-        (intent.status === "CANCELLED" || intent.status === "FAILED") && "bg-paper/60",
+        (intent.status === "CANCELLED" || needsAttention) && "bg-paper/60",
         className,
       )}
       data-intent-id={intent.id}
@@ -86,9 +92,11 @@ export function IntentRunCard({
             "mt-2 text-sm",
             failed
               ? "text-vermilion-600"
-              : waiting && notConnected
+              : needsInput
                 ? "text-amber-700"
-                : "text-ink-700",
+                : waiting && notConnected
+                  ? "text-amber-700"
+                  : "text-ink-700",
           )}
         >
           {intent.notice}
@@ -116,18 +124,18 @@ export function IntentRunCard({
           </Button>
         )}
 
-        {failed && onRetry && (
+        {needsAttention && onRetry && (
           <Button
             variant="secondary"
             className="min-h-9 px-3"
             disabled={busy}
             onClick={() => onRetry(intent)}
           >
-            重试
+            {needsInput ? "补齐信息后重试" : "重试"}
           </Button>
         )}
 
-        {failed && (
+        {needsAttention && (
           <Button variant="ghost" className="min-h-9 px-3" onClick={() => void escalate()}>
             {copied ? "已复制，发给同事" : "转人工"}
           </Button>

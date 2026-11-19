@@ -84,12 +84,139 @@ export interface LlmProvider {
   extractReplyFromImage(input: { imageUrl: string }): Promise<{ text: string }>;
   /** 最近一次真实模型调用的用量回执；本地规则实现为 null。 */
   readonly lastUsage: LlmCallReceipt | null;
+  /**
+   * 最近一次「主 provider 失败、已回退本地规则」的记录。
+   * 只有 `FallbackLlmProvider` 会设置它；本地规则实现恒为 undefined。
+   */
+  readonly lastFallback?: LlmFallbackNotice | null;
+}
+
+/** 一次降级的事实：哪个任务失败了、给人看的原因（绝不含网关原文 / request id）。 */
+export interface LlmFallbackNotice {
+  task: LlmTask;
+  reason: string;
+}
+
+/**
+ * 把上游模型错误收成人话。
+ *
+ * 网关的 4xx 响应体里带 request id 与内部模型名，直接透给前端既是噪音也是信息泄漏；
+ * 这里只保留「哪个环节出了问题」，具体排查靠服务端日志与用量表。
+ */
+export function humanizeLlmError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const http = /企业模型网关调用失败：HTTP (\d{3})/.exec(raw);
+  if (http) {
+    const status = Number(http[1]);
+    if (status === 401 || status === 403) {
+      return `模型网关拒绝了本次调用（HTTP ${status}）：令牌可能无权使用当前模型`;
+    }
+    if (status === 429) return "模型网关限流了本次调用（HTTP 429），稍后会自动重试";
+    if (status >= 500) return `模型网关暂时不可用（HTTP ${status}）`;
+    return `模型网关拒绝了本次调用（HTTP ${status}）`;
+  }
+  if (/abort|timed?\s*out|timeout|fetch failed|ECONN|EAI_AGAIN|ENOTFOUND/i.test(raw)) {
+    return "模型网关响应超时或网络不可达";
+  }
+  if (
+    raw.includes("不在租户白名单") ||
+    raw.includes("未配置") ||
+    raw.includes("预算已用尽") ||
+    raw.includes("缺少 LLM") ||
+    raw.includes("不受支持")
+  ) {
+    // 这些错误本身就是写给人看的配置提示，不含密钥与请求 id。
+    return raw.slice(0, 200);
+  }
+  return "模型服务暂时不可用";
+}
+
+/**
+ * 主 provider 失败即回退本地规则，保证「模型坏了也不影响出结果」。
+ *
+ * 报价格式抽取、客户回复分类、跟进建议都有确定性实现；只有截图 OCR 没有本地替代，
+ * 回退后仍会失败，但至少错误已经是人话且原文保留。
+ */
+export class FallbackLlmProvider implements LlmProvider {
+  readonly name: string;
+  private fallbackNotice: LlmFallbackNotice | null = null;
+  private readonly initialReason: string | null;
+
+  constructor(
+    private readonly primary: LlmProvider | null,
+    private readonly fallback: LlmProvider = new LocalRuleLlmProvider(),
+    initialReason?: string,
+  ) {
+    this.name = primary?.name ?? fallback.name;
+    this.initialReason = initialReason ?? null;
+  }
+
+  get lastUsage(): LlmCallReceipt | null {
+    return this.primary?.lastUsage ?? null;
+  }
+
+  get lastFallback(): LlmFallbackNotice | null {
+    return this.fallbackNotice;
+  }
+
+  suggestFollowup(input: {
+    customerId: string;
+    shipment: SampleShipment;
+    tracking: TrackingSnapshot;
+  }): Promise<FollowupSuggestion> {
+    return this.attempt(
+      "FOLLOWUP_SUGGESTION",
+      () => this.primary!.suggestFollowup(input),
+      () => this.fallback.suggestFollowup(input),
+    );
+  }
+
+  classifyReply(input: { text: string }): Promise<ReplyClassification> {
+    return this.attempt(
+      "REPLY_CLASSIFICATION",
+      () => this.primary!.classifyReply(input),
+      () => this.fallback.classifyReply(input),
+    );
+  }
+
+  extractQuoteIntent(input: { text: string }): Promise<QuoteIntentExtraction> {
+    return this.attempt(
+      "QUOTE_INTENT",
+      () => this.primary!.extractQuoteIntent(input),
+      () => this.fallback.extractQuoteIntent(input),
+    );
+  }
+
+  extractReplyFromImage(input: { imageUrl: string }): Promise<{ text: string }> {
+    return this.attempt(
+      "SCREENSHOT_OCR",
+      () => this.primary!.extractReplyFromImage(input),
+      () => this.fallback.extractReplyFromImage(input),
+    );
+  }
+
+  private async attempt<T>(
+    task: LlmTask,
+    runPrimary: () => Promise<T>,
+    runFallback: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.primary) {
+      this.fallbackNotice = { task, reason: this.initialReason ?? "模型服务未配置" };
+      return runFallback();
+    }
+    try {
+      return await runPrimary();
+    } catch (error) {
+      // 记下第一次失败原因；同一次请求里后续任务继续用主 provider，仍是同一套降级策略。
+      this.fallbackNotice ??= { task, reason: humanizeLlmError(error) };
+      return runFallback();
+    }
+  }
 }
 
 /** 多模态消息内容：文本或图片（OpenAI 兼容 image_url 协议）。 */
 export type ChatContentPart =
-  | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string } };
+  { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
 export type ChatMessage = {
   role: "system" | "user";
@@ -655,9 +782,7 @@ function redactMessageContent(content: string | ChatContentPart[]): string | Cha
 function serializeContent(content: string | ChatContentPart[]): string {
   if (typeof content === "string") return content;
   return content
-    .map((part) =>
-      part.type === "text" ? `text:${part.text}` : `image_url:${part.image_url.url}`,
-    )
+    .map((part) => (part.type === "text" ? `text:${part.text}` : `image_url:${part.image_url.url}`))
     .join("\n");
 }
 
@@ -730,7 +855,8 @@ export function createLlmProvider(
     // 避免 OIDC 已接入但 NODE_ENV 不是 production 时 fail-open（WAN-94）。
     const productionLike = isProductionLike({ ...process.env, ...options.env });
 
-    const baseUrl = options.settings.baseUrl || options.env?.LLM_BASE_URL || process.env.LLM_BASE_URL;
+    const baseUrl =
+      options.settings.baseUrl || options.env?.LLM_BASE_URL || process.env.LLM_BASE_URL;
     if (!baseUrl) {
       throw new Error(
         "缺少 LLM_BASE_URL：请配置 openai-compatible 企业模型网关地址（含 /v1）后再调用模型。",
@@ -778,4 +904,27 @@ export function createLlmProvider(
   throw new Error(
     `LLM_PROVIDER=${provider} 不受支持；当前支持：local-rule / openai-compatible。请配置 openai-compatible 企业模型网关。`,
   );
+}
+
+/**
+ * 产品路径统一用这个工厂，而不是直接 `createLlmProvider`。
+ *
+ * - `local-rule`：零依赖，直接用。
+ * - `openai-compatible`：包一层回退。构造失败（缺 baseUrl / key / 白名单）也**不让整个
+ *   请求 500**：降级到本地规则，并把配置原因作为降级说明带回给用户。
+ *
+ * 这是 WAN-172 的直接修复：生产网关 403 时仍能出草稿，而不是把「模型坏了」变成
+ * 「报价功能坏了」。
+ */
+export function createResilientLlmProvider(
+  provider = "local-rule",
+  options?: CreateLlmOptions,
+): LlmProvider {
+  const local = new LocalRuleLlmProvider();
+  if (provider === "local-rule") return local;
+  try {
+    return new FallbackLlmProvider(createLlmProvider(provider, options), local);
+  } catch (error) {
+    return new FallbackLlmProvider(null, local, humanizeLlmError(error));
+  }
 }

@@ -169,6 +169,13 @@
       "when": 1795013690349,
       "tag": "0023_uneven_zemo",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795062483093,
+      "tag": "0024_bizarre_leopardon",
+      "breakpoints": true
     }
   ]
 }

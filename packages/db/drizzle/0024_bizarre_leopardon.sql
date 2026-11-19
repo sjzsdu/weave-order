@@ -1,0 +1,1 @@
+ALTER TYPE "public"."intent_status" ADD VALUE 'NEEDS_INPUT' BEFORE 'FAILED';

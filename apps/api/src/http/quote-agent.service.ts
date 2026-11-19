@@ -8,7 +8,7 @@ import type { Kernel, KernelContext } from "../kernel";
 import { createPostgresCheckpointer } from "../platform/checkpoint";
 import { DatabaseProvider } from "../platform/database.provider";
 import { loadEnv } from "../platform/env";
-import { createLlmProvider } from "../platform/llm";
+import { createResilientLlmProvider } from "../platform/llm";
 import { createTools } from "../tools";
 import { HumanActorService } from "./human-actor.service";
 import { KERNEL } from "./tokens";
@@ -57,7 +57,8 @@ export class QuoteAgentService {
       env.LLM_PROVIDER === "openai-compatible" && settings.allowExternal
         ? "openai-compatible"
         : "local-rule";
-    const llm = createLlmProvider(provider, { settings, usage: kernel.usage, env });
+    // 网关 403 / 超时 / 配置缺失都回退 local-rule：WAN-172 的底线是「模型坏了，报价还能出」。
+    const llm = createResilientLlmProvider(provider, { settings, usage: kernel.usage, env });
     this.checkpointer ??= await createPostgresCheckpointer(this.database.handle.pool);
     return createQuoteAgentGraph({
       tools: createTools(kernel),

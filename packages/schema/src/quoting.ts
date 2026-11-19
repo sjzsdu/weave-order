@@ -148,6 +148,11 @@ export const QuoteAgentResult = z
     draft: QuoteDraft.nullable(),
     missingFields: z.array(MissingField).max(20),
     explanation: z.string().max(2000),
+    /**
+     * 降级说明：模型网关不可用、本次改用本地规则时给出人话原因。
+     * 正常走企业模型时恒为 null；不得把网关原文 / request id 放进这里。
+     */
+    notice: z.string().max(500).nullable(),
     provider: z.string().min(1).max(64),
     usage: LlmCallReceipt.nullable(),
     failure: QuoteAgentFailure.nullable(),

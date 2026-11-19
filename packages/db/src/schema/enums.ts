@@ -207,6 +207,7 @@ export const intentStatusEnum = pgEnum("intent_status", [
   "QUEUED",
   "RUNNING",
   "SUCCEEDED",
+  "NEEDS_INPUT",
   "FAILED",
   "CANCELLED",
   "TIMEOUT",

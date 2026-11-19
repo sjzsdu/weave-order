@@ -28,13 +28,13 @@ const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 50;
 
 /**
- * 当前没有接入真实的意图拆解执行器。
+ * 执行器接线状态。
  *
- * 这不是占位代码：它决定了 `POST /api/intents` 的回执写「尚未接入」而不是绿色成功。
- * 未来接入执行器时，替换这个常量并实现 `markRunning` / `markSucceeded` / `markFailed`
- * 的调用方即可，状态机与持久化不用动。
+ * WAN-172：桌面链路已接通「意图 → 报价 agent → 报价草稿」的执行器（见
+ * `http/intent-executor.service.ts`），提交后立刻进入 RUNNING。
+ * 仍保留 NOT_CONNECTED 分支，是为了识别历史遗留的 QUEUED 行，界面继续诚实显示「待受理」。
  */
-const EXECUTOR_STATE = "NOT_CONNECTED" as const;
+const EXECUTOR_STATE = "CONNECTED" as const;
 
 function mapRow(row: IntentRow): IntentViewType {
   const executorState = row.executorState === "CONNECTED" ? "CONNECTED" : "NOT_CONNECTED";
@@ -212,6 +212,26 @@ export class IntentService {
       .set({
         status: "SUCCEEDED",
         result: draft,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(intents.tenantId, this.tenantId), eq(intents.id, id)))
+      .returning();
+    return mapRow(this.requireRow(rows[0], id));
+  }
+
+  /**
+   * 报价 agent 跑完但缺阻断项（客户 / 样品 / 数量）：不是失败，原话保留可重试。
+   * `failureReason` 复用来承载「还差什么」，避免再加一列。
+   */
+  async markNeedsInput(id: string, reason: string): Promise<IntentViewType> {
+    const row = await this.find(id);
+    assertIntentTransition(row.status, "NEEDS_INPUT");
+    const rows = await this.db
+      .update(intents)
+      .set({
+        status: "NEEDS_INPUT",
+        failureReason: reason.slice(0, 500),
         finishedAt: new Date(),
         updatedAt: new Date(),
       })
