@@ -278,7 +278,7 @@ export default function ApprovalsPage() {
                   <View>
                     <View className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
                       <Badge tone="warn">{item.kind === "quote" ? "报价草稿" : "寄样草稿"}</Badge>
-                      <Badge>v{item.kind === "quote" ? "草稿" : "草稿"}</Badge>
+                      {typeof item.version === "number" && <Badge>v{item.version}</Badge>}
                       <Text className="tiny">{relativeTime(item.createdAt)}</Text>
                     </View>
                     <View className="list-title" style={{ marginTop: 8 }}>

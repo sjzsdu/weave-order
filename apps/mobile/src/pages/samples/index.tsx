@@ -5,6 +5,7 @@ import type { FabricSample } from "@weave-order/schema";
 import { Badge, Button, Card, NavBar, Page, Sheet } from "../../components/ui";
 import { api, IS_MOCK } from "../../lib/runtime";
 import { openCamera, openQuote } from "../../lib/nav";
+import { userFacingErrorMessage } from "../../lib/upload-failure";
 
 type PageData = Awaited<ReturnType<typeof api.listSamplesPage>>;
 
@@ -27,7 +28,9 @@ export default function SamplesPage() {
       setData(page);
       setSamples((current) => (cursor ? [...current, ...page.samples] : page.samples));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "加载样品失败");
+      // 技术原文只进日志：Zod 的 invalid_type 之类不能直接展示给用户。
+      console.error("[samples] 加载失败", caught);
+      setError(userFacingErrorMessage(caught, "加载样品失败，请重试"));
     } finally {
       setLoading(false);
     }
@@ -91,6 +94,7 @@ export default function SamplesPage() {
                   />
                 ) : (
                   <View
+                    className="tiny"
                     style={{
                       width: "100%",
                       height: 140,
@@ -99,16 +103,13 @@ export default function SamplesPage() {
                       justifyContent: "center",
                       background: "#faf8f3",
                       color: "#9a9385",
-                      fontSize: 12,
                     }}
                   >
                     待补图
                   </View>
                 )}
                 <View style={{ padding: "8px 10px" }}>
-                  <View className="list-title" style={{ fontSize: 14 }}>
-                    {sample.name}
-                  </View>
+                  <View className="list-title">{sample.name}</View>
                   <View className="list-sub">
                     {sample.code} ·{" "}
                     {[sample.composition, sample.weight].filter(Boolean).join(" · ") || "规格未填"}

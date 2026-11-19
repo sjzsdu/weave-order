@@ -13,6 +13,17 @@ $danger-soft: #fbeceb;
 $info: #1d4ed8;
 $info-soft: #eaeffd;
 
+/*
+ * 根字号：CSS 里的设计尺寸都按 750 稿写成 px，由 postcss-pxtransform 换成 rem
+ * （rootValue = 40，即 1px 设计稿 = 1/40 rem）。此前全站没有 html 字号，
+ * 浏览器默认 16px，390 宽下 .7rem 只有 11.2px。
+ *
+ * 19/24 用大写 PX：postcss-pxtransform 只匹配小写 px，避免它们被二次换算成 rem。
+ */
+html {
+  font-size: clamp(19PX, 5.3333vw, 24PX);
+}
+
 /* 启动门禁覆盖层：children 始终挂载，加载/错误只是盖在上面的层，避免卸载首屏 Page。 */
 .auth-gate {
   position: fixed;
@@ -78,9 +89,9 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  /* 44pt 固定命中区：rem 不参与 rpx 换算（根字号 16px => 2.75rem = 44px）。 */
-  width: 2.75rem;
-  height: 2.75rem;
+  /* 44pt 固定命中区：用 PX 跳过 rpx 换算，根字号变化后仍是 44px。 */
+  width: 44PX;
+  height: 44PX;
 }
 
 .navbar-back {
@@ -117,7 +128,7 @@ body {
 }
 
 .navbar-sub {
-  font-size: 20px;
+  font-size: 24px;
   color: $muted;
   line-height: 1.3;
   overflow: hidden;
@@ -152,7 +163,7 @@ body {
 
 .section-hint {
   color: $muted;
-  font-size: 22px;
+  font-size: 26px;
   margin-top: 2px;
 }
 
@@ -200,11 +211,11 @@ body {
 
 .muted {
   color: $muted;
-  font-size: 24px;
+  font-size: 26px;
 }
 
 .tiny {
-  font-size: 20px;
+  font-size: 24px;
   color: $muted;
 }
 
@@ -237,7 +248,7 @@ body {
   align-items: center;
   border-radius: 999px;
   padding: 4px 14px;
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1.6;
   border: 1px solid $line;
   color: $muted;
@@ -272,7 +283,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 84px;
+  min-height: max(2.2rem, 44PX);
   padding: 0 32px;
   border-radius: 14px;
   font-size: 28px;
@@ -286,7 +297,7 @@ body {
 }
 
 .btn-small {
-  min-height: 60px;
+  min-height: max(2.1rem, 44PX);
   padding: 0 20px;
   font-size: 24px;
   border-radius: 10px;
@@ -338,7 +349,7 @@ body {
 }
 
 .field-label {
-  font-size: 22px;
+  font-size: 24px;
   color: $muted;
 }
 
@@ -348,7 +359,7 @@ body {
 }
 
 .field-hint {
-  font-size: 20px;
+  font-size: 24px;
   color: $muted;
   margin-top: 4px;
 }
@@ -381,7 +392,7 @@ body {
 }
 
 .label {
-  font-size: 22px;
+  font-size: 26px;
   color: $muted;
   margin: 16px 0 8px;
 }
@@ -427,7 +438,7 @@ body {
   border: 1px solid rgba(178, 106, 0, 0.25);
   border-radius: 12px;
   padding: 14px 18px;
-  font-size: 22px;
+  font-size: 24px;
   margin-bottom: 16px;
 }
 
@@ -452,7 +463,7 @@ body {
 
 .stat-label {
   color: $muted;
-  font-size: 22px;
+  font-size: 24px;
 }
 
 .stat-warn {
@@ -480,7 +491,7 @@ body {
   background: $warn-soft;
   border-radius: 8px;
   padding: 2px 10px;
-  font-size: 20px;
+  font-size: 24px;
 }
 
 .timeline {
@@ -519,7 +530,7 @@ body {
 
 .timeline-meta {
   color: $muted;
-  font-size: 20px;
+  font-size: 24px;
   margin-top: 2px;
 }
 
@@ -684,7 +695,13 @@ body {
 .sheet-close {
   color: $muted;
   font-size: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44PX;
+  min-height: 44PX;
   padding: 8px;
+  box-sizing: border-box;
 }
 
 .sheet-body {
@@ -736,7 +753,7 @@ body {
 
 .mode-desc {
   color: $muted;
-  font-size: 22px;
+  font-size: 24px;
   text-align: center;
   margin-top: 4px;
 }
@@ -758,7 +775,7 @@ body {
   border-radius: 50%;
   background: $accent-soft;
   color: $accent;
-  font-size: 22px;
+  font-size: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -784,7 +801,7 @@ body {
   border-radius: 12px;
   padding: 14px;
   margin-top: 12px;
-  font-size: 22px;
+  font-size: 24px;
 }
 
 .recording {
@@ -838,13 +855,19 @@ body {
 
 .list-sub {
   color: $muted;
-  font-size: 22px;
+  font-size: 24px;
   margin-top: 2px;
 }
 
 .link {
   color: $accent;
   font-size: 24px;
+  /* 视觉不变，命中区补到 44px：现在「全部」「360」这类链接只有一行字的高度。 */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44PX;
+  padding: 0 0.3rem;
+  margin: 0 -0.3rem;
 }
 
 .divider {
@@ -862,7 +885,7 @@ body {
 
 .footnote {
   color: $muted;
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1.6;
   margin-top: 16px;
 }
@@ -903,7 +926,7 @@ body {
 
 .field-error {
   color: $danger;
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1.6;
   margin-top: 12px;
 }
@@ -913,6 +936,31 @@ body {
   color: $info;
   border-radius: 10px;
   padding: 10px 14px;
-  font-size: 20px;
+  font-size: 24px;
   margin-bottom: 12px;
+}
+
+/* 页面内的警示文案（相机失败等）：颜色强调，字号走 rem 跟随根字号。 */
+.warn-text {
+  color: $warn;
+  font-size: 26px;
+  line-height: 1.6;
+}
+
+/* tabbar 选中态不能只靠颜色区分，文字再加粗。 */
+.weui-bar__item_on .weui-tabbar__label {
+  font-weight: 600;
+}
+
+/*
+ * Taro H5 的 tabbar 文案是组件内置的固定 10px，不跟根字号缩放；
+ * 补到 12.5px（24px 设计稿）并加高容器，避免文字挤压。
+ */
+.weui-tabbar .weui-tabbar__label {
+  font-size: 24px;
+  line-height: 1.6;
+}
+
+taro-tabbar.taro-tabbar__tabbar {
+  height: 60PX;
 }
