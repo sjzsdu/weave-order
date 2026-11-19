@@ -29,6 +29,8 @@ export const TARO_ENV = process.env.TARO_ENV;
 export const IS_H5 = TARO_ENV === "h5";
 export const IS_WEAPP = TARO_ENV === "weapp";
 export const IS_RN = TARO_ENV === "rn";
+/** 构建期注入的版本号；本地开发没有 tag 时显示「开发版」。 */
+export const APP_VERSION = process.env.TARO_APP_VERSION?.trim() || "开发版";
 /**
  * mock 是演示/开发专用，生产构建下必须编译期关闭。
  *

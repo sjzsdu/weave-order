@@ -14,7 +14,8 @@ import {
   Page,
   SectionTitle,
 } from "../../components/ui";
-import { useCustomer360, useCustomerTimeline } from "../../lib/hooks";
+import { CustomerNowActions } from "../../components/customer-actions";
+import { useCapabilities, useCustomer360, useCustomerTimeline } from "../../lib/hooks";
 import { formatMoneyShort, maskPhone, ownerLabel, relativeTime, shortDate } from "../../lib/format";
 import { api } from "../../lib/runtime";
 import { enterQuote } from "../../routes";
@@ -46,6 +47,7 @@ export default function CustomerPage() {
   const id = router.params.id ?? "";
   const detail = useCustomer360(id);
   const timeline = useCustomerTimeline(id);
+  const capabilities = useCapabilities();
   const [revealPhone, setRevealPhone] = useState(false);
   const [shares, setShares] = useState<ShareSummary[]>([]);
   const [shareError, setShareError] = useState<string | null>(null);
@@ -118,47 +120,20 @@ export default function CustomerPage() {
         {customer.tier} · 负责人 {ownerLabel(detail.data?.ownerName, detail.data?.ownerId)}
       </View>
 
-      <Card>
-        <View className="list-row">
-          <View>
-            <View className="list-title">{customer.contactName ?? "未填联系人"}</View>
-            <View className="list-sub">
-              {revealPhone
-                ? (customer.contactPhone ?? "未留电话")
-                : maskPhone(customer.contactPhone)}
-            </View>
-          </View>
-          <Text className="link" onClick={() => setRevealPhone((value) => !value)}>
-            {revealPhone ? "隐藏" : "显示"}
-          </Text>
-        </View>
-        {customer.contactEmail && (
-          <View className="list-row">
-            <View className="list-title">{customer.contactEmail}</View>
-            <Text className="tiny">邮箱</Text>
-          </View>
-        )}
-        <View className="actions">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              if (!customer.contactPhone) {
-                void Taro.showToast({ title: "客户未留电话", icon: "none" });
-                return;
-              }
-              void Taro.makePhoneCall({ phoneNumber: customer.contactPhone });
-            }}
-          >
-            打电话
-          </Button>
-          <Button onClick={() => enterQuote({ mode: "customer", customerId: customer.id })}>
-            快速报价
-          </Button>
-        </View>
-        <View className="footnote">定位只在点击「签到」时取一次；手机不做后台定位。</View>
-      </Card>
+      {/*
+       * 首屏顺序固定：先给「现在能做什么」，再给数字，最后才是时间线。
+       * 业务员打开 360 是来干活的，不是来读报表的。
+       */}
+      <CustomerNowActions
+        customerId={customer.id}
+        customerName={customer.name}
+        canQuote={capabilities.includes("quote.write")}
+        canShip={capabilities.includes("sample.write")}
+        canCollect={capabilities.includes("receivable.read")}
+        onQuote={() => enterQuote({ mode: "customer", customerId: customer.id })}
+      />
 
-      <SectionTitle title="数字面板" hint="与 PC 端同一口径" />
+      <SectionTitle title="未决 / 在途 / 应收" hint="与 PC 端同一口径" />
       <Card className="card-flat">
         <View className="list-row">
           <View>
@@ -194,6 +169,42 @@ export default function CustomerPage() {
             </View>
           </View>
         </View>
+      </Card>
+
+      <Card>
+        <View className="list-row">
+          <View>
+            <View className="list-title">{customer.contactName ?? "未填联系人"}</View>
+            <View className="list-sub">
+              {revealPhone
+                ? (customer.contactPhone ?? "未留电话")
+                : maskPhone(customer.contactPhone)}
+            </View>
+          </View>
+          <Text className="link" onClick={() => setRevealPhone((value) => !value)}>
+            {revealPhone ? "隐藏" : "显示"}
+          </Text>
+        </View>
+        {customer.contactEmail && (
+          <View className="list-row">
+            <View className="list-title">{customer.contactEmail}</View>
+            <Text className="tiny">邮箱</Text>
+          </View>
+        )}
+        <Button
+          variant="ghost"
+          block
+          onClick={() => {
+            if (!customer.contactPhone) {
+              void Taro.showToast({ title: "客户未留电话", icon: "none" });
+              return;
+            }
+            void Taro.makePhoneCall({ phoneNumber: customer.contactPhone });
+          }}
+        >
+          打电话
+        </Button>
+        <View className="footnote">定位只在点击「签到」时取一次；手机不做后台定位。</View>
       </Card>
 
       {context && context.preferenceNotes.length > 0 && (

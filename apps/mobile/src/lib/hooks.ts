@@ -7,6 +7,7 @@ import type {
   Capability,
   Customer,
   Customer360,
+  CustomerListItem,
   CustomerTimelinePage,
   PanoramaSnapshot,
 } from "@weave-order/schema";
@@ -74,6 +75,27 @@ export function useCustomers(limit = 50) {
     queryFn: async () => {
       const data = await api.listCustomers(limit);
       writeCache(`customers.${limit}`, data);
+      return data;
+    },
+    ...(cached
+      ? { initialData: cached.data, initialDataUpdatedAt: Date.parse(cached.savedAt) }
+      : {}),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * 客户列表（带聚合数字）：排序交给服务端，页面拿到什么顺序就显示什么顺序。
+ * `followup` = 待跟进优先（未决报价 / 逾期应收）→ 最近往来倒序 → 等级。
+ */
+export function useCustomerList(sort: "recent" | "followup" = "followup", limit = 100) {
+  const cacheKey = `customerList.${sort}.${limit}`;
+  const cached = readCache<CustomerListItem[]>(cacheKey);
+  return useQuery({
+    queryKey: queryKeys.customerList({ sort, limit }),
+    queryFn: async () => {
+      const data = await api.customerList({ sort, limit });
+      writeCache(cacheKey, data);
       return data;
     },
     ...(cached

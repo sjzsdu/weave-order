@@ -339,6 +339,45 @@ body {
   flex: 1;
 }
 
+/*
+ * 客户列表：搜索吸顶。背景必须不透明，否则滚动时下面的卡片会透出来。
+ */
+.search-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: $bg;
+  padding: 8px 0 12px;
+}
+
+.customer-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.customer-money {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.customer-link {
+  margin-top: 8px;
+}
+
+/* 三个动作等宽，命中区 ≥44px；行点击进 360，动作各自阻止冒泡。 */
+.customer-actions {
+  margin-top: 12px;
+}
+
+/* 弹层里选中一行：整行墨绿浅底，配右侧「已选」徽标，不只靠颜色。 */
+.row-active {
+  background: $accent-soft;
+  border-radius: 12px;
+}
+
 .field {
   padding: 18px 0;
   border-bottom: 1px solid $line;

@@ -136,6 +136,9 @@ const initialItems = [line("22222222-2222-4222-8222-111111111111", "32S 精梳�
 export function initialQuotes(now: Date = new Date()): QuoteRecord[] {
   const createdAt = new Date(now.getTime() - 42 * 60_000).toISOString();
   const expiresAt = new Date(now.getTime() + 14 * 24 * 3600_000).toISOString();
+  // 另外两位客户各有一张报价：列表的「待跟进优先」在演示模式下也有真实顺序可看。
+  const otherQuotesCreated = (hoursAgo: number) =>
+    new Date(now.getTime() - hoursAgo * 3600_000).toISOString();
   return [
     {
       id: "33333333-3333-4333-8333-111111111111",
@@ -151,6 +154,38 @@ export function initialQuotes(now: Date = new Date()): QuoteRecord[] {
       expiresAt,
       createdAt,
       remarks: "客户微信原话：这款 220g 棉的，要 500 米。",
+      version: 1,
+    },
+    {
+      id: "33333333-3333-4333-8333-222222222222",
+      tenantId: MOCK_TENANT_ID,
+      customerId: "11111111-1111-4111-8111-222222222222",
+      status: "SENT" satisfies QuoteStatus,
+      currency: "CNY",
+      items: initialItems,
+      subtotal: { amount: 1280000, currency: "CNY" },
+      total: { amount: 1280000, currency: "CNY" },
+      amountsComputedByKernel: true,
+      validityDays: 14,
+      expiresAt,
+      createdAt: otherQuotesCreated(50),
+      remarks: null,
+      version: 1,
+    },
+    {
+      id: "33333333-3333-4333-8333-333333333333",
+      tenantId: MOCK_TENANT_ID,
+      customerId: "11111111-1111-4111-8111-333333333333",
+      status: "DRAFT" satisfies QuoteStatus,
+      currency: "CNY",
+      items: initialItems,
+      subtotal: { amount: 560000, currency: "CNY" },
+      total: { amount: 560000, currency: "CNY" },
+      amountsComputedByKernel: true,
+      validityDays: 14,
+      expiresAt,
+      createdAt: otherQuotesCreated(6),
+      remarks: "客户问：能不能先寄三色样？",
       version: 1,
     },
   ];

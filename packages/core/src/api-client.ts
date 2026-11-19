@@ -449,6 +449,8 @@ export function createApiClient(options: ApiClientOptions) {
         owner?: "mine" | "all";
         tier?: string;
         overdueOnly?: boolean;
+        /** `followup`：待跟进优先；服务端排序，前端不再二次排序。 */
+        sort?: "recent" | "followup";
         limit?: number;
       } = {},
     ) => {
@@ -457,6 +459,7 @@ export function createApiClient(options: ApiClientOptions) {
       if (options.owner) params.set("owner", options.owner);
       if (options.tier) params.set("tier", options.tier);
       if (options.overdueOnly) params.set("overdue", "1");
+      if (options.sort) params.set("sort", options.sort);
       if (options.limit !== undefined) params.set("limit", String(options.limit));
       const qs = params.toString();
       return CustomerListResponse.parse(await request(`/api/customers${qs ? `?${qs}` : ""}`))
@@ -525,7 +528,8 @@ export function createApiClient(options: ApiClientOptions) {
       ),
 
     /** 联系人角色建议（来自 field_options(contact.role)）。 */
-    contactRoles: async () => ContactRoleOptionsResponse.parse(await request("/api/contacts/roles")),
+    contactRoles: async () =>
+      ContactRoleOptionsResponse.parse(await request("/api/contacts/roles")),
 
     /** 批量导出联系人；后端写一条 AUDIT_EXPORTED，VIEWER 导出内容仍掩码。 */
     exportContacts: async () => ContactExportResult.parse(await request("/api/contacts/export")),

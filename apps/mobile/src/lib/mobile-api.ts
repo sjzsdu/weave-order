@@ -11,6 +11,7 @@ import {
   T006SuggestLinePriceResult,
 } from "@weave-order/schema";
 import type { CreatedQuoteShare } from "@weave-order/schema";
+import type { CustomerListItem, CustomerListOptions } from "@weave-order/schema";
 
 /**
  * 移动端 API 面 = `packages/core` 的契约客户端 + 三个尚未进 core 的动作。
@@ -53,6 +54,8 @@ export interface ShareSummary {
 
 export interface MobileApi extends ApiClient {
   getQuote(quoteId: string): Promise<QuoteDetail>;
+  /** 客户列表：`sort` 原样透传给服务端，移动端不二次排序。 */
+  customerList(options?: CustomerListOptions): Promise<CustomerListItem[]>;
   /**
    * 建议单价（T-006）：内核按成本底线 + 默认毛利算出建议价，只读不落库。
    * 手机端拿不到成本底线，只能通过这个接口给业务员一个合规起点。
@@ -175,6 +178,10 @@ export function createMobileApi(
 
     async getQuote(quoteId) {
       return QuoteDetail.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`));
+    },
+
+    async customerList(options = {}) {
+      return core.customerList(options);
     },
 
     async suggestLinePrice(input) {

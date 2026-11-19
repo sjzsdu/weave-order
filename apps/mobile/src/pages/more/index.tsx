@@ -9,6 +9,7 @@ import { useInstallPrompt } from "../../lib/pwa";
 import { useNetworkStatus, useQueueState, useSyncQueue } from "../../lib/hooks";
 import { formatMoneyShort, relativeTime } from "../../lib/format";
 import {
+  APP_VERSION,
   IS_MOCK,
   api,
   loadTenantContext,
@@ -218,36 +219,11 @@ export default function MorePage() {
   return (
     <Page>
       <View className="page-title">我的</View>
-      <View className="page-sub">身份、离线队列、安装与隐私；批量的事留在 PC。</View>
-
-      {IS_MOCK && (
-        <Card className="card-flat">
-          <View className="row">
-            <View>
-              <View className="list-title">演示模式（Mock）</View>
-              <View className="list-sub">契约端点本地实现；可模拟断网与并发冲突</View>
-            </View>
-            <Badge tone="info">Mock</Badge>
-          </View>
-          <View className="actions">
-            <Button small variant="ghost" onClick={toggleOffline}>
-              {simulatedOffline ? "恢复网络" : "模拟断网"}
-            </Button>
-            <Button small variant="ghost" onClick={simulateRemoteEdit}>
-              模拟服务端改价
-            </Button>
-          </View>
-          <View className="actions">
-            <Button small variant="danger" onClick={() => void resetDemo()}>
-              重置演示数据
-            </Button>
-          </View>
-        </Card>
-      )}
+      <View className="page-sub">公司、同步、身份与设备。批量导入与权限配置留在 PC。</View>
 
       {company && (
         <>
-          <SectionTitle title="当前公司" hint="切换后权限与数据整体切换" />
+          <SectionTitle title="公司" hint="切换后权限与数据整体切换" />
           <Card>
             <View className="list-row" onClick={() => void switchCompany()}>
               <View>
@@ -283,7 +259,7 @@ export default function MorePage() {
         </>
       )}
 
-      <SectionTitle title="离线队列" hint="按时间序提交；冲突必须人工确认" />
+      <SectionTitle title="离线与同步" hint="按时间序提交；冲突必须人工确认" />
       <Card>
         <View className="stats">
           <View className="stat">
@@ -347,22 +323,7 @@ export default function MorePage() {
         </View>
       </Card>
 
-      {/* 相机退出 tab 后的兜底入口：主流程（报价拍布、待办任务卡）都不再让人选模式。 */}
-      <SectionTitle title="现场动作" hint="兜底入口；正常从任务或报价里直接进" />
-      <Card>
-        <View className="onsite-grid">
-          {(["find", "sample", "signature", "cargo", "receipt", "waybill"] as const).map((mode) => (
-            <Button key={mode} small variant="soft" onClick={() => enterCamera({ mode })}>
-              {CAMERA_MODE_SPECS[mode].title}
-            </Button>
-          ))}
-        </View>
-        <View className="footnote">
-          找样与建样会直接出结果；签收 / 大货 / 回款只传对应凭证，离线时先存本地队列。
-        </View>
-      </Card>
-
-      <SectionTitle title="应用" hint="PWA 可安装；小程序 / App 同一份代码" />
+      <SectionTitle title="设备与关于" hint="PWA 可安装；小程序 / App 同一份代码" />
       <Card>
         <View className="list-row">
           <View>
@@ -410,18 +371,58 @@ export default function MorePage() {
             {network.online ? "在线" : "离线"}
           </Badge>
         </View>
+        <View className="list-row">
+          <View>
+            <View className="list-title">版本</View>
+            <View className="list-sub">{APP_VERSION}</View>
+          </View>
+          <Badge>{IS_MOCK ? "演示数据" : "正式服务"}</Badge>
+        </View>
         <View className="footnote">
           PWA：manifest + Service Worker 已随 H5 构建输出；只缓存静态壳，不缓存 /api 鉴权响应。
         </View>
       </Card>
 
-      <SectionTitle title="手机不做" hint="避免手机变成「什么都做一点」" />
-      <Card className="card-flat">
-        <View className="muted">
-          批量导入、报价模板编辑、宽表全景、权限配置、审计全文检索、对账单批量调整。
+      {/* WAN-185 的兜底入口：四组之外单独一块，正常从任务或报价里直接进。 */}
+      <SectionTitle title="现场动作" hint="兜底入口；正常从任务或报价里直接进" />
+      <Card>
+        <View className="onsite-grid">
+          {(["find", "sample", "signature", "cargo", "receipt", "waybill"] as const).map((mode) => (
+            <Button key={mode} small variant="soft" onClick={() => enterCamera({ mode })}>
+              {CAMERA_MODE_SPECS[mode].title}
+            </Button>
+          ))}
         </View>
-        <View className="footnote">这些在 PC 上 10 秒能做完，在手机上做是自虐。</View>
+        <View className="footnote">
+          找样与建样会直接出结果；签收 / 大货 / 回款只传对应凭证，离线时先存本地队列。
+        </View>
       </Card>
+
+      {/* 演示控件只在本地产物出现，放在四组之后，免得「我的」第一屏又变杂物间。 */}
+      {IS_MOCK && (
+        <Card className="card-flat">
+          <View className="row">
+            <View>
+              <View className="list-title">演示模式（Mock）</View>
+              <View className="list-sub">契约端点本地实现；可模拟断网与并发冲突</View>
+            </View>
+            <Badge tone="info">Mock</Badge>
+          </View>
+          <View className="actions">
+            <Button small variant="ghost" onClick={toggleOffline}>
+              {simulatedOffline ? "恢复网络" : "模拟断网"}
+            </Button>
+            <Button small variant="ghost" onClick={simulateRemoteEdit}>
+              模拟服务端改价
+            </Button>
+          </View>
+          <View className="actions">
+            <Button small variant="danger" onClick={() => void resetDemo()}>
+              重置演示数据
+            </Button>
+          </View>
+        </Card>
+      )}
 
       <Sheet open={showQueue} title="离线队列" onClose={() => setShowQueue(false)}>
         {items.length === 0 ? (

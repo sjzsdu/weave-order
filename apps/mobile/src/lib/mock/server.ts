@@ -1,5 +1,8 @@
 import {
   ApprovalDecisionInput,
+  Customer360,
+  CustomerListItem,
+  CustomerTimelinePage,
   CreateQuoteShareInput,
   CreateRevisionRequestInput,
   DecideRevisionRequestInput,
@@ -38,6 +41,13 @@ const MOCK_CAPABILITIES = roleCapabilities({
   dataScope: "ALL",
   approvalLimitAmount: null,
 });
+
+/** 演示客户的微信号（列表「微信」动作用；真实数据来自主联系人）。 */
+const MOCK_WECHAT: Record<string, string> = {
+  "11111111-1111-4111-8111-111111111111": "chenqing_qinghe",
+  "11111111-1111-4111-8111-222222222222": "wangrui_huarui",
+  "11111111-1111-4111-8111-333333333333": "lijin_jincheng",
+};
 
 /**
  * 与真实内核同口径的最低可报单价：成本底线 × (1 + 最低毛利)。
@@ -227,6 +237,63 @@ export function createMockServer(options: MockServerOptions): MockServer {
 
   const quoteById = (id: string) => state.quotes.find((quote) => quote.id === id);
   const customerById = (id: string) => MOCK_CUSTOMERS.find((customer) => customer.id === id);
+
+  /**
+   * 客户列表读模型：与后端同口径（未决 = DRAFT 报价），演示模式才有「待跟进」可看。
+   * 排序同样在服务端做，页面拿到的顺序就是最终顺序。
+   */
+  const customerListItems = (): CustomerListItem[] =>
+    MOCK_CUSTOMERS.map((customer) => {
+      const quotes = state.quotes.filter((quote) => quote.customerId === customer.id);
+      const drafts = quotes.filter((quote) => quote.status === "DRAFT");
+      const amountByCurrency = new Map<string, number>();
+      for (const draft of drafts) {
+        amountByCurrency.set(
+          draft.currency,
+          (amountByCurrency.get(draft.currency) ?? 0) + draft.total.amount,
+        );
+      }
+      const lastContactAt =
+        quotes
+          .map((quote) => quote.createdAt)
+          .sort((left, right) => right.localeCompare(left))[0] ?? null;
+      return CustomerListItem.parse({
+        ...customer,
+        ownerId: null,
+        ownerName: "孙巨中",
+        pendingQuoteCount: drafts.length,
+        pendingQuoteAmount: [...amountByCurrency].map(([currency, amount]) => ({
+          amount,
+          currency,
+        })),
+        inTransitSampleCount: 0,
+        activeOrderCount: 0,
+        receivableBalance: [],
+        overdueReceivableCount: 0,
+        lastContactAt,
+        contactWechat: MOCK_WECHAT[customer.id] ?? null,
+      });
+    });
+
+  const CUSTOMER_TIER_RANK: Record<string, number> = {
+    VIP: 3,
+    REGULAR: 2,
+    NEW: 1,
+    COLD: 0,
+  };
+
+  const followupSorted = (items: CustomerListItem[]): CustomerListItem[] => {
+    const group = (item: CustomerListItem) =>
+      item.pendingQuoteCount > 0 || item.overdueReceivableCount > 0 ? 1 : 0;
+    return [...items].sort((left, right) => {
+      const byGroup = group(right) - group(left);
+      if (byGroup !== 0) return byGroup;
+      const leftAt = left.lastContactAt ? Date.parse(left.lastContactAt) : -Infinity;
+      const rightAt = right.lastContactAt ? Date.parse(right.lastContactAt) : -Infinity;
+      if (rightAt !== leftAt) return rightAt - leftAt;
+      return (CUSTOMER_TIER_RANK[right.tier] ?? 0) - (CUSTOMER_TIER_RANK[left.tier] ?? 0);
+    });
+  };
 
   const touchApproval = (quote: QuoteRecord): void => {
     state.approvals = state.approvals.map((item) =>
@@ -844,8 +911,85 @@ export function createMockServer(options: MockServerOptions): MockServer {
 
     if (method === "GET" && path === "/api/customers") {
       const limit = Number(search.get("limit") ?? 20);
+      const items = customerListItems();
+      const sorted = search.get("sort") === "followup" ? followupSorted(items) : items;
       return jsonResponse(200, {
-        customers: MOCK_CUSTOMERS.slice(0, Number.isFinite(limit) ? limit : 20),
+        customers: sorted.slice(0, Number.isFinite(limit) ? limit : 20),
+      });
+    }
+
+    if (method === "GET" && path.startsWith("/api/customers/") && path.endsWith("/timeline")) {
+      return jsonResponse(
+        200,
+        CustomerTimelinePage.parse({ events: [], hasMore: false, nextCursor: null }),
+      );
+    }
+
+    if (method === "GET" && path.startsWith("/api/customers/")) {
+      const id = decodeURIComponent(path.slice("/api/customers/".length));
+      const item = customerListItems().find((entry) => entry.id === id);
+      if (!item) return fail(404, "CUSTOMER_NOT_FOUND", "客户不存在");
+      return jsonResponse(
+        200,
+        Customer360.parse({
+          customer: {
+            id: item.id,
+            tenantId: item.tenantId,
+            code: item.code,
+            name: item.name,
+            tier: item.tier,
+            contactName: item.contactName,
+            contactPhone: item.contactPhone,
+            contactEmail: item.contactEmail,
+          },
+          ownerId: item.ownerId,
+          ownerName: item.ownerName,
+          contacts: [],
+          context: {
+            customerId: item.id,
+            preferenceNotes: ["只做本白与浅色，不接受荧光增白。", "样布一次寄三色，附成分单。"],
+            pricingBehavior: {
+              sensitivity: "HIGH",
+              counterofferAcceptanceRate: 0.62,
+              typicalAcceptanceWindowDays: 3,
+              notes: [],
+            },
+            paymentPattern: {
+              preferredTerms: "TT_30D",
+              onTimeRate: 0.86,
+              averageDelayDays: 4,
+              notes: [],
+            },
+            followupPreference: {
+              preferredChannel: "WECHAT",
+              preferredTimeWindow: "09:00-11:00",
+              avoidDays: [],
+              notes: [],
+            },
+            decisionDeltas: [],
+            updatedAt: now().toISOString(),
+          },
+          summary: {
+            customerId: item.id,
+            pendingQuoteCount: item.pendingQuoteCount,
+            inTransitSampleCount: item.inTransitSampleCount,
+            activeOrderCount: item.activeOrderCount,
+            receivableBalance: item.receivableBalance,
+            overdueReceivableCount: item.overdueReceivableCount,
+            latestShareableQuoteId: null,
+            lastContactAt: item.lastContactAt,
+          },
+        }),
+      );
+    }
+
+    // 演示模式没有应收数据：登记回款弹层给出空态，而不是 404。
+    if (method === "GET" && path === "/api/receivables") {
+      return jsonResponse(200, {
+        receivables: [],
+        hasMore: false,
+        nextCursor: null,
+        summary: { overdue: 0, dueSoon: 0, settled: 0, balanceByCurrency: [] },
       });
     }
 
