@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { FabricSample, Unit } from "@weave-order/schema";
-import { Badge, Button, cn } from "@weave-order/ui";
+import type { FabricSample, FieldKey, Unit } from "@weave-order/schema";
+import { Badge, Button, ComboBox, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { FieldOptionsManager, useFieldOptions } from "@/field-options-manager";
 import { compressImageFile, uploadToPresignedUrl } from "@/image-compress";
 import type { CompressedImage } from "@/image-compress";
 
@@ -66,6 +67,9 @@ export function SampleEditor({
   const [primaryIndex, setPrimaryIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manageField, setManageField] = useState<FieldKey | null>(null);
+  const compositionOptions = useFieldOptions("sample.composition");
+  const categoryOptions = useFieldOptions("sample.category");
 
   useEffect(() => {
     if (!open) return;
@@ -272,18 +276,62 @@ export function SampleEditor({
               />
             </Field>
             <Field label="成分">
-              <input
-                className="input"
+              <ComboBox
                 value={composition}
-                onChange={(event) => setComposition(event.target.value)}
+                onChange={setComposition}
+                options={compositionOptions.options
+                  .filter((option) => option.active)
+                  .map((option) => ({ value: option.code, label: option.label }))}
+                loading={compositionOptions.loading}
+                loadError={compositionOptions.error}
+                onSaveAsOption={async (label) => {
+                  try {
+                    await api.createFieldOption("sample.composition", label);
+                    await compositionOptions.reload();
+                  } catch (caught) {
+                    setError(caught instanceof Error ? caught.message : "保存成分选项失败");
+                  }
+                }}
+                footer={
+                  <button
+                    type="button"
+                    className="text-xs text-indigo-700 hover:underline"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setManageField("sample.composition")}
+                  >
+                    管理成分
+                  </button>
+                }
                 placeholder="如 100% 棉"
               />
             </Field>
             <Field label="品类">
-              <input
-                className="input"
+              <ComboBox
                 value={category}
-                onChange={(event) => setCategory(event.target.value)}
+                onChange={setCategory}
+                options={categoryOptions.options
+                  .filter((option) => option.active)
+                  .map((option) => ({ value: option.code, label: option.label }))}
+                loading={categoryOptions.loading}
+                loadError={categoryOptions.error}
+                onSaveAsOption={async (label) => {
+                  try {
+                    await api.createFieldOption("sample.category", label);
+                    await categoryOptions.reload();
+                  } catch (caught) {
+                    setError(caught instanceof Error ? caught.message : "保存品类选项失败");
+                  }
+                }}
+                footer={
+                  <button
+                    type="button"
+                    className="text-xs text-indigo-700 hover:underline"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setManageField("sample.category")}
+                  >
+                    管理品类
+                  </button>
+                }
                 placeholder="如 针织 / 梭织"
               />
             </Field>
@@ -414,6 +462,17 @@ export function SampleEditor({
           </div>
         </footer>
       </div>
+
+      {manageField && (
+        <FieldOptionsManager
+          fieldKey={manageField}
+          onClose={() => setManageField(null)}
+          onChanged={() => {
+            void compositionOptions.reload();
+            void categoryOptions.reload();
+          }}
+        />
+      )}
     </div>
   );
 }

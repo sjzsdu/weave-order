@@ -1,8 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { ImportBatchResult, ImportRowError } from "@weave-order/schema";
-import { MAX_IMPORT_ROWS } from "@weave-order/schema";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  FieldKey,
+  FieldOptionWithUsage,
+  ImportBatchResult,
+  ImportRowError,
+} from "@weave-order/schema";
+import { MAX_IMPORT_ROWS, resolveFieldValue } from "@weave-order/schema";
 import { Button, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { CsvImportResultPanel } from "@/csv-import-result";
@@ -238,11 +243,78 @@ export function SampleImport({
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportBatchResult | null>(null);
+  const [fieldOptions, setFieldOptions] = useState<Record<string, FieldOptionWithUsage[]>>({});
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<
+    Record<string, { mode: "save" | "keep" | "map"; target?: string }>
+  >({});
+
+  /** 品类/成分只是建议：未知值不阻断导入，但要让用户选「存为选项 / 仅本次 / 映射」。 */
+  const optionFields: Array<{ fieldKey: FieldKey; rowKey: "category" | "composition" }> = [
+    { fieldKey: "sample.category", rowKey: "category" },
+    { fieldKey: "sample.composition", rowKey: "composition" },
+  ];
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      optionFields.map(async (field) => ({
+        fieldKey: field.fieldKey,
+        options: await api.listFieldOptions(field.fieldKey, { usage: false }),
+      })),
+    )
+      .then((loaded) => {
+        if (cancelled) return;
+        setFieldOptions(Object.fromEntries(loaded.map((entry) => [entry.fieldKey, entry.options])));
+        setOptionsError(null);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setOptionsError(caught instanceof Error ? caught.message : "选项加载失败");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // optionFields 是常量描述，依赖 api 即可。
+  }, [api]);
+
+  const unknowns = useMemo(() => {
+    if (!parsed || parsed.error) return [];
+    const found = new Map<
+      string,
+      { fieldKey: FieldKey; rowKey: "category" | "composition"; value: string; count: number }
+    >();
+    for (const field of optionFields) {
+      const options = fieldOptions[field.fieldKey] ?? [];
+      for (const row of parsed.rows) {
+        const value = row.values[field.rowKey];
+        if (typeof value !== "string" || value.trim() === "") continue;
+        if (resolveFieldValue(field.fieldKey, value, options).matched) continue;
+        const key = `${field.fieldKey}:${value}`;
+        const current = found.get(key);
+        found.set(key, {
+          fieldKey: field.fieldKey,
+          rowKey: field.rowKey,
+          value,
+          count: (current?.count ?? 0) + 1,
+        });
+      }
+    }
+    return [...found.entries()].map(([key, item]) => ({ key, ...item }));
+  }, [parsed, fieldOptions]);
+
+  const undecided = unknowns.filter((item) => {
+    const decision = decisions[item.key];
+    if (!decision) return true;
+    return decision.mode === "map" && !decision.target;
+  });
 
   async function readFile(file: File) {
     setResult(null);
     setSubmitError(null);
     setParsed(null);
+    setDecisions({});
     setFileName(file.name);
     if (!/\.csv$/i.test(file.name)) {
       setParsed({
@@ -265,8 +337,32 @@ export function SampleImport({
     setBusy(true);
     setSubmitError(null);
     try {
+      // 未知选项按用户选择落库/映射；「仅本次用」保留原文。
+      const rewrites = new Map<string, string>();
+      for (const item of unknowns) {
+        const decision = decisions[item.key];
+        if (!decision) continue;
+        if (decision.mode === "save") {
+          const option = await api.createFieldOption(item.fieldKey, item.value);
+          rewrites.set(item.key, option.label);
+        } else if (decision.mode === "map" && decision.target) {
+          const target = (fieldOptions[item.fieldKey] ?? []).find(
+            (option) => option.code === decision.target,
+          );
+          if (target) rewrites.set(item.key, target.label);
+        }
+      }
       const batch = await api.importBatch({
-        samples: parsed.rows.map((row) => row.values),
+        samples: parsed.rows.map((row) => {
+          const next = { ...row.values };
+          for (const field of optionFields) {
+            const value = next[field.rowKey];
+            if (typeof value !== "string") continue;
+            const replacement = rewrites.get(`${field.fieldKey}:${value}`);
+            if (replacement) next[field.rowKey] = replacement;
+          }
+          return next;
+        }),
       });
       setResult(batch);
       if (batch.committed) onImported(batch.importedSamples);
@@ -398,6 +494,78 @@ export function SampleImport({
                         : ""}
                     </span>
                   </div>
+                  {optionsError && (
+                    <p className="rounded-md border border-amber-600/40 bg-amber-100/40 px-3 py-2 text-sm text-amber-700">
+                      选项没加载出来（{optionsError}），导入仍可继续，但无法识别新选项。
+                    </p>
+                  )}
+                  {unknowns.length > 0 && (
+                    <div className="rounded-lg border border-amber-600/40 bg-amber-100/30 p-3">
+                      <p className="text-sm font-medium text-ink-900">
+                        发现 {unknowns.length} 个新选项
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-500">
+                        品类/成分只做建议：可以存为公司选项、仅本次保留原文，或映射到已有选项。
+                      </p>
+                      <ul className="mt-2 grid gap-2">
+                        {unknowns.map((item) => (
+                          <li
+                            key={item.key}
+                            className="flex flex-wrap items-center gap-2 rounded border border-line bg-surface px-3 py-2"
+                          >
+                            <span className="text-sm text-ink-900">
+                              {item.value}
+                              <span className="ml-1 text-xs text-ink-400">
+                                · {item.fieldKey === "sample.category" ? "品类" : "成分"} ·{" "}
+                                {item.count} 行
+                              </span>
+                            </span>
+                            <select
+                              className="input min-h-8 min-w-40 flex-1 text-xs"
+                              value={decisions[item.key]?.mode ?? ""}
+                              onChange={(event) => {
+                                const mode = event.target.value as "save" | "keep" | "map" | "";
+                                setDecisions((current) => ({
+                                  ...current,
+                                  [item.key]:
+                                    mode === "map"
+                                      ? { mode: "map", target: current[item.key]?.target }
+                                      : { mode: mode === "save" ? "save" : "keep" },
+                                }));
+                              }}
+                            >
+                              <option value="">选择处理方式…</option>
+                              <option value="save">存为选项</option>
+                              <option value="keep">仅本次用（保留原文）</option>
+                              <option value="map">映射到已有选项</option>
+                            </select>
+                            {decisions[item.key]?.mode === "map" && (
+                              <select
+                                className="input min-h-8 min-w-40 flex-1 text-xs"
+                                value={decisions[item.key]?.target ?? ""}
+                                onChange={(event) => {
+                                  const target = event.target.value;
+                                  setDecisions((current) => ({
+                                    ...current,
+                                    [item.key]: { mode: "map", target },
+                                  }));
+                                }}
+                              >
+                                <option value="">选择目标选项…</option>
+                                {(fieldOptions[item.fieldKey] ?? [])
+                                  .filter((option) => option.active)
+                                  .map((option) => (
+                                    <option key={option.id} value={option.code}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                              </select>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="overflow-x-auto rounded-lg border border-line">
                     <table className="w-full min-w-[720px] text-sm">
                       <thead className="bg-paper text-xs text-ink-400">
@@ -421,6 +589,12 @@ export function SampleImport({
                             <td className="px-3 py-2">{cellText(row.values.name, "（空）")}</td>
                             <td className="px-3 py-2 text-xs">
                               {cellText(row.values.composition)}
+                              {typeof row.values.composition === "string" &&
+                                unknowns.some(
+                                  (item) =>
+                                    item.key ===
+                                    `sample.composition:${String(row.values.composition)}`,
+                                ) && <span className="ml-1 text-amber-700">新选项</span>}
                             </td>
                             <td className="px-3 py-2 text-xs">{cellText(row.values.weight)}</td>
                             <td className="px-3 py-2 text-xs">
@@ -452,7 +626,13 @@ export function SampleImport({
               <Button
                 variant="primary"
                 onClick={() => void submit()}
-                disabled={busy || !parsed || parsed.error !== null || parsed.rows.length === 0}
+                disabled={
+                  busy ||
+                  !parsed ||
+                  parsed.error !== null ||
+                  parsed.rows.length === 0 ||
+                  undecided.length > 0
+                }
               >
                 {busy ? "正在导入…" : "确认导入"}
               </Button>

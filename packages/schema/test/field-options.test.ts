@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_FIELD_OPTIONS,
   DEFAULT_TIER_OPTIONS,
+  FieldOptionWithUsage,
+  MergeFieldOptionsInput,
   normalizeFieldValue,
   resolveFieldValue,
   generateTierCode,
+  generateOptionCode,
 } from "../src";
 import type { FieldOptionLike } from "../src";
 
@@ -93,5 +97,60 @@ describe("预置项与自定义 code", () => {
   it("自定义等级 code 是 T- 前缀且不暗示顺序", () => {
     expect(generateTierCode(() => "ABCDEF123456")).toBe("T-ABCDEF123456");
     expect(generateTierCode()).toMatch(/^T-[A-Z0-9]+$/);
+  });
+
+  it("非等级字段 code 是 O- 前缀，不与等级预置 code 相撞", () => {
+    expect(generateOptionCode(() => "ABCDEF123456")).toBe("O-ABCDEF123456");
+    expect(generateOptionCode()).toMatch(/^O-[A-Z0-9]+$/);
+  });
+
+  it("四个字段都有预置项，且每个字段都覆盖等级/品类/成分/角色", () => {
+    expect(Object.keys(DEFAULT_FIELD_OPTIONS).sort()).toEqual([
+      "contact.role",
+      "customer.tier",
+      "sample.category",
+      "sample.composition",
+    ]);
+    for (const presets of Object.values(DEFAULT_FIELD_OPTIONS)) {
+      expect(presets.length).toBeGreaterThan(0);
+      expect(new Set(presets.map((item) => item.code)).size).toBe(presets.length);
+      expect(new Set(presets.map((item) => normalizeFieldValue(item.label))).size).toBe(
+        presets.length,
+      );
+    }
+  });
+});
+
+describe("字段选项契约", () => {
+  it("usage 必填且非负：读模型不能靠调用方自己补", () => {
+    const base = {
+      id: "11111111-1111-4111-8111-111111111111",
+      tenantId: "22222222-2222-4222-8222-222222222222",
+      fieldKey: "customer.tier" as const,
+      code: "NEW",
+      label: "新客",
+      normalized: "新客",
+      sortOrder: 10,
+      active: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      usage: 3,
+    };
+    expect(FieldOptionWithUsage.parse(base).usage).toBe(3);
+    expect(FieldOptionWithUsage.safeParse({ ...base, usage: -1 }).success).toBe(false);
+    expect(FieldOptionWithUsage.safeParse({ ...base, usage: undefined }).success).toBe(false);
+  });
+
+  it("合并输入默认改写历史文本，但可显式关闭", () => {
+    const id1 = "11111111-1111-4111-8111-111111111111";
+    const id2 = "22222222-2222-4222-8222-222222222222";
+    expect(MergeFieldOptionsInput.parse({ sourceId: id1, targetId: id2 }).rewriteText).toBe(true);
+    expect(
+      MergeFieldOptionsInput.parse({ sourceId: id1, targetId: id2, rewriteText: false })
+        .rewriteText,
+    ).toBe(false);
+    expect(MergeFieldOptionsInput.safeParse({ sourceId: id1, targetId: "nope" }).success).toBe(
+      false,
+    );
   });
 });

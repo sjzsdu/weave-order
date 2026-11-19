@@ -17,6 +17,7 @@ import { useApi } from "@/providers";
 import { Can } from "@/can";
 import { useMounted } from "@/use-mounted";
 import { SharePanel } from "@/share-panel";
+import { useFieldOptions } from "@/field-options-manager";
 import { actionLabel, KIND_LABEL, relativeTime, STATUS_LABEL, TIER_LABEL } from "@/format";
 
 const STAT_KEYS = [
@@ -38,6 +39,10 @@ export default function PanoramaPage() {
 }
 
 function PanoramaPageContent() {
+  // 自定义等级也要显示名字：接口失败时回退 static 预置表。
+  const { options: tierOptions } = useFieldOptions("customer.tier");
+  const tierLabel = (code: string) =>
+    tierOptions.find((option) => option.code === code)?.label ?? TIER_LABEL[code] ?? code;
   const api = useApi();
   const panorama = usePanorama(api);
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
@@ -154,7 +159,7 @@ function PanoramaPageContent() {
                     </td>
                     <td className="px-3 py-2">
                       <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>
-                        {TIER_LABEL[customer.tier] ?? "新客"}
+                        {tierLabel(customer.tier)}
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-ink-700">

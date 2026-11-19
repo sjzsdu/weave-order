@@ -10,6 +10,7 @@ import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
 import { track } from "@/analytics";
 import { formatMoney } from "@weave-order/ui";
+import { FieldOptionsSummary } from "@/field-options-manager";
 
 const INVITE_STATUS_LABEL: Record<TeamInvite["status"], string> = {
   INVITED: "待接受",
@@ -243,6 +244,8 @@ function SettingsPageContent() {
           </dl>
         </section>
       </div>
+
+      <FieldOptionsSummary />
 
       <CreditsCard />
 

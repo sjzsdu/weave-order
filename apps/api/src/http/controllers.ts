@@ -106,6 +106,10 @@ export function rethrowHttp(error: unknown): never {
     if (error.details.reason === "SAMPLE_CODE_EXISTS") {
       throw new ConflictException(error.message);
     }
+    // 改成已存在的选项名是「请求合法但与现有数据冲突」，提示用户走合并，不是 400。
+    if (error.details.reason === "FIELD_OPTION_LABEL_EXISTS") {
+      throw new ConflictException(error.message);
+    }
     // 意图已终结 / 超过撤销窗口：请求合法但与当前状态冲突，返回 409 让前端区分「重试无用」。
     if (
       error.details.reason === "INTENT_ALREADY_FINISHED" ||

@@ -11,7 +11,8 @@ import { useMounted } from "@/use-mounted";
 import { Customer360Panel } from "@/customer-360";
 import { CustomerForm } from "@/customer-form";
 import { CustomerImport } from "@/customer-import";
-import { TIER_LABEL, ownerLabel, relativeTime } from "@/format";
+import { FieldOptionsManager, optionLabel, useFieldOptions } from "@/field-options-manager";
+import { ownerLabel, relativeTime } from "@/format";
 
 const PAGE_SIZE = 100;
 
@@ -38,7 +39,10 @@ function CustomersPageContent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [manageTierOpen, setManageTierOpen] = useState(false);
   const [created, setCreated] = useState<Customer | null>(null);
+  // 连停用项一起取：历史客户的等级 label 要靠它解析，下拉只展示 active。
+  const tierOptions = useFieldOptions("customer.tier");
 
   // 从时间线 / 别人发来的链接带 ?id= 进来直接展开抽屉；筛选也能分享。
   useEffect(() => {
@@ -167,18 +171,29 @@ function CustomersPageContent() {
         </label>
 
         <label className="flex items-center gap-2 text-sm text-ink-700">
-          状态
+          等级
           <select
             value={tier}
             onChange={(event) => setTier(event.target.value)}
             className="min-h-9 rounded-md border border-line bg-surface px-2 text-sm"
           >
             <option value="">全部等级</option>
-            <option value="VIP">VIP</option>
-            <option value="REGULAR">常规</option>
-            <option value="NEW">新客</option>
-            <option value="COLD">沉睡</option>
+            {tierOptions.options
+              .filter((option) => option.active)
+              .map((option) => (
+                <option key={option.id} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
           </select>
+          {/* 治理入口长在选项被使用的地方：筛选旁就能改名/排序/合并/停用。 */}
+          <Button
+            variant="ghost"
+            className="min-h-9 px-2 text-xs"
+            onClick={() => setManageTierOpen(true)}
+          >
+            管理等级
+          </Button>
         </label>
 
         <label className="flex items-center gap-2 text-sm text-ink-700">
@@ -304,7 +319,7 @@ function CustomersPageContent() {
                   </td>
                   <td className="px-3 py-2">
                     <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>
-                      {TIER_LABEL[customer.tier] ?? customer.tier}
+                      {optionLabel(tierOptions.options, customer.tier)}
                     </Badge>
                   </td>
                 </tr>
@@ -337,6 +352,17 @@ function CustomersPageContent() {
         <CustomerImport
           onClose={() => setImportOpen(false)}
           onImported={() => void refreshCustomers()}
+        />
+      )}
+
+      {manageTierOpen && (
+        <FieldOptionsManager
+          fieldKey="customer.tier"
+          onClose={() => setManageTierOpen(false)}
+          onChanged={() => {
+            void tierOptions.reload();
+            void refreshCustomers();
+          }}
         />
       )}
 

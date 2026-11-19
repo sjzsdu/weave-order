@@ -9,6 +9,7 @@ import {
   CustomerListItem,
   CustomerTimelinePage,
   DemoSceneResponse,
+  FieldOption,
   PrintCenterSnapshot,
   PrintDevices,
   PrintJobList,
@@ -51,6 +52,25 @@ const ORDER_ID = "99999999-9999-4999-8999-999999999999";
 
 const NOW = "2026-11-12T09:00:00.000Z";
 const EXPIRES = "2026-11-26T09:00:00.000Z";
+
+/** 演示模式的字典：与真实预置项同名同 code，便于本地点通治理交互。 */
+const mockFieldOptions: FieldOption[] = [
+  { code: "NEW", label: "新客", sortOrder: 10 },
+  { code: "REGULAR", label: "常规", sortOrder: 20 },
+  { code: "VIP", label: "VIP", sortOrder: 30 },
+  { code: "COLD", label: "沉睡", sortOrder: 40 },
+].map((option) => ({
+  id: `mock-option-${option.code.toLowerCase()}`,
+  tenantId: TENANT_ID,
+  fieldKey: "customer.tier" as const,
+  code: option.code,
+  label: option.label,
+  normalized: option.label.toLowerCase(),
+  sortOrder: option.sortOrder,
+  active: true,
+  createdAt: NOW,
+  updatedAt: NOW,
+}));
 
 const customer = {
   id: CUSTOMER_ID,
@@ -540,6 +560,86 @@ export function createMockApiClient(): ApiClient {
     },
 
     customerTimeline: () => Promise.resolve(customerTimeline),
+
+    listFieldOptions: (field) =>
+      Promise.resolve(
+        mockFieldOptions
+          .filter((option) => option.fieldKey === field)
+          .map((option) => ({
+            ...option,
+            usage: 0,
+          })),
+      ),
+
+    resolveFieldValue: (field, value) => {
+      const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+      const hit = mockFieldOptions.find(
+        (option) =>
+          option.fieldKey === field &&
+          (option.normalized === normalized || option.code.toLowerCase() === normalized),
+      );
+      return Promise.resolve({
+        fieldKey: field,
+        input: value,
+        normalized,
+        matched: hit !== undefined,
+        code: hit?.code ?? null,
+        label: hit?.label ?? null,
+      });
+    },
+
+    createFieldOption: (field, label) =>
+      Promise.resolve({
+        ...(mockFieldOptions.find((option) => option.fieldKey === field) ?? mockFieldOptions[0]!),
+        id: `mock-option-${Math.random().toString(36).slice(2, 8)}`,
+        fieldKey: field,
+        code: `T-MOCK-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        label,
+        normalized: label.toLowerCase(),
+        active: true,
+        usage: 0,
+      }),
+
+    renameFieldOption: (id, label) =>
+      Promise.resolve({
+        ...(mockFieldOptions.find((option) => option.id === id) ?? mockFieldOptions[0]!),
+        id,
+        label,
+        normalized: label.toLowerCase(),
+        usage: 0,
+      }),
+
+    deleteFieldOption: () => Promise.resolve(),
+
+    restoreFieldOption: (id) =>
+      Promise.resolve({
+        ...(mockFieldOptions.find((option) => option.id === id) ?? mockFieldOptions[0]!),
+        id,
+        active: true,
+        usage: 0,
+      }),
+
+    reorderFieldOptions: (field, ids) =>
+      Promise.resolve(
+        ids.map((id, index) => ({
+          ...(mockFieldOptions.find((option) => option.id === id) ?? mockFieldOptions[0]!),
+          id,
+          fieldKey: field,
+          sortOrder: (index + 1) * 10,
+          usage: 0,
+        })),
+      ),
+
+    previewFieldOptionMerge: (sourceId, targetId) =>
+      Promise.resolve({
+        fieldKey: "customer.tier",
+        source: mockFieldOptions.find((option) => option.id === sourceId) ?? mockFieldOptions[0]!,
+        target: mockFieldOptions.find((option) => option.id === targetId) ?? mockFieldOptions[1]!,
+        affected: 0,
+        samples: [],
+      }),
+
+    mergeFieldOptions: () => Promise.resolve({ affected: 0 }),
 
     listSamples: () => Promise.resolve([sample]),
 

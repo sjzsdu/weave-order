@@ -141,3 +141,126 @@ function defaultRandomSegment(): string {
     Date.now().toString(36).slice(-6).toUpperCase()
   );
 }
+
+/**
+ * 非等级字段（品类/成分/联系人角色）的稳定 code。
+ *
+ * 与等级不同，这些字段业务表存的是原文，`code` 只用于治理页与合并定位。
+ * 用随机段而不是 label：改名后旧 label 不应继续被当成「同一选项」的别名，
+ * 否则用户手输历史名字会被悄悄解析到新选项上，历史统计口径就变了。
+ */
+export function generateOptionCode(random: () => string = defaultRandomSegment): string {
+  return `O-${random()}`;
+}
+
+/**
+ * 新公司建租户时写入的预置选项（四个字段）。
+ *
+ * 预置项与用户新增项完全平等：可改名、可删除、可排序，没有任何不可改的内置项。
+ * 幂等写入由 `(tenant_id, field_key, normalized)` / `code` 唯一约束兜底。
+ */
+export const DEFAULT_FIELD_OPTIONS: Readonly<
+  Record<FieldKey, ReadonlyArray<{ code: string; label: string; sortOrder: number }>>
+> = {
+  "customer.tier": DEFAULT_TIER_OPTIONS,
+  "sample.category": [
+    { code: "CAT-KNIT", label: "针织", sortOrder: 10 },
+    { code: "CAT-WOVEN", label: "梭织", sortOrder: 20 },
+    { code: "CAT-NONWOVEN", label: "无纺", sortOrder: 30 },
+    { code: "CAT-YARNDYE", label: "色织", sortOrder: 40 },
+    { code: "CAT-PRINT", label: "印花", sortOrder: 50 },
+  ],
+  "sample.composition": [
+    { code: "COMP-COTTON", label: "100% 棉", sortOrder: 10 },
+    { code: "COMP-POLYESTER", label: "100% 涤纶", sortOrder: 20 },
+    { code: "COMP-COTTON-POLY", label: "棉涤混纺", sortOrder: 30 },
+    { code: "COMP-LINEN", label: "100% 亚麻", sortOrder: 40 },
+    { code: "COMP-SILK", label: "100% 真丝", sortOrder: 50 },
+  ],
+  "contact.role": [
+    { code: "ROLE-PURCHASING", label: "采购", sortOrder: 10 },
+    { code: "ROLE-FINANCE", label: "财务", sortOrder: 20 },
+    { code: "ROLE-MERCHANDISER", label: "跟单", sortOrder: 30 },
+  ],
+};
+
+/** 治理页每一行的读模型：选项 + 实际用量。 */
+export const FieldOptionWithUsage = FieldOption.extend({
+  /** 正在使用该选项的业务记录数；等级按 code，品类/成分按归一化后的原文。 */
+  usage: z.number().int().min(0),
+}).strict();
+export type FieldOptionWithUsage = z.infer<typeof FieldOptionWithUsage>;
+
+export const FieldOptionListResponse = z
+  .object({ options: z.array(FieldOptionWithUsage) })
+  .strict();
+export type FieldOptionListResponse = z.infer<typeof FieldOptionListResponse>;
+
+export const CreateFieldOptionInput = z
+  .object({
+    fieldKey: FieldKey,
+    label: z.string().trim().min(1).max(128),
+  })
+  .strict();
+export type CreateFieldOptionInput = z.infer<typeof CreateFieldOptionInput>;
+
+export const RenameFieldOptionInput = z
+  .object({
+    label: z.string().trim().min(1).max(128),
+  })
+  .strict();
+export type RenameFieldOptionInput = z.infer<typeof RenameFieldOptionInput>;
+
+export const ReorderFieldOptionsInput = z
+  .object({
+    fieldKey: FieldKey,
+    /** 全量顺序：必须覆盖该字段全部选项，少传或多传都拒绝，避免半截排序。 */
+    ids: z.array(z.string().uuid()).min(1),
+  })
+  .strict();
+export type ReorderFieldOptionsInput = z.infer<typeof ReorderFieldOptionsInput>;
+
+export const MergeFieldOptionsInput = z
+  .object({
+    sourceId: z.string().uuid(),
+    targetId: z.string().uuid(),
+    /**
+     * 纯文本字段（品类/成分/联系人角色）是否改写历史原文。
+     * 等级永远回写 code，无需该开关；为 false 时只停用 source，不动业务数据。
+     */
+    rewriteText: z.boolean().default(true),
+  })
+  .strict();
+export type MergeFieldOptionsInput = z.infer<typeof MergeFieldOptionsInput>;
+
+/** 合并前的预览：条数 + 前几条样例，用户确认后才会真正改数据。 */
+export const FieldOptionMergePreview = z
+  .object({
+    fieldKey: FieldKey,
+    source: FieldOption,
+    target: FieldOption,
+    affected: z.number().int().min(0),
+    samples: z.array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+      }),
+    ),
+  })
+  .strict();
+export type FieldOptionMergePreview = z.infer<typeof FieldOptionMergePreview>;
+
+export const MergeFieldOptionsResult = z.object({ affected: z.number().int().min(0) }).strict();
+export type MergeFieldOptionsResult = z.infer<typeof MergeFieldOptionsResult>;
+
+export const ResolveFieldValueResponse = z
+  .object({
+    fieldKey: FieldKey,
+    input: z.string(),
+    normalized: z.string(),
+    matched: z.boolean(),
+    code: z.string().nullable(),
+    label: z.string().nullable(),
+  })
+  .strict();
+export type ResolveFieldValueResponse = z.infer<typeof ResolveFieldValueResponse>;

@@ -34,6 +34,7 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { loadCustomerList, loadCustomerSummary, loadCustomerTimeline } from "./customer-aggregates";
 import { KernelError, isKernelError, isUniqueViolation } from "./errors";
+import type { FieldOptionsService } from "./field-options.service";
 import { memberDisplayName } from "./member-label";
 import { ownerScopeFilter } from "./data-scope";
 import { currencyOf, toIso } from "./mappers";
@@ -113,6 +114,11 @@ export class CustomerService {
   constructor(
     private readonly db: Db,
     private readonly tenantId: string,
+    /**
+     * 等级写入闸门。`tier` 列在 P0 从 enum 放宽成 varchar 后，这里必须解析到已有选项，
+     * 否则导入/API/智能体都能写下悬挂 code（历史客户会显示成原始字符串）。
+     */
+    private readonly fieldOptions?: FieldOptionsService,
   ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<Customer> {
@@ -180,6 +186,10 @@ export class CustomerService {
     ctx: KernelContext,
     context?: CustomerContextImport,
   ): Promise<Customer> {
+    // 人类表单给 code，智能体/CSV 可能给 label；统一解析成稳定 code 再落库。
+    const tier = this.fieldOptions
+      ? await this.fieldOptions.resolveTierCode(parsed.tier, ctx)
+      : parsed.tier;
     const rows = await tx
       .insert(customers)
       .values({
@@ -188,7 +198,7 @@ export class CustomerService {
         ownerId: ctx.ownerId ?? null,
         code: parsed.code,
         name: parsed.name,
-        tier: parsed.tier,
+        tier,
         contactName: parsed.contactName ?? null,
         contactPhone: parsed.contactPhone ?? null,
         contactEmail: parsed.contactEmail ?? null,
