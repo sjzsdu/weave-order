@@ -7,8 +7,14 @@ import axe from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Plan, TenantSummary } from "@weave-order/schema";
 
+const navigation = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  push: vi.fn(),
+  replace: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
+  useRouter: () => navigation,
   usePathname: () => "/tenants",
 }));
 
@@ -21,7 +27,14 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { BreakGlassForm, ConfigForm, PlanForm, ProvisionTenantForm, TicketForm } from "./actions";
+import {
+  BreakGlassForm,
+  ConfigForm,
+  PlanForm,
+  ProvisionTenantDialog,
+  ProvisionTenantForm,
+  TicketForm,
+} from "./actions";
 import { ConsoleShell } from "./console-shell";
 import { Field } from "./form-field";
 
@@ -117,6 +130,15 @@ async function axeViolations(container: HTMLElement) {
 }
 
 beforeEach(() => {
+  navigation.refresh.mockClear();
+  navigation.replace.mockClear();
+  // jsdom 没有实现原生 dialog 的打开/关闭，只补齐属性行为，组件仍走真实交互逻辑。
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  };
   // jsdom 没有 matchMedia；侧栏抽屉据此判断移动端断点，测试按桌面端处理。
   window.matchMedia = (query: string) => ({
     matches: false,
@@ -205,5 +227,61 @@ describe("表单可访问性（axe）", () => {
     const key = container.querySelector("input[required]");
     expect(key?.getAttribute("aria-required")).toBe("true");
     expect(key?.id).toBeTruthy();
+  });
+});
+
+describe("开通公司弹窗", () => {
+  it("由页头按钮打开和关闭，并支持 provision=1 直接打开", () => {
+    const container = mount(<ProvisionTenantDialog plans={plans} />);
+    const dialog = container.querySelector("dialog");
+    expect(dialog?.open).toBe(false);
+
+    const trigger = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "开通公司",
+    );
+    act(() => trigger?.click());
+    expect(dialog?.open).toBe(true);
+
+    const close = container.querySelector<HTMLButtonElement>('button[aria-label="关闭"]');
+    act(() => close?.click());
+    expect(dialog?.open).toBe(false);
+
+    const deepLinked = mount(<ProvisionTenantDialog plans={plans} defaultOpen />);
+    expect(deepLinked.querySelector("dialog")?.open).toBe(true);
+  });
+
+  it("创建成功后关闭弹窗、清除筛选并刷新租户列表", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ tenant: tenants[0] }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const container = mount(<ProvisionTenantDialog plans={plans} defaultOpen />);
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    for (const [name, value] of [
+      ["name", "青禾纺织"],
+      ["slug", "qinghe-new"],
+    ]) {
+      const input = container.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+      act(() => {
+        valueSetter?.call(input, value);
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+
+    const form = container.querySelector("form");
+    await act(async () => {
+      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await vi.waitFor(() => expect(navigation.refresh).toHaveBeenCalled());
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tenants",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(navigation.replace).toHaveBeenCalledWith("/tenants");
+    expect(container.querySelector("dialog")?.open).toBe(false);
   });
 });

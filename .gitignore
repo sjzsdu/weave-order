@@ -38,3 +38,5 @@ __pycache__/
 
 # Playwright（截图 / trace / HTML 报告 / 种子清单）
 e2e/.artifacts/
+.trae
+.trae-html-share-packages

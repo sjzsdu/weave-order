@@ -115,6 +115,7 @@ function FormShell({
   disabled,
   hint,
   validate,
+  onCancel,
 }: {
   children: React.ReactNode;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -127,6 +128,7 @@ function FormShell({
   hint?: string | null;
   /** 原生约束校验之外的表单级规则（日期区间、JSON 解析等）。 */
   validate?: () => FieldIssue[];
+  onCancel?: () => void;
 }) {
   const idPrefix = useId();
   const formRef = useRef<HTMLFormElement>(null);
@@ -214,6 +216,11 @@ function FormShell({
           </p>
         ) : null}
         <div className="btn-row">
+          {onCancel ? (
+            <button className="btn btn-ghost" type="button" onClick={onCancel} disabled={pending}>
+              取消
+            </button>
+          ) : null}
           <button className="btn btn-primary" type="submit" disabled={pending || disabled}>
             {pending ? "提交中…" : submitLabel}
           </button>
@@ -223,7 +230,7 @@ function FormShell({
   );
 }
 
-function useSubmit() {
+function useSubmit(onSuccess?: () => void) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<FormError | null>(null);
@@ -234,6 +241,7 @@ function useSubmit() {
     startTransition(async () => {
       try {
         await mutate(path, method, body);
+        onSuccess?.();
         setSuccess(message);
         router.refresh();
       } catch (cause) {
@@ -247,8 +255,21 @@ function useSubmit() {
 
 /* --------------------------- 开通公司 --------------------------- */
 
-export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
-  const { pending, error, success, submit } = useSubmit();
+export function ProvisionTenantForm({
+  plans,
+  onSuccess,
+  onCancel,
+}: {
+  plans: Plan[];
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}) {
+  const router = useRouter();
+  const { pending, error, success, submit } = useSubmit(() => {
+    onSuccess?.();
+    // 新租户可能不符合旧筛选条件；回到完整目录，确保创建结果立即可见。
+    router.replace("/tenants");
+  });
   // 没有套餐时订阅无从创建：明确说明原因并禁用提交，而不是让用户撞上参数错误。
   const noPlans = plans.length === 0;
   const [form, setForm] = useState({
@@ -276,6 +297,7 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
       success={success}
       disabled={noPlans}
       hint={noPlans ? "尚未配置任何套餐，无法创建试用订阅。请先到「套餐与价格」新建套餐。" : null}
+      onCancel={onCancel}
       submitLabel="开通公司 + 试用订阅"
       onSubmit={(event) => {
         event.preventDefault();
@@ -396,6 +418,56 @@ export function ProvisionTenantForm({ plans }: { plans: Plan[] }) {
         <textarea value={form.notes} onChange={set("notes")} placeholder="仅平台内部可见" />
       </Field>
     </FormShell>
+  );
+}
+
+export function ProvisionTenantDialog({
+  plans,
+  defaultOpen = false,
+}: {
+  plans: Plan[];
+  defaultOpen?: boolean;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const close = () => dialogRef.current?.close();
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (defaultOpen && dialog && !dialog.open) dialog.showModal();
+  }, [defaultOpen]);
+
+  return (
+    <>
+      <button
+        className="btn btn-primary"
+        type="button"
+        disabled={plans.length === 0}
+        onClick={() => dialogRef.current?.showModal()}
+      >
+        开通公司
+      </button>
+      <dialog
+        ref={dialogRef}
+        className="modal provision-dialog"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <div className="modal-head">
+          <div>
+            <h2 id={titleId}>开通公司</h2>
+            <p id={descriptionId}>
+              新建租户账号与试用订阅，仅写控制面，不会创建或读取任何业务数据。
+            </p>
+          </div>
+          <button className="modal-close" type="button" aria-label="关闭" onClick={close}>
+            ×
+          </button>
+        </div>
+        <ProvisionTenantForm plans={plans} onSuccess={close} onCancel={close} />
+      </dialog>
+    </>
   );
 }
 
@@ -1170,8 +1242,8 @@ export function LlmSettingsForm({ settings }: { settings: PlatformLlmSettings })
     monthlyTokenBudget: settings.monthlyTokenBudget?.toString() ?? "",
     keyRef: settings.keyRef ?? "",
   });
-  const set = (key: keyof typeof form) =>
-    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set =
+    (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((current) => ({ ...current, [key]: event.target.value }));
 
   return (
@@ -1340,13 +1412,7 @@ export function LlmOverrideForm({
   );
 }
 
-export function LlmTestButton({
-  baseUrl,
-  keyRef,
-}: {
-  baseUrl?: string;
-  keyRef?: string;
-}) {
+export function LlmTestButton({ baseUrl, keyRef }: { baseUrl?: string; keyRef?: string }) {
   const [result, setResult] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -2131,7 +2197,8 @@ export function OnboardingLinkPanel({
               自己先打开看看
             </a>
             <span className="tiny muted">
-              到期：<Time value={link.expiresAt} />
+              到期：
+              <Time value={link.expiresAt} />
             </span>
           </div>
         </div>

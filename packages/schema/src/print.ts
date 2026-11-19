@@ -41,7 +41,13 @@ export type ReprintReason = z.infer<typeof ReprintReason>;
 export const PrinterKind = z.enum(["A4", "THERMAL", "BLUETOOTH"]);
 export type PrinterKind = z.infer<typeof PrinterKind>;
 
-export const PrinterConnection = z.enum(["SYSTEM_DRIVER", "RAW_TCP", "USB", "BLUETOOTH"]);
+export const PrinterConnection = z.enum([
+  "SYSTEM_DRIVER",
+  "SAVE_PDF",
+  "RAW_TCP",
+  "USB",
+  "BLUETOOTH",
+]);
 export type PrinterConnection = z.infer<typeof PrinterConnection>;
 
 /**

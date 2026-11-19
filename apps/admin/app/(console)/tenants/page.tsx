@@ -4,7 +4,7 @@ import type { Plan, TenantSummary } from "@weave-order/schema";
 import { TENANT_STATUS_LABEL, money, statusClass } from "@/src/format";
 import { Time } from "@/src/time";
 import { platformFetch } from "@/src/server-api";
-import { ProvisionTenantForm } from "@/src/actions";
+import { ProvisionTenantDialog } from "@/src/actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "租户" };
@@ -34,6 +34,7 @@ export default async function TenantsPage({
           <h1>租户</h1>
           <p>账号级信息：套餐、席位、用量、健康度、隔离模式与 LLM 覆盖。</p>
         </div>
+        <ProvisionTenantDialog plans={plans} defaultOpen={params.provision === "1"} />
       </div>
 
       {plans.length === 0 ? (
@@ -43,16 +44,14 @@ export default async function TenantsPage({
         </p>
       ) : null}
 
-      <details className="card" open={params.provision === "1"}>
-        <summary style={{ cursor: "pointer", fontWeight: 600 }}>开通公司</summary>
-        <p className="small muted">
-          新建租户账号 + 试用订阅。只写控制面，不会在控制台创建或读取任何业务数据。
-        </p>
-        <ProvisionTenantForm plans={plans} />
-      </details>
-
-      <div className="card" style={{ marginTop: 16 }}>
-        <form className="inline-form" method="get" style={{ marginBottom: 14 }}>
+      <div className="card">
+        <div className="card-head tenant-list-head">
+          <div>
+            <h2>租户目录</h2>
+            <p>当前显示 {tenants.length} 家租户</p>
+          </div>
+        </div>
+        <form key={query.toString()} className="inline-form tenant-filter" method="get">
           <div className="field">
             <label htmlFor="q">搜索</label>
             <input id="q" name="q" defaultValue={params.q ?? ""} placeholder="公司名 / slug" />
@@ -158,8 +157,9 @@ export default async function TenantsPage({
               })}
               {tenants.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="muted">
-                    没有匹配的租户。
+                  <td colSpan={8} className="empty">
+                    <div>没有匹配的租户</div>
+                    <div className="tiny muted">可重置筛选条件，或点击右上角「开通公司」。</div>
                   </td>
                 </tr>
               ) : null}

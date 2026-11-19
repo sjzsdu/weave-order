@@ -1,0 +1,1 @@
+ALTER TYPE "public"."printer_connection" ADD VALUE 'SAVE_PDF' BEFORE 'RAW_TCP';

@@ -137,7 +137,7 @@ pub async fn clear_local_data(state: State<'_, AppState>) -> Result<(), String> 
 pub async fn test_print(
     state: State<'_, AppState>,
     printer: Option<PrinterProfileConfig>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let profile = match printer {
         Some(printer) => printer,
         None => state
@@ -153,4 +153,5 @@ pub async fn test_print(
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
+        .map(|path| path.map(|path| path.display().to_string()))
 }

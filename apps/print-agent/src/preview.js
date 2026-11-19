@@ -4,6 +4,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DEMO_DISCOVERED = [
   {
+    name: "另存为 PDF",
+    kind: "A4",
+    connection: "SAVE_PDF",
+    address: "~/Downloads/织序打印",
+    format: "ZPL",
+    status: "READY",
+  },
+  {
     name: "Zebra ZD421",
     kind: "THERMAL",
     connection: "RAW_TCP",
@@ -62,7 +70,9 @@ export function createPreviewBridge() {
         };
       }
       case "test_print":
-        return null;
+        return args.printer?.connection === "SAVE_PDF"
+          ? "~/Downloads/织序打印/test-preview.pdf（演示路径）"
+          : null;
       case "save_printers":
         config.printers = args.printers ?? [];
         return null;

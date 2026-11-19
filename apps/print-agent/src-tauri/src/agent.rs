@@ -179,16 +179,27 @@ async fn worker_loop(app: AppHandle) {
                 .or_else(|| config.printers.first());
 
             match profile {
-                Some(profile) => match print_job(&job, profile) {
-                    Ok(()) => {
-                        state.emit_log(&format!("任务 {} 已出纸", short(&job.id)));
-                        let _ = state.spool.mark_printed(&job.id);
+                Some(profile) => {
+                    let save_pdf = profile.connection == "SAVE_PDF";
+                    match print_job(&job, profile) {
+                        Ok(()) => {
+                            state.emit_log(&format!(
+                                "任务 {} {}",
+                                short(&job.id),
+                                if save_pdf {
+                                    "已保存 PDF"
+                                } else {
+                                    "已出纸"
+                                }
+                            ));
+                            let _ = state.spool.mark_printed(&job.id);
+                        }
+                        Err(error) => {
+                            state.emit_log(&format!("任务 {} 打印失败：{error}", short(&job.id)));
+                            let _ = state.spool.mark_failed(&job.id, &error.to_string());
+                        }
                     }
-                    Err(error) => {
-                        state.emit_log(&format!("任务 {} 打印失败：{error}", short(&job.id)));
-                        let _ = state.spool.mark_failed(&job.id, &error.to_string());
-                    }
-                },
+                }
                 None => {
                     let _ = state.spool.mark_failed(&job.id, "没有匹配的打印机 profile");
                 }

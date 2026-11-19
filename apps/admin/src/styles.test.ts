@@ -56,6 +56,12 @@ describe("键盘焦点与跳过导航样式", () => {
   it("fieldset/legend 去掉了浏览器默认边框", () => {
     expect(css).toMatch(/fieldset\.field \{[^}]*border: 0/);
   });
+
+  it("带帮助文字的多列表单仍按顶部对齐，开通弹窗有独立布局", () => {
+    expect(css).toMatch(/\.form\.row \{[^}]*align-items: start/);
+    expect(css).toMatch(/dialog\.modal::backdrop/);
+    expect(css).toMatch(/\.provision-dialog \.form\.row/);
+  });
 });
 
 /**

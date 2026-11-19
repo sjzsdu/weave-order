@@ -180,6 +180,7 @@ export const printerKindEnum = pgEnum("printer_kind", ["A4", "THERMAL", "BLUETOO
 
 export const printerConnectionEnum = pgEnum("printer_connection", [
   "SYSTEM_DRIVER",
+  "SAVE_PDF",
   "RAW_TCP",
   "USB",
   "BLUETOOTH",

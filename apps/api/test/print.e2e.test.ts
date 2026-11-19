@@ -205,6 +205,15 @@ describe("打印中心 HTTP / WSS（e2e）", () => {
             calibration: {},
             status: "READY",
           },
+          {
+            name: "另存为 PDF",
+            kind: "A4",
+            connection: "SAVE_PDF",
+            address: "~/Downloads/织序打印",
+            capabilities: {},
+            calibration: {},
+            status: "READY",
+          },
         ],
       }),
     });

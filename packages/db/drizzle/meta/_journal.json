@@ -204,6 +204,13 @@
       "when": 1795093000000,
       "tag": "0028_intent_needs_input",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795097131000,
+      "tag": "0029_illegal_mariko_yashida",
+      "breakpoints": true
     }
   ]
 }

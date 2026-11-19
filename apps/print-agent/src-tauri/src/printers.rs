@@ -147,6 +147,68 @@ pub fn address_from_port(port: &str, name: &str) -> (String, Option<String>) {
 
 #[cfg(not(target_os = "windows"))]
 pub fn discover() -> DiscoveryReport {
+    let report = discover_cups();
+    #[cfg(target_os = "macos")]
+    {
+        with_save_pdf_target(report)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        report
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn with_save_pdf_target(mut report: DiscoveryReport) -> DiscoveryReport {
+    let cups_count = report.printers.len();
+    let cups_ok = report.ok;
+    let cups_message = report.message.clone();
+    let cups_hint = report.hint.clone();
+    if !report
+        .printers
+        .iter()
+        .any(|printer| printer.connection == "SAVE_PDF")
+    {
+        report.printers.push(DiscoveredPrinter {
+            name: "另存为 PDF".to_string(),
+            kind: "A4".to_string(),
+            connection: "SAVE_PDF".to_string(),
+            address: Some(crate::printer::DEFAULT_SAVE_PDF_DIRECTORY.to_string()),
+            format: "ZPL".to_string(),
+            status: "READY".to_string(),
+        });
+    }
+    report.ok = true;
+    report.tool = format!("{} + 内置 PDF", report.tool);
+    report.message = if cups_count > 0 {
+        format!("发现 {cups_count} 台系统打印队列和内置「另存为 PDF」")
+    } else if cups_ok {
+        "未发现系统打印队列，已添加内置「另存为 PDF」".to_string()
+    } else {
+        "系统打印队列不可用，但内置「另存为 PDF」可用".to_string()
+    };
+    let pdf_hint = format!(
+        "PDF 默认保存到 {}，可在下方修改",
+        crate::printer::DEFAULT_SAVE_PDF_DIRECTORY
+    );
+    report.hint = if cups_ok {
+        [cups_hint, pdf_hint]
+            .into_iter()
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("；")
+    } else {
+        [cups_message, cups_hint, pdf_hint]
+            .into_iter()
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("；")
+    };
+    report
+}
+
+#[cfg(not(target_os = "windows"))]
+fn discover_cups() -> DiscoveryReport {
     let platform = platform_label();
     let probe = run("lpstat", &["-e"]);
     if probe.missing {
@@ -421,6 +483,9 @@ pub struct ProbeResult {
 
 pub fn probe(profile: &PrinterProfileConfig) -> ProbeResult {
     let address = profile.address.clone().unwrap_or_default();
+    if profile.connection == "SAVE_PDF" {
+        return probe_save_pdf(&address);
+    }
     let raw = profile.connection == "RAW_TCP" || profile.connection == "BLUETOOTH";
     if raw {
         let target = normalize_raw_target(&address);
@@ -434,6 +499,33 @@ pub fn probe(profile: &PrinterProfileConfig) -> ProbeResult {
         };
     }
     probe_system_queue(&profile.name, &profile.connection)
+}
+
+fn probe_save_pdf(address: &str) -> ProbeResult {
+    let target = if address.trim().is_empty() {
+        crate::printer::DEFAULT_SAVE_PDF_DIRECTORY.to_string()
+    } else {
+        address.trim().to_string()
+    };
+    let result = crate::printer::pdf_directory(address).and_then(|directory| {
+        std::fs::create_dir_all(&directory)?;
+        tempfile::Builder::new()
+            .prefix(".weave-print-probe-")
+            .tempfile_in(&directory)?;
+        Ok(directory)
+    });
+    match result {
+        Ok(directory) => ProbeResult {
+            ok: true,
+            target: directory.display().to_string(),
+            detail: "目录可写，测试 PDF 将保存到这里".to_string(),
+        },
+        Err(error) => ProbeResult {
+            ok: false,
+            target,
+            detail: format!("PDF 保存目录不可用：{error}"),
+        },
+    }
 }
 
 fn normalize_raw_target(address: &str) -> Option<String> {
@@ -595,6 +687,18 @@ fn probe_system_queue(name: &str, connection: &str) -> ProbeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mac_pdf_target_is_available_without_cups_and_not_duplicated() {
+        let failed = DiscoveryReport::failed("macOS", "lpstat", "CUPS 不可用", "检查 CUPS");
+        let report = with_save_pdf_target(with_save_pdf_target(failed));
+        assert!(report.ok);
+        assert_eq!(report.printers.len(), 1);
+        assert_eq!(report.printers[0].connection, "SAVE_PDF");
+        assert_eq!(report.printers[0].kind, "A4");
+        assert!(report.hint.contains("CUPS 不可用"));
+        assert!(report.hint.contains("PDF 默认保存到"));
+    }
 
     #[cfg(not(target_os = "windows"))]
     #[test]

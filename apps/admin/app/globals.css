@@ -376,16 +376,89 @@ table.table {
   align-items: center;
 }
 
+dialog.modal {
+  width: min(920px, calc(100vw - 32px));
+  max-width: 100%;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 70px rgba(15, 23, 32, 0.24);
+  overflow: auto;
+}
+dialog.modal::backdrop {
+  background: rgba(15, 23, 32, 0.5);
+  backdrop-filter: blur(2px);
+}
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+.modal-head p {
+  max-width: 660px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.modal-close:hover {
+  border-color: var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+.provision-dialog > .form {
+  gap: 18px;
+  padding: 22px 24px 24px;
+}
+.provision-dialog .form.row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.provision-dialog .form > .btn-row {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
 .form {
   display: grid;
   gap: 12px;
 }
 .form.row {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  align-items: end;
-}
-/* 出现字段级错误时行高会变化，按底对齐会让相邻字段的标签错位，改为顶部对齐。 */
-.form.row:has(.field-error) {
+  /* 帮助文字与错误提示高度不同，顶部对齐才能保持标签和控件整齐。 */
   align-items: start;
 }
 .field {
@@ -505,6 +578,22 @@ table.table {
 .inline-form .field {
   min-width: 130px;
   flex: 1;
+}
+.tenant-list-head {
+  margin-bottom: 12px;
+}
+.tenant-filter {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #eee9df;
+  border-radius: 10px;
+  background: #faf8f3;
+}
+.tenant-filter .field:first-child {
+  flex-grow: 1.6;
+}
+.tenant-filter .btn-row {
+  margin-left: auto;
 }
 
 .alert {
@@ -724,6 +813,11 @@ table.table {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+@media (max-width: 760px) {
+  .provision-dialog .form.row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 860px) {
   .shell {
     display: block;
@@ -884,6 +978,15 @@ table.table {
   }
   .page-head .btn-row .btn {
     flex: 1 1 auto;
+  }
+  .provision-dialog > .form {
+    padding: 18px 16px 20px;
+  }
+  .provision-dialog .form.row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .modal-head {
+    padding: 18px 16px;
   }
   .inline-form {
     display: grid;

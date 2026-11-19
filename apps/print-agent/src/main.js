@@ -41,6 +41,7 @@ const KIND_OPTIONS = [
 
 const CONNECTION_OPTIONS = [
   ["SYSTEM_DRIVER", "系统驱动"],
+  ["SAVE_PDF", "另存为 PDF"],
   ["RAW_TCP", "网络 RAW TCP"],
   ["USB", "USB 队列"],
   ["BLUETOOTH", "蓝牙"],
@@ -51,6 +52,7 @@ const ADDRESS_PLACEHOLDER = {
   BLUETOOTH: "蓝牙设备名",
   SYSTEM_DRIVER: "系统队列名（留空则用打印机名）",
   USB: "系统队列名",
+  SAVE_PDF: "~/Downloads/织序打印",
 };
 
 let printers = [];
@@ -120,7 +122,7 @@ function makeField(labelText, control) {
 function buildProfile(printer) {
   return {
     name: (printer.name || "").trim(),
-    kind: printer.kind || "THERMAL",
+    kind: printer.connection === "SAVE_PDF" ? "A4" : printer.kind || "THERMAL",
     connection: printer.connection || "SYSTEM_DRIVER",
     address: (printer.address || "").trim() || null,
     format: printer.format === "TSPL" ? "TSPL" : "ZPL",
@@ -206,25 +208,36 @@ function printerCard(printer, index) {
     formatLabel.hidden = printer.kind !== "THERMAL";
   };
 
+  const kindSelect = makeSelect(KIND_OPTIONS, printer.kind || "THERMAL", (value) => {
+    printer.kind = value;
+    syncFormatVisibility();
+  });
+  const addressLabel = makeField("地址 / 队列", addressInput);
+  const syncConnection = () => {
+    const savePdf = printer.connection === "SAVE_PDF";
+    addressInput.placeholder = ADDRESS_PLACEHOLDER[printer.connection] ?? "";
+    addressLabel.querySelector("span").textContent = savePdf ? "保存目录" : "地址 / 队列";
+    kindSelect.disabled = savePdf;
+    if (savePdf) {
+      printer.kind = "A4";
+      kindSelect.value = "A4";
+    }
+    syncFormatVisibility();
+  };
+
   grid.append(
-    makeField(
-      "类型",
-      makeSelect(KIND_OPTIONS, printer.kind || "THERMAL", (value) => {
-        printer.kind = value;
-        syncFormatVisibility();
-      }),
-    ),
+    makeField("类型", kindSelect),
     makeField(
       "连接方式",
       makeSelect(CONNECTION_OPTIONS, printer.connection || "SYSTEM_DRIVER", (value) => {
         printer.connection = value;
-        addressInput.placeholder = ADDRESS_PLACEHOLDER[value] ?? "";
+        syncConnection();
       }),
     ),
-    makeField("地址 / 队列", addressInput),
+    addressLabel,
     formatLabel,
   );
-  syncFormatVisibility();
+  syncConnection();
 
   const probeLine = document.createElement("p");
   probeLine.className = "probe-line";
@@ -292,13 +305,16 @@ async function testPrinter(printer, card) {
     line.textContent = "正在发送测试页…";
   }
   try {
-    await invoke("test_print", { printer: buildProfile(printer) });
+    const savedPath = await invoke("test_print", { printer: buildProfile(printer) });
+    const message = savedPath
+      ? `PDF 已保存：${savedPath}`
+      : `已向 ${printer.name || "打印机"} 发送测试页`;
     if (line) {
       line.hidden = false;
       line.dataset.ok = "true";
-      line.textContent = "测试页已发送，请取纸检查对齐、浓度和二维码";
+      line.textContent = savedPath ? message : "测试页已发送，请取纸检查对齐、浓度和二维码";
     }
-    log(`已向 ${printer.name || "打印机"} 发送测试页`);
+    log(message);
   } catch (error) {
     if (line) {
       line.hidden = false;
@@ -488,9 +504,12 @@ function bindEvents() {
       return;
     }
     try {
-      await invoke("test_print", { printer: buildProfile(printer) });
-      showMessage("localMessage", `测试页已发送到 ${printer.name || "打印机"}，请取纸确认。`, "ok");
-      log(`已发送测试页到 ${printer.name || "打印机"}`);
+      const savedPath = await invoke("test_print", { printer: buildProfile(printer) });
+      const message = savedPath
+        ? `PDF 已保存：${savedPath}`
+        : `测试页已发送到 ${printer.name || "打印机"}，请取纸确认。`;
+      showMessage("localMessage", message, "ok");
+      log(message);
     } catch (error) {
       showMessage("localMessage", `测试打印失败：${error}`, "error");
       log(`测试打印失败：${error}`);
