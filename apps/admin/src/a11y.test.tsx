@@ -259,14 +259,14 @@ describe("开通公司弹窗", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const container = mount(<ProvisionTenantDialog plans={plans} defaultOpen />);
-    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
     for (const [name, value] of [
       ["name", "青禾纺织"],
       ["slug", "qinghe-new"],
     ]) {
       const input = container.querySelector<HTMLInputElement>(`input[name="${name}"]`);
       act(() => {
-        valueSetter?.call(input, value);
+        valueDescriptor?.set?.call(input, value);
         input?.dispatchEvent(new Event("input", { bubbles: true }));
       });
     }
@@ -274,6 +274,7 @@ describe("开通公司弹窗", () => {
     const form = container.querySelector("form");
     await act(async () => {
       form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
     });
     await vi.waitFor(() => expect(navigation.refresh).toHaveBeenCalled());
 
