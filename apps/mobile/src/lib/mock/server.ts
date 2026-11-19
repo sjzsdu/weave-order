@@ -699,6 +699,8 @@ export function createMockServer(options: MockServerOptions): MockServer {
         id: shareId,
         tenantId: quote.tenantId,
         quoteId: quote.id,
+        contactId: null,
+        contactSnapshot: null,
         version: quote.version,
         tokenHash: hash32(plain),
         expiresAt: new Date(

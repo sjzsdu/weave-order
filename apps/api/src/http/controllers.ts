@@ -110,6 +110,14 @@ export function rethrowHttp(error: unknown): never {
     if (error.details.reason === "FIELD_OPTION_LABEL_EXISTS") {
       throw new ConflictException(error.message);
     }
+    // 联系人重复是「与现有数据冲突」，409 比 400 更能让前端区分「改内容」还是「重试」。
+    if (
+      error.details.reason === "CONTACT_PHONE_DUPLICATE" ||
+      error.details.reason === "CONTACT_EMAIL_DUPLICATE" ||
+      error.details.reason === "CONTACT_PRIMARY_CONFLICT"
+    ) {
+      throw new ConflictException(error.message);
+    }
     // 意图已终结 / 超过撤销窗口：请求合法但与当前状态冲突，返回 409 让前端区分「重试无用」。
     if (
       error.details.reason === "INTENT_ALREADY_FINISHED" ||
@@ -248,6 +256,100 @@ export class CatalogController {
         async (kernel, ctx) => ({
           customer: await kernel.customers.createForHuman(body, ctx),
         }),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 客户联系人列表（未归档，主要联系人在前；VIEWER 的手机 / 邮箱已掩码）。 */
+  @Get("customers/:id/contacts")
+  async customerContacts(
+    @Param("id") id: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => ({ contacts: await kernel.contacts.list(id, ctx) }),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Post("customers/:id/contacts")
+  async createCustomerContact(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.create(id, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Patch("customers/:id/contacts/:contactId")
+  async updateCustomerContact(
+    @Param("id") id: string,
+    @Param("contactId") contactId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.update(contactId, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 归档联系人；归档主要联系人时 body 必填 `successorContactId`。 */
+  @Post("customers/:id/contacts/:contactId/archive")
+  async archiveCustomerContact(
+    @Param("id") id: string,
+    @Param("contactId") contactId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.archive(contactId, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 设为主要联系人：同事务清旧主，不需要先归档。 */
+  @Post("customers/:id/contacts/:contactId/primary")
+  async setPrimaryCustomerContact(
+    @Param("id") id: string,
+    @Param("contactId") contactId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.setPrimary(contactId, ctx),
         { scope: "write" },
       );
     } catch (error) {
@@ -928,5 +1030,50 @@ export class QuoteAgentController {
   @Post("quote")
   async quote(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     return this.agent.run(authorization, body);
+  }
+}
+
+/**
+ * 联系人辅助接口：角色建议 + 批量导出。
+ *
+ * 单独一个控制器而不是挂在 `customers/:id` 下：`/api/contacts/...` 是租户级动作，
+ * 导出覆盖查看者数据范围内的全部客户，不是某一位客户的子资源。
+ */
+@Controller("api")
+export class ContactsController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get("contacts/roles")
+  async roles(@Headers("authorization") authorization?: string) {
+    try {
+      // 角色建议来自调用者所在租户的 field_options，必须按登录态解析租户，
+      // 不能直接用默认内核（多租户下会拿到别家公司的选项）。
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        (kernel) => kernel.contacts.roleOptions(),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 批量导出联系人 CSV；服务端按能力掩码并写一条 AUDIT_EXPORTED。 */
+  @Get("contacts/export")
+  async exportContacts(@Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.exportCsv(ctx),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 }

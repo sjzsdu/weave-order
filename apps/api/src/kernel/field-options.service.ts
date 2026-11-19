@@ -1,4 +1,4 @@
-import { customers, fieldOptions, samples } from "@weave-order/db";
+import { customerContacts, customers, fieldOptions, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import {
   DEFAULT_FIELD_OPTIONS,
@@ -461,8 +461,27 @@ export class FieldOptionsService {
       return result;
     }
     if (fieldKey === "contact.role") {
-      // 联系人表由 P2 落地；在此之前没有可统计的来源。
-      for (const option of options) result.set(this.usageKey(fieldKey, option), 0);
+      // 联系人角色存原文（label），按归一化后的值统计在用的联系人行。
+      const rows = await this.db
+        .select({ value: customerContacts.role, total: count() })
+        .from(customerContacts)
+        .where(
+          and(
+            eq(customerContacts.tenantId, this.tenantId),
+            sql`${customerContacts.role} is not null`,
+            sql`${customerContacts.archivedAt} is null`,
+          ),
+        )
+        .groupBy(customerContacts.role);
+      for (const option of options) {
+        let total = 0;
+        for (const row of rows) {
+          if (row.value && normalizeFieldValue(row.value) === option.normalized) {
+            total += Number(row.total);
+          }
+        }
+        result.set(this.usageKey(fieldKey, option), total);
+      }
       return result;
     }
     const counts = await this.textValueCounts(fieldKey);

@@ -9,7 +9,8 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { JsonValue } from "@weave-order/schema";
+import type { JsonValue, QuoteShareContactSnapshot } from "@weave-order/schema";
+import { customerContacts } from "./customer-contacts";
 import { quoteShareEventEnum } from "./enums";
 import { quotes } from "./quotes";
 
@@ -26,6 +27,10 @@ export const quoteShares = pgTable(
       .notNull()
       .references(() => quotes.id, { onDelete: "cascade" }),
     version: integer("version").notNull().default(1),
+    /** 分享给哪位联系人；联系人归档不物理删，未来物理删也只 set null，外发记录不悬挂。 */
+    contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+    /** 发送时的姓名 + 邮箱快照：联系人改名 / 归档后时间线仍可读。 */
+    contactSnapshot: jsonb("contact_snapshot").$type<QuoteShareContactSnapshot>(),
     tokenHash: varchar("token_hash", { length: 128 }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     requirePhoneTail: boolean("require_phone_tail").notNull().default(false),
@@ -37,6 +42,7 @@ export const quoteShares = pgTable(
   (table) => [
     uniqueIndex("quote_shares_token_hash_idx").on(table.tokenHash),
     index("quote_shares_tenant_quote_idx").on(table.tenantId, table.quoteId),
+    index("quote_shares_tenant_contact_idx").on(table.tenantId, table.contactId),
   ],
 );
 

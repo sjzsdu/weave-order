@@ -1,4 +1,5 @@
 import {
+  customerContacts,
   customers,
   quoteItems,
   quoteShareEvents,
@@ -20,6 +21,7 @@ import {
   QuoteShareStats,
   QuoteShareStatsList,
   QuoteShare,
+  pickDefaultContact,
 } from "@weave-order/schema";
 import type {
   CustomerQuotePage as CustomerPage,
@@ -27,7 +29,7 @@ import type {
   QuoteLinkErrorCode,
   QuoteShare as QuoteShareRecord,
 } from "@weave-order/schema";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
@@ -208,6 +210,29 @@ export class ShareService {
       this.options.secret,
     );
     const version = (quote as typeof quote & { version?: number }).version ?? 1;
+    // 外发记录必须带 contact_id + 快照：显式指定 → 按场景挑（报价找采购）→ 主联系人。
+    const contactRows = await this.db
+      .select()
+      .from(customerContacts)
+      .where(
+        and(
+          eq(customerContacts.tenantId, this.tenantId),
+          eq(customerContacts.customerId, quote.customerId),
+          isNull(customerContacts.archivedAt),
+        ),
+      )
+      .orderBy(desc(customerContacts.isPrimary), desc(customerContacts.createdAt));
+    const chosenContact = parsed.contactId
+      ? (contactRows.find((contact) => contact.id === parsed.contactId) ?? null)
+      : pickDefaultContact(contactRows, "quote");
+    if (parsed.contactId && !chosenContact) {
+      throw new KernelError("KERNEL_REJECTED", "收件联系人不存在或已归档", {
+        reason: "CONTACT_NOT_FOUND",
+      });
+    }
+    const contactSnapshot = chosenContact
+      ? { name: chosenContact.name, email: chosenContact.email }
+      : null;
 
     const row = await this.db.transaction(async (tx) => {
       const inserted = await tx
@@ -219,6 +244,8 @@ export class ShareService {
           version,
           tokenHash,
           expiresAt,
+          contactId: chosenContact?.id ?? null,
+          contactSnapshot,
           requirePhoneTail: parsed.requirePhoneTail,
           allowPdf: parsed.allowPdf,
           createdBy: ctx.actor.id,
@@ -244,6 +271,8 @@ export class ShareService {
             expiresAt: expiresAt.toISOString(),
             requirePhoneTail: share.requirePhoneTail,
             allowPdf: share.allowPdf,
+            contactId: share.contactId,
+            contactName: share.contactSnapshot?.name ?? null,
           },
         },
         this.tenantId,
@@ -504,6 +533,8 @@ export class ShareService {
       id: row.id,
       tenantId: row.tenantId,
       quoteId: row.quoteId,
+      contactId: row.contactId,
+      contactSnapshot: row.contactSnapshot ?? null,
       version: row.version,
       tokenHash: row.tokenHash,
       expiresAt: toIso(row.expiresAt),

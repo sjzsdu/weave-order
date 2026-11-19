@@ -98,6 +98,22 @@ const customer = {
   contactEmail: "zhoumin@example.com",
 };
 
+const contact = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  tenantId: TENANT_ID,
+  customerId: CUSTOMER_ID,
+  name: "周敏",
+  role: "采购",
+  phone: "138****6621",
+  email: "zhoumin@example.com",
+  wechat: "zhoumin_wechat",
+  note: null,
+  isPrimary: true,
+  archivedAt: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
 const customerListItem = CustomerListItem.parse({
   ...customer,
   ownerId: MEMBERSHIP_ID,
@@ -114,6 +130,7 @@ const customer360 = Customer360.parse({
   customer,
   ownerId: MEMBERSHIP_ID,
   ownerName: "孙巨中",
+  contacts: [contact],
   context: {
     customerId: CUSTOMER_ID,
     preferenceNotes: ["只做本白与浅色，不接受荧光增白。", "样布一次寄三色，附成分单。"],
@@ -523,6 +540,47 @@ export function createMockApiClient(): ApiClient {
       id === CUSTOMER_ID
         ? Promise.resolve(customer360)
         : Promise.reject(new Error("CUSTOMER_NOT_FOUND")),
+
+    customerContacts: () => Promise.resolve([contact]),
+
+    createCustomerContact: (_customerId, input) =>
+      Promise.resolve({
+        contact: {
+          ...contact,
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          name: input.name,
+          role: input.role ?? null,
+          phone: input.phone ?? null,
+          email: input.email ?? null,
+          wechat: input.wechat ?? null,
+          note: input.note ?? null,
+          isPrimary: input.isPrimary ?? false,
+        },
+        warnings: [],
+      }),
+
+    updateCustomerContact: (_customerId, _contactId, input) =>
+      Promise.resolve({
+        contact: { ...contact, ...input },
+        warnings: [],
+      }),
+
+    archiveCustomerContact: () =>
+      Promise.resolve({ contact: { ...contact, isPrimary: false }, warnings: [] }),
+
+    setPrimaryCustomerContact: () => Promise.resolve({ contact, warnings: [] }),
+
+    contactRoles: () =>
+      Promise.resolve({
+        roles: [
+          { code: "ROLE-PURCHASING", label: "采购" },
+          { code: "ROLE-FINANCE", label: "财务" },
+          { code: "ROLE-MERCHANDISER", label: "跟单" },
+        ],
+      }),
+
+    exportContacts: () =>
+      Promise.resolve({ csv: "客户编号,客户名称,姓名\nKH-018,杭州青禾服饰,周敏", rowCount: 1, masked: false }),
 
     createCustomer: (input) =>
       Promise.resolve({

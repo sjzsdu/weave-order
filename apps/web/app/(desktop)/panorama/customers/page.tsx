@@ -43,6 +43,7 @@ function CustomersPageContent() {
   const [created, setCreated] = useState<Customer | null>(null);
   // 连停用项一起取：历史客户的等级 label 要靠它解析，下拉只展示 active。
   const tierOptions = useFieldOptions("customer.tier");
+  const [exporting, setExporting] = useState(false);
 
   // 从时间线 / 别人发来的链接带 ?id= 进来直接展开抽屉；筛选也能分享。
   useEffect(() => {
@@ -95,6 +96,24 @@ function CustomersPageContent() {
     ]);
   }
 
+  /** 导出联系人：后端按能力掩码并写一条 AUDIT_EXPORTED；前端只负责下载。 */
+  async function exportContacts() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const result = await api.exportContacts();
+      const blob = new Blob([`\uFEFF${result.csv}`], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `客户联系人-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function handleCreated(customer: Customer) {
     setFormOpen(false);
     setCreated(customer);
@@ -140,6 +159,9 @@ function CustomersPageContent() {
           <Button variant="secondary" onClick={() => setImportOpen(true)}>
             导入 CSV
           </Button>
+          <Button variant="secondary" onClick={() => void exportContacts()} disabled={exporting}>
+            {exporting ? "导出中…" : "导出联系人"}
+          </Button>
           <Button variant="primary" onClick={() => setFormOpen(true)}>
             新建客户
           </Button>
@@ -154,7 +176,7 @@ function CustomersPageContent() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜客户名 / 编号 / 联系人"
+            placeholder="搜客户名 / 编号 / 联系人姓名、手机、微信"
             className="min-h-9 w-full bg-transparent text-sm text-ink-900 outline-none"
             aria-label="搜索客户"
           />

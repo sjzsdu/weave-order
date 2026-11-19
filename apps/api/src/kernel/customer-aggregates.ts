@@ -5,8 +5,16 @@ import {
   CustomerSummary,
   CustomerTimelineEvent,
   CustomerTimelinePage,
+  maskEmail,
+  maskPhone,
 } from "@weave-order/schema";
-import type { Currency, CustomerListOptions, CustomerTimelineKind } from "@weave-order/schema";
+import type {
+  Currency,
+  CustomerListOptions,
+  CustomerTimelineKind,
+  MemberRole,
+} from "@weave-order/schema";
+import { hasCapability } from "@weave-order/schema";
 import { sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { KernelContext } from "./audit";
@@ -136,7 +144,9 @@ function aggregateColumns(): SQL {
   `;
 }
 
-function mapListItem(row: CustomerListRow): CustomerListItem {
+function mapListItem(row: CustomerListRow, role?: MemberRole): CustomerListItem {
+  // 列表与客户 360 同一套 PII 规则：只有 VIEWER 掩码，其余角色全量。
+  const masked = role !== undefined && !hasCapability(role, "contact.pii.view");
   return CustomerListItem.parse({
     id: row.id,
     tenantId: row.tenant_id,
@@ -144,8 +154,8 @@ function mapListItem(row: CustomerListRow): CustomerListItem {
     name: row.name,
     tier: row.tier,
     contactName: row.contact_name,
-    contactPhone: row.contact_phone,
-    contactEmail: row.contact_email,
+    contactPhone: masked ? maskPhone(row.contact_phone) : row.contact_phone,
+    contactEmail: masked ? maskEmail(row.contact_email) : row.contact_email,
     ownerId: row.owner_id,
     // 兜底第二层：SQL 只取姓名/邮箱副本，这里再挡一次 UUID，任何上游回退到 subject 都不会泄漏。
     ownerName: memberDisplayName(row.owner_name),
@@ -183,10 +193,21 @@ export async function loadCustomerList(
   if (options.tier) conditions.push(sql`customers.tier = ${options.tier}`);
   if (options.query) {
     const pattern = `%${escapeLikePattern(options.query)}%`;
+    // 搜索扩展到联系人姓名 / 手机 / 邮箱 / 微信：用 EXISTS 判存在性，
+    // 不做 join 聚合，避免一个客户多个联系人多出重复行。
     conditions.push(
       sql`(customers.name ILIKE ${pattern} ESCAPE '\\'
         OR customers.code ILIKE ${pattern} ESCAPE '\\'
-        OR customers.contact_name ILIKE ${pattern} ESCAPE '\\')`,
+        OR EXISTS (
+          SELECT 1 FROM customer_contacts cc
+          WHERE cc.tenant_id = customers.tenant_id
+            AND cc.customer_id = customers.id
+            AND cc.archived_at IS NULL
+            AND (cc.name ILIKE ${pattern} ESCAPE '\\'
+                 OR cc.phone ILIKE ${pattern} ESCAPE '\\'
+                 OR cc.email ILIKE ${pattern} ESCAPE '\\'
+                 OR cc.wechat ILIKE ${pattern} ESCAPE '\\')
+        ))`,
     );
   }
   if (options.overdueOnly) {
@@ -208,9 +229,9 @@ export async function loadCustomerList(
       customers.code,
       customers.name,
       customers.tier,
-      customers.contact_name,
-      customers.contact_phone,
-      customers.contact_email,
+      pc.name AS contact_name,
+      pc.phone AS contact_phone,
+      pc.email AS contact_email,
       customers.owner_id,
       -- 负责人只取可展示的姓名/邮箱副本，绝不回退到 subject（那是 SSO 主键 UUID，WAN-151）。
       COALESCE(
@@ -219,6 +240,16 @@ export async function loadCustomerList(
       ) AS owner_name,
       ${aggregateColumns()}
     FROM customers
+    -- 主联系人投影：优先 is_primary，缺失时取最近创建的未归档联系人（只读回退）。
+    LEFT JOIN LATERAL (
+      SELECT cc.name, cc.phone, cc.email
+      FROM customer_contacts cc
+      WHERE cc.tenant_id = customers.tenant_id
+        AND cc.customer_id = customers.id
+        AND cc.archived_at IS NULL
+      ORDER BY cc.is_primary DESC, cc.created_at DESC
+      LIMIT 1
+    ) pc ON TRUE
     LEFT JOIN memberships
       ON memberships.id = customers.owner_id
      AND memberships.tenant_id = customers.tenant_id
@@ -226,7 +257,7 @@ export async function loadCustomerList(
     ORDER BY customers.created_at DESC, customers.id DESC
     LIMIT ${limit}
   `);
-  return result.rows.map(mapListItem);
+  return result.rows.map((row) => mapListItem(row, ctx?.actor.role));
 }
 
 /**

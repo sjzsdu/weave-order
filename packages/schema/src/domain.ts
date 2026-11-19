@@ -93,7 +93,11 @@ export const Customer = z.object({
   tier: CustomerTierCode,
   contactName: z.string().nullable(),
   contactPhone: z.string().nullable(),
-  contactEmail: z.string().email().nullable(),
+  /**
+   * 主联系人投影。读模型可能已按查看者能力掩码（`z***@qinghe.com`），
+   * 所以这里不能再做 email 格式校验；写入校验在 `CreateCustomerInput`。
+   */
+  contactEmail: z.string().max(255).nullable(),
 });
 export type Customer = z.infer<typeof Customer>;
 

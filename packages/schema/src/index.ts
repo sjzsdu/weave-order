@@ -7,6 +7,7 @@ export * from "./navigation";
 export * from "./personas";
 export * from "./entities";
 export * from "./customer";
+export * from "./contact";
 export * from "./workspace";
 export * from "./revisions";
 export * from "./quote-revision";

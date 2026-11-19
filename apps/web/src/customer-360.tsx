@@ -7,6 +7,7 @@ import { ApiError } from "@weave-order/core";
 import type { CustomerTimelineEvent, CustomerTimelineKind } from "@weave-order/schema";
 import { Badge, Button, CustomerHeader, EmptyState, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { CustomerContactsSection } from "@/customer-contacts";
 import { SharePanel } from "@/share-panel";
 import { InboundReplyDrawer } from "@/inbound-reply-drawer";
 import { STATUS_LABEL, TIMELINE_KIND_LABEL, actionLabel, ownerLabel, relativeTime } from "@/format";
@@ -221,6 +222,12 @@ export function Customer360Panel({
           </Link>
         </div>
       </header>
+
+      <CustomerContactsSection
+        customerId={customer.id}
+        contacts={data.contacts}
+        onChanged={() => detail.refetch()}
+      />
 
       <section aria-label="客户汇总" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <SummaryTile
@@ -478,6 +485,7 @@ export function Customer360Panel({
         <SharePanel
           quoteId={shareTarget.id}
           title={shareTarget.title}
+          contacts={data.contacts}
           onClose={() => setShareTarget(null)}
         />
       )}
