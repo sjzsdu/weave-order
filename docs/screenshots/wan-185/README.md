@@ -12,6 +12,7 @@
 | 06-camera-signature.png | 拍签收：字段跟任务走，只有运单号 + 一句说明 |
 | 07-samples-error.png | 筛选请求失败：保留已加载数据，错误走 `userFacingErrorMessage`，界面无英文技术串 |
 | 08-quote-from-sample.png | 点「用它报价」带 sampleId 进报价页（候选卡显示「带入的样品」） |
+| 09-camera-waybill-h5.png | H5 运单号页：副标题「手工录入」、正文无「扫码」，只有「录入运单号」 |
 
 ## 复现方式
 

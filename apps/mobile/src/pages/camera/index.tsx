@@ -70,8 +70,9 @@ export default function CameraPage() {
     }
   });
 
-  const spec = cameraModeSpec(mode);
   const isWeapp = process.env.TARO_ENV === "weapp";
+  // 文案分端：H5 的运单号页不能出现「扫码」，只有小程序拿 weapp 版本。
+  const spec = cameraModeSpec(mode, isWeapp);
 
   const pickImage = async (source: "camera" | "album") => {
     setError(null);
@@ -468,7 +469,7 @@ export default function CameraPage() {
 
       <View className="footnote">
         图片先压缩（长边 1600px / ≤1MB）再直传对象存储；离线时照片存本地队列，联网后按时间序提交。
-        扫箱唛重打与蓝牙标签在「我的」的设备分组里。
+        箱唛重打与蓝牙标签在「我的」的设备分组里。
       </View>
     </Page>
   );

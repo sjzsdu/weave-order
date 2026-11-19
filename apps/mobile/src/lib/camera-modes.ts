@@ -27,6 +27,11 @@ export interface CameraModeSpec {
   proofKind?: ProofKind;
   /** 空态提示：拍完之后这块会变成结果。 */
   emptyHint: string;
+  /**
+   * 只有小程序能做的动作对应的文案（如扫码）。
+   * H5 页面必须完全不出现「扫码」——按钮、标题、正文都算，所以文案本身也要分端。
+   */
+  weapp?: { subtitle: string; desc: string };
 }
 
 export const CAMERA_MODE_SPECS: Record<CameraMode, CameraModeSpec> = {
@@ -51,12 +56,17 @@ export const CAMERA_MODE_SPECS: Record<CameraMode, CameraModeSpec> = {
   },
   waybill: {
     title: "录入运单号",
-    subtitle: "手输或扫码",
-    desc: "小程序里可以直接扫码；H5 没有条码能力，手工录入。",
+    // H5 没有条码能力：这里的文案一个字都不能提「扫码」，按钮与正文共用同一套。
+    subtitle: "手工录入",
+    desc: "浏览器没有条码能力，手工录入运单号。",
     outcome: "input",
     captureLabel: "录入运单号",
     fields: [],
     emptyHint: "运单号只存在本地，接入单号查询后自动提交。",
+    weapp: {
+      subtitle: "手输或扫码",
+      desc: "小程序可以直接扫码，也可以手工录入。",
+    },
   },
   signature: {
     title: "拍签收",
@@ -90,8 +100,10 @@ export const CAMERA_MODE_SPECS: Record<CameraMode, CameraModeSpec> = {
   },
 };
 
-export function cameraModeSpec(mode: CameraMode): CameraModeSpec {
-  return CAMERA_MODE_SPECS[mode];
+export function cameraModeSpec(mode: CameraMode, isWeapp = false): CameraModeSpec {
+  const spec = CAMERA_MODE_SPECS[mode];
+  if (!isWeapp || !spec.weapp) return spec;
+  return { ...spec, subtitle: spec.weapp.subtitle, desc: spec.weapp.desc };
 }
 
 export function cameraFieldVisible(mode: CameraMode, field: CameraField): boolean {

@@ -53,4 +53,26 @@ describe("相机 mode 规格", () => {
     expect(waybillActionLabel(true)).toContain("扫");
     expect(cameraModeSpec("waybill").outcome).toBe("input");
   });
+
+  it("H5 的运单号页文案（subtitle / desc）不含「扫码」", () => {
+    // 按钮文案对了不代表页面文案对了：副标题与正文曾经写着「手输或扫码」，
+    // H5 用户照样会看到「扫码」，且点了也扫不了。
+    for (const mode of CAMERA_MODES) {
+      const h5 = cameraModeSpec(mode, false);
+      expect(h5.subtitle).not.toContain("扫码");
+      expect(h5.desc).not.toContain("扫码");
+      expect(h5.emptyHint).not.toContain("扫码");
+    }
+    const waybill = cameraModeSpec("waybill", false);
+    expect(waybill.subtitle).toContain("录入");
+    expect(waybill.desc).toContain("录入运单号");
+  });
+
+  it("小程序端运单号页才出现扫码文案", () => {
+    const weapp = cameraModeSpec("waybill", true);
+    expect(weapp.subtitle).toContain("扫码");
+    expect(weapp.desc).toContain("扫码");
+    // 没写 weapp 文案的 mode 不受影响。
+    expect(cameraModeSpec("find", true)).toEqual(cameraModeSpec("find", false));
+  });
 });
