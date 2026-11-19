@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { Pool } from "pg";
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -69,7 +71,11 @@ async function isolatedKernel(id: string): Promise<{ kernel: Kernel; tenantId: s
   if (!db) throw new Error("数据库不可用");
   const bootstrap = createKernel(db);
   const tenant = await bootstrap.tenancy.createTenant(
-    { slug: `it-contacts-${id}-${suffix()}`, name: `Contacts IT ${id}`, casdoorOrg: `it-contacts-${id}` },
+    {
+      slug: `it-contacts-${id}-${suffix()}`,
+      name: `Contacts IT ${id}`,
+      casdoorOrg: `it-contacts-${id}`,
+    },
     SYSTEM,
   );
   createdTenantIds.push(tenant.id);
@@ -168,11 +174,7 @@ describe("多联系人（集成）", () => {
       OWNER,
     );
     await expect(
-      kernel.contacts.create(
-        a.id,
-        { name: "甲2", phone: "138 0013 8000" },
-        OWNER,
-      ),
+      kernel.contacts.create(a.id, { name: "甲2", phone: "138 0013 8000" }, OWNER),
     ).rejects.toSatisfy((error: unknown) => errorReason(error) === "CONTACT_PHONE_DUPLICATE");
     await expect(
       kernel.contacts.create(a.id, { name: "甲3", email: "SAME@example.com" }, OWNER),
@@ -182,11 +184,7 @@ describe("多联系人（集成）", () => {
       { code: `CT-B-${suffix()}`, name: "客户 B", contactName: "乙" },
       OWNER,
     );
-    const result = await kernel.contacts.create(
-      b.id,
-      { name: "乙", phone: "13800138000" },
-      OWNER,
-    );
+    const result = await kernel.contacts.create(b.id, { name: "乙", phone: "13800138000" }, OWNER);
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]?.customerName).toBe("客户 A");
   });
@@ -268,7 +266,7 @@ describe("多联系人（集成）", () => {
     expect(customer.id).toBeTruthy();
   });
 
-  it("回填 SQL 幂等：重复执行不会给同一客户建第二个主联系人", async (ctx) => {
+  it("0026 迁移自带回填：老客户升级后已有主联系人且幂等", async (ctx) => {
     if (!available) ctx.skip();
     const { tenantId } = await isolatedKernel("backfill");
     // 绕过内核直接写一条「旧版」客户：只填三列、没有联系人行，模拟升级前的数据。
@@ -279,36 +277,39 @@ describe("多联系人（集成）", () => {
         code: `CT-LEGACY-${suffix()}`,
         name: "旧数据客户",
         contactName: "老周",
-        contactPhone: "138 0000 1111",
+        contactPhone: "+86 138 0000 1111",
         contactEmail: null,
       })
       .returning();
     const legacy = rows[0]!;
 
-    // 与 0025 迁移里的回填语句一致（not exists + 名称兜底）。
-    const backfill = sql`
-      INSERT INTO customer_contacts (tenant_id, customer_id, name, phone, phone_normalized, email, is_primary)
-      SELECT c.tenant_id, c.id,
-             COALESCE(NULLIF(BTRIM(c.contact_name), ''), '主要联系人'),
-             NULLIF(BTRIM(c.contact_phone), ''),
-             NULLIF(REGEXP_REPLACE(BTRIM(c.contact_phone), '[^0-9]', '', 'g'), ''),
-             NULLIF(BTRIM(c.contact_email), ''),
-             TRUE
-      FROM customers c
-      WHERE (NULLIF(BTRIM(c.contact_name), '') IS NOT NULL
-          OR NULLIF(BTRIM(c.contact_phone), '') IS NOT NULL
-          OR NULLIF(BTRIM(c.contact_email), '') IS NOT NULL)
-        AND NOT EXISTS (SELECT 1 FROM customer_contacts cc WHERE cc.customer_id = c.id)
-        AND c.tenant_id = ${tenantId}::uuid
-    `;
-    await db!.execute(backfill);
-    await db!.execute(backfill);
+    // 直接取 0026 迁移文件里的回填语句：测试不能自己抄一份，否则迁移丢语句也测不出来。
+    // vitest 的 cwd 是 apps/api：从仓库根取真实迁移文件。
+    const migration = await readFile(
+      path.resolve(process.cwd(), "../../packages/db/drizzle/0026_broad_silver_surfer.sql"),
+      "utf8",
+    );
+    const backfill = migration
+      .split("--> statement-breakpoint")
+      .find((statement) => statement.includes('INSERT INTO "customer_contacts"'));
+    expect(backfill, "0026 迁移必须包含存量联系人回填").toBeTruthy();
 
-    const counted = await db!.execute<{ count: string }>(sql`
-      SELECT count(*) FROM customer_contacts
-      WHERE tenant_id = ${tenantId}::uuid AND customer_id = ${legacy.id}::uuid
-    `);
-    expect(counted.rows[0]?.count).toBe("1");
+    // 迁移里的语句是整表回填；测试库还有其它租户的存量行，两次执行都必须只给本客户建一条。
+    await db!.execute(sql.raw(backfill!));
+    await db!.execute(sql.raw(backfill!));
+
+    const contacts = await db!
+      .select()
+      .from(customerContacts)
+      .where(eq(customerContacts.customerId, legacy.id));
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]).toMatchObject({
+      name: "老周",
+      phone: "+86 138 0000 1111",
+      phoneNormalized: "+8613800001111",
+      email: null,
+      isPrimary: true,
+    });
   });
 
   it("外发记录带 contact_id + 快照", async (ctx) => {
@@ -346,10 +347,7 @@ describe("多联系人（集成）", () => {
     const share = await kernel.shares.createForQuote(quote.id, {}, OWNER);
     expect(share.share.contactId).toBe(buyer.id);
     expect(share.share.contactSnapshot).toEqual({ name: "林采", email: "lin@example.com" });
-    const stored = await db!
-      .select()
-      .from(quoteShares)
-      .where(eq(quoteShares.id, share.share.id));
+    const stored = await db!.select().from(quoteShares).where(eq(quoteShares.id, share.share.id));
     expect(stored[0]?.contactId).toBe(buyer.id);
   });
 });
