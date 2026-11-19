@@ -17,7 +17,7 @@ import {
 import { useCustomer360, useCustomerTimeline } from "../../lib/hooks";
 import { formatMoneyShort, maskPhone, ownerLabel, relativeTime, shortDate } from "../../lib/format";
 import { api } from "../../lib/runtime";
-import { openQuote } from "../../lib/nav";
+import { enterQuote } from "../../routes";
 import type { ShareSummary } from "../../lib/mobile-api";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -151,7 +151,7 @@ export default function CustomerPage() {
           >
             打电话
           </Button>
-          <Button onClick={() => openQuote({ customerId: customer.id, mode: "paste" })}>
+          <Button onClick={() => enterQuote({ mode: "customer", customerId: customer.id })}>
             快速报价
           </Button>
         </View>

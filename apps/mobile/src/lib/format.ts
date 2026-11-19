@@ -48,6 +48,15 @@ export function shortDate(iso: string): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
+/** 待办页问候：只说时段，不带姓名（姓名要靠额外接口，首屏不为一个字多发一次请求）。 */
+export function greeting(now: Date = new Date()): string {
+  const hour = now.getHours();
+  if (hour < 6) return "还在忙";
+  if (hour < 12) return "早上好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
+}
+
 /** 客户手机号默认脱敏。 */
 export function maskPhone(phone: string | null | undefined): string {
   if (!phone) return "未留电话";

@@ -1,9 +1,9 @@
 import { Image, Input, Text, Textarea, View } from "@tarojs/components";
-import Taro, { useRouter } from "@tarojs/taro";
+import Taro, { useDidShow, useRouter } from "@tarojs/taro";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "@weave-order/core";
 import type { FabricSample, QuoteDraft, QuoteStatus, SpecMatch, Unit } from "@weave-order/schema";
-import { Amount, Badge, Button, Card, NavBar, Page, Sheet } from "../../components/ui";
+import { Amount, Badge, Button, Card, Page, Sheet } from "../../components/ui";
 import { useCustomers } from "../../lib/hooks";
 import {
   centsToYuanInput,
@@ -18,6 +18,7 @@ import { verifyLargeAmount } from "../../lib/biometric";
 import { api, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { copyText } from "../../lib/clipboard";
+import { takeQuoteEntry } from "../../routes";
 
 type Step = "input" | "candidates" | "draft";
 
@@ -43,9 +44,17 @@ const EXAMPLES = [
 
 export default function QuotePage() {
   const router = useRouter();
-  const quoteId = router.params.quoteId ?? "";
-  const paramCustomerId = router.params.customerId ?? "";
-  const paramSampleId = router.params.sampleId ?? "";
+  // 报价是 tab 页，入口参数由 routes.enterQuote 暂存后在这里取一次（深链 query 仍兼容）。
+  const [entry, setEntry] = useState(() => takeQuoteEntry(router.params));
+  const quoteId = entry.quoteId ?? "";
+  const paramCustomerId = entry.customerId ?? "";
+  const paramSampleId = entry.sampleId ?? "";
+
+  useDidShow(() => {
+    const next = takeQuoteEntry();
+    // 只有带 id 的入口需要重新载入；从 tabbar 直接进来（默认 paste）不打断当前输入。
+    if (next.quoteId || next.sampleId || next.customerId) setEntry(next);
+  });
 
   const customers = useCustomers(100);
   const [step, setStep] = useState<Step>("input");
@@ -92,6 +101,11 @@ export default function QuotePage() {
   useEffect(() => {
     if (!customerId && customers.data?.[0]) setCustomerId(customers.data[0].id);
   }, [customerId, customers.data]);
+
+  // 从客户行 / 客户 360 再次进入报价页（页面已挂载）时，带上新的客户。
+  useEffect(() => {
+    if (paramCustomerId) setCustomerId(paramCustomerId);
+  }, [paramCustomerId]);
 
   useEffect(() => {
     if (!customer) return;
@@ -546,7 +560,7 @@ export default function QuotePage() {
 
   return (
     <Page>
-      <NavBar title={step === "draft" ? "报价草稿" : "快速报价"} />
+      <View className="page-title">{step === "draft" ? "报价草稿" : "开报价"}</View>
       <View className="page-sub">
         {step === "draft"
           ? "改价直接写在草稿里，你批准之后新价格才生效。"

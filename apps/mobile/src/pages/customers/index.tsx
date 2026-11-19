@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Loading, OfflineBanner, Page } from "../../components/ui";
 import { useCustomers, useOfflineBanner } from "../../lib/hooks";
 import { maskPhone } from "../../lib/format";
-import { openCustomer, openQuote } from "../../lib/nav";
+import { enterQuote, openCustomer } from "../../routes";
 
 const TIER_LABEL: Record<string, string> = {
   VIP: "VIP",
@@ -76,7 +76,7 @@ export default function CustomersPage() {
               </Text>
               <Text
                 className="link"
-                onClick={() => openQuote({ customerId: customer.id, mode: "paste" })}
+                onClick={() => enterQuote({ mode: "customer", customerId: customer.id })}
               >
                 快速报价
               </Text>

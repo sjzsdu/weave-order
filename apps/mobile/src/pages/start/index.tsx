@@ -2,7 +2,7 @@ import { Input, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useState } from "react";
 import { Button, Card, Page } from "../../components/ui";
-import { openWorkspace } from "../../lib/nav";
+import { openWorkspace } from "../../routes";
 import { api, loadTenantContext } from "../../lib/runtime";
 
 export default function StartPage() {

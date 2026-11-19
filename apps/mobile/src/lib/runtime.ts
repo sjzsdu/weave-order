@@ -90,6 +90,27 @@ export const prefs = {
   setCameraMode(mode: string): void {
     writePreference("weave.camera.mode", mode);
   },
+  /**
+   * 报价是 tab 页，`switchTab` 不能带 query：入口参数先落本地，报价页取一次即清。
+   * 存取的都是未校验的 JSON —— 调用方（routes.ts）负责过 Zod。
+   */
+  takeQuoteEntry(): unknown {
+    const raw = readPreference("weave.quote.entry");
+    writePreference("weave.quote.entry", null);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  },
+  setQuoteEntry(entry: unknown): void {
+    try {
+      writePreference("weave.quote.entry", JSON.stringify(entry));
+    } catch {
+      // 不可序列化的参数不写：入口退回默认报价页。
+    }
+  },
 };
 
 /**

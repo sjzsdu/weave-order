@@ -2,10 +2,10 @@ import { Image, Text, View } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import { useCallback, useState } from "react";
 import type { FabricSample } from "@weave-order/schema";
-import { Badge, Button, Card, NavBar, Page, Sheet } from "../../components/ui";
+import { Badge, Button, Card, Page, Sheet } from "../../components/ui";
 import { api, IS_MOCK } from "../../lib/runtime";
-import { openCamera, openQuote } from "../../lib/nav";
 import { userFacingErrorMessage } from "../../lib/upload-failure";
+import { enterCamera, enterQuote } from "../../routes";
 
 type PageData = Awaited<ReturnType<typeof api.listSamplesPage>>;
 
@@ -42,14 +42,14 @@ export default function SamplesPage() {
 
   return (
     <Page>
-      <NavBar title="样品库" />
+      <View className="page-title">样品库</View>
       <View className="page-sub">拍照建样品；点开看规格。PC 上图墙更大、可以批量补规格。</View>
 
       <View className="actions" style={{ marginBottom: 12 }}>
         <Button variant="ghost" onClick={() => void load(null)} loading={loading}>
           刷新
         </Button>
-        <Button onClick={() => openCamera("sample")}>拍照建样品</Button>
+        <Button onClick={() => enterCamera({ mode: "sample" })}>拍照建样品</Button>
       </View>
 
       {IS_MOCK && (
@@ -178,7 +178,7 @@ export default function SamplesPage() {
                   const sampleId = selected.id;
                   setSelected(null);
                   // 带上 sampleId：报价页据此预填面料，否则样品库入口等于断链（WAN-160 A）。
-                  openQuote({ sampleId, mode: "paste" });
+                  enterQuote({ sampleId, mode: "paste" });
                 }}
               >
                 用这个样品报价
