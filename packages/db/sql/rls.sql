@@ -29,6 +29,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   tenants,
   memberships,
   customers,
+  customer_contacts,
   customer_contexts,
   field_options,
   samples,
@@ -83,6 +84,7 @@ DECLARE
   business_tables text[] := ARRAY[
     'memberships',
     'customers',
+    'customer_contacts',
     'customer_contexts',
     'field_options',
     'samples',

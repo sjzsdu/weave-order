@@ -47,6 +47,9 @@ export function validateCustomerDraft(draft: CustomerDraft): CustomerDraftErrors
   if (!name) errors.name = "客户名称必填";
   else if (name.length > 255) errors.name = "客户名称最多 255 个字";
 
+  // 新建客户必须先登记第一位联系人：这是「至少一位主联系人」的应用层保证，
+  // 否则新客户在 360 里既没有主联系人、也没有默认外发对象。
+  if (!draft.contactName.trim()) errors.contactName = "请先填第一位联系人的姓名";
   if (draft.contactPhone.trim() && !PHONE_PATTERN.test(draft.contactPhone.trim())) {
     errors.contactPhone = "手机号里请只填数字、空格、+ - ()";
   }
@@ -148,7 +151,9 @@ export function CustomerForm({
         <header className="flex items-center justify-between border-b border-line px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-ink-900">新建客户</h2>
-            <p className="mt-0.5 text-xs text-ink-400">编号自动生成，只要填名字就能建。</p>
+            <p className="mt-0.5 text-xs text-ink-400">
+              编号自动生成；客户名与第一位联系人必填。
+            </p>
           </div>
           <Button
             variant="ghost"
@@ -198,7 +203,7 @@ export function CustomerForm({
             )}
           </Field>
 
-          <Field label="联系人" error={errors.contactName}>
+          <Field label="联系人" required error={errors.contactName}>
             <input
               value={draft.contactName}
               onChange={(event) => update("contactName", event.target.value)}

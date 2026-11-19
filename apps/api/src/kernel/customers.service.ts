@@ -1,4 +1,5 @@
 import {
+  customerContacts,
   customerContexts,
   customers,
   decisionDeltas,
@@ -8,8 +9,17 @@ import {
   sampleShipments,
   samples,
 } from "@weave-order/db";
-import type { Db, Tx } from "@weave-order/db";
-import { CreateCustomerInput, CreateCustomerRequest, Customer360 } from "@weave-order/schema";
+import type { CustomerContactRow, Db, Tx } from "@weave-order/db";
+import {
+  CreateCustomerInput,
+  CreateCustomerRequest,
+  Customer360,
+  hasCapability,
+  maskEmail,
+  maskPhone,
+  normalizePhone,
+} from "@weave-order/schema";
+import type { MemberRole } from "@weave-order/schema";
 import type {
   Customer,
   CustomerContext,
@@ -32,6 +42,7 @@ import type {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { loadActiveContacts, loadPrimaryContactRow } from "./contact-read";
 import { loadCustomerList, loadCustomerSummary, loadCustomerTimeline } from "./customer-aggregates";
 import { KernelError, isKernelError, isUniqueViolation } from "./errors";
 import type { FieldOptionsService } from "./field-options.service";
@@ -81,16 +92,27 @@ export function formatCustomerCode(prefix: string, sequence: number): string {
   return `${prefix}${String(sequence).padStart(4, "0")}`;
 }
 
-function mapCustomer(row: CustomerRow): Customer {
+/**
+ * 档案读模型：联系人三列一律取 `customer_contacts` 的主联系人投影，
+ * 不再读 `customers.contact_*`（那三列只做兼容投影，由写路径双写）。
+ * 没有联系人时回退 NULL，页面显示「未登记联系人」。
+ */
+function mapCustomer(
+  row: CustomerRow,
+  primary?: CustomerContactRow | null,
+  role?: MemberRole,
+): Customer {
+  // 与 `contact-read.toContact` 同一条规则：只有缺 `contact.pii.view` 的角色（VIEWER）掩码。
+  const masked = role !== undefined && !hasCapability(role, "contact.pii.view");
   return {
     id: row.id,
     tenantId: row.tenantId,
     code: row.code,
     name: row.name,
     tier: row.tier,
-    contactName: row.contactName,
-    contactPhone: row.contactPhone,
-    contactEmail: row.contactEmail,
+    contactName: primary?.name ?? null,
+    contactPhone: masked ? maskPhone(primary?.phone) : (primary?.phone ?? null),
+    contactEmail: masked ? maskEmail(primary?.email) : (primary?.email ?? null),
   };
 }
 
@@ -190,6 +212,13 @@ export class CustomerService {
     const tier = this.fieldOptions
       ? await this.fieldOptions.resolveTierCode(parsed.tier, ctx)
       : parsed.tier;
+    const hasContact = Boolean(
+      parsed.contactName || parsed.contactPhone || parsed.contactEmail,
+    );
+    // 投影必须与即将写入的联系人行逐字一致：只有手机/邮箱时联系人名落「主要联系人」。
+    const projectedContactName = hasContact
+      ? (parsed.contactName ?? "主要联系人")
+      : null;
     const rows = await tx
       .insert(customers)
       .values({
@@ -199,7 +228,8 @@ export class CustomerService {
         code: parsed.code,
         name: parsed.name,
         tier,
-        contactName: parsed.contactName ?? null,
+        // 旧三列是主联系人投影；联系人行仍是唯一事实源（下面同事务写入）。
+        contactName: projectedContactName,
         contactPhone: parsed.contactPhone ?? null,
         contactEmail: parsed.contactEmail ?? null,
       })
@@ -209,6 +239,42 @@ export class CustomerService {
       throw new KernelError("KERNEL_REJECTED", "客户写入未返回记录", {
         reason: "INSERT_RETURNED_NO_ROW",
       });
+    }
+    let primaryContact: CustomerContactRow | null = null;
+    if (hasContact) {
+      const contactRows = await tx
+        .insert(customerContacts)
+        .values({
+          tenantId: this.tenantId,
+          customerId: row.id,
+          name: projectedContactName ?? "主要联系人",
+          phone: parsed.contactPhone ?? null,
+          phoneNormalized: normalizePhone(parsed.contactPhone),
+          email: parsed.contactEmail ?? null,
+          isPrimary: true,
+        })
+        .returning();
+      primaryContact = contactRows[0] ?? null;
+      if (primaryContact) {
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: "CONTACT_CREATED",
+            entityType: "customer_contact",
+            entityId: primaryContact.id,
+            before: null,
+            after: {
+              customerId: row.id,
+              name: primaryContact.name,
+              role: primaryContact.role,
+              isPrimary: true,
+            },
+            entityLabel: primaryContact.name,
+          },
+          this.tenantId,
+        );
+      }
     }
     await tx.insert(customerContexts).values({
       customerId: row.id,
@@ -231,7 +297,7 @@ export class CustomerService {
       },
       this.tenantId,
     );
-    return mapCustomer(row);
+    return mapCustomer(row, primaryContact, ctx.actor.role);
   }
 
   /** 单条读取；`ctx` 带数据范围时越权一律按「不存在」处理。 */
@@ -253,7 +319,8 @@ export class CustomerService {
         customerId,
       });
     }
-    return mapCustomer(row);
+    const primary = await loadPrimaryContactRow(this.db, this.tenantId, customerId);
+    return mapCustomer(row, primary, ctx?.actor.role);
   }
 
   /** T-003 get_customer_history 的内核实现。 */
@@ -381,7 +448,14 @@ export class CustomerService {
     const owner = ownerRows.rows[0];
     const ownerId = owner?.owner_id ?? null;
     const ownerName = memberDisplayName(owner?.owner_name);
-    return Customer360.parse({ customer, ownerId, ownerName, context, summary });
+    // 顺序执行：RLS 会话绑定单连接，不能与上面的查询交错。
+    const contacts = await loadActiveContacts(
+      this.db,
+      this.tenantId,
+      customerId,
+      ctx?.actor.role,
+    );
+    return Customer360.parse({ customer, ownerId, ownerName, context, summary, contacts });
   }
 
   /** 客户时间线：五类源单据合并后按时间倒序，游标翻页。 */

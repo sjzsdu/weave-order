@@ -1,5 +1,6 @@
 export * from "./enums";
 export * from "./customers";
+export * from "./customer-contacts";
 export * from "./field-options";
 export * from "./samples";
 export * from "./quotes";

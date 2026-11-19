@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_CUSTOMER_DRAFT, customerSubmitError, validateCustomerDraft } from "./customer-form";
 
 describe("validateCustomerDraft", () => {
-  it("只填名字就能通过（等级默认新客）", () => {
-    expect(validateCustomerDraft({ ...EMPTY_CUSTOMER_DRAFT, name: "杭州青禾" })).toEqual({});
+  it("客户名 + 第一位联系人姓名必填（等级默认新客）", () => {
+    expect(validateCustomerDraft({ ...EMPTY_CUSTOMER_DRAFT, name: "杭州青禾" }).contactName).toBe(
+      "请先填第一位联系人的姓名",
+    );
+    expect(
+      validateCustomerDraft({ ...EMPTY_CUSTOMER_DRAFT, name: "杭州青禾", contactName: "周敏" }),
+    ).toEqual({});
     expect(EMPTY_CUSTOMER_DRAFT.tier).toBe("NEW");
   });
 
@@ -17,6 +22,7 @@ describe("validateCustomerDraft", () => {
     const errors = validateCustomerDraft({
       ...EMPTY_CUSTOMER_DRAFT,
       name: "青禾",
+      contactName: "周敏",
       contactPhone: "abc",
       contactEmail: "not-an-email",
     });

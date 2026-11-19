@@ -6,7 +6,11 @@ import {
   ApprovalQueue,
   AuthMeResponse,
   AuthContextResponse,
+  ContactExportResult,
+  ContactMutationResult,
+  ContactRoleOptionsResponse,
   CreatedQuoteShare,
+  CreateCustomerContactInput,
   CreateCustomerRequest,
   CreateQuoteShareInput,
   CreateSampleInput,
@@ -16,6 +20,7 @@ import {
   CreateShipmentInput,
   Customer,
   Customer360,
+  CustomerContactsResponse,
   CustomerListItem,
   CustomerTimelineKind,
   CustomerTimelinePage,
@@ -74,6 +79,8 @@ import {
   SampleImage,
   Shipment,
   ShipmentView,
+  UpdateCustomerContactInput,
+  ArchiveCustomerContactInput,
   T002SearchFabricBySpecInput,
   T001SearchFabricByImageResult,
   T002SearchFabricBySpecResult,
@@ -424,6 +431,61 @@ export function createApiClient(options: ApiClientOptions) {
     createCustomer: async (input: z.input<typeof CreateCustomerRequest>) =>
       CustomerResponse.parse(await post("/api/customers", CreateCustomerRequest.parse(input)))
         .customer,
+
+    /** 客户联系人：未归档，主要联系人在前；VIEWER 拿到的手机 / 邮箱已掩码。 */
+    customerContacts: async (customerId: string) =>
+      CustomerContactsResponse.parse(
+        await request(`/api/customers/${encodeURIComponent(customerId)}/contacts`),
+      ).contacts,
+
+    createCustomerContact: async (
+      customerId: string,
+      input: z.input<typeof CreateCustomerContactInput>,
+    ) =>
+      ContactMutationResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts`,
+          CreateCustomerContactInput.parse(input),
+        ),
+      ),
+
+    updateCustomerContact: async (
+      customerId: string,
+      contactId: string,
+      input: z.input<typeof UpdateCustomerContactInput>,
+    ) =>
+      ContactMutationResult.parse(
+        await request(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts/${encodeURIComponent(contactId)}`,
+          { method: "PATCH", body: JSON.stringify(UpdateCustomerContactInput.parse(input)) },
+        ),
+      ),
+
+    archiveCustomerContact: async (
+      customerId: string,
+      contactId: string,
+      input: z.input<typeof ArchiveCustomerContactInput> = {},
+    ) =>
+      ContactMutationResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts/${encodeURIComponent(contactId)}/archive`,
+          ArchiveCustomerContactInput.parse(input),
+        ),
+      ),
+
+    setPrimaryCustomerContact: async (customerId: string, contactId: string) =>
+      ContactMutationResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts/${encodeURIComponent(contactId)}/primary`,
+          {},
+        ),
+      ),
+
+    /** 联系人角色建议（来自 field_options(contact.role)）。 */
+    contactRoles: async () => ContactRoleOptionsResponse.parse(await request("/api/contacts/roles")),
+
+    /** 批量导出联系人；后端写一条 AUDIT_EXPORTED，VIEWER 导出内容仍掩码。 */
+    exportContacts: async () => ContactExportResult.parse(await request("/api/contacts/export")),
 
     /** 批量导入（整批原子）：逐行回执由服务端给出，前端只展示。 */
     importBatch: async (batch: z.input<typeof ImportBatch>) =>
