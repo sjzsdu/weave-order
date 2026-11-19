@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cameraEntrySchema,
+  createQuoteEntrySession,
   parseCameraMode,
   parseQuoteEntryQuery,
   quoteEntrySchema,
@@ -67,5 +68,60 @@ describe("相机入口参数", () => {
     expect(parseCameraMode("scan")).toBeNull();
     expect(parseCameraMode(null)).toBeNull();
     expect(parseCameraMode("find")).toBe("find");
+  });
+});
+
+/**
+ * 「一次消费」状态机：Taro 的首屏是 useDidShow 先于挂载 effect，
+ * 两处各自读暂存值会让后读的默认 paste 覆盖掉 edit / customer（WAN-183 第 2 轮 FAIL）。
+ */
+function fakeSource(values: unknown[]) {
+  const queue = [...values];
+  return { take: () => (queue.length > 0 ? queue.shift() : null) };
+}
+
+describe("报价入口的消费顺序", () => {
+  it("挂载消费入口后，首次显示的 resume 返回 null（不会用默认 paste 覆盖）", () => {
+    const session = createQuoteEntrySession(fakeSource([{ mode: "customer", customerId: "c-7" }]));
+    expect(session.mount({})).toEqual({ mode: "customer", customerId: "c-7" });
+    expect(session.resume()).toBeNull();
+  });
+
+  it("挂载结果只算一次，后续渲染拿到同一份入口", () => {
+    const source = fakeSource([
+      { mode: "edit", quoteId: "q-1" },
+      { mode: "sample", sampleId: "s-1" },
+    ]);
+    const session = createQuoteEntrySession(source);
+    expect(session.mount({})).toEqual({ mode: "edit", quoteId: "q-1" });
+    expect(session.mount({})).toEqual({ mode: "edit", quoteId: "q-1" });
+    // 第二次挂载调用没有消费掉第二份暂存值，resume 才能拿到它。
+    expect(session.resume()).toEqual({ mode: "sample", sampleId: "s-1" });
+  });
+
+  it("仅 query 深链：没有暂存值时按 query 进入对应模式", () => {
+    const session = createQuoteEntrySession(fakeSource([]));
+    expect(session.mount({ mode: "edit", quoteId: "q-3" })).toEqual({
+      mode: "edit",
+      quoteId: "q-3",
+    });
+    expect(session.resume()).toBeNull();
+  });
+
+  it("没有暂存值也没有 query 时是默认粘贴入口", () => {
+    const session = createQuoteEntrySession(fakeSource([]));
+    expect(session.mount()).toEqual({ mode: "paste" });
+  });
+
+  it("再次显示拿到新入口时返回新入口（tab 复用）", () => {
+    const session = createQuoteEntrySession(
+      fakeSource([
+        { mode: "edit", quoteId: "q-1" },
+        { mode: "customer", customerId: "c-2" },
+      ]),
+    );
+    expect(session.mount({})).toEqual({ mode: "edit", quoteId: "q-1" });
+    expect(session.resume()).toEqual({ mode: "customer", customerId: "c-2" });
+    expect(session.resume()).toBeNull();
   });
 });

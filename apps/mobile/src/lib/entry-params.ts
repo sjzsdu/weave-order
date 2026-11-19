@@ -105,6 +105,40 @@ export function resolveQuoteEntry(
   return parseQuoteEntry(stored) ?? parseQuoteEntryQuery(query);
 }
 
+/** 暂存值的来源：一次 `take` 取走一份，没有则为 null（不返回默认值）。 */
+export interface QuoteEntrySource {
+  take(): unknown;
+}
+
+export interface QuoteEntrySession {
+  /** 首挂载：只消费一次并记住结果，之后重复调用返回同一份入口。 */
+  mount(query?: Record<string, string | undefined>): QuoteEntryParams;
+  /** 页面再次显示：只有确实有新入口时才返回，否则 null（点 tabbar 不该重置页面）。 */
+  resume(query?: Record<string, string | undefined>): QuoteEntryParams | null;
+}
+
+/**
+ * 入口参数的「一次消费」状态机。
+ *
+ * Taro 的首屏时序是 `useDidShow` 先于挂载 effect：两处各自去读暂存值，就会
+ * 一处拿到 edit、另一处拿到默认 paste 并覆盖它（WAN-183 第 2 轮 FAIL 的原因）。
+ * 这里把消费点收敛成一份显式状态 —— 挂载固定读第一次，show 之后只在有新入口时返回。
+ */
+export function createQuoteEntrySession(source: QuoteEntrySource): QuoteEntrySession {
+  let mounted: QuoteEntryParams | null = null;
+  return {
+    mount(query = {}) {
+      if (!mounted) mounted = resolveQuoteEntry(source.take(), query);
+      return mounted;
+    },
+    resume(query = {}) {
+      const stored = source.take();
+      if (stored === null) return null;
+      return resolveQuoteEntry(stored, query);
+    },
+  };
+}
+
 export function parseCameraMode(value: unknown): CameraMode | null {
   const parsed = z.enum(CAMERA_MODES).safeParse(value);
   return parsed.success ? parsed.data : null;

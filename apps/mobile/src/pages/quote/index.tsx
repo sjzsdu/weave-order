@@ -3,16 +3,7 @@ import Taro, { useDidShow, useRouter } from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ApiError } from "@weave-order/core";
 import type { FabricSample, QuoteDraft, Unit } from "@weave-order/schema";
-import {
-  Amount,
-  Badge,
-  Button,
-  Card,
-  Field,
-  Loading,
-  Page,
-  Sheet,
-} from "../../components/ui";
+import { Amount, Badge, Button, Card, Field, Loading, Page, Sheet } from "../../components/ui";
 import { useCanApproveQuote, useCustomers } from "../../lib/hooks";
 import {
   centsToYuanInput,
@@ -28,7 +19,9 @@ import { api, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { copyText, readClipboardText, shareText } from "../../lib/clipboard";
 import { useVoiceNote } from "../../lib/recorder";
-import { consumeQuoteEntry, enterCamera, takeQuoteEntry } from "../../routes";
+import { createQuoteEntrySession } from "../../lib/entry-params";
+import type { QuoteEntrySession } from "../../lib/entry-params";
+import { enterCamera } from "../../routes";
 import {
   INITIAL_QUOTE_STATE,
   missingForDraft,
@@ -89,19 +82,27 @@ export default function QuotePage() {
   const [suggestions, setSuggestions] = useState<Record<string, number>>({});
   const [submitted, setSubmitted] = useState(false);
 
+  /**
+   * 入口参数只消费一次（WAN-183 第 2 轮 FAIL：Taro 的 `useDidShow` 先于挂载 effect，
+   * 两个消费点各自去读暂存值，后读的默认 paste 会覆盖先读到的 edit / customer）。
+   * 渲染期取一次并缓存，show 之后只在确实有新入口时才重置页面。
+   */
+  const entrySession = useRef<QuoteEntrySession | null>(null);
+  if (!entrySession.current) {
+    entrySession.current = createQuoteEntrySession({ take: () => prefs.takeQuoteEntry() });
+  }
+  const initialEntry = entrySession.current.mount(router.params);
   const entered = useRef(false);
 
-  // 入口只在首次渲染时解析一次，后续 state 由事件驱动。
-  // 报价是 tab 页，`switchTab` 带不了 query：参数由 routes.enterQuote 暂存，这里取一次即清。
   useEffect(() => {
     if (entered.current) return;
     entered.current = true;
-    dispatch({ type: "enter", params: takeQuoteEntry(router.params) });
-  }, [router.params]);
+    dispatch({ type: "enter", params: initialEntry });
+  }, [initialEntry]);
 
   // tab 复用时从其它入口再进来：只有确实暂存过参数才重置，点 tabbar 不打断当前输入。
   useDidShow(() => {
-    const next = consumeQuoteEntry();
+    const next = entrySession.current?.resume();
     if (!next) return;
     dispatch({ type: "enter", params: next });
     setParsed(null);
