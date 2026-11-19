@@ -146,6 +146,14 @@ export const TeamInvite = z
         detail: z.string().optional(),
       })
       .nullable(),
+    /** 展示名（来自登录 claims）；邀请尚未接受时为空。 */
+    displayName: z.string().nullable().optional(),
+    /** 数据范围：只在成员与权限分栏里编辑。 */
+    dataScope: DataScope.optional(),
+    /** 审批金额上限（整数分）；null = 按角色默认规则。 */
+    approvalLimitAmount: z.number().int().nonnegative().nullable().optional(),
+    /** 是不是当前登录成员本人；本人行不允许改自己的角色（防自锁）。 */
+    isSelf: z.boolean().optional(),
   })
   .strict();
 export type TeamInvite = z.infer<typeof TeamInvite>;
@@ -227,3 +235,25 @@ export const UpdateOnboardingStateInput = z
   })
   .strict();
 export type UpdateOnboardingStateInput = z.infer<typeof UpdateOnboardingStateInput>;
+
+/**
+ * 成员与权限分栏的编辑入参（WAN-175）。
+ *
+ * 三个字段都可单独修改；全部缺省视为空操作由服务端拒绝，而不是静默成功。
+ * 角色变更会改变能力集合，因此服务端额外校验「不能改 OWNER」「不能改自己」。
+ */
+export const UpdateTeamMemberInput = z
+  .object({
+    role: MemberRole.optional(),
+    dataScope: DataScope.optional(),
+    approvalLimitAmount: z.number().int().nonnegative().nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.role !== undefined ||
+      value.dataScope !== undefined ||
+      value.approvalLimitAmount !== undefined,
+    { message: "至少要修改一项：角色 / 数据范围 / 审批额度" },
+  );
+export type UpdateTeamMemberInput = z.infer<typeof UpdateTeamMemberInput>;

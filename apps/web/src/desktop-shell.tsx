@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApprovals, useIntentChannel, useTenantContext } from "@weave-order/core";
 import type { TenantChoice } from "@weave-order/schema";
+import { BUSINESS_NAV, PRIMARY_NAV, visibleNav } from "@weave-order/schema";
 import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
@@ -23,11 +24,16 @@ import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-swit
 const APP_VERSION = appVersionLabel(process.env.NEXT_PUBLIC_APP_VERSION);
 const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT;
 
-const WINDOWS = [
-  { href: "/today", label: "工作台", key: "1", hint: "⌘1" },
-  { href: "/approvals", label: "审批", key: "2", hint: "⌘2" },
-  { href: "/panorama", label: "全景", key: "3", hint: "⌘3" },
-];
+/**
+ * 导航项的「当前页」判定。
+ *
+ * 业务概览 `/panorama` 必须精确匹配：否则所有二级页都会把「概览」也点亮。
+ * 其余入口用前缀匹配，详情页（`/panorama/customers/xxx`）仍归属父入口。
+ */
+function navItemActive(href: string, pathname: string): boolean {
+  if (href === "/panorama" || href === "/settings") return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -49,8 +55,9 @@ function switchErrorText(error: unknown): string | null {
 }
 
 /**
- * 桌面外壳：顶栏 + 3 个业务窗口 + 组织设置（管理面）+ 全局打印抽屉。
- * 快捷键 ⌘1/⌘2/⌘3/⌘,，不抢输入焦点。
+ * 桌面外壳：顶栏（工作台 / 审批 / 业务 / 日志）+ 业务二级导航
+ * + 组织设置（管理面）+ 全局打印抽屉。
+ * 快捷键 ⌘1/⌘2/⌘3/⌘4/⌘,，不抢输入焦点；入口按能力显隐。
  */
 export function DesktopShell({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -125,6 +132,15 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   // 顶栏与页内 composer 共用同一个意图 hook：同一份幂等键策略、同一份轮询与缓存。
   const intentChannel = useIntentChannel(api);
 
+  // 菜单 = 服务端下发能力集合的投影：不在调用点写 role === "..."。
+  // 未就绪（加载中 / 待选租户）时能力为空，导航只保留全员可见项。
+  const capabilities = useMemo(
+    () => (tenantContext.status === "READY" ? tenantContext.capabilities : []),
+    [tenantContext],
+  );
+  const primaryNav = useMemo(() => visibleNav(PRIMARY_NAV, capabilities), [capabilities]);
+  const businessNav = useMemo(() => visibleNav(BUSINESS_NAV, capabilities), [capabilities]);
+
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
     update();
@@ -140,13 +156,14 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
     const onKey = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
       if (!(event.metaKey || event.ctrlKey)) return;
-      const map: Record<string, string> = {
-        "1": "/today",
-        "2": "/approvals",
-        "3": "/panorama",
-        ",": "/settings",
-      };
-      const target = map[event.key];
+      // 快捷键从同一份可见导航生成：入口被能力隐藏时，⌘ 数字也不会把
+      // 用户带到一个 403 页面。设置 ⌘, 固定存在（设置内部再按分栏裁剪）。
+      const shortcuts = new Map<string, string>();
+      for (const item of primaryNav) {
+        if (item.key) shortcuts.set(item.key, item.href);
+      }
+      shortcuts.set(",", "/settings");
+      const target = shortcuts.get(event.key);
       if (target) {
         event.preventDefault();
         router.push(target);
@@ -159,7 +176,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router]);
+  }, [router, primaryNav]);
 
   const pending = approvals.data?.items.length ?? 0;
   const pendingMore = approvals.data?.hasMore === true;
@@ -220,13 +237,14 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           </Link>
 
           <nav aria-label="桌面窗口" className="flex shrink-0 items-center gap-0.5 md:gap-1">
-            {WINDOWS.map((item) => {
-              const active = pathname.startsWith(item.href);
+            {primaryNav.map((item) => {
+              const active = navItemActive(item.href, pathname);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
+                  title={item.hint}
                   className={cn(
                     "relative inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-md px-2 text-sm md:gap-2 md:px-3",
                     active
@@ -408,6 +426,31 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             </div>
           </div>
         </div>
+        {pathname.startsWith("/panorama") && businessNav.length > 0 && (
+          <nav
+            aria-label="业务导航"
+            className="mx-auto flex max-w-[1440px] items-center gap-1 overflow-x-auto px-3 py-1.5 md:px-5"
+          >
+            {businessNav.map((item) => {
+              const active = navItemActive(item.href, pathname);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-xs",
+                    active
+                      ? "bg-surface font-medium text-ink-900 shadow-sm ring-1 ring-line"
+                      : "text-ink-500 hover:bg-surface hover:text-ink-900",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
         {!online && (
           <div className="mx-auto max-w-[1440px] px-5 pb-2">
             <OfflineBanner pending={0} />

@@ -22,6 +22,8 @@ import {
   AuditExportInput,
   AuditLogSummaryRange,
   OrderStatus,
+  QuoteListFilter,
+  QuoteStatus,
   ReceivableBucket,
   ReviseQuoteDraftResult,
 } from "@weave-order/schema";
@@ -491,6 +493,38 @@ export class QuoteController {
         throw error;
       }
     });
+  }
+
+  /**
+   * 报价工作台列表（WAN-175）。必须声明在 `quotes/:id` 之前：
+   * Nest 按声明顺序匹配，反了会把 `quotes` 当成 id 去查单据。
+   */
+  @Get("quotes")
+  async listQuotes(
+    @Query("status") status?: string,
+    @Query("query") query?: string,
+    @Query("customerId") customerId?: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+        const parsedStatus = nonEmpty(status);
+        return kernel.quotes.listWorkbench(
+          QuoteListFilter.parse({
+            ...(parsedStatus ? { status: QuoteStatus.parse(parsedStatus) } : {}),
+            ...(nonEmpty(query) ? { query: nonEmpty(query) } : {}),
+            ...(nonEmpty(customerId) ? { customerId: customerId } : {}),
+            ...(nonEmpty(cursor) ? { cursor } : {}),
+            limit: clampLimit(limit, 50, 100),
+          }),
+          ctx,
+        );
+      });
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 
   /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
