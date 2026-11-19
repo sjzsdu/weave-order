@@ -1,11 +1,16 @@
 import { controlSyncOutbox, memberships, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { CreateMembershipInput, CreateTenantInput } from "@weave-order/schema";
+import {
+  CreateMembershipInput,
+  CreateTenantInput,
+  hasCapability,
+} from "@weave-order/schema";
 import type { DataScope, MemberRole, Membership, Tenant, TenantChoice } from "@weave-order/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError, isUniqueViolation } from "./errors";
+import { seedFieldOptions } from "./field-options.service";
 import { isTechnicalId } from "./member-label";
 import { toIso } from "./mappers";
 
@@ -93,6 +98,9 @@ export class TenancyService {
             reason: "INSERT_RETURNED_NO_ROW",
           });
         }
+        // 新公司的等级/品类/成分/联系人角色预置项：与租户同事务，避免「新公司打开下拉是空的」。
+        // 0024/0025 迁移只覆盖迁移时刻已存在的租户。
+        await seedFieldOptions(tx, row.id);
         await appendAudit(
           tx,
           ctx,
@@ -349,6 +357,134 @@ export class TenancyService {
   async listMemberships(tenantId: string): Promise<Membership[]> {
     const rows = await this.db.select().from(memberships).where(eq(memberships.tenantId, tenantId));
     return rows.map(mapMembership);
+  }
+
+  /**
+   * 调整成员角色 / 数据范围 / 审批额度（WAN-175「成员与权限」）。
+   *
+   * 规则写在内核而不是控制器：前端隐藏只是减少误触，真正的边界在这里。
+   * - 只有具备 `member.invite` 的角色能改（OWNER / MANAGER）；
+   * - 不能修改 OWNER 成员，也不能把别人提成 OWNER（只有 OWNER 能授予 OWNER）；
+   * - 不能改自己的角色：否则一次误操作就把自己锁在门外；
+   * - 降级最后一位 OWNER 直接拒绝，避免公司失去管理员。
+   * 每个实际变化的字段各写一条审计，且与 UPDATE 同事务。
+   */
+  async updateMembership(
+    input: {
+      tenantId: string;
+      membershipId: string;
+      role?: MemberRole;
+      dataScope?: DataScope;
+      approvalLimitAmount?: number | null;
+    },
+    ctx: KernelContext,
+  ): Promise<Membership> {
+    if (!ctx.actor.role || !hasCapability(ctx.actor.role, "member.invite")) {
+      throw new KernelError("PERMISSION_DENIED", "只有老板或主管可以调整成员权限");
+    }
+    return await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(memberships)
+        .where(
+          and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId)),
+        )
+        .limit(1);
+      const row = rows[0];
+      if (!row) throw new KernelError("RESOURCE_NOT_FOUND", "这条成员记录不存在");
+
+      const isSelf = ctx.ownerId === row.id;
+      if (
+        row.role === "OWNER" &&
+        (!ctx.actor.role || !hasCapability(ctx.actor.role, "member.owner.grant"))
+      ) {
+        throw new KernelError("PERMISSION_DENIED", "只有老板可以调整老板的权限");
+      }
+      if (
+        input.role === "OWNER" &&
+        (!ctx.actor.role || !hasCapability(ctx.actor.role, "member.owner.grant"))
+      ) {
+        throw new KernelError("PERMISSION_DENIED", "只有老板可以授予老板角色");
+      }
+      if (row.role === "OWNER" && input.role !== undefined && input.role !== "OWNER") {
+        const owners = await tx
+          .select({ id: memberships.id })
+          .from(memberships)
+          .where(
+            and(
+              eq(memberships.tenantId, input.tenantId),
+              eq(memberships.role, "OWNER"),
+              eq(memberships.status, "ACTIVE"),
+            ),
+          );
+        if (owners.length <= 1) {
+          throw new KernelError("KERNEL_REJECTED", "至少保留一位老板，不能把最后一位老板降级");
+        }
+      }
+
+      const changed: Array<{
+        action: "MEMBERSHIP_ROLE_CHANGED" | "MEMBERSHIP_SCOPE_CHANGED" | "MEMBERSHIP_LIMIT_CHANGED";
+        before: string | number | null;
+        after: string | number | null;
+      }> = [];
+      const next: Partial<MembershipRow> = {};
+      if (input.role !== undefined && input.role !== row.role) {
+        next.role = input.role;
+        changed.push({ action: "MEMBERSHIP_ROLE_CHANGED", before: row.role, after: input.role });
+      }
+      if (input.dataScope !== undefined && input.dataScope !== row.dataScope) {
+        next.dataScope = input.dataScope;
+        changed.push({
+          action: "MEMBERSHIP_SCOPE_CHANGED",
+          before: row.dataScope,
+          after: input.dataScope,
+        });
+      }
+      if (
+        input.approvalLimitAmount !== undefined &&
+        input.approvalLimitAmount !== row.approvalLimitAmount
+      ) {
+        next.approvalLimitAmount = input.approvalLimitAmount;
+        changed.push({
+          action: "MEMBERSHIP_LIMIT_CHANGED",
+          before: row.approvalLimitAmount,
+          after: input.approvalLimitAmount,
+        });
+      }
+
+      if (changed.length === 0) {
+        throw new KernelError("KERNEL_REJECTED", "没有需要修改的内容");
+      }
+      // 自己改自己的角色 / 范围 / 额度，轻则把自己锁在门外，重则自抬审批上限；
+      // 一律要求另一位管理员操作。UI 同样不给自己这一行渲染编辑入口。
+      if (isSelf) {
+        throw new KernelError("KERNEL_REJECTED", "不能修改自己的权限，请让另一位管理员操作");
+      }
+
+      const updated = await tx
+        .update(memberships)
+        .set({ ...next, updatedAt: new Date() })
+        .where(eq(memberships.id, row.id))
+        .returning();
+      const fresh = updated[0];
+      if (!fresh) throw new KernelError("KERNEL_REJECTED", "成员更新未返回记录");
+
+      for (const entry of changed) {
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: entry.action,
+            entityType: "membership",
+            entityId: row.id,
+            before: { value: entry.before },
+            after: { value: entry.after, email: fresh.email, displayName: fresh.displayName },
+          },
+          input.tenantId,
+        );
+      }
+      return mapMembership(fresh);
+    });
   }
 
   /**

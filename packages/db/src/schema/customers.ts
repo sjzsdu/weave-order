@@ -16,7 +16,6 @@ import type {
   PaymentPattern,
   PricingBehavior,
 } from "@weave-order/schema";
-import { customerTierEnum } from "./enums";
 
 /** 客户主表。只能由 kernel 写入。 */
 export const customers = pgTable(
@@ -28,7 +27,8 @@ export const customers = pgTable(
     ownerId: uuid("owner_id"),
     code: varchar("code", { length: 64 }).notNull(),
     name: varchar("name", { length: 255 }).notNull(),
-    tier: customerTierEnum("tier").notNull().default("REGULAR"),
+    /** 等级 code（`field_options` 的 `customer.tier`）；varchar 不设外键，新等级可直接录入。 */
+    tier: varchar("tier", { length: 64 }).notNull().default("REGULAR"),
     contactName: varchar("contact_name", { length: 255 }),
     contactPhone: varchar("contact_phone", { length: 64 }),
     contactEmail: varchar("contact_email", { length: 255 }),
@@ -40,6 +40,7 @@ export const customers = pgTable(
   (table) => [
     uniqueIndex("customers_tenant_code_idx").on(table.tenantId, table.code),
     index("customers_tenant_owner_idx").on(table.tenantId, table.ownerId),
+    index("customers_tenant_tier_idx").on(table.tenantId, table.tier),
     index("customers_name_idx").on(table.name),
   ],
 );

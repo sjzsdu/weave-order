@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import type { FabricSample } from "@weave-order/schema";
+import type { FabricSample, FieldKey } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
@@ -14,6 +14,7 @@ import { SampleImageSearch } from "@/sample-image-search";
 import { SampleSavedToast, toSampleSaveFeedback } from "@/sample-saved-toast";
 import type { SampleSaveFeedback } from "@/sample-saved-toast";
 import { thumbBadge } from "@/sample-image-status";
+import { FieldOptionsManager } from "@/field-options-manager";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
 
@@ -44,6 +45,8 @@ function SamplesWall() {
   const [importedCount, setImportedCount] = useState<number | null>(null);
   const [openSampleId, setOpenSampleId] = useState<string | null>(null);
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
+  // 品类/成分治理弹层：既能从设置页深链打开，也能直接在图墙管理。
+  const [manageField, setManageField] = useState<FieldKey | null>(null);
   // 保存成功后的动作级反馈：带下一步，而不是让图墙悄悄多一格。
   const [saved, setSaved] = useState<SampleSaveFeedback | null>(null);
 
@@ -86,6 +89,7 @@ function SamplesWall() {
       setEditorOpen(true);
     }
     if (params.get("import") === "1") setImportOpen(true);
+    if (params.get("manageOptions") === "1") setManageField("sample.category");
   }, []);
   const openEdit = (sample: FabricSample) => {
     setEditorSample(sample);
@@ -116,6 +120,27 @@ function SamplesWall() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink-700 hover:text-ink-900">
+              字段选项
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 grid min-w-36 gap-1 rounded-lg border border-line bg-surface p-1 shadow-lg">
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-left text-sm hover:bg-ink-900/5"
+                onClick={() => setManageField("sample.category")}
+              >
+                品类选项
+              </button>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-left text-sm hover:bg-ink-900/5"
+                onClick={() => setManageField("sample.composition")}
+              >
+                成分选项
+              </button>
+            </div>
+          </details>
           <Button
             variant="secondary"
             data-testid="open-image-search"
@@ -131,6 +156,14 @@ function SamplesWall() {
       </header>
 
       {imageSearchOpen && <SampleImageSearch onClose={() => setImageSearchOpen(false)} />}
+
+      {manageField && (
+        <FieldOptionsManager
+          fieldKey={manageField}
+          onClose={() => setManageField(null)}
+          onChanged={() => void list.refetch()}
+        />
+      )}
 
       {importedCount !== null && (
         <div

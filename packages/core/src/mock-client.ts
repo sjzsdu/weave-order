@@ -9,17 +9,22 @@ import {
   CustomerListItem,
   CustomerTimelinePage,
   DemoSceneResponse,
+  FieldOption,
   PrintCenterSnapshot,
   PrintDevices,
   PrintJobList,
   PrintLogList,
   PrintTemplateList,
   PanoramaSnapshot,
+  QuoteDetail,
+  QuoteListResponse,
   QuoteShareStats,
   QuoteShareStatsList,
+  ReviseQuoteDraftResult,
   ShipmentView,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftResult,
+  T006SuggestLinePriceResult,
   IntentView,
   roleCapabilities,
 } from "@weave-order/schema";
@@ -52,6 +57,40 @@ const ORDER_ID = "99999999-9999-4999-8999-999999999999";
 const NOW = "2026-11-12T09:00:00.000Z";
 const EXPIRES = "2026-11-26T09:00:00.000Z";
 
+/** 演示模式的字典：与真实预置项同名同 code，便于本地点通治理交互。 */
+function mockOption(
+  fieldKey: FieldOption["fieldKey"],
+  code: string,
+  label: string,
+  sortOrder: number,
+): FieldOption {
+  return {
+    id: `mock-option-${code.toLowerCase()}`,
+    tenantId: TENANT_ID,
+    fieldKey,
+    code,
+    label,
+    normalized: label.toLowerCase(),
+    sortOrder,
+    active: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+const mockFieldOptions: FieldOption[] = [
+  mockOption("customer.tier", "NEW", "新客", 10),
+  mockOption("customer.tier", "REGULAR", "常规", 20),
+  mockOption("customer.tier", "VIP", "VIP", 30),
+  mockOption("customer.tier", "COLD", "沉睡", 40),
+  mockOption("sample.category", "CAT-KNIT", "针织", 10),
+  mockOption("sample.category", "CAT-WOVEN", "梭织", 20),
+  mockOption("sample.category", "CAT-NONWOVEN", "无纺", 30),
+  mockOption("sample.composition", "COMP-COTTON", "100% 棉", 10),
+  mockOption("sample.composition", "COMP-POLYESTER", "100% 涤纶", 20),
+  mockOption("sample.composition", "COMP-COTTON-POLY", "棉涤混纺", 30),
+];
+
 const customer = {
   id: CUSTOMER_ID,
   tenantId: TENANT_ID,
@@ -61,6 +100,22 @@ const customer = {
   contactName: "周敏",
   contactPhone: "138****6621",
   contactEmail: "zhoumin@example.com",
+};
+
+const contact = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  tenantId: TENANT_ID,
+  customerId: CUSTOMER_ID,
+  name: "周敏",
+  role: "采购",
+  phone: "138****6621",
+  email: "zhoumin@example.com",
+  wechat: "zhoumin_wechat",
+  note: null,
+  isPrimary: true,
+  archivedAt: null,
+  createdAt: NOW,
+  updatedAt: NOW,
 };
 
 const customerListItem = CustomerListItem.parse({
@@ -79,6 +134,7 @@ const customer360 = Customer360.parse({
   customer,
   ownerId: MEMBERSHIP_ID,
   ownerName: "孙巨中",
+  contacts: [contact],
   context: {
     customerId: CUSTOMER_ID,
     preferenceNotes: ["只做本白与浅色，不接受荧光增白。", "样布一次寄三色，附成分单。"],
@@ -437,6 +493,8 @@ export function createMockApiClient(): ApiClient {
     previewInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     acceptInvite: () => Promise.reject(new Error("演示模式不支持邀请，请用真实账号")),
     listTeam: () => Promise.resolve([]),
+    updateTeamMember: () =>
+      Promise.reject(new Error("演示模式不支持调整成员权限，请用真实账号")),
     creditsUsage: () =>
       Promise.resolve({
         period: "2026-11",
@@ -489,6 +547,47 @@ export function createMockApiClient(): ApiClient {
         ? Promise.resolve(customer360)
         : Promise.reject(new Error("CUSTOMER_NOT_FOUND")),
 
+    customerContacts: () => Promise.resolve([contact]),
+
+    createCustomerContact: (_customerId, input) =>
+      Promise.resolve({
+        contact: {
+          ...contact,
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          name: input.name,
+          role: input.role ?? null,
+          phone: input.phone ?? null,
+          email: input.email ?? null,
+          wechat: input.wechat ?? null,
+          note: input.note ?? null,
+          isPrimary: input.isPrimary ?? false,
+        },
+        warnings: [],
+      }),
+
+    updateCustomerContact: (_customerId, _contactId, input) =>
+      Promise.resolve({
+        contact: { ...contact, ...input },
+        warnings: [],
+      }),
+
+    archiveCustomerContact: () =>
+      Promise.resolve({ contact: { ...contact, isPrimary: false }, warnings: [] }),
+
+    setPrimaryCustomerContact: () => Promise.resolve({ contact, warnings: [] }),
+
+    contactRoles: () =>
+      Promise.resolve({
+        roles: [
+          { code: "ROLE-PURCHASING", label: "采购" },
+          { code: "ROLE-FINANCE", label: "财务" },
+          { code: "ROLE-MERCHANDISER", label: "跟单" },
+        ],
+      }),
+
+    exportContacts: () =>
+      Promise.resolve({ csv: "客户编号,客户名称,姓名\nKH-018,杭州青禾服饰,周敏", rowCount: 1, masked: false }),
+
     createCustomer: (input) =>
       Promise.resolve({
         ...customer,
@@ -540,6 +639,86 @@ export function createMockApiClient(): ApiClient {
     },
 
     customerTimeline: () => Promise.resolve(customerTimeline),
+
+    listFieldOptions: (field) =>
+      Promise.resolve(
+        mockFieldOptions
+          .filter((option) => option.fieldKey === field)
+          .map((option) => ({
+            ...option,
+            usage: 0,
+          })),
+      ),
+
+    resolveFieldValue: (field, value) => {
+      const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+      const hit = mockFieldOptions.find(
+        (option) =>
+          option.fieldKey === field &&
+          (option.normalized === normalized || option.code.toLowerCase() === normalized),
+      );
+      return Promise.resolve({
+        fieldKey: field,
+        input: value,
+        normalized,
+        matched: hit !== undefined,
+        code: hit?.code ?? null,
+        label: hit?.label ?? null,
+      });
+    },
+
+    createFieldOption: (field, label) =>
+      Promise.resolve({
+        ...(mockFieldOptions.find((option) => option.fieldKey === field) ?? mockFieldOptions[0]!),
+        id: `mock-option-${Math.random().toString(36).slice(2, 8)}`,
+        fieldKey: field,
+        code: `T-MOCK-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        label,
+        normalized: label.toLowerCase(),
+        active: true,
+        usage: 0,
+      }),
+
+    renameFieldOption: (id, label) =>
+      Promise.resolve({
+        ...(mockFieldOptions.find((option) => option.id === id) ?? mockFieldOptions[0]!),
+        id,
+        label,
+        normalized: label.toLowerCase(),
+        usage: 0,
+      }),
+
+    deleteFieldOption: () => Promise.resolve(),
+
+    restoreFieldOption: (id) =>
+      Promise.resolve({
+        ...(mockFieldOptions.find((option) => option.id === id) ?? mockFieldOptions[0]!),
+        id,
+        active: true,
+        usage: 0,
+      }),
+
+    reorderFieldOptions: (field, ids) =>
+      Promise.resolve(
+        ids.map((id, index) => ({
+          ...(mockFieldOptions.find((option) => option.id === id) ?? mockFieldOptions[0]!),
+          id,
+          fieldKey: field,
+          sortOrder: (index + 1) * 10,
+          usage: 0,
+        })),
+      ),
+
+    previewFieldOptionMerge: (sourceId, targetId) =>
+      Promise.resolve({
+        fieldKey: "customer.tier",
+        source: mockFieldOptions.find((option) => option.id === sourceId) ?? mockFieldOptions[0]!,
+        target: mockFieldOptions.find((option) => option.id === targetId) ?? mockFieldOptions[1]!,
+        affected: 0,
+        samples: [],
+      }),
+
+    mergeFieldOptions: () => Promise.resolve({ affected: 0 }),
 
     listSamples: () => Promise.resolve([sample]),
 
@@ -710,6 +889,56 @@ export function createMockApiClient(): ApiClient {
 
     audit: () => Promise.resolve(audit),
 
+    auditLog: () => {
+      const items = audit.map((entry) => ({
+        seq: entry.seq,
+        createdAt: entry.createdAt,
+        actorType: entry.actorType,
+        actorId: entry.actorId,
+        actorName: null,
+        actorRole: null,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        entityLabel: null,
+        highRisk: false,
+        summary: `${entry.action} · ${entry.entityType}`,
+      }));
+      return Promise.resolve({ scope: "ALL" as const, items, nextCursor: null });
+    },
+    auditLogDetail: (seq) => {
+      const entry = audit.find((item) => item.seq === seq) ?? audit[0]!;
+      return Promise.resolve({
+        seq: entry.seq,
+        createdAt: entry.createdAt,
+        actorType: entry.actorType,
+        actorId: entry.actorId,
+        actorName: null,
+        actorRole: null,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        entityLabel: null,
+        highRisk: false,
+        summary: `${entry.action} · ${entry.entityType}`,
+        before: entry.before,
+        after: entry.after,
+        maskedFields: [],
+        correlationId: entry.correlationId,
+      });
+    },
+    auditLogSummary: (range) =>
+      Promise.resolve({
+        scope: "ALL" as const,
+        range: range as "30d",
+        total: audit.length,
+        highRiskCount: 0,
+        days: [{ date: NOW.slice(0, 10), count: audit.length }],
+        actorTypes: [{ actorType: "AGENT" as const, count: audit.length }],
+      }),
+    createAuditExport: () => Promise.reject(new Error("演示模式不支持导出操作日志，请用真实账号")),
+    auditExportJob: () => Promise.reject(new Error("演示模式不支持导出操作日志，请用真实账号")),
+
     searchBySpec: () =>
       Promise.resolve(
         T002SearchFabricBySpecResult.parse({
@@ -728,6 +957,76 @@ export function createMockApiClient(): ApiClient {
 
     generateQuoteDraft: (_input: Parameters<ApiClient["generateQuoteDraft"]>[0]) =>
       Promise.resolve(T004GenerateQuoteDraftResult.parse({ ok: true, data: { draft } })),
+
+    quotes: () =>
+      Promise.resolve(
+        QuoteListResponse.parse({
+          items: [
+            {
+              id: QUOTE_ID,
+              customerId: draft.customerId,
+              customerName: customer.name,
+              status: "DRAFT",
+              currency: draft.currency,
+              total: draft.total,
+              version: 1,
+              itemCount: draft.items.length,
+              expiresAt: draft.expiresAt,
+              createdAt: draft.createdAt,
+              updatedAt: draft.createdAt,
+              pendingApproval: true,
+            },
+          ],
+          nextCursor: null,
+        }),
+      ),
+
+    quote: (id) => {
+      if (id !== QUOTE_ID) return Promise.reject(new Error("NOT_FOUND"));
+      return Promise.resolve(
+        QuoteDetail.parse({ draft, version: 1, status: "DRAFT" }),
+      );
+    },
+
+    suggestLinePrice: (input) =>
+      Promise.resolve(
+        T006SuggestLinePriceResult.parse({
+          ok: true,
+          data: {
+            pricing: {
+              customerId: input.customerId,
+              fabricSampleId: input.fabricSampleId,
+              currency: input.currency,
+              quantity: input.quantity,
+              costFloor: null,
+              markupRateBps: 0,
+              suggestedUnitPrice: draft.items[0]?.unitPrice ?? {
+                amount: 0,
+                currency: input.currency,
+              },
+              components: [
+                {
+                  kind: "POLICY",
+                  label: "演示建议价",
+                  amount: draft.items[0]?.unitPrice ?? { amount: 0, currency: input.currency },
+                  rateBps: null,
+                  source: "demo",
+                  note: null,
+                },
+              ],
+              computedBy: "KERNEL",
+            },
+          },
+        }),
+      ),
+
+    reviseQuote: () =>
+      Promise.resolve(
+        ReviseQuoteDraftResult.parse({
+          ok: false,
+          error: { code: "INVALID_INPUT", message: "演示模式不支持改价，请用真实账号" },
+        }),
+      ),
 
     decideApproval: (input) => {
       current = toDetail(input, input.decision === "APPROVE" ? "SENT" : "REJECTED");

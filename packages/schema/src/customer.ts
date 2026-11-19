@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { Customer, CustomerContext, CustomerTier, EntityId, Money, Timestamp } from "./domain";
+import { CustomerContact } from "./contact";
+import { Customer, CustomerContext, CustomerTierCode, EntityId, Money, Timestamp } from "./domain";
 
 /**
  * 客户 360 读模型。
@@ -14,7 +15,8 @@ export const CustomerListOptions = z
     /** 名称 / 编号 / 联系人 模糊搜索（字面量匹配）。 */
     query: z.string().trim().min(1).max(100).optional(),
     owner: z.enum(["mine", "all"]).optional(),
-    tier: CustomerTier.optional(),
+    /** 等级 code（不是 label）；筛选项来自 `field_options(customer.tier)`。 */
+    tier: CustomerTierCode.optional(),
     overdueOnly: z.boolean().optional(),
     limit: z.number().int().min(1).max(200).optional(),
   })
@@ -63,7 +65,14 @@ export const CustomerSummary = z
   .strict();
 export type CustomerSummary = z.infer<typeof CustomerSummary>;
 
-/** 客户 360 首屏：档案 + 上下文 + 汇总，timeline 单独分页拉取。 */
+/**
+ * 客户 360 首屏：档案 + 上下文 + 汇总 + 联系人。
+ *
+ * `contacts` 只含未归档联系人（`is_primary desc, created_at asc`），
+ * `customer.contactName/phone/email` 是主联系人投影，保留给旧页面与打印。
+ * VIEWER 拿到的手机 / 邮箱已由后端按能力掩码。
+ * timeline 单独分页拉取。
+ */
 export const Customer360 = z
   .object({
     customer: Customer,
@@ -71,6 +80,7 @@ export const Customer360 = z
     ownerName: z.string().nullable(),
     context: CustomerContext,
     summary: CustomerSummary,
+    contacts: z.array(CustomerContact),
   })
   .strict();
 export type Customer360 = z.infer<typeof Customer360>;

@@ -12,6 +12,7 @@ import {
   createGetCustomerHistoryTool,
   type GetCustomerHistoryTool,
 } from "./get-customer-history.tool";
+import { createGetFieldOptionsTool, type GetFieldOptionsTool } from "./get-field-options.tool";
 import {
   createSearchFabricByImageTool,
   type SearchFabricByImageTool,
@@ -26,6 +27,7 @@ export interface Tools {
   searchFabricByImage: SearchFabricByImageTool;
   searchFabricBySpec: SearchFabricBySpecTool;
   getCustomerHistory: GetCustomerHistoryTool;
+  getFieldOptions: GetFieldOptionsTool;
   generateQuoteDraft: GenerateQuoteDraftTool;
   suggestLinePrice: SuggestLinePriceTool;
   createSampleShipment: CreateSampleShipmentTool;
@@ -37,6 +39,7 @@ export function createTools(kernel: Kernel, imageFetcher?: ImageFetcher): Tools 
     searchFabricByImage: createSearchFabricByImageTool(kernel, imageFetcher),
     searchFabricBySpec: createSearchFabricBySpecTool(kernel),
     getCustomerHistory: createGetCustomerHistoryTool(kernel),
+    getFieldOptions: createGetFieldOptionsTool(kernel),
     generateQuoteDraft: createGenerateQuoteDraftTool(kernel),
     suggestLinePrice: createSuggestLinePriceTool(kernel),
     createSampleShipment: createCreateSampleShipmentTool(kernel),

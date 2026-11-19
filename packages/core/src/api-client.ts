@@ -4,9 +4,17 @@ import {
   ApprovalDecisionInput,
   ApprovalDecisionResult,
   ApprovalQueue,
+  AuditExportJobResponse,
+  AuditLogDetail,
+  AuditLogListResponse,
+  AuditLogSummary,
   AuthMeResponse,
   AuthContextResponse,
+  ContactExportResult,
+  ContactMutationResult,
+  ContactRoleOptionsResponse,
   CreatedQuoteShare,
+  CreateCustomerContactInput,
   CreateCustomerRequest,
   CreateQuoteShareInput,
   CreateSampleInput,
@@ -16,6 +24,7 @@ import {
   CreateShipmentInput,
   Customer,
   Customer360,
+  CustomerContactsResponse,
   CustomerListItem,
   CustomerTimelineKind,
   CustomerTimelinePage,
@@ -24,11 +33,16 @@ import {
   DemoSceneListResponse,
   DemoSceneResponse,
   FabricSample,
+  FieldOption,
+  FieldOptionListResponse,
+  FieldOptionMergePreview,
   InboundIntakeInput,
   InboundReplyList,
   InboundReplyResult,
   ImportBatch,
   ImportBatchResult,
+  MergeFieldOptionsInput,
+  MergeFieldOptionsResult,
   IntentListResponse,
   IntentView,
   OnboardingState,
@@ -57,8 +71,13 @@ import {
   PublishPrintTemplateInput,
   PublishPrintTemplateVersionInput,
   PickScanInput,
+  QuoteDetail,
+  QuoteListResponse,
   QuoteShareStats,
+  ResolveFieldValueResponse,
   QuoteShareStatsList,
+  ReviseQuoteDraftInput,
+  ReviseQuoteDraftResult,
   RegisterPrintAgentInput,
   Receivable,
   ReceivableListResponse,
@@ -68,19 +87,30 @@ import {
   SampleImage,
   Shipment,
   ShipmentView,
+  UpdateCustomerContactInput,
+  ArchiveCustomerContactInput,
   T002SearchFabricBySpecInput,
   T001SearchFabricByImageResult,
   T002SearchFabricBySpecResult,
   T004GenerateQuoteDraftInput,
   T004GenerateQuoteDraftResult,
   T005CreateSampleShipmentResult,
+  T006SuggestLinePriceInput,
+  T006SuggestLinePriceResult,
+  UpdateTeamMemberInput,
   SubmitIntentInput,
   SwitchTenantInput,
   TenantChoicesResponse,
   UpdateSampleInput,
   VerifyScanInput,
 } from "@weave-order/schema";
-import type { ApprovalKind, PersonaKey, ReprintReason, SampleStatus } from "@weave-order/schema";
+import type {
+  ApprovalKind,
+  FieldKey,
+  PersonaKey,
+  ReprintReason,
+  SampleStatus,
+} from "@weave-order/schema";
 
 /**
  * 前端唯一 API 入口。
@@ -99,6 +129,20 @@ export interface SampleListParams {
   category?: string | null;
   status?: SampleStatus | "ALL" | null;
   cursor?: string | null;
+  limit?: number;
+}
+
+/** 操作日志列表筛选：与 `/api/audit/log` 的查询参数一一对应。 */
+export interface AuditLogListParams {
+  from?: string | null;
+  to?: string | null;
+  actorId?: string | null;
+  actor?: string | null;
+  actions?: string[];
+  entityType?: string | null;
+  keyword?: string | null;
+  highRisk?: boolean;
+  cursor?: number | null;
   limit?: number;
 }
 
@@ -278,6 +322,9 @@ export function createApiClient(options: ApiClientOptions) {
   const put = (path: string, body: unknown) =>
     request(path, { method: "PUT", body: JSON.stringify(body) });
 
+  const patch = (path: string, body: unknown) =>
+    request(path, { method: "PATCH", body: JSON.stringify(body) });
+
   /** 工具 / 审批面：4xx 的业务失败按契约对象交回。 */
   const toolPost = (path: string, body: unknown) =>
     request(path, { method: "POST", body: JSON.stringify(body) }, { toolFailure: true });
@@ -354,6 +401,15 @@ export function createApiClient(options: ApiClientOptions) {
     /** 待接受与已加入的同事。 */
     listTeam: async () => TeamInviteList.parse(await request("/api/team/invites")).invites,
 
+    /** 修改成员角色 / 数据范围 / 审批额度（能力 `member.invite`，服务端二次校验）。 */
+    updateTeamMember: async (membershipId: string, input: z.input<typeof UpdateTeamMemberInput>) =>
+      TeamInvite.parse(
+        await patch(
+          `/api/team/members/${encodeURIComponent(membershipId)}`,
+          UpdateTeamMemberInput.parse(input),
+        ),
+      ),
+
     /** 本月 credits 用量：1 credit = 1,000 tokens。 */
     creditsUsage: async () =>
       z
@@ -413,9 +469,127 @@ export function createApiClient(options: ApiClientOptions) {
       CustomerResponse.parse(await post("/api/customers", CreateCustomerRequest.parse(input)))
         .customer,
 
+    /** 客户联系人：未归档，主要联系人在前；VIEWER 拿到的手机 / 邮箱已掩码。 */
+    customerContacts: async (customerId: string) =>
+      CustomerContactsResponse.parse(
+        await request(`/api/customers/${encodeURIComponent(customerId)}/contacts`),
+      ).contacts,
+
+    createCustomerContact: async (
+      customerId: string,
+      input: z.input<typeof CreateCustomerContactInput>,
+    ) =>
+      ContactMutationResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts`,
+          CreateCustomerContactInput.parse(input),
+        ),
+      ),
+
+    updateCustomerContact: async (
+      customerId: string,
+      contactId: string,
+      input: z.input<typeof UpdateCustomerContactInput>,
+    ) =>
+      ContactMutationResult.parse(
+        await request(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts/${encodeURIComponent(contactId)}`,
+          { method: "PATCH", body: JSON.stringify(UpdateCustomerContactInput.parse(input)) },
+        ),
+      ),
+
+    archiveCustomerContact: async (
+      customerId: string,
+      contactId: string,
+      input: z.input<typeof ArchiveCustomerContactInput> = {},
+    ) =>
+      ContactMutationResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts/${encodeURIComponent(contactId)}/archive`,
+          ArchiveCustomerContactInput.parse(input),
+        ),
+      ),
+
+    setPrimaryCustomerContact: async (customerId: string, contactId: string) =>
+      ContactMutationResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(customerId)}/contacts/${encodeURIComponent(contactId)}/primary`,
+          {},
+        ),
+      ),
+
+    /** 联系人角色建议（来自 field_options(contact.role)）。 */
+    contactRoles: async () => ContactRoleOptionsResponse.parse(await request("/api/contacts/roles")),
+
+    /** 批量导出联系人；后端写一条 AUDIT_EXPORTED，VIEWER 导出内容仍掩码。 */
+    exportContacts: async () => ContactExportResult.parse(await request("/api/contacts/export")),
+
     /** 批量导入（整批原子）：逐行回执由服务端给出，前端只展示。 */
     importBatch: async (batch: z.input<typeof ImportBatch>) =>
       ImportBatchResult.parse(await post("/api/import", ImportBatch.parse(batch))),
+
+    /**
+     * 字段选项列表。
+     *
+     * 默认连已停用项一起返回：历史客户/样品的 label 要靠它解析，
+     * 只显示下拉建议的地方自己按 `active` 过滤。
+     */
+    listFieldOptions: async (
+      field: FieldKey,
+      options: { includeInactive?: boolean; usage?: boolean } = {},
+    ) => {
+      const params = new URLSearchParams({ field });
+      if (options.includeInactive === false) params.set("includeInactive", "0");
+      if (options.usage) params.set("usage", "1");
+      return FieldOptionListResponse.parse(await request(`/api/field-options?${params.toString()}`))
+        .options;
+    },
+
+    /** 解析一个候选值：导入/智能体共用同一套归一化规则。 */
+    resolveFieldValue: async (field: FieldKey, value: string) => {
+      const params = new URLSearchParams({ field, value });
+      return ResolveFieldValueResponse.parse(
+        await request(`/api/field-options/resolve?${params.toString()}`),
+      );
+    },
+
+    /** 创建（幂等）：同名归一化后已存在时返回已有选项。 */
+    createFieldOption: async (field: FieldKey, label: string) =>
+      z
+        .object({ option: FieldOption })
+        .parse(await post("/api/field-options", { fieldKey: field, label })).option,
+
+    renameFieldOption: async (id: string, label: string) =>
+      z.object({ option: FieldOption }).parse(
+        await request(`/api/field-options/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ label }),
+        }),
+      ).option,
+
+    deleteFieldOption: async (id: string) => {
+      await request(`/api/field-options/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
+
+    restoreFieldOption: async (id: string) =>
+      z
+        .object({ option: FieldOption })
+        .parse(await post(`/api/field-options/${encodeURIComponent(id)}/restore`, {})).option,
+
+    reorderFieldOptions: async (field: FieldKey, ids: string[]) =>
+      FieldOptionListResponse.parse(
+        await post("/api/field-options/reorder", { fieldKey: field, ids }),
+      ).options,
+
+    previewFieldOptionMerge: async (sourceId: string, targetId: string) =>
+      FieldOptionMergePreview.parse(
+        await post("/api/field-options/merge/preview", { sourceId, targetId }),
+      ),
+
+    mergeFieldOptions: async (input: z.input<typeof MergeFieldOptionsInput>) =>
+      MergeFieldOptionsResult.parse(
+        await post("/api/field-options/merge", MergeFieldOptionsInput.parse(input)),
+      ),
 
     /** 客户时间线（游标分页）。 */
     customerTimeline: async (
@@ -557,9 +731,85 @@ export function createApiClient(options: ApiClientOptions) {
     audit: async (limit = 50) =>
       AuditResponse.parse(await request(`/api/audit?limit=${limit}`)).entries,
 
+    /** 操作日志列表：筛选与游标都交给服务端（服务端同时决定 ALL/OWN 范围）。 */
+    auditLog: async (params: AuditLogListParams = {}) =>
+      AuditLogListResponse.parse(
+        await request(`/api/audit/log?${new URLSearchParams(auditQuery(params)).toString()}`),
+      ),
+
+    /** 单条详情：before/after 由服务端按查看者能力裁剪。 */
+    auditLogDetail: async (seq: number) =>
+      z.object({ entry: AuditLogDetail }).parse(await request(`/api/audit/log/${seq}`)).entry,
+
+    auditLogSummary: async (range: string) =>
+      AuditLogSummary.parse(
+        await request(`/api/audit/log/summary?range=${encodeURIComponent(range)}`),
+      ),
+
+    createAuditExport: async (params: AuditLogListParams = {}) =>
+      AuditExportJobResponse.parse(
+        await request(`/api/audit/log/export`, {
+          method: "POST",
+          body: JSON.stringify({
+            from: params.from ?? undefined,
+            to: params.to ?? undefined,
+            actorId: params.actorId ?? undefined,
+            actor: params.actor ?? undefined,
+            action: params.actions,
+            entityType: params.entityType ?? undefined,
+            keyword: params.keyword ?? undefined,
+            highRisk: params.highRisk,
+          }),
+        }),
+      ).job,
+
+    auditExportJob: async (jobId: string) =>
+      AuditExportJobResponse.parse(
+        await request(`/api/audit/log/export/${encodeURIComponent(jobId)}`),
+      ).job,
+
     generateQuoteDraft: async (input: z.input<typeof T004GenerateQuoteDraftInput>) =>
       T004GenerateQuoteDraftResult.parse(
         await toolPost("/api/tools/generate-quote-draft", T004GenerateQuoteDraftInput.parse(input)),
+      ),
+
+    /**
+     * 报价工作台列表：状态 / 关键词 / 客户筛选 + 游标分页。
+     * 返回项只带摘要；逐行明细由 `quote()` 懒加载。
+     */
+    quotes: async (
+      options: {
+        status?: string | null;
+        query?: string | null;
+        customerId?: string | null;
+        cursor?: string | null;
+        limit?: number;
+      } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (options.status && options.status !== "ALL") params.set("status", options.status);
+      if (options.query) params.set("query", options.query);
+      if (options.customerId) params.set("customerId", options.customerId);
+      if (options.cursor) params.set("cursor", options.cursor);
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      const qs = params.toString();
+      return QuoteListResponse.parse(await request(`/api/quotes${qs ? `?${qs}` : ""}`));
+    },
+
+    /** 单据详情（草稿手改前先读版本号，避免覆盖别人的修改）。 */
+    quote: async (quoteId: string) =>
+      QuoteDetail.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}`)),
+
+    /** 建议单价（T-006）：成本在服务端，桌面端同样只负责回填可编辑输入框。 */
+    suggestLinePrice: async (input: z.input<typeof T006SuggestLinePriceInput>) =>
+      T006SuggestLinePriceResult.parse(
+        await toolPost("/api/tools/suggest-line-price", T006SuggestLinePriceInput.parse(input)),
+      ),
+
+    /** 人类改稿：版本 +1、重算金额、写审计；改幅超阈值自动升级审批。 */
+    reviseQuote: async (input: z.input<typeof ReviseQuoteDraftInput>) =>
+      ReviseQuoteDraftResult.parse(
+        await post("/api/quotes/revise", ReviseQuoteDraftInput.parse(input)),
       ),
 
     searchBySpec: async (input: z.input<typeof T002SearchFabricBySpecInput>) =>
@@ -855,3 +1105,19 @@ export function createApiClient(options: ApiClientOptions) {
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
+
+/** 只把有值的筛选拼进查询串；空字符串会让后端误当成筛选条件。 */
+function auditQuery(params: AuditLogListParams): Record<string, string> {
+  const query: Record<string, string> = {};
+  if (params.from) query.from = params.from;
+  if (params.to) query.to = params.to;
+  if (params.actorId) query.actorId = params.actorId;
+  if (params.actor) query.actor = params.actor;
+  if (params.actions && params.actions.length > 0) query.action = params.actions.join(",");
+  if (params.entityType) query.entityType = params.entityType;
+  if (params.keyword) query.keyword = params.keyword;
+  if (params.highRisk) query.highRisk = "1";
+  if (params.cursor) query.cursor = String(params.cursor);
+  if (params.limit) query.limit = String(params.limit);
+  return query;
+}

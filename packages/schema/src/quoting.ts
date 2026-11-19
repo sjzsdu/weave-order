@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { Currency, EntityId, FabricSample, Quantity, QuoteStatus } from "./domain";
+import {
+  Currency,
+  EntityId,
+  FabricSample,
+  Money,
+  Quantity,
+  QuoteStatus,
+  Timestamp,
+} from "./domain";
 import { LlmTask } from "./llm";
 import { ImagePayload } from "./tools/t001-search-fabric-by-image";
 import { QuotePricingBasis } from "./tools/t006-suggest-line-price";
@@ -174,3 +182,53 @@ export const QuoteDetail = z
   })
   .strict();
 export type QuoteDetail = z.infer<typeof QuoteDetail>;
+
+/**
+ * 报价工作台列表项（WAN-175）。
+ *
+ * 列表只带「一眼判断该点哪一条」的字段：客户名、状态、金额、行数、有效期。
+ * 逐行明细与改稿 diff 留在 `GET /api/quotes/:id` / 审批卡里懒加载，
+ * 避免列表页为 50 条报价各拉一次明细。
+ */
+export const QuoteListItem = z
+  .object({
+    id: EntityId,
+    customerId: EntityId,
+    /** 客户名是列表现场 join 出来的展示快照；客户改名后列表立即跟随。 */
+    customerName: z.string().min(1).max(255),
+    status: QuoteStatus,
+    currency: Currency,
+    total: Money,
+    version: z.number().int().positive(),
+    itemCount: z.number().int().nonnegative(),
+    /** 与草稿同一个有效期口径；已过期的历史报价仍可读。 */
+    expiresAt: Timestamp,
+    createdAt: Timestamp,
+    updatedAt: Timestamp,
+    /** 是否还停在草稿态（需要走审批才会发送）。 */
+    pendingApproval: z.boolean(),
+  })
+  .strict();
+export type QuoteListItem = z.infer<typeof QuoteListItem>;
+
+export const QuoteListResponse = z
+  .object({
+    items: z.array(QuoteListItem),
+    /** 没有下一页时为 null。 */
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+export type QuoteListResponse = z.infer<typeof QuoteListResponse>;
+
+/** 工作台列表筛选。`status` 缺省 = 全部状态。 */
+export const QuoteListFilter = z
+  .object({
+    status: QuoteStatus.optional(),
+    /** 客户名 / 报价单号前缀以外的自由关键词，只匹配客户名与样品描述。 */
+    query: z.string().trim().max(200).optional(),
+    customerId: EntityId.optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+    cursor: z.string().max(512).optional(),
+  })
+  .strict();
+export type QuoteListFilter = z.infer<typeof QuoteListFilter>;

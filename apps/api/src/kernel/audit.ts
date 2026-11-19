@@ -34,6 +34,10 @@ export interface AuditWrite {
   entityId: string;
   before?: JsonValue | null;
   after?: JsonValue | null;
+  /** 操作人姓名快照（成员名 / 「智能体」「系统」）；缺省不写，前端回退「成员」。 */
+  actorName?: string | null;
+  /** 对象名称快照（客户名 / 报价号等）；缺省不写，前端回退「业务记录」。 */
+  entityLabel?: string | null;
 }
 
 /**
@@ -55,6 +59,8 @@ export async function appendAudit(
     actorType: ctx.actor.type,
     actorId: ctx.actor.id,
     actorRole: ctx.actor.role ?? null,
+    actorName: entry.actorName ?? null,
+    entityLabel: entry.entityLabel ?? null,
     action: entry.action,
     entityType: entry.entityType,
     entityId: entry.entityId,
@@ -101,6 +107,8 @@ function toAuditEntry(row: AuditRow, tenantId: string): AuditLogEntry {
     actorType: row.actorType,
     actorId: row.actorId,
     actorRole: row.actorRole ?? null,
+    actorName: row.actorName ?? null,
+    entityLabel: row.entityLabel ?? null,
     action: row.action,
     entityType: row.entityType,
     entityId: row.entityId,

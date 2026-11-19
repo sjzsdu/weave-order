@@ -1,35 +1,18 @@
 "use client";
 
+import Link from "next/link";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthContext } from "@weave-order/core";
-import { Fragment, useEffect, useState } from "react";
-import type { TeamInvite } from "@weave-order/schema";
-import { memberRoleLabel } from "@weave-order/schema";
-import { Badge, EmptyState, Spinner } from "@weave-order/ui";
+import type { Capability, Currency, MemberRole } from "@weave-order/schema";
+import { SETTINGS_SECTIONS, memberRoleLabel, visibleNav } from "@weave-order/schema";
+import { Badge, EmptyState, Spinner, cn } from "@weave-order/ui";
+import { formatMoney } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
-import { track } from "@/analytics";
-import { formatMoney } from "@weave-order/ui";
-
-const INVITE_STATUS_LABEL: Record<TeamInvite["status"], string> = {
-  INVITED: "待接受",
-  ACTIVE: "已加入",
-};
-
-/**
- * 成员姓名：`name` 为空时退到邮箱，再退到「我」。
- * 绝不回退到 `subject` —— 那是 SSO 主键 UUID，给用户看只会破坏信任。
- */
-function memberDisplayName(me: { name: string | null; email: string | null }): string {
-  return me.name?.trim() || me.email?.trim() || "我";
-}
-
-/** 成员表里的一行怎么称呼：绝不把 SSO 主键或原始枚举放到界面上。 */
-function memberRowLabel(item: TeamInvite, selfMembershipId: string): string {
-  if (item.membershipId === selfMembershipId) return "我";
-  if (item.email.includes("@")) return item.email;
-  return item.status === "INVITED" ? "待接受的邀请" : "已加入的同事";
-}
+import { FieldOptionsSummary } from "@/field-options-manager";
+import { MembersSection } from "./members-section";
 
 const SCOPE_LABEL: Record<string, string> = {
   ALL: "全公司",
@@ -68,17 +51,37 @@ function Field({ label, value, hint }: { label: string; value: React.ReactNode; 
   );
 }
 
-/** 组织设置（⌘,）：管理面，不是第四个业务窗口。 */
+/** 成员姓名：`name` 为空时退到邮箱，再退到「我」；绝不回退到 SSO 主键。 */
+function memberDisplayName(me: { name: string | null; email: string | null }): string {
+  return me.name?.trim() || me.email?.trim() || "我";
+}
+
+/**
+ * 设置（⌘,）：管理面，不是业务窗口。
+ *
+ * 左栏六个分栏由 `SETTINGS_SECTIONS` + 能力集合投影而来；分栏选中态写进
+ * `?section=`，因此「把某条设置发给同事」是一条可分享的深链。
+ */
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-ink-400">正在连接织序…</div>}>
+      <SettingsShell />
+    </Suspense>
+  );
+}
+
+function SettingsShell() {
   const mounted = useMounted();
   if (!mounted) {
     return <div className="p-6 text-sm text-ink-400">正在连接织序…</div>;
   }
-  return <SettingsPageContent />;
+  return <SettingsContent />;
 }
 
-function SettingsPageContent() {
+function SettingsContent() {
   const api = useApi();
+  const router = useRouter();
+  const params = useSearchParams();
   const me = useAuthContext(api);
 
   if (me.isLoading) return <Spinner label="读取组织信息…" />;
@@ -100,8 +103,6 @@ function SettingsPageContent() {
       />
     );
   }
-
-  // 还没选租户时没有组织信息可展示；外壳会渲染选择页，这里只做兜底。
   if ("tenants" in me.data) {
     return (
       <EmptyState
@@ -111,8 +112,22 @@ function SettingsPageContent() {
     );
   }
 
-  const { tenant, membership } = me.data;
-  const limit = membership.approvalLimitAmount;
+  const { tenant, membership, capabilities } = me.data;
+  const sections = visibleNav(SETTINGS_SECTIONS, capabilities);
+  if (sections.length === 0) {
+    return (
+      <EmptyState
+        title="没有可管理的设置"
+        description="当前角色没有可查看的设置分栏；需要调整请联系公司管理员。"
+      />
+    );
+  }
+  const requested = params.get("section");
+  const active = sections.find((item) => sectionKey(item.href) === requested) ?? sections[0]!;
+
+  const go = (href: string) => {
+    router.replace(href, { scroll: false });
+  };
 
   return (
     <div className="grid gap-6">
@@ -120,10 +135,138 @@ function SettingsPageContent() {
         <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">组织与设置</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink-900">{tenant.name}</h1>
         <p className="mt-1 text-sm text-ink-400">
-          这里能看到公司资料、你的角色和审批权限。资料由平台管理员维护，需要修改时找管理员即可。
+          共 {sections.length} 个分栏可见。资料由平台管理员维护；成员角色、数据范围与审批额度可在这里调整。
         </p>
       </header>
 
+      <div className="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
+        <aside className="md:sticky md:top-20 md:self-start">
+          <nav aria-label="设置分栏" className="flex gap-1 overflow-x-auto md:flex-col">
+            {sections.map((item) => {
+              const selected = item.href === active.href;
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => go(item.href)}
+                  className={cn(
+                    "shrink-0 rounded-md px-3 py-2 text-left text-sm",
+                    selected
+                      ? "bg-indigo-100 font-medium text-indigo-600"
+                      : "text-ink-700 hover:bg-surface",
+                  )}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="min-w-0">
+          <SectionContent
+            section={sectionKey(active.href)}
+            tenant={tenant}
+            membership={membership}
+            selfName={memberDisplayName(me.data)}
+            email={me.data.email}
+            capabilities={capabilities}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function sectionKey(href: string): string {
+  const value = href.split("section=")[1];
+  return value ?? "organization";
+}
+
+function SectionContent({
+  section,
+  tenant,
+  membership,
+  selfName,
+  email,
+  capabilities,
+}: {
+  section: string;
+  tenant: {
+    name: string;
+    brand: string | null;
+    slug: string;
+    currency: Currency;
+    status: string;
+    isolationMode: string;
+  };
+  membership: {
+    id: string;
+    role: MemberRole;
+    dataScope: "ALL" | "TEAM" | "OWN";
+    approvalLimitAmount: number | null;
+  };
+  selfName: string;
+  email: string | null;
+  capabilities: Capability[];
+}) {
+  switch (section) {
+    case "members":
+      return (
+        <MembersSection
+          selfMembershipId={membership.id}
+          canManage={capabilities.includes("member.invite")}
+          canGrantOwner={capabilities.includes("member.owner.grant")}
+          currency={tenant.currency}
+          role={membership.role}
+        />
+      );
+    case "fields":
+      return <FieldsSection />;
+    case "print":
+      return <PrintSection />;
+    case "import":
+      return <ImportSection />;
+    case "billing":
+      return <BillingSection />;
+    default:
+      return (
+        <OrgSection
+          tenant={tenant}
+          membership={membership}
+          selfName={selfName}
+          email={email}
+        />
+      );
+  }
+}
+
+function OrgSection({
+  tenant,
+  membership,
+  selfName,
+  email,
+}: {
+  tenant: {
+    name: string;
+    brand: string | null;
+    slug: string;
+    currency: Currency;
+    status: string;
+    isolationMode: string;
+  };
+  membership: {
+    role: MemberRole;
+    dataScope: "ALL" | "TEAM" | "OWN";
+    approvalLimitAmount: number | null;
+  };
+  selfName: string;
+  email: string | null;
+}) {
+  const limit = membership.approvalLimitAmount;
+  return (
+    <div className="grid gap-6">
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-lg border border-line bg-surface px-5 py-3">
           <h2 className="py-2 text-sm font-medium text-ink-900">组织资料</h2>
@@ -133,7 +276,7 @@ function SettingsPageContent() {
             <Field
               label="公司标识"
               value={<code className="font-mono text-xs">{tenant.slug}</code>}
-              hint="和我们的技术支持沟通时提供这一串即可"
+              hint="和技术支持沟通时提供这一串即可"
             />
             <Field
               label="计费币种"
@@ -161,8 +304,8 @@ function SettingsPageContent() {
           <dl>
             <Field
               label="成员"
-              value={memberDisplayName(me.data)}
-              hint={me.data.name?.trim() && me.data.email ? me.data.email : undefined}
+              value={selfName}
+              hint={selfName !== email && email ? email : undefined}
             />
             <Field label="角色" value={memberRoleLabel(membership.role)} />
             <Field label="数据范围" value={SCOPE_LABEL[membership.dataScope] ?? "本人"} />
@@ -184,41 +327,6 @@ function SettingsPageContent() {
         </section>
       </div>
 
-      <section className="rounded-lg border border-line bg-surface px-5 py-4">
-        <h2 className="text-sm font-medium text-ink-900">角色与审批等级</h2>
-        <p className="mt-1 text-xs text-ink-400">
-          金额类动作一律先出草稿、由人确认；超过上限或改幅超过阈值时，自动升级给上级审批，不需要你手动报备。
-        </p>
-        <div className="mt-3 overflow-hidden rounded-md border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-paper text-xs text-ink-400">
-              <tr>
-                <th className="px-3 py-2 text-left font-normal">角色</th>
-                <th className="px-3 py-2 text-left font-normal">典型职责</th>
-                <th className="px-3 py-2 text-left font-normal">审批边界</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line text-ink-700">
-              <tr>
-                <td className="px-3 py-2">老板 / 主管</td>
-                <td className="px-3 py-2">定价策略、大额审批</td>
-                <td className="px-3 py-2">可批全部；大额双人复核</td>
-              </tr>
-              <tr>
-                <td className="px-3 py-2">销售 / 跟单</td>
-                <td className="px-3 py-2">出报价、跟进客户</td>
-                <td className="px-3 py-2">本人数据；超限升级</td>
-              </tr>
-              <tr>
-                <td className="px-3 py-2">财务</td>
-                <td className="px-3 py-2">对账、收款确认</td>
-                <td className="px-3 py-2">只读业务 + 财务确认</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
           <h2 className="text-sm font-medium text-ink-900">登录与安全</h2>
@@ -236,7 +344,7 @@ function SettingsPageContent() {
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
           <h2 className="text-sm font-medium text-ink-900">日常使用</h2>
           <dl>
-            <Field label="窗口" value="工作台 ⌘1 · 审批 ⌘2 · 全景 ⌘3" />
+            <Field label="窗口" value="工作台 ⌘1 · 审批 ⌘2 · 业务 ⌘3 · 日志 ⌘4" />
             <Field label="设置" value="组织与设置 ⌘," />
             <Field label="打印" value="任意页面调用打印面板，桌面版直连打印机" />
             <Field label="外设" value="扫码枪、电子秤、标签机即插即用" />
@@ -244,335 +352,99 @@ function SettingsPageContent() {
         </section>
       </div>
 
-      <CreditsCard />
-
-      <TeamSection
-        canManage={me.data.capabilities.includes("member.invite")}
-        selfMembershipId={membership.id}
-      />
-
       <p className="text-xs text-ink-400">
-        公司资料由平台管理员维护；成员邀请可以在这里随时撤销。需要改公司名、抬头或增加账号数，
-        <SupportMailto
-          className="text-indigo-600 underline underline-offset-2"
-          label="写信给我们"
-        />{" "}
+        公司资料由平台管理员维护；成员邀请与权限在「成员与权限」分栏调整。需要改公司名、抬头或增加账号数，
+        <SupportMailto className="text-indigo-600 underline underline-offset-2" label="写信给我们" />{" "}
         或联系你的对接人。
       </p>
     </div>
   );
 }
 
-const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "MANAGER", label: "主管" },
-  { value: "SALES", label: "销售" },
-  { value: "MERCHANDISER", label: "跟单" },
-  { value: "SAMPLE_ADMIN", label: "样品管理" },
-  { value: "FINANCE", label: "财务" },
-  { value: "VIEWER", label: "只读" },
-];
-
 /**
- * 邀请同事（老板/主管可用）。
- *
- * 生成一条 7 天有效的专属链接，复制到微信或邮件发给对方；对方登录后点接受即加入。
- * 没有接短信/邮件服务，所以这里负责生成与复制，不做「已发送」的假象。
+ * 客户与字段：只做汇总与跳转，治理入口长在选项被使用的地方（P1 就地治理）。
+ * 这里不复制一套治理 UI，避免出现两份「哪个才是真的」。
  */
-function TeamSection({
-  canManage,
-  selfMembershipId,
-}: {
-  canManage: boolean;
-  selfMembershipId: string;
-}) {
-  const api = useApi();
-  const [invites, setInvites] = useState<TeamInvite[]>([]);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("SALES");
-  const [channel, setChannel] = useState<"email" | "sms">("email");
-  const [phone, setPhone] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<string | null>(null);
-  const [delivery, setDelivery] = useState<TeamInvite["delivery"]>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
-  const [revokeError, setRevokeError] = useState<{
-    membershipId: string;
-    message: string;
-  } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+function FieldsSection() {
+  return (
+    <div className="grid gap-6">
+      <FieldOptionsSummary />
+      <section className="rounded-lg border border-line bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium text-ink-900">客户与字段</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          客户等级、样品品类、样品成分、联系人角色都是公司共享选项：任何成员都能增删改、排序、合并。
+          治理入口就在使用现场，看到哪里不对就地改。
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Link
+            href="/panorama/customers?manageTiers=1"
+            className="rounded-lg border border-line bg-paper px-4 py-3 hover:border-indigo-600"
+          >
+            <div className="text-sm font-medium text-ink-900">管理客户等级</div>
+            <p className="mt-1 text-xs text-ink-400">改名、排序、停用后恢复、合并历史客户。</p>
+          </Link>
+          <Link
+            href="/panorama/samples?manageOptions=1"
+            className="rounded-lg border border-line bg-paper px-4 py-3 hover:border-indigo-600"
+          >
+            <div className="text-sm font-medium text-ink-900">管理品类与成分</div>
+            <p className="mt-1 text-xs text-ink-400">只影响后续建议，不改历史单据；要改历史走「合并」。</p>
+          </Link>
+        </div>
+        <p className="mt-3 text-xs text-ink-400">
+          用量见上方汇总；改名、排序、停用与合并都在使用现场完成，这里只做入口。
+        </p>
+      </section>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listTeam()
-      .then((rows) => {
-        if (!cancelled) setInvites(rows);
-      })
-      .catch(() => {
-        // 没有权限时静默：设置页其它部分仍然可读。
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    setLink(null);
-    try {
-      const created = await api.inviteMember({
-        email: email.trim(),
-        role: role as never,
-        channel,
-        ...(channel === "sms" && phone.trim() ? { phone: phone.trim() } : {}),
-      });
-      setLink(created.url);
-      // 只记角色，不记同事的邮箱和手机号。
-      track("invite_created", { role });
-      setDelivery(created.delivery);
-      setEmail("");
-      const rows = await api.listTeam();
-      setInvites(rows);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "邀请失败");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function copy() {
-    if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
-    } catch {
-      setError("复制失败，请手动选中链接复制");
-    }
-  }
-
-  async function revoke(item: TeamInvite) {
-    setRevokingId(item.membershipId);
-    setRevokeError(null);
-    try {
-      await api.revokeInvite(item.membershipId);
-      setInvites((rows) => rows.filter((row) => row.membershipId !== item.membershipId));
-      setConfirmingId(null);
-      setToast(`已撤销给 ${item.email} 的邀请，原链接已失效`);
-    } catch (cause) {
-      // 服务端已经给出人话原因（403 / 404 / 409）；没有就用通用文案，不假装成功。
-      setRevokeError({
-        membershipId: item.membershipId,
-        message: cause instanceof Error ? cause.message : "撤销失败，请稍后重试",
-      });
-      setConfirmingId(null);
-    } finally {
-      setRevokingId(null);
-    }
-  }
-
+/** 打印与外设：打印是全局抽屉，不占一级入口，这里只放使用说明与排障入口。 */
+function PrintSection() {
   return (
     <section className="rounded-lg border border-line bg-surface px-5 py-4">
-      <h2 className="text-sm font-medium text-ink-900">邀请同事</h2>
+      <h2 className="text-sm font-medium text-ink-900">打印与外设</h2>
       <p className="mt-1 text-xs text-ink-400">
-        填同事邮箱和角色，生成一条 7
-        天有效的专属链接，复制到微信或邮件发给他。他打开链接、登录后点「接受邀请」就加入你这间公司。
+        打印面板在任意页面都能打开（顶栏「打印」），不单独占一个窗口。寄样标签、报价单与对账单都在那里发起。
       </p>
+      <dl className="mt-2">
+        <Field label="标签机" value="即插即用，打印面板选择设备即可" />
+        <Field label="扫码枪" value="按键盘输入处理，不需要额外驱动" />
+        <Field label="电子秤" value="串口/USB 接入后在寄样与出库流程可用" />
+        <Field
+          label="故障排查"
+          value={<SupportMailto className="text-indigo-600 underline" label="联系技术支持" />}
+          hint="带上设备型号与打印面板里的错误提示"
+        />
+      </dl>
+    </section>
+  );
+}
 
-      <form
-        onSubmit={(event) => void submit(event)}
-        className="mt-3 flex flex-wrap items-end gap-2"
-      >
-        <label className="grid gap-1 text-[11px] text-ink-400">
-          同事邮箱
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="colleague@company.com"
-            className="min-w-56 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
-          />
-        </label>
-        <label className="grid gap-1 text-[11px] text-ink-400">
-          角色
-          <select
-            value={role}
-            onChange={(event) => setRole(event.target.value)}
-            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
-          >
-            {ROLE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-[11px] text-ink-400">
-          通知方式
-          <select
-            value={channel}
-            onChange={(event) => setChannel(event.target.value as "email" | "sms")}
-            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
-          >
-            <option value="email">邮件</option>
-            <option value="sms">短信</option>
-          </select>
-        </label>
-        {channel === "sms" ? (
-          <label className="grid gap-1 text-[11px] text-ink-400">
-            手机号
-            <input
-              required
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="13800000000"
-              className="min-w-40 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-900 focus:border-indigo-600 focus:outline-none"
-            />
-          </label>
-        ) : null}
-        <button
-          type="submit"
-          disabled={busy || !email.includes("@") || (channel === "sms" && phone.trim().length < 6)}
-          className="inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+/** 数据导入：统一入口，格式说明与模板下载在对应业务页。 */
+function ImportSection() {
+  return (
+    <section className="rounded-lg border border-line bg-surface px-5 py-4">
+      <h2 className="text-sm font-medium text-ink-900">数据导入</h2>
+      <p className="mt-1 text-xs text-ink-400">
+        先下载模板再填，预览确认后才写入；未知的等级 / 品类会标出来让你选择「存为选项 / 仅本次 / 映射到已有」。
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Link
+          href="/panorama/customers?import=1"
+          className="rounded-lg border border-line bg-paper px-4 py-3 hover:border-indigo-600"
         >
-          {busy ? "生成中…" : "生成邀请链接"}
-        </button>
-      </form>
-
-      {error ? <p className="mt-2 text-xs text-vermilion-600">{error}</p> : null}
-
-      {delivery ? (
-        <p className={`mt-2 text-xs ${delivery.ok ? "text-moss-600" : "text-ink-500"}`}>
-          {delivery.ok
-            ? `已通过${delivery.channel === "sms" ? "短信" : "邮件"}发送给 ${email || "对方"}。也可以复制下面的链接直接发微信。`
-            : `没有发出通知（${delivery.detail ?? "发送通道不可用"}）。请复制下面的链接，自己发给对方。`}
-        </p>
-      ) : null}
-
-      {link ? (
-        <div className="mt-3 grid gap-2">
-          <p className="text-xs text-ink-500">这条链接 7 天有效：</p>
-          <div className="flex gap-2">
-            <input
-              readOnly
-              value={link}
-              onFocus={(event) => event.currentTarget.select()}
-              className="flex-1 rounded-md border border-line bg-paper px-3 py-2 font-mono text-xs text-ink-700"
-            />
-            <button
-              type="button"
-              onClick={() => void copy()}
-              className="rounded-md border border-line px-3 text-xs text-ink-700 hover:border-ink-400"
-            >
-              复制
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {invites.length > 0 ? (
-        <div className="mt-4 overflow-hidden rounded-md border border-line">
-          <table className="w-full text-sm">
-            <thead className="bg-paper text-xs text-ink-400">
-              <tr>
-                <th className="px-3 py-2 text-left font-normal">同事</th>
-                <th className="hidden px-3 py-2 text-left font-normal sm:table-cell">角色</th>
-                <th className="hidden px-3 py-2 text-left font-normal sm:table-cell">状态</th>
-                {canManage ? <th className="px-3 py-2 text-right font-normal">操作</th> : null}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line text-ink-700">
-              {invites.map((item) => (
-                <Fragment key={item.membershipId}>
-                  <tr>
-                    <td className="px-3 py-2 text-xs">
-                      {memberRowLabel(item, selfMembershipId)}
-                      <span className="mt-0.5 block text-ink-400 sm:hidden">
-                        {memberRoleLabel(item.role)} ·{" "}
-                        {INVITE_STATUS_LABEL[item.status] ?? "已加入"}
-                      </span>
-                    </td>
-                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs sm:table-cell">
-                      {memberRoleLabel(item.role)}
-                    </td>
-                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-ink-400 sm:table-cell">
-                      {INVITE_STATUS_LABEL[item.status] ?? "已加入"}
-                    </td>
-                    {canManage ? (
-                      <td className="px-3 py-2 text-right text-xs">
-                        {item.status === "INVITED" ? (
-                          confirmingId === item.membershipId ? (
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                              <span className="text-ink-500">
-                                撤销后这条邀请链接立即失效，对方将无法再通过它加入。
-                              </span>
-                              <button
-                                type="button"
-                                disabled={revokingId === item.membershipId}
-                                onClick={() => void revoke(item)}
-                                className="rounded-md bg-vermilion-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-vermilion-600/90 disabled:opacity-60"
-                              >
-                                {revokingId === item.membershipId ? "撤销中…" : "确认撤销"}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={revokingId === item.membershipId}
-                                onClick={() => setConfirmingId(null)}
-                                className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-700 hover:border-ink-400 disabled:opacity-60"
-                              >
-                                取消
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setConfirmingId(item.membershipId);
-                                setRevokeError(null);
-                              }}
-                              className="whitespace-nowrap rounded-md border border-line px-2.5 py-1 text-xs text-ink-700 hover:border-vermilion-600 hover:text-vermilion-600"
-                            >
-                              撤销
-                            </button>
-                          )
-                        ) : null}
-                      </td>
-                    ) : null}
-                  </tr>
-                  {revokeError?.membershipId === item.membershipId ? (
-                    <tr>
-                      <td
-                        colSpan={canManage ? 4 : 3}
-                        className="bg-vermilion-100 px-3 py-2 text-xs text-vermilion-600"
-                      >
-                        撤销失败：{revokeError.message}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div
-          role="status"
-          className="fixed bottom-6 right-6 z-50 rounded-md bg-ink-900 px-4 py-2 text-sm text-white shadow-lg"
+          <div className="text-sm font-medium text-ink-900">导入客户</div>
+          <p className="mt-1 text-xs text-ink-400">客户名、等级、联系方式；重名客户会先提示。</p>
+        </Link>
+        <Link
+          href="/panorama/samples?import=1"
+          className="rounded-lg border border-line bg-paper px-4 py-3 hover:border-indigo-600"
         >
-          {toast}
-        </div>
-      ) : null}
+          <div className="text-sm font-medium text-ink-900">导入样品</div>
+          <p className="mt-1 text-xs text-ink-400">编号、品名、成分、克重、成本底线。</p>
+        </Link>
+      </div>
     </section>
   );
 }
@@ -585,11 +457,8 @@ type CreditsState = {
   state: "OK" | "WARN" | "PAUSED";
 };
 
-/**
- * 本月 credits：套餐含的额度 + 已用 + 超额提醒。
- * 到 80% 提示、到 100% 智能体暂停（人仍可查看、审批、导出），充值后恢复。
- */
-function CreditsCard() {
+/** 用量与订阅：老板只读（账单由平台侧维护，本期不做自助）。 */
+function BillingSection() {
   const api = useApi();
   const [data, setData] = useState<CreditsState | null>(null);
 
@@ -601,45 +470,63 @@ function CreditsCard() {
         if (!cancelled) setData(usage);
       })
       .catch(() => {
-        // 拿不到就隐藏，不影响设置页其它内容。
+        // 拿不到就显示占位，不影响其它分栏。
       });
     return () => {
       cancelled = true;
     };
   }, [api]);
 
-  if (!data) return null;
-
-  const percent = Math.max(0, Math.min(100, data.percent));
+  const percent = Math.max(0, Math.min(100, data?.percent ?? 0));
   const tone =
-    data.state === "PAUSED"
+    data?.state === "PAUSED"
       ? "bg-vermilion-600"
-      : data.state === "WARN"
-        ? "bg-amber-500"
+      : data?.state === "WARN"
+        ? "bg-amber-600"
         : "bg-indigo-600";
 
   return (
-    <section className="rounded-lg border border-line bg-surface px-5 py-4">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium text-ink-900">本月 AI 额度（credits）</h2>
-        <span className="font-mono text-xs text-ink-400">{data.period}</span>
-      </div>
-      <p className="mt-2 text-2xl font-semibold text-ink-900">
-        {data.creditsUsed.toLocaleString()}
-        <span className="ml-1 text-sm font-normal text-ink-400">
-          / {data.creditsIncluded === null ? "不限" : data.creditsIncluded.toLocaleString()} credits
-        </span>
-      </p>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-paper">
-        <div className={`h-full ${tone}`} style={{ width: `${percent}%` }} />
-      </div>
-      <p className="mt-2 text-xs text-ink-500">
-        {data.state === "PAUSED"
-          ? "额度已用完：智能体暂停，你仍可以查看、审批和导出；充值或升级后立刻恢复。"
-          : data.state === "WARN"
-            ? "已用超过 80%：接下来智能体会变慢或暂停，建议提前充值或升级套餐。"
-            : "1 credit ≈ 1,000 tokens。额度每月 1 日重置，不结转。"}
-      </p>
-    </section>
+    <div className="grid gap-6">
+      <section className="rounded-lg border border-line bg-surface px-5 py-4">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-sm font-medium text-ink-900">本月 AI 额度（credits）</h2>
+          <span className="font-mono text-xs text-ink-400">{data?.period ?? "—"}</span>
+        </div>
+        {data ? (
+          <>
+            <p className="mt-2 text-2xl font-semibold text-ink-900">
+              {data.creditsUsed.toLocaleString()}
+              <span className="ml-1 text-sm font-normal text-ink-400">
+                /{" "}
+                {data.creditsIncluded === null
+                  ? "不限"
+                  : data.creditsIncluded.toLocaleString()}{" "}
+                credits
+              </span>
+            </p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-paper">
+              <div className={`h-full ${tone}`} style={{ width: `${percent}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-ink-500">
+              {data.state === "PAUSED"
+                ? "额度已用完：智能体暂停，你仍可以查看、审批和导出；充值或升级后立刻恢复。"
+                : data.state === "WARN"
+                  ? "已用超过 80%：接下来智能体会变慢或暂停，建议提前充值或升级套餐。"
+                  : "1 credit ≈ 1,000 tokens。额度每月 1 日重置，不结转。"}
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-xs text-ink-400">暂时读不到用量数据，稍后刷新重试。</p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-line bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium text-ink-900">订阅</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          套餐、发票与付款方式由平台侧维护，本期这里只读展示。需要变更请
+          <SupportMailto className="text-indigo-600 underline" label="联系对接人" />。
+        </p>
+      </section>
+    </div>
   );
 }

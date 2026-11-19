@@ -27,7 +27,8 @@
     "verify:prod-env": "vitest run test/production-env-gate.test.ts",
     "maintain:media": "tsx scripts/maintain-media.ts",
     "maintain:inbound": "tsx scripts/maintain-inbound.ts",
-    "verify:thumbnails": "tsx scripts/verify-thumbnails.ts"
+    "verify:thumbnails": "tsx scripts/verify-thumbnails.ts",
+    "maintain:audit": "tsx scripts/maintain-audit.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",

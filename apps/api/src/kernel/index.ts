@@ -14,12 +14,15 @@ import type { ObjectStorage } from "../platform/storage";
 import { objectUrl } from "../platform/thumbnail";
 import { AccessService } from "./access.service";
 import { countAuditLog, listAuditLog, listBusinessAuditLog } from "./audit";
+import { AuditLogService } from "./audit-log.service";
 import type { AuditCountFilter } from "./audit";
 import { KernelError } from "./errors";
 import { LlmSettingsService } from "./llm-settings.service";
 import { QuotePricingService } from "./quote-pricing.service";
 import { UsageService } from "./usage.service";
+import { ContactService } from "./contacts.service";
 import { CustomerService } from "./customers.service";
+import { FieldOptionsService } from "./field-options.service";
 import { ImportService } from "./import.service";
 import { InboundRepliesService } from "./inbound-replies.service";
 import { IntentService } from "./intents.service";
@@ -79,7 +82,9 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const activeImageEmbedder =
     options.imageEmbedder ??
     createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
-  const customers = new CustomerService(db, tenantId);
+  const fieldOptions = new FieldOptionsService(db, tenantId);
+  const customers = new CustomerService(db, tenantId, fieldOptions);
+  const contacts = new ContactService(db, tenantId, customers);
   const storage = options.storage ?? createObjectStorageFromEnv(env);
   const sampleImages = new SampleImageService(db, tenantId, storage, env);
   const thumbs = new SampleThumbService(db, tenantId, storage);
@@ -159,11 +164,14 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
   });
   const print = createPrintCenter(db, tenantId);
+  const auditLogRead = new AuditLogService(db, tenantId, storage);
 
   return {
     tenantId,
     access,
+    fieldOptions,
     customers,
+    contacts,
     samples,
     sampleIndex,
     sampleImages,
@@ -189,6 +197,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     inboundReplies,
     shares,
     print,
+    auditLog: auditLogRead,
     audit: {
       list: (limit?: number, entityId?: string) => listAuditLog(db, limit, tenantId, entityId),
       businessEvents: (limit: number, actions: AuditAction[]) =>

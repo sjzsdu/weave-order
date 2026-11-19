@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { ImportBatchResult, ImportRowError } from "@weave-order/schema";
-import { MAX_IMPORT_ROWS } from "@weave-order/schema";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FieldOptionWithUsage, ImportBatchResult, ImportRowError } from "@weave-order/schema";
+import { MAX_IMPORT_ROWS, resolveFieldValue } from "@weave-order/schema";
 import { Button, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { TIER_LABEL } from "@/format";
@@ -116,7 +116,8 @@ export function parseCustomerCsv(text: string): ParsedCustomerCsv {
       const key = keys[cellIndex];
       const value = cell.trim();
       if (!key || value === "") return;
-      values[key] = key === "tier" ? (TIER_VALUES[value] ?? value.toUpperCase()) : value;
+      // 自定义等级可能是任意大小写；不能 toUpperCase 后再去匹配，原样交给解析器。
+      values[key] = key === "tier" ? (TIER_VALUES[value] ?? value) : value;
     });
     rows.push({ line: index + 1, values });
   }
@@ -200,11 +201,56 @@ export function CustomerImport({
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportBatchResult | null>(null);
+  const [tierOptions, setTierOptions] = useState<FieldOptionWithUsage[]>([]);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<
+    Record<string, { mode: "create" | "map"; target?: string }>
+  >({});
+
+  // 等级列不能塞自由文本：导入前必须把不认识的值落成选项或映射到已有等级。
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listFieldOptions("customer.tier", { usage: false })
+      .then((options) => {
+        if (!cancelled) {
+          setTierOptions(options);
+          setOptionsError(null);
+        }
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setOptionsError(caught instanceof Error ? caught.message : "等级选项加载失败");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const unknownTiers = useMemo(() => {
+    if (!parsed || parsed.error) return [];
+    const counts = new Map<string, number>();
+    for (const row of parsed.rows) {
+      const value = row.values.tier;
+      if (typeof value !== "string" || value.trim() === "") continue;
+      if (resolveFieldValue("customer.tier", value, tierOptions).matched) continue;
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([value, count]) => ({ value, count }));
+  }, [parsed, tierOptions]);
+
+  const undecided = unknownTiers.filter((item) => {
+    const decision = decisions[item.value];
+    if (!decision) return true;
+    return decision.mode === "map" && !decision.target;
+  });
 
   async function readFile(file: File) {
     setResult(null);
     setSubmitError(null);
     setParsed(null);
+    setDecisions({});
     setFileName(file.name);
     if (!/\.csv$/i.test(file.name)) {
       setParsed({
@@ -224,11 +270,32 @@ export function CustomerImport({
 
   async function submit() {
     if (busy || !parsed || parsed.error || parsed.rows.length === 0) return;
+    if (unknownTiers.length > 0 && undecided.length > 0) {
+      setSubmitError("还有新等级没有处理：创建等级或映射到已有等级后再导入。");
+      return;
+    }
     setBusy(true);
     setSubmitError(null);
     try {
+      // 先把未知等级落成 code，再提交整批；任一步失败整批不导入。
+      const tierMap = new Map<string, string>();
+      for (const item of unknownTiers) {
+        const decision = decisions[item.value];
+        if (!decision) continue;
+        if (decision.mode === "create") {
+          const option = await api.createFieldOption("customer.tier", item.value);
+          tierMap.set(item.value, option.code);
+        } else if (decision.target) {
+          tierMap.set(item.value, decision.target);
+        }
+      }
       const batch = await api.importBatch({
-        customers: parsed.rows.map((row) => row.values),
+        customers: parsed.rows.map((row) => {
+          const value = row.values.tier;
+          if (typeof value !== "string") return row.values;
+          const code = tierMap.get(value);
+          return code ? { ...row.values, tier: code } : row.values;
+        }),
       });
       setResult(batch);
       if (batch.committed) onImported();
@@ -360,6 +427,67 @@ export function CustomerImport({
                         : ""}
                     </span>
                   </div>
+                  {optionsError && (
+                    <p
+                      role="alert"
+                      className="rounded-md border border-vermilion-600/40 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600"
+                    >
+                      等级选项没加载出来（{optionsError}），为避免导入悬挂等级，请稍后重试。
+                    </p>
+                  )}
+                  {unknownTiers.length > 0 && (
+                    <div className="rounded-lg border border-amber-600/40 bg-amber-100/30 p-3">
+                      <p className="text-sm font-medium text-ink-900">
+                        发现 {unknownTiers.length} 个新等级，导入前必须二选一
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-500">
+                        等级是引用值，不能像品类那样只留原文。创建后会成为公司共享选项。
+                      </p>
+                      <ul className="mt-2 grid gap-2">
+                        {unknownTiers.map((item) => (
+                          <li
+                            key={item.value}
+                            className="flex flex-wrap items-center gap-2 rounded border border-line bg-surface px-3 py-2"
+                          >
+                            <span className="text-sm text-ink-900">
+                              {item.value}
+                              <span className="ml-1 text-xs text-ink-400">（{item.count} 行）</span>
+                            </span>
+                            <select
+                              className="input min-h-8 min-w-36 flex-1 text-xs"
+                              value={
+                                decisions[item.value]
+                                  ? decisions[item.value]!.mode === "create"
+                                    ? "__create__"
+                                    : (decisions[item.value]!.target ?? "")
+                                  : ""
+                              }
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setDecisions((current) => ({
+                                  ...current,
+                                  [item.value]:
+                                    value === "__create__"
+                                      ? { mode: "create" }
+                                      : { mode: "map", target: value },
+                                }));
+                              }}
+                            >
+                              <option value="">选择处理方式…</option>
+                              <option value="__create__">创建等级「{item.value}」并导入</option>
+                              {tierOptions
+                                .filter((option) => option.active)
+                                .map((option) => (
+                                  <option key={option.id} value={option.code}>
+                                    映射到：{option.label}
+                                  </option>
+                                ))}
+                            </select>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="overflow-x-auto rounded-lg border border-line">
                     <table className="w-full min-w-[640px] text-sm">
                       <thead className="bg-paper text-xs text-ink-400">
@@ -382,7 +510,18 @@ export function CustomerImport({
                             <td className="px-3 py-2">{cellText(row.values.name, "（空）")}</td>
                             <td className="px-3 py-2 text-xs">
                               {row.values.tier
-                                ? (TIER_LABEL[cellText(row.values.tier)] ?? "—")
+                                ? (() => {
+                                    const raw = cellText(row.values.tier);
+                                    const resolved = resolveFieldValue(
+                                      "customer.tier",
+                                      raw,
+                                      tierOptions,
+                                    );
+                                    if (resolved.matched) {
+                                      return resolved.label ?? TIER_LABEL[raw] ?? raw;
+                                    }
+                                    return <span className="text-amber-700">新等级：{raw}</span>;
+                                  })()
                                 : "—"}
                             </td>
                             <td className="px-3 py-2 text-xs">
@@ -415,7 +554,14 @@ export function CustomerImport({
               <Button
                 variant="primary"
                 onClick={() => void submit()}
-                disabled={busy || !parsed || parsed.error !== null || parsed.rows.length === 0}
+                disabled={
+                  busy ||
+                  !parsed ||
+                  parsed.error !== null ||
+                  parsed.rows.length === 0 ||
+                  Boolean(optionsError) ||
+                  undecided.length > 0
+                }
               >
                 {busy ? "正在导入…" : "确认导入"}
               </Button>

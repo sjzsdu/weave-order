@@ -20,7 +20,9 @@ import { QuoteAgentService } from "./quote-agent.service";
 import {
   ApprovalController,
   AuditController,
+  AuditLogController,
   CatalogController,
+  ContactsController,
   HealthController,
   ImportController,
   OrderController,
@@ -35,6 +37,7 @@ import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
+import { FieldOptionsController } from "./field-options.controllers";
 import { InboundController } from "./inbound.controllers";
 import { IntentController } from "./intents.controllers";
 import { IntentExecutorService } from "./intent-executor.service";
@@ -108,8 +111,10 @@ const providers: Provider[] = [
     HealthController,
     PersonalAccessController,
     CatalogController,
+    ContactsController,
     QuoteController,
     AuditController,
+    AuditLogController,
     ApprovalController,
     PanoramaController,
     ImportController,
@@ -122,6 +127,7 @@ const providers: Provider[] = [
     PrintController,
     PrintAgentController,
     MediaController,
+    FieldOptionsController,
     InboundController,
     IntentController,
     OnboardingStateController,

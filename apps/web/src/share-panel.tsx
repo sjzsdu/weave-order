@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CreatedQuoteShare, QuoteShareStats } from "@weave-order/schema";
+import type { CreatedQuoteShare, CustomerContact, QuoteShareStats } from "@weave-order/schema";
+import { pickDefaultContact } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 
@@ -15,11 +16,14 @@ export function SharePanel({
   quoteId,
   title,
   initialCreated,
+  contacts,
   onClose,
 }: {
   quoteId: string;
   title: string;
   initialCreated?: CreatedQuoteShare;
+  /** 客户 360 打开时带上联系人，用于默认收件人（报价 → 采购）与切换。 */
+  contacts?: CustomerContact[];
   onClose: () => void;
 }) {
   const api = useApi();
@@ -29,6 +33,9 @@ export function SharePanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // 报价外发默认找「采购」，找不到回退主联系人；用户可在这里切换。
+  const defaultContact = contacts ? pickDefaultContact(contacts, "quote") : null;
+  const [contactId, setContactId] = useState<string>(defaultContact?.id ?? "");
 
   const load = async () => {
     setError(null);
@@ -69,6 +76,7 @@ export function SharePanel({
         quoteId,
         requirePhoneTail: true,
         allowPdf: true,
+        ...(contactId ? { contactId } : {}),
       });
       setCreated(share);
       setCopied(false);
@@ -158,6 +166,27 @@ export function SharePanel({
               请立即通过微信/邮件发给客户；关闭后无法再取回这条链接，只能重新生成。
             </p>
           </div>
+        )}
+
+        {contacts && contacts.length > 0 && (
+          <label className="mt-4 flex flex-wrap items-center gap-2 text-xs text-ink-400">
+            发给
+            <select
+              value={contactId}
+              onChange={(event) => setContactId(event.target.value)}
+              className="min-h-9 rounded-md border border-line bg-surface px-2 text-sm text-ink-900"
+            >
+              <option value="">不指定（自动选采购 / 主联系人）</option>
+              {contacts.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contact.name}
+                  {contact.role ? ` · ${contact.role}` : ""}
+                  {contact.isPrimary ? " · 主要" : ""}
+                </option>
+              ))}
+            </select>
+            <span>记录到这条分享上，之后改名或归档仍显示发送时的快照。</span>
+          </label>
         )}
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">

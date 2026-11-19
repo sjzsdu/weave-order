@@ -8,7 +8,12 @@ import {
   OnboardingResult,
   StartTenantInput,
 } from "@weave-order/schema";
-import { TeamInvite, TeamInviteList, hasCapability } from "@weave-order/schema";
+import {
+  TeamInvite,
+  TeamInviteList,
+  UpdateTeamMemberInput,
+  hasCapability,
+} from "@weave-order/schema";
 import type { AuthClaims, Membership } from "@weave-order/schema";
 import { createNotifier, inviteMessage } from "@weave-order/notify";
 import { createKernel, isKernelError } from "../kernel";
@@ -303,7 +308,10 @@ export class OnboardingService {
   }
 
   /** 待接受与已加入的成员列表（邀请链接不落库，列表里不回传明文）。 */
-  async listTeam(tenantId: string): Promise<ReturnType<typeof TeamInviteList.parse>> {
+  async listTeam(
+    tenantId: string,
+    selfMembershipId?: string,
+  ): Promise<ReturnType<typeof TeamInviteList.parse>> {
     const kernel = this.kernel();
     const memberships = await kernel.tenancy.listMemberships(tenantId);
     return TeamInviteList.parse({
@@ -314,7 +322,11 @@ export class OnboardingService {
           // ACTIVE 成员的 `subject` 是 SSO 主键（UUID），不是邮箱。
           // 优先用登录时落库的 email 副本；INVITED 的 subject 本身就是邮箱。
           email: item.email ?? (item.subject.includes("@") ? item.subject : ""),
+          displayName: item.displayName ?? null,
           role: item.role,
+          dataScope: item.dataScope,
+          approvalLimitAmount: item.approvalLimitAmount,
+          isSelf: selfMembershipId === item.id,
           status: item.status === "INVITED" ? "INVITED" : "ACTIVE",
           url: null,
           expiresAt: null,
@@ -322,6 +334,66 @@ export class OnboardingService {
           delivery: null,
         })),
     });
+  }
+
+  /**
+   * 调整成员角色 / 数据范围 / 审批额度。
+   *
+   * 校验全部在内核（见 `TenancyService.updateMembership`），这里只负责
+   * 「把 Membership 转换成 KernelContext」与把结果映射回列表形状。
+   */
+  async updateMember(
+    actor: Membership,
+    membershipId: string,
+    raw: unknown,
+  ): Promise<TeamInvite> {
+    if (!hasCapability(actor, "member.invite")) {
+      throw new TeamActionError("只有老板或主管可以调整成员权限", 403);
+    }
+    const input = UpdateTeamMemberInput.parse(raw);
+    const parsedId = EntityId.safeParse(membershipId);
+    if (!parsedId.success) throw new TeamActionError("这条成员记录不存在", 404);
+    const kernel = this.kernel();
+    try {
+      const updated = await kernel.tenancy.updateMembership(
+        {
+          tenantId: actor.tenantId,
+          membershipId: parsedId.data,
+          ...(input.role !== undefined ? { role: input.role } : {}),
+          ...(input.dataScope !== undefined ? { dataScope: input.dataScope } : {}),
+          ...(input.approvalLimitAmount !== undefined
+            ? { approvalLimitAmount: input.approvalLimitAmount }
+            : {}),
+        },
+        {
+          actor: { type: "HUMAN", id: actor.subject, role: actor.role },
+          tenantId: actor.tenantId,
+          ownerId: actor.id,
+          correlationId: parsedId.data,
+        },
+      );
+      return TeamInvite.parse({
+        membershipId: updated.id,
+        email: updated.email ?? (updated.subject.includes("@") ? updated.subject : ""),
+        displayName: updated.displayName ?? null,
+        role: updated.role,
+        dataScope: updated.dataScope,
+        approvalLimitAmount: updated.approvalLimitAmount,
+        isSelf: updated.id === actor.id,
+        status: updated.status === "INVITED" ? "INVITED" : "ACTIVE",
+        url: null,
+        expiresAt: null,
+        createdAt: updated.createdAt,
+        delivery: null,
+      });
+    } catch (error) {
+      if (isKernelError(error)) {
+        if (error.code === "PERMISSION_DENIED") throw new TeamActionError(error.message, 403);
+        if (error.code === "RESOURCE_NOT_FOUND") throw new TeamActionError(error.message, 404);
+        throw new TeamActionError(error.message, 409);
+      }
+      throw error;
+    }
   }
 
   /**

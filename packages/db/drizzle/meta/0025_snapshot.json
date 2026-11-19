@@ -1,6 +1,6 @@
 {
-  "id": "c272600c-d3e3-4c05-8498-38abb670342d",
-  "prevId": "d572dba7-9418-4261-8f11-32a9fc29b6d7",
+  "id": "a4b55ea8-318e-4dab-a4f8-85d6bef7e583",
+  "prevId": "a32c54b3-8953-4e7f-880f-3dcf595f0b2f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -119,8 +119,7 @@
         },
         "tier": {
           "name": "tier",
-          "type": "customer_tier",
-          "typeSchema": "public",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": true,
           "default": "'REGULAR'"
@@ -208,6 +207,27 @@
           "method": "btree",
           "with": {}
         },
+        "customers_tenant_tier_idx": {
+          "name": "customers_tenant_tier_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "customers_name_idx": {
           "name": "customers_name_idx",
           "columns": [
@@ -227,6 +247,131 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.field_options": {
+      "name": "field_options",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_key": {
+          "name": "field_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized": {
+          "name": "normalized",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "field_options_tenant_field_sort_idx": {
+          "name": "field_options_tenant_field_sort_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "field_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "field_options_tenant_field_normalized_uq": {
+          "name": "field_options_tenant_field_normalized_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "field_key",
+            "normalized"
+          ]
+        },
+        "field_options_tenant_field_code_uq": {
+          "name": "field_options_tenant_field_code_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "field_key",
+            "code"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -3406,6 +3551,18 @@
           "name": "actor_role",
           "type": "member_role",
           "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_name": {
+          "name": "actor_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_label": {
+          "name": "entity_label",
+          "type": "varchar(255)",
           "primaryKey": false,
           "notNull": false
         },
@@ -6885,16 +7042,6 @@
         "HKD"
       ]
     },
-    "public.customer_tier": {
-      "name": "customer_tier",
-      "schema": "public",
-      "values": [
-        "VIP",
-        "REGULAR",
-        "NEW",
-        "COLD"
-      ]
-    },
     "public.data_scope": {
       "name": "data_scope",
       "schema": "public",
@@ -6928,7 +7075,6 @@
         "QUEUED",
         "RUNNING",
         "SUCCEEDED",
-        "NEEDS_INPUT",
         "FAILED",
         "CANCELLED",
         "TIMEOUT"

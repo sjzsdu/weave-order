@@ -17,11 +17,26 @@ export const QuoteShareEventType = z.enum([
 ]);
 export type QuoteShareEventType = z.infer<typeof QuoteShareEventType>;
 
+/**
+ * 发送时的联系人快照：联系人后来改名 / 归档，时间线仍能显示「发给 周敏（采购）」。
+ * 只存姓名与邮箱，不存手机 —— 分享链接本身不需要手机，快照也不该扩大 PII 面。
+ */
+export const QuoteShareContactSnapshot = z
+  .object({
+    name: z.string().min(1).max(255),
+    email: z.string().max(255).nullable(),
+  })
+  .strict();
+export type QuoteShareContactSnapshot = z.infer<typeof QuoteShareContactSnapshot>;
+
 export const QuoteShare = z
   .object({
     id: EntityId,
     tenantId: EntityId,
     quoteId: EntityId,
+    /** 分享给哪位联系人；历史行 / 未指定时为 null，此时看快照。 */
+    contactId: EntityId.nullable().default(null),
+    contactSnapshot: QuoteShareContactSnapshot.nullable().default(null),
     /** 分享时锁定的报价版本号。 */
     version: z.number().int().positive(),
     tokenHash: z.string().min(32).max(128),
@@ -55,6 +70,8 @@ export const CreateQuoteShareInput = z
     expiresInDays: z.number().int().positive().max(90).default(14),
     requirePhoneTail: z.boolean().default(false),
     allowPdf: z.boolean().default(true),
+    /** 收件联系人（必须属于这张报价的客户）；不给则由服务端按采购→主联系人推导。 */
+    contactId: EntityId.optional(),
   })
   .strict();
 export type CreateQuoteShareInput = z.infer<typeof CreateQuoteShareInput>;

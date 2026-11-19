@@ -18,7 +18,12 @@ import {
 } from "@nestjs/common";
 import {
   ApprovalKind,
+  AuditAction,
+  AuditExportInput,
+  AuditLogSummaryRange,
   OrderStatus,
+  QuoteListFilter,
+  QuoteStatus,
   ReceivableBucket,
   ReviseQuoteDraftResult,
 } from "@weave-order/schema";
@@ -26,6 +31,11 @@ import { CustomerListOptions, CustomerTimelineKind } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { ZodError } from "zod";
 import { createApprovalService } from "../approval";
+import {
+  AuditExportNotFoundError,
+  AuditLogNotFoundError,
+} from "../kernel/audit-log.service";
+import type { AuditLogQuery } from "../kernel/audit-log.service";
 import { isKernelError } from "../kernel";
 import { narrowPricingContext } from "../kernel/pricing-scope";
 import { QuoteAgentService } from "./quote-agent.service";
@@ -104,6 +114,18 @@ export function rethrowHttp(error: unknown): never {
       );
     }
     if (error.details.reason === "SAMPLE_CODE_EXISTS") {
+      throw new ConflictException(error.message);
+    }
+    // 改成已存在的选项名是「请求合法但与现有数据冲突」，提示用户走合并，不是 400。
+    if (error.details.reason === "FIELD_OPTION_LABEL_EXISTS") {
+      throw new ConflictException(error.message);
+    }
+    // 联系人重复是「与现有数据冲突」，409 比 400 更能让前端区分「改内容」还是「重试」。
+    if (
+      error.details.reason === "CONTACT_PHONE_DUPLICATE" ||
+      error.details.reason === "CONTACT_EMAIL_DUPLICATE" ||
+      error.details.reason === "CONTACT_PRIMARY_CONFLICT"
+    ) {
       throw new ConflictException(error.message);
     }
     // 意图已终结 / 超过撤销窗口：请求合法但与当前状态冲突，返回 409 让前端区分「重试无用」。
@@ -251,6 +273,100 @@ export class CatalogController {
     }
   }
 
+  /** 客户联系人列表（未归档，主要联系人在前；VIEWER 的手机 / 邮箱已掩码）。 */
+  @Get("customers/:id/contacts")
+  async customerContacts(
+    @Param("id") id: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => ({ contacts: await kernel.contacts.list(id, ctx) }),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Post("customers/:id/contacts")
+  async createCustomerContact(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.create(id, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  @Patch("customers/:id/contacts/:contactId")
+  async updateCustomerContact(
+    @Param("id") id: string,
+    @Param("contactId") contactId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.update(contactId, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 归档联系人；归档主要联系人时 body 必填 `successorContactId`。 */
+  @Post("customers/:id/contacts/:contactId/archive")
+  async archiveCustomerContact(
+    @Param("id") id: string,
+    @Param("contactId") contactId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.archive(contactId, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 设为主要联系人：同事务清旧主，不需要先归档。 */
+  @Post("customers/:id/contacts/:contactId/primary")
+  async setPrimaryCustomerContact(
+    @Param("id") id: string,
+    @Param("contactId") contactId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.setPrimary(contactId, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
   /** 客户时间线：游标翻页，默认 20 条，可筛单据类型。 */
   @Get("customers/:id/timeline")
   async customerTimeline(
@@ -377,6 +493,38 @@ export class QuoteController {
         throw error;
       }
     });
+  }
+
+  /**
+   * 报价工作台列表（WAN-175）。必须声明在 `quotes/:id` 之前：
+   * Nest 按声明顺序匹配，反了会把 `quotes` 当成 id 去查单据。
+   */
+  @Get("quotes")
+  async listQuotes(
+    @Query("status") status?: string,
+    @Query("query") query?: string,
+    @Query("customerId") customerId?: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+        const parsedStatus = nonEmpty(status);
+        return kernel.quotes.listWorkbench(
+          QuoteListFilter.parse({
+            ...(parsedStatus ? { status: QuoteStatus.parse(parsedStatus) } : {}),
+            ...(nonEmpty(query) ? { query: nonEmpty(query) } : {}),
+            ...(nonEmpty(customerId) ? { customerId: customerId } : {}),
+            ...(nonEmpty(cursor) ? { cursor } : {}),
+            limit: clampLimit(limit, 50, 100),
+          }),
+          ctx,
+        );
+      });
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 
   /** 审批卡详情：只读，逐行 diff + 每个数字的出处。 */
@@ -815,6 +963,205 @@ export class AuditController {
 }
 
 /**
+ * 操作日志（WAN-179）：只读、可筛选、可导出。
+ *
+ * 范围由服务端按 `audit.read.all` 判定；没有它的角色在同一个端点上只看到
+ * `actor_id = 自己` 的记录（响应里的 `scope` 告诉前端该标「我的操作」）。
+ * 旧的 `GET /api/audit` 保留给动态流，两者不共用展示逻辑，但共用账本。
+ */
+@Controller("api/audit/log")
+export class AuditLogController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get()
+  async list(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("actorId") actorId?: string,
+    @Query("actor") actor?: string,
+    @Query("action") action?: string | string[],
+    @Query("entityType") entityType?: string,
+    @Query("keyword") keyword?: string,
+    @Query("highRisk") highRisk?: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.auditLog.list(
+            parseAuditQuery({
+              from,
+              to,
+              actorId,
+              actor,
+              action,
+              entityType,
+              keyword,
+              highRisk,
+              cursor,
+              limit,
+            }),
+            ctx,
+          );
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  @Get("summary")
+  async summary(@Query("range") range?: string, @Headers("authorization") authorization?: string) {
+    const parsed = AuditLogSummaryRange.safeParse(nonEmpty(range) ?? "30d");
+    if (!parsed.success) throw new BadRequestException(`未知摘要区间：${range}`);
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => kernel.auditLog.summary(parsed.data, ctx),
+      { scope: "read" },
+    );
+  }
+
+  @Get("export/:jobId")
+  async exportStatus(
+    @Param("jobId") jobId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return { job: await kernel.auditLog.exportJob(jobId, ctx) };
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  /** 详情：字段级 before/after，敏感金额在服务端按查看者能力裁剪。 */
+  @Get(":seq")
+  async detail(@Param("seq") seq: string, @Headers("authorization") authorization?: string) {
+    const value = Number(seq);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new BadRequestException(`审计序号不合法：${seq}`);
+    }
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return { entry: await kernel.auditLog.detail(value, ctx) };
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  /** 异步导出：建 job 后立即返回；前端轮询 export/:jobId 拿下载地址。 */
+  @Post("export")
+  async export(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    const parsed = AuditExportInput.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "导出条件不合法");
+    }
+    const input = parsed.data;
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          const job = await kernel.auditLog.createExport(
+            {
+              from: input.from ? new Date(input.from) : undefined,
+              to: input.to ? new Date(input.to) : undefined,
+              actorId: input.actorId,
+              actor: input.actor,
+              actions: input.action,
+              entityType: input.entityType,
+              keyword: input.keyword,
+              highRisk: input.highRisk,
+            },
+            ctx,
+          );
+          // 后台生成 CSV 用独立租户会话：响应返回时请求的会话会被释放。
+          void this.human.runDetached(authorization, this.kernel, (scoped) =>
+            scoped.auditLog.runExport(job.id),
+          );
+          return { job };
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+}
+
+/** 审计读接口的错误映射：越权与不存在都按 404，不泄漏记录是否存在。 */
+function rethrowAudit(error: unknown): never {
+  if (error instanceof AuditLogNotFoundError || error instanceof AuditExportNotFoundError) {
+    throw new NotFoundException(error.message);
+  }
+  rethrowHttp(error);
+}
+
+/** 把查询串解析成内核查询：多值 action 支持 `action=A,B` 与重复参数两种写法。 */
+function parseAuditQuery(raw: {
+  from?: string;
+  to?: string;
+  actorId?: string;
+  actor?: string;
+  action?: string | string[];
+  entityType?: string;
+  keyword?: string;
+  highRisk?: string;
+  cursor?: string;
+  limit?: string;
+}): AuditLogQuery {
+  const actionsRaw = Array.isArray(raw.action)
+    ? raw.action
+    : (raw.action ?? "").split(",").map((token) => token.trim());
+  const actions = actionsRaw
+    .flatMap((token) => token.split(","))
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const parsed = AuditAction.safeParse(token);
+      if (!parsed.success) throw new BadRequestException(`未知审计动作：${token}`);
+      return parsed.data;
+    });
+  const cursor = raw.cursor ? Number(raw.cursor) : undefined;
+  if (cursor !== undefined && (!Number.isInteger(cursor) || cursor <= 0)) {
+    throw new BadRequestException(`游标不合法：${raw.cursor}`);
+  }
+  return {
+    from: parseDate(raw.from, "开始时间"),
+    to: parseDate(raw.to, "结束时间"),
+    actorId: nonEmpty(raw.actorId),
+    actor: nonEmpty(raw.actor),
+    actions: actions.length > 0 ? actions : undefined,
+    entityType: nonEmpty(raw.entityType),
+    keyword: nonEmpty(raw.keyword)?.slice(0, 100),
+    highRisk: raw.highRisk === "1" || raw.highRisk === "true",
+    cursor,
+    limit: raw.limit ? clampLimit(raw.limit, 50, 200) : undefined,
+  };
+}
+
+/**
  * 审批窗口（Review Queue）的 HTTP 面。
  *
  * 批准 / 拒绝是前端唯一的人类决策入口：控制器固定传入 HUMAN 上下文，
@@ -924,5 +1271,50 @@ export class QuoteAgentController {
   @Post("quote")
   async quote(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     return this.agent.run(authorization, body);
+  }
+}
+
+/**
+ * 联系人辅助接口：角色建议 + 批量导出。
+ *
+ * 单独一个控制器而不是挂在 `customers/:id` 下：`/api/contacts/...` 是租户级动作，
+ * 导出覆盖查看者数据范围内的全部客户，不是某一位客户的子资源。
+ */
+@Controller("api")
+export class ContactsController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get("contacts/roles")
+  async roles(@Headers("authorization") authorization?: string) {
+    try {
+      // 角色建议来自调用者所在租户的 field_options，必须按登录态解析租户，
+      // 不能直接用默认内核（多租户下会拿到别家公司的选项）。
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        (kernel) => kernel.contacts.roleOptions(),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 批量导出联系人 CSV；服务端按能力掩码并写一条 AUDIT_EXPORTED。 */
+  @Get("contacts/export")
+  async exportContacts(@Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.contacts.exportCsv(ctx),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 }

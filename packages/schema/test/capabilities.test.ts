@@ -42,17 +42,60 @@ const EXPECTED: Record<MemberRole, Capability[]> = {
     "settings.edit",
     "receivable.read",
     "panorama.orders.view",
+    "audit.read.all",
+    "audit.read.own",
+    "contact.pii.view",
+    "quote.workbench.view",
+    "field_options.manage",
+    "data.import",
   ],
   // 业务员：能改稿、能批到自己那一档、能看应收与订单；看不到成本、不能配置。
-  SALES: ["quote.write", "quote.approve", "receivable.read", "panorama.orders.view"],
+  SALES: [
+    "quote.write",
+    "quote.approve",
+    "receivable.read",
+    "panorama.orders.view",
+    "audit.read.own",
+    "contact.pii.view",
+    "quote.workbench.view",
+    "field_options.manage",
+    "data.import",
+  ],
   // 跟单：只读业务流，不碰价格、权限、成本。
-  MERCHANDISER: ["panorama.orders.view"],
+  MERCHANDISER: [
+    "panorama.orders.view",
+    "audit.read.own",
+    "contact.pii.view",
+    "field_options.manage",
+    "data.import",
+  ],
   // 样品管理：维护样品（含成本底线），但不做报价与审批。
-  SAMPLE_ADMIN: ["sample.write", "sample.cost.view", "panorama.orders.view"],
+  SAMPLE_ADMIN: [
+    "sample.write",
+    "sample.cost.view",
+    "panorama.orders.view",
+    "audit.read.own",
+    "contact.pii.view",
+    "field_options.manage",
+    "data.import",
+  ],
   // 财务：成本与应收是工作面；订单漏斗不在一级入口。
-  FINANCE: ["sample.cost.view", "receivable.read"],
+  FINANCE: [
+    "sample.cost.view",
+    "receivable.read",
+    "audit.read.own",
+    "contact.pii.view",
+    "field_options.manage",
+  ],
   // 只读席位：读得到业务与应收，改不了；成本底线沿用收敛前的不可见。
-  VIEWER: ["receivable.read", "panorama.orders.view"],
+  // 联系人手机/邮箱是唯一按角色掩码的字段（巧匠 WAN-174 第 3 条），因此 VIEWER 没有 contact.pii.view。
+  VIEWER: [
+    "receivable.read",
+    "panorama.orders.view",
+    "audit.read.own",
+    "quote.workbench.view",
+    "field_options.manage",
+  ],
 };
 
 describe("能力表：7 角色 × 全部能力", () => {
@@ -128,6 +171,32 @@ describe("产品矩阵的硬规则（回归旧实现的行为）", () => {
       "SAMPLE_ADMIN",
       "VIEWER",
     ]);
+  });
+
+  it("审计范围：只有 owner / manager 能看全公司，其余角色都能看自己", () => {
+    expect(ALL_ROLES.filter((role) => hasCapability(role, "audit.read.all"))).toEqual([
+      "OWNER",
+      "MANAGER",
+    ]);
+    expect(ALL_ROLES.filter((role) => hasCapability(role, "audit.read.own"))).toEqual(ALL_ROLES);
+    // 能看全公司必然能看自己，反之不成立。
+    for (const role of ALL_ROLES) {
+      if (hasCapability(role, "audit.read.all")) {
+        expect(hasCapability(role, "audit.read.own")).toBe(true);
+      }
+    }
+  });
+
+  it("联系人 PII 只对只读席位掩码（WAN-174 巧匠第 3 条）", () => {
+    expect(ALL_ROLES.filter((role) => !hasCapability(role, "contact.pii.view"))).toEqual([
+      "VIEWER",
+    ]);
+  });
+
+  it("字段选项对全部角色开放", () => {
+    expect(ALL_ROLES.filter((role) => hasCapability(role, "field_options.manage"))).toEqual(
+      ALL_ROLES,
+    );
   });
 });
 

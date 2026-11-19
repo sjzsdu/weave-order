@@ -11,7 +11,8 @@ import { useMounted } from "@/use-mounted";
 import { Customer360Panel } from "@/customer-360";
 import { CustomerForm } from "@/customer-form";
 import { CustomerImport } from "@/customer-import";
-import { TIER_LABEL, ownerLabel, relativeTime } from "@/format";
+import { FieldOptionsManager, optionLabel, useFieldOptions } from "@/field-options-manager";
+import { ownerLabel, relativeTime } from "@/format";
 
 const PAGE_SIZE = 100;
 
@@ -38,7 +39,11 @@ function CustomersPageContent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [manageTierOpen, setManageTierOpen] = useState(false);
   const [created, setCreated] = useState<Customer | null>(null);
+  // 连停用项一起取：历史客户的等级 label 要靠它解析，下拉只展示 active。
+  const tierOptions = useFieldOptions("customer.tier");
+  const [exporting, setExporting] = useState(false);
 
   // 从时间线 / 别人发来的链接带 ?id= 进来直接展开抽屉；筛选也能分享。
   useEffect(() => {
@@ -55,6 +60,8 @@ function CustomersPageContent() {
     // 深链入口：开张清单与 ⌘K 命令直接落到「新建客户 / 导入 CSV」，少两次点击。
     if (params.get("new") === "1") setFormOpen(true);
     if (params.get("import") === "1") setImportOpen(true);
+    // 设置页「客户与字段」直接打开等级治理弹层。
+    if (params.get("manageTiers") === "1") setManageTierOpen(true);
   }, []);
 
   // 搜索走防抖，避免每敲一个字打一次后端。
@@ -69,7 +76,7 @@ function CustomersPageContent() {
       limit: PAGE_SIZE,
       owner,
       ...(debouncedQuery ? { query: debouncedQuery } : {}),
-      ...(tier ? { tier: tier as CustomerListOptions["tier"] } : {}),
+      ...(tier ? { tier } : {}),
       ...(overdueOnly ? { overdueOnly: true } : {}),
     }),
     [owner, debouncedQuery, tier, overdueOnly],
@@ -87,6 +94,24 @@ function CustomersPageContent() {
       // 全景的客户数要跟着变，否则切回工作台还是旧数字。
       queryClient.invalidateQueries({ queryKey: ["panorama"] }),
     ]);
+  }
+
+  /** 导出联系人：后端按能力掩码并写一条 AUDIT_EXPORTED；前端只负责下载。 */
+  async function exportContacts() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const result = await api.exportContacts();
+      const blob = new Blob([`\uFEFF${result.csv}`], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `客户联系人-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   }
 
   function handleCreated(customer: Customer) {
@@ -134,6 +159,9 @@ function CustomersPageContent() {
           <Button variant="secondary" onClick={() => setImportOpen(true)}>
             导入 CSV
           </Button>
+          <Button variant="secondary" onClick={() => void exportContacts()} disabled={exporting}>
+            {exporting ? "导出中…" : "导出联系人"}
+          </Button>
           <Button variant="primary" onClick={() => setFormOpen(true)}>
             新建客户
           </Button>
@@ -148,7 +176,7 @@ function CustomersPageContent() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜客户名 / 编号 / 联系人"
+            placeholder="搜客户名 / 编号 / 联系人姓名、手机、微信"
             className="min-h-9 w-full bg-transparent text-sm text-ink-900 outline-none"
             aria-label="搜索客户"
           />
@@ -167,18 +195,29 @@ function CustomersPageContent() {
         </label>
 
         <label className="flex items-center gap-2 text-sm text-ink-700">
-          状态
+          等级
           <select
             value={tier}
             onChange={(event) => setTier(event.target.value)}
             className="min-h-9 rounded-md border border-line bg-surface px-2 text-sm"
           >
             <option value="">全部等级</option>
-            <option value="VIP">VIP</option>
-            <option value="REGULAR">常规</option>
-            <option value="NEW">新客</option>
-            <option value="COLD">沉睡</option>
+            {tierOptions.options
+              .filter((option) => option.active)
+              .map((option) => (
+                <option key={option.id} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
           </select>
+          {/* 治理入口长在选项被使用的地方：筛选旁就能改名/排序/合并/停用。 */}
+          <Button
+            variant="ghost"
+            className="min-h-9 px-2 text-xs"
+            onClick={() => setManageTierOpen(true)}
+          >
+            管理等级
+          </Button>
         </label>
 
         <label className="flex items-center gap-2 text-sm text-ink-700">
@@ -304,7 +343,7 @@ function CustomersPageContent() {
                   </td>
                   <td className="px-3 py-2">
                     <Badge tone={customer.tier === "VIP" ? "info" : "neutral"}>
-                      {TIER_LABEL[customer.tier] ?? customer.tier}
+                      {optionLabel(tierOptions.options, customer.tier)}
                     </Badge>
                   </td>
                 </tr>
@@ -337,6 +376,17 @@ function CustomersPageContent() {
         <CustomerImport
           onClose={() => setImportOpen(false)}
           onImported={() => void refreshCustomers()}
+        />
+      )}
+
+      {manageTierOpen && (
+        <FieldOptionsManager
+          fieldKey="customer.tier"
+          onClose={() => setManageTierOpen(false)}
+          onChanged={() => {
+            void tierOptions.reload();
+            void refreshCustomers();
+          }}
         />
       )}
 

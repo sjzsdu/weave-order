@@ -1,5 +1,7 @@
 export * from "./enums";
 export * from "./customers";
+export * from "./customer-contacts";
+export * from "./field-options";
 export * from "./samples";
 export * from "./quotes";
 export * from "./tenants";
@@ -11,6 +13,7 @@ export * from "./pricing";
 export * from "./decision-deltas";
 export * from "./shares";
 export * from "./audit";
+export * from "./audit-export-jobs";
 export * from "./auth";
 export * from "./embeddings";
 export * from "./sample-text-embeddings";

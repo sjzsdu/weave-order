@@ -9,11 +9,12 @@ import {
   Inject,
   Ip,
   Param,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
 import { ApiErrorResponse, OnboardingClaimInput } from "@weave-order/schema";
-import type { OnboardingPreview, OnboardingResult } from "@weave-order/schema";
+import type { OnboardingPreview, OnboardingResult, TeamInvite } from "@weave-order/schema";
 import { AuthService } from "../gateway/auth.service";
 import { isKernelError } from "../kernel";
 import { OnboardingTicketError } from "./ticket";
@@ -181,7 +182,7 @@ export class TeamController {
   async list(@Headers("authorization") authorization?: string) {
     try {
       const { membership } = await this.auth.authenticate(authorization);
-      return await this.onboarding.listTeam(membership.tenantId);
+      return await this.onboarding.listTeam(membership.tenantId, membership.id);
     } catch (error) {
       throw toHttpError(error);
     }
@@ -196,6 +197,25 @@ export class TeamController {
         body,
         claims.name ?? claims.email ?? "公司管理员",
       );
+    } catch (error) {
+      throw toHttpError(error);
+    }
+  }
+
+  /**
+   * 调整成员角色 / 数据范围 / 审批额度（设置 → 成员与权限）。
+   *
+   * 能力与不变量由服务端裁决；前端只决定「是否渲染编辑控件」。
+   */
+  @Patch("members/:membershipId")
+  async updateMember(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("membershipId") membershipId: string,
+    @Body() body: unknown,
+  ): Promise<TeamInvite> {
+    try {
+      const { membership } = await this.auth.authenticate(authorization);
+      return await this.onboarding.updateMember(membership, membershipId, body);
     } catch (error) {
       throw toHttpError(error);
     }

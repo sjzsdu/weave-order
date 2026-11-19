@@ -75,9 +75,14 @@ export const Quantity = z.object({
 });
 export type Quantity = z.infer<typeof Quantity>;
 
-/** 客户等级。 */
-export const CustomerTier = z.enum(["VIP", "REGULAR", "NEW", "COLD"]);
-export type CustomerTier = z.infer<typeof CustomerTier>;
+/**
+ * 客户等级 code：`field_options` 里 `customer.tier` 的稳定标识。
+ *
+ * 不再是封闭枚举：公司可以自定义等级（`T-` 前缀），预置项沿用旧枚举值
+ * `NEW / REGULAR / VIP / COLD`，所以存量数据无需改写即可继续解析。
+ */
+export const CustomerTierCode = z.string().min(1).max(64);
+export type CustomerTierCode = z.infer<typeof CustomerTierCode>;
 
 export const Customer = z.object({
   id: EntityId,
@@ -85,10 +90,14 @@ export const Customer = z.object({
   tenantId: EntityId,
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
-  tier: CustomerTier,
+  tier: CustomerTierCode,
   contactName: z.string().nullable(),
   contactPhone: z.string().nullable(),
-  contactEmail: z.string().email().nullable(),
+  /**
+   * 主联系人投影。读模型可能已按查看者能力掩码（`z***@qinghe.com`），
+   * 所以这里不能再做 email 格式校验；写入校验在 `CreateCustomerInput`。
+   */
+  contactEmail: z.string().max(255).nullable(),
 });
 export type Customer = z.infer<typeof Customer>;
 

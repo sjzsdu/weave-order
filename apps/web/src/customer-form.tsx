@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import type { Customer, CustomerTier } from "@weave-order/schema";
+import type { Customer, CustomerTierCode } from "@weave-order/schema";
 import { ApiError } from "@weave-order/core";
 import { Button } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { useFieldOptions } from "@/field-options-manager";
 
-export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTier; label: string }> = [
+/** 选项接口失败时的兜底：预置四项仍可选，不把新建客户卡死。 */
+export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTierCode; label: string }> = [
   { value: "NEW", label: "新客" },
   { value: "REGULAR", label: "常规" },
   { value: "VIP", label: "VIP" },
@@ -16,7 +18,7 @@ export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTier; label: string }
 
 export interface CustomerDraft {
   name: string;
-  tier: CustomerTier;
+  tier: CustomerTierCode;
   contactName: string;
   contactPhone: string;
   contactEmail: string;
@@ -45,6 +47,9 @@ export function validateCustomerDraft(draft: CustomerDraft): CustomerDraftErrors
   if (!name) errors.name = "客户名称必填";
   else if (name.length > 255) errors.name = "客户名称最多 255 个字";
 
+  // 新建客户必须先登记第一位联系人：这是「至少一位主联系人」的应用层保证，
+  // 否则新客户在 360 里既没有主联系人、也没有默认外发对象。
+  if (!draft.contactName.trim()) errors.contactName = "请先填第一位联系人的姓名";
   if (draft.contactPhone.trim() && !PHONE_PATTERN.test(draft.contactPhone.trim())) {
     errors.contactPhone = "手机号里请只填数字、空格、+ - ()";
   }
@@ -82,6 +87,7 @@ export function CustomerForm({
   onCreated: (customer: Customer) => void;
 }) {
   const api = useApi();
+  const { options: tierOptions, error: tierError } = useFieldOptions("customer.tier");
   const [draft, setDraft] = useState<CustomerDraft>(EMPTY_CUSTOMER_DRAFT);
   const [errors, setErrors] = useState<CustomerDraftErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -91,6 +97,16 @@ export function CustomerForm({
     setDraft((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
+
+  const activeTiers = tierOptions.filter((option) => option.active);
+  // 兜底 + 保证当前值一定在下拉里（自定义等级或接口失败时不会变成空白选项）。
+  const tierChoices =
+    activeTiers.length > 0
+      ? activeTiers.map((option) => ({ value: option.code, label: option.label }))
+      : CUSTOMER_TIER_OPTIONS;
+  const choicesWithCurrent = tierChoices.some((choice) => choice.value === draft.tier)
+    ? tierChoices
+    : [{ value: draft.tier, label: draft.tier }, ...tierChoices];
 
   async function submit() {
     if (busy) return;
@@ -135,7 +151,9 @@ export function CustomerForm({
         <header className="flex items-center justify-between border-b border-line px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-ink-900">新建客户</h2>
-            <p className="mt-0.5 text-xs text-ink-400">编号自动生成，只要填名字就能建。</p>
+            <p className="mt-0.5 text-xs text-ink-400">
+              编号自动生成；客户名与第一位联系人必填。
+            </p>
           </div>
           <Button
             variant="ghost"
@@ -171,18 +189,21 @@ export function CustomerForm({
           <Field label="等级" error={errors.tier}>
             <select
               value={draft.tier}
-              onChange={(event) => update("tier", event.target.value as CustomerTier)}
+              onChange={(event) => update("tier", event.target.value)}
               className={FIELD_CLASS}
             >
-              {CUSTOMER_TIER_OPTIONS.map((option) => (
+              {choicesWithCurrent.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
+            {tierError && (
+              <p className="mt-1 text-xs text-amber-700">等级选项没加载出来，先用默认四项。</p>
+            )}
           </Field>
 
-          <Field label="联系人" error={errors.contactName}>
+          <Field label="联系人" required error={errors.contactName}>
             <input
               value={draft.contactName}
               onChange={(event) => update("contactName", event.target.value)}
