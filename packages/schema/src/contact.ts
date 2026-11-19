@@ -15,10 +15,11 @@ export const CONTACT_PHONE_MAX = 64;
 export const CONTACT_NAME_MAX = 255;
 
 /** 角色预置建议：只做建议，存原文；默认收件人规则只认这三个 normalized 值。 */
+// code 与 P1 迁移/新租户种子里的 `contact.role` 选项保持一致，避免治理页出现两套 code。
 export const CONTACT_ROLE_PRESETS: ReadonlyArray<{ code: string; label: string }> = [
-  { code: "PURCHASING", label: "采购" },
-  { code: "FINANCE", label: "财务" },
-  { code: "FOLLOW_UP", label: "跟单" },
+  { code: "ROLE-PURCHASING", label: "采购" },
+  { code: "ROLE-FINANCE", label: "财务" },
+  { code: "ROLE-MERCHANDISER", label: "跟单" },
 ];
 
 /** 外发场景 → 默认收件人角色（找不到回退主联系人）。 */

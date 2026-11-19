@@ -1047,8 +1047,19 @@ export class ContactsController {
   ) {}
 
   @Get("contacts/roles")
-  async roles() {
-    return this.kernel.contacts.roleOptions();
+  async roles(@Headers("authorization") authorization?: string) {
+    try {
+      // 角色建议来自调用者所在租户的 field_options，必须按登录态解析租户，
+      // 不能直接用默认内核（多租户下会拿到别家公司的选项）。
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        (kernel) => kernel.contacts.roleOptions(),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 
   /** 批量导出联系人 CSV；服务端按能力掩码并写一条 AUDIT_EXPORTED。 */

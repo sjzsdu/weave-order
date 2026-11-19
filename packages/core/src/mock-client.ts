@@ -573,9 +573,9 @@ export function createMockApiClient(): ApiClient {
     contactRoles: () =>
       Promise.resolve({
         roles: [
-          { code: "PURCHASING", label: "采购" },
-          { code: "FINANCE", label: "财务" },
-          { code: "FOLLOW_UP", label: "跟单" },
+          { code: "ROLE-PURCHASING", label: "采购" },
+          { code: "ROLE-FINANCE", label: "财务" },
+          { code: "ROLE-MERCHANDISER", label: "跟单" },
         ],
       }),
 
