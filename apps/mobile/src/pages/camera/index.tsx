@@ -415,7 +415,7 @@ export default function CameraPage() {
       )}
       {error && (
         <Card className="card-flat">
-          <View style={{ color: "#b26a00", fontSize: 24 }}>{error}</View>
+          <View className="warn-text">{error}</View>
         </Card>
       )}
 
@@ -456,6 +456,7 @@ export default function CameraPage() {
                     />
                   ) : (
                     <View
+                      className="tiny"
                       style={{
                         width: 44,
                         height: 44,
@@ -464,7 +465,6 @@ export default function CameraPage() {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: 10,
                         color: "#9a9385",
                       }}
                     >

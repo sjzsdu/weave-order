@@ -40,7 +40,7 @@ const ROLE_BLOCKS: Record<Role, RoleBlock["id"][]> = {
 };
 
 export const ROLE_QUICK_ACTIONS: Record<Role, string[]> = {
-  sales: ["paste", "camera", "scan", "quote"],
+  sales: ["paste", "camera", "scan"],
   owner: ["decide", "report", "paste", "scan"],
   followup: ["scan", "signature", "camera", "decide"],
   sampleRoom: ["scan", "camera", "sample", "decide"],

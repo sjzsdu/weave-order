@@ -739,6 +739,7 @@ export default function QuotePage() {
                       />
                     ) : (
                       <View
+                        className="tiny"
                         style={{
                           width: 48,
                           height: 48,
@@ -747,7 +748,6 @@ export default function QuotePage() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          fontSize: 10,
                           color: "#9a9385",
                           flexShrink: 0,
                         }}

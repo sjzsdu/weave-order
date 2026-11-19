@@ -33,7 +33,6 @@ const ACTION_LABEL = auditActionLabel;
 
 const QUICK_META: Record<string, { icon: string; label: string; action: () => void }> = {
   paste: { icon: "📋", label: "粘贴微信", action: () => openQuote({ mode: "paste" }) },
-  quote: { icon: "🧾", label: "快速报价", action: () => openQuote({ mode: "paste" }) },
   camera: { icon: "📷", label: "拍照找样", action: () => openCamera("find") },
   scan: { icon: "🔍", label: "扫运单", action: () => openCamera("waybill") },
   signature: { icon: "✍️", label: "拍签收", action: () => openCamera("signature") },
