@@ -20,6 +20,8 @@ import {
 import { onQueueChanged } from "../../lib/offline";
 import { ROLES, ROLE_LABEL, isRole } from "../../lib/roles";
 import type { Role } from "../../lib/roles";
+import { enterCamera } from "../../routes";
+import { CAMERA_MODE_SPECS } from "../../lib/camera-modes";
 
 const KIND_LABEL: Record<string, string> = {
   "quote.compose": "原话 → 报价草稿",
@@ -342,6 +344,21 @@ export default function MorePage() {
             <View className="list-sub">色卡屏幕色仅供参考</View>
           </View>
           <Text className="link">查看</Text>
+        </View>
+      </Card>
+
+      {/* 相机退出 tab 后的兜底入口：主流程（报价拍布、待办任务卡）都不再让人选模式。 */}
+      <SectionTitle title="现场动作" hint="兜底入口；正常从任务或报价里直接进" />
+      <Card>
+        <View className="onsite-grid">
+          {(["find", "sample", "signature", "cargo", "receipt", "waybill"] as const).map((mode) => (
+            <Button key={mode} small variant="soft" onClick={() => enterCamera({ mode })}>
+              {CAMERA_MODE_SPECS[mode].title}
+            </Button>
+          ))}
+        </View>
+        <View className="footnote">
+          找样与建样会直接出结果；签收 / 大货 / 回款只传对应凭证，离线时先存本地队列。
         </View>
       </Card>
 

@@ -16,6 +16,8 @@ import type { CompressedImage } from "../../lib/media";
 import { api, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { enterQuote, parseCameraMode } from "../../routes";
+import type { CameraMode } from "../../lib/entry-params";
+import { cameraFieldVisible, cameraModeSpec, waybillActionLabel } from "../../lib/camera-modes";
 import {
   buildSampleSaveFailureMessage,
   isMediaUploadError,
@@ -23,31 +25,17 @@ import {
   userFacingErrorMessage,
 } from "../../lib/upload-failure";
 
-type Mode = "find" | "waybill" | "signature" | "cargo" | "sample" | "receipt";
-
-const MODES: Array<{ id: Mode; icon: string; label: string; desc: string }> = [
-  { id: "find", icon: "🔎", label: "找样", desc: "拍布 / 相册找同款" },
-  { id: "waybill", icon: "📦", label: "扫运单", desc: "扫码录运单号" },
-  { id: "signature", icon: "✍️", label: "拍签收", desc: "签收单回传" },
-  { id: "cargo", icon: "🏭", label: "拍大货", desc: "生产进度" },
-  { id: "sample", icon: "🧵", label: "建样品", desc: "拍布建样" },
-  { id: "receipt", icon: "💳", label: "拍回款", desc: "凭证回传" },
-];
-
-const PROOF_KIND: Record<
-  Exclude<Mode, "find" | "waybill">,
-  "SIGNATURE" | "CARGO" | "SAMPLE" | "RECEIPT"
-> = {
-  signature: "SIGNATURE",
-  cargo: "CARGO",
-  sample: "SAMPLE",
-  receipt: "RECEIPT",
-};
-
+/**
+ * 相机是「能力」，不是目的地。
+ *
+ * 页面只认一个入口参数 `mode`（由 `enterCamera` 写入 prefs，`useDidShow` 取一次），
+ * 每个 mode 的标题、字段、拍摄后去向都来自 `lib/camera-modes.ts`：
+ * 找样不带运单号/备注，建样只问品名，取证模式只传对应 proof kind。
+ */
 export default function CameraPage() {
   const queryClient = useQueryClient();
   const network = useNetworkStatus();
-  const [mode, setMode] = useState<Mode>("find");
+  const [mode, setMode] = useState<CameraMode>("find");
   const [busy, setBusy] = useState(false);
   const [image, setImage] = useState<CompressedImage | null>(null);
   const [matches, setMatches] = useState<ImageMatch[]>([]);
@@ -69,10 +57,22 @@ export default function CameraPage() {
 
   useDidShow(() => {
     const pending = parseCameraMode(prefs.takeCameraMode());
-    if (pending) setMode(pending);
+    if (pending) {
+      setMode(pending);
+      // 换能力要清掉上一轮的结果，否则「拍签收」会看到「找样」的候选卡。
+      setMatches([]);
+      setFindMeta(null);
+      setImage(null);
+      setResultText(null);
+      setError(null);
+      setTracking("");
+      setNote("");
+    }
   });
 
-  const current = MODES.find((entry) => entry.id === mode) ?? MODES[0]!;
+  const isWeapp = process.env.TARO_ENV === "weapp";
+  // 文案分端：H5 的运单号页不能出现「扫码」，只有小程序拿 weapp 版本。
+  const spec = cameraModeSpec(mode, isWeapp);
 
   const pickImage = async (source: "camera" | "album") => {
     setError(null);
@@ -94,11 +94,11 @@ export default function CameraPage() {
         return;
       }
       setImage(compressed);
-      if (mode === "find") await runFind(compressed);
-      else if (mode === "sample") {
+      if (spec.outcome === "find") await runFind(compressed);
+      else if (spec.outcome === "sample") {
         // 拍完停在表单：品名/成分/克重填好再保存，避免“拍完就丢”。
         setResultText(null);
-      } else if (mode !== "waybill") await runProof(compressed, mode);
+      } else if (spec.outcome === "proof") await runProof(compressed);
     } catch (caught) {
       setError(
         caught instanceof Error && /cancel/i.test(caught.message)
@@ -142,20 +142,21 @@ export default function CameraPage() {
     }
   };
 
-  const runProof = async (
-    compressed: CompressedImage,
-    proofMode: Exclude<Mode, "find" | "waybill">,
-  ) => {
-    const kind = PROOF_KIND[proofMode];
+  const runProof = async (compressed: CompressedImage) => {
+    const kind = spec.proofKind;
+    if (!kind) return;
+    // 只带当前 mode 的字段：签收要运单号，大货/回款只要一句说明。
+    const payload = {
+      kind,
+      ...(cameraFieldVisible(mode, "tracking") && tracking.trim()
+        ? { trackingNumber: tracking.trim() }
+        : {}),
+      ...(cameraFieldVisible(mode, "note") && note.trim() ? { note: note.trim() } : {}),
+    };
     if (network.online) {
       try {
         const imageUrl = await uploadImage(compressed, api);
-        await api.recordProof({
-          kind,
-          imageUrl,
-          ...(tracking ? { trackingNumber: tracking } : {}),
-          ...(note ? { note } : {}),
-        });
+        await api.recordProof({ ...payload, imageUrl });
         setResultText("已上传并记录（图片直传对象存储，未走 base64 JSON）");
         return;
       } catch (caught) {
@@ -179,12 +180,7 @@ export default function CameraPage() {
     await enqueueOperation(offlineQueue, {
       kind: "shipment.proof",
       opId: `proof-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      payload: {
-        kind,
-        mediaKey,
-        ...(tracking ? { trackingNumber: tracking } : {}),
-        ...(note ? { note } : {}),
-      },
+      payload: { ...payload, mediaKey },
     });
     setResultText(`已存本地（${(compressed.byteSize / 1024).toFixed(0)}KB）· 联网后自动上传`);
   };
@@ -265,75 +261,57 @@ export default function CameraPage() {
     }
   };
 
-  const scanWaybill = async () => {
+  /**
+   * 运单号：小程序才真扫码，H5 只做手工录入。
+   * 之前 H5 点「扫码」弹出输入框，名不副实，文案改成「录入运单号」。
+   */
+  const enterWaybill = async () => {
     setError(null);
-    try {
-      if (process.env.TARO_ENV === "weapp") {
+    if (isWeapp) {
+      try {
         const result = await Taro.scanCode({ scanType: ["barCode", "qrCode"] });
         setTracking(result.result);
         setResultText(`运单号：${result.result}`);
         return;
+      } catch {
+        setError("扫码失败，请手动输入运单号");
       }
-      const options = {
-        title: "录入运单号",
-        editable: true,
-        placeholderText: "例如 SF1234567890",
-      } as unknown as Parameters<typeof Taro.showModal>[0];
-      const result = (await Taro.showModal(options)) as unknown as {
-        confirm: boolean;
-        content?: string;
-      };
-      if (result.confirm && result.content) {
-        setTracking(result.content);
-        setResultText(`运单号：${result.content}（已在本地暂存，接入 Track A 后提交）`);
-      }
-    } catch {
-      setError("扫码失败，请手动输入运单号");
     }
+    if (!tracking.trim()) {
+      setError("先填写运单号");
+      return;
+    }
+    setResultText(`运单号：${tracking.trim()}（已在本地暂存，接入 Track A 后提交）`);
   };
 
   return (
     <Page>
-      {/* 相机不再是 tab，而是从待办 / 样品页带 mode 打开的能力页，必须有返回。 */}
-      <NavBar title="相机" subtitle="现场能力：能拍就不填" />
-      <View className="page-sub">色卡屏幕色仅供参考，以实物为准。</View>
-
-      <View className="grid-3">
-        {MODES.map((entry) => (
-          <View
-            key={entry.id}
-            className={`tile${mode === entry.id ? " tile-active" : ""}`}
-            onClick={() => {
-              setMode(entry.id);
-              setMatches([]);
-              setResultText(null);
-              setError(null);
-            }}
-          >
-            <View className="tile-icon">{entry.icon}</View>
-            <View className="tile-label">{entry.label}</View>
-          </View>
-        ))}
-      </View>
+      {/* 相机不再是 tab，而是从报价 / 待办 / 我的带 mode 打开的能力页，必须有返回。 */}
+      <NavBar title={spec.title} subtitle={spec.subtitle} />
+      <View className="page-sub">{spec.desc}</View>
 
       <Card className="card-flat" style={{ marginTop: 16 }}>
         <View className="row">
-          <View>
-            <View className="list-title">
-              {current.icon} {current.label}
-            </View>
-            <View className="list-sub">{current.desc}</View>
-          </View>
+          <View className="muted">{spec.emptyHint}</View>
           <Badge tone={network.online ? "accent" : "warn"}>
             {network.online ? "在线" : "离线"}
           </Badge>
         </View>
 
-        {mode === "waybill" ? (
-          <View className="actions">
-            <Button block onClick={() => void scanWaybill()}>
-              扫码 / 录入运单号
-            </Button>
+        {spec.outcome === "input" ? (
+          <View>
+            <View className="label">运单号</View>
+            <Input
+              className="input"
+              value={tracking}
+              placeholder="例如 SF1234567890"
+              onInput={(event) => setTracking(event.detail.value)}
+            />
+            <View className="actions">
+              <Button block onClick={() => void enterWaybill()}>
+                {waybillActionLabel(isWeapp)}
+              </Button>
+            </View>
           </View>
         ) : (
           <View className="actions">
@@ -341,26 +319,34 @@ export default function CameraPage() {
               从相册
             </Button>
             <Button onClick={() => void pickImage("camera")} loading={busy}>
-              打开相机
+              {spec.captureLabel}
             </Button>
           </View>
         )}
 
-        <View className="label">备注 / 运单号</View>
-        <Input
-          className="input"
-          value={tracking}
-          placeholder="运单号（可选）"
-          onInput={(event) => setTracking(event.detail.value)}
-        />
-        <View style={{ marginTop: 12 }}>
-          <Input
-            className="input"
-            value={note}
-            placeholder="一句说明（可选）"
-            onInput={(event) => setNote(event.detail.value)}
-          />
-        </View>
+        {/* 字段跟任务走：找样/建样不出现运单号与备注。 */}
+        {cameraFieldVisible(mode, "tracking") && spec.outcome !== "input" && (
+          <View>
+            <View className="label">运单号</View>
+            <Input
+              className="input"
+              value={tracking}
+              placeholder="运单号（可选）"
+              onInput={(event) => setTracking(event.detail.value)}
+            />
+          </View>
+        )}
+        {cameraFieldVisible(mode, "note") && (
+          <View>
+            <View className="label">一句说明</View>
+            <Input
+              className="input"
+              value={note}
+              placeholder="如：已签收 / 今日出货 300 米"
+              onInput={(event) => setNote(event.detail.value)}
+            />
+          </View>
+        )}
       </Card>
 
       {image && (
@@ -375,7 +361,7 @@ export default function CameraPage() {
               长边 ≤1600 · ≤1MB
             </Badge>
           </View>
-          {mode === "sample" && (
+          {spec.outcome === "sample" && (
             <View>
               <View className="label">品名（必填）</View>
               <Input
@@ -420,18 +406,20 @@ export default function CameraPage() {
         </Card>
       )}
 
-      {mode === "find" && findMeta && (findMeta.mode === "caption" || !findMeta.semantic) && (
-        <Card className="card-flat">
-          <Badge tone="warn">{findMeta.mode === "caption" ? "按图像描述检索" : "演示模式"}</Badge>
-          <View className="muted" style={{ marginTop: 8 }}>
-            {findMeta.mode === "caption"
-              ? "这次按图片描述找相似面料，结果仅供参考。"
-              : "当前是演示模式，结果只用于体验，不代表真实相似度。"}
-          </View>
-        </Card>
-      )}
+      {spec.outcome === "find" &&
+        findMeta &&
+        (findMeta.mode === "caption" || !findMeta.semantic) && (
+          <Card className="card-flat">
+            <Badge tone="warn">{findMeta.mode === "caption" ? "按图像描述检索" : "演示模式"}</Badge>
+            <View className="muted" style={{ marginTop: 8 }}>
+              {findMeta.mode === "caption"
+                ? "这次按图片描述找相似面料，结果仅供参考。"
+                : "当前是演示模式，结果只用于体验，不代表真实相似度。"}
+            </View>
+          </Card>
+        )}
 
-      {mode === "find" && matches.length > 0 && (
+      {spec.outcome === "find" && matches.length > 0 && (
         <View>
           <SectionTitle
             title="候选面料"
@@ -456,21 +444,7 @@ export default function CameraPage() {
                       style={{ width: 44, height: 44, borderRadius: 6 }}
                     />
                   ) : (
-                    <View
-                      className="tiny"
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 6,
-                        border: "1px dashed #d8d3c8",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#9a9385",
-                      }}
-                    >
-                      待补图
-                    </View>
+                    <View className="candidate-thumb-empty">待补图</View>
                   )}
                   <Badge tone="accent">相似 {(match.score * 100).toFixed(0)}%</Badge>
                 </View>
@@ -495,7 +469,7 @@ export default function CameraPage() {
 
       <View className="footnote">
         图片先压缩（长边 1600px / ≤1MB）再直传对象存储；离线时照片存本地队列，联网后按时间序提交。
-        扫箱唛重打与蓝牙标签在「更多」。
+        箱唛重打与蓝牙标签在「我的」的设备分组里。
       </View>
     </Page>
   );

@@ -1077,3 +1077,249 @@ taro-textarea-core.textarea textarea {
   min-height: 0 !important;
   overflow-y: auto !important;
 }
+
+/*
+ * 样品 tab（WAN-185）：吸顶搜索 + 三行单选 chips + 两列图墙。
+ * 吸顶块用负 margin 抵消 .page 的内边距，滚到顶部时背景铺满，不露出列表内容。
+ */
+.samples-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 400;
+  margin: 0 -24px 12px;
+  padding: 8px 24px 10px;
+  background: $bg;
+}
+
+.samples-search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.samples-search {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 有内容时拍照收成右上角图标：命中区按物理像素 ≥44，避免只靠视觉大小。 */
+.samples-camera {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  min-width: 44PX;
+  min-height: 44PX;
+  border-radius: 50%;
+  background: $accent;
+}
+
+.samples-camera-icon {
+  color: #ffffff;
+  font-size: 40px;
+  line-height: 1;
+}
+
+.samples-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.samples-clear {
+  flex: none;
+  color: $accent;
+}
+
+/* 切筛选时保留旧列表 + 一条细进度条，避免整页闪一下再回来。 */
+.samples-progress {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, $accent, transparent);
+  animation: samples-progress 1s ease-in-out infinite;
+}
+
+@keyframes samples-progress {
+  0% {
+    opacity: 0.2;
+    transform: scaleX(0.2);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0.2;
+    transform: scaleX(0.2);
+  }
+}
+
+.sample-wall-refreshing {
+  opacity: 0.55;
+}
+
+.facet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.facet-label {
+  flex: none;
+  width: 64px;
+  color: $muted;
+  font-size: 24px;
+}
+
+.chip-row,
+.facet-scroll {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.chip-row {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 同一行里 chip 不能被压扁成「全部…」，横向滚动才是它的溢出方式。 */
+.chip-row > .chip,
+.facet-scroll > .chip {
+  flex: 0 0 auto;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 24px;
+  border: 1px solid $line;
+  border-radius: 999px;
+  background: $surface;
+  color: $muted;
+  font-size: 24px;
+  white-space: nowrap;
+}
+
+.chip-active {
+  border-color: $accent;
+  background: $accent;
+  color: #ffffff;
+}
+
+.chip-count {
+  border-style: dashed;
+  background: transparent;
+}
+
+.sample-wall {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  transition: opacity 0.15s ease;
+}
+
+.sample-card {
+  border: 1px solid $line;
+  border-radius: 18px;
+  overflow: hidden;
+  background: $surface;
+}
+
+/*
+ * 图 1:1：Taro 的 Image 是自定义元素，直接给 aspect-ratio 在小程序端不稳，
+ * 用外层 padding-bottom 占位，图片本身绝对定位填满。
+ */
+.sample-thumb-wrap {
+  position: relative;
+  width: 100%;
+  padding-bottom: 100%;
+  background: $bg;
+}
+
+.sample-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sample-thumb-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px dashed #d8d3c8;
+  background: #faf8f3;
+  color: #9a9385;
+  font-size: 24px;
+}
+
+.sample-body {
+  padding: 14px 16px 16px;
+}
+
+.sample-name {
+  font-size: 26px;
+  font-weight: 550;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 70px;
+}
+
+.sample-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sample-meta {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: $muted;
+  font-size: 22px;
+}
+
+/* 卡片底部的「用它报价」：命中区 ≥44，边框让它看起来是一个可点动作。 */
+.sample-quote {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44PX;
+  padding: 0 18px;
+  border: 1px solid $accent;
+  border-radius: 999px;
+  color: $accent;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.sample-detail-image {
+  display: block;
+  width: 100%;
+  border-radius: 16px;
+}
+
+.onsite-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
