@@ -25,20 +25,31 @@ export function openWorkspace(): void {
   void Taro.reLaunch({ url: ROUTES.today });
 }
 
-export function openQuote(
-  params: {
-    customerId?: string;
-    sampleId?: string;
-    mode?: "paste" | "voice" | "camera";
-  } = {},
-): void {
+/** 报价入口模式：决定预填什么，不决定权限。 */
+export type QuoteMode = "paste" | "camera" | "sample" | "customer" | "edit";
+
+export interface QuoteEntryParams {
+  mode: QuoteMode;
+  sampleId?: string;
+  customerId?: string;
+  quoteId?: string;
+}
+
+/**
+ * 所有报价入口的唯一形状（待办主按钮、客户行、样品「用它报价」、审批「改价」）。
+ * 参数语义收在一处，新增入口只加调用点，不加新函数。
+ */
+export function enterQuote(params: QuoteEntryParams = { mode: "paste" }): void {
   const search = new URLSearchParams();
+  search.set("mode", params.mode);
   if (params.customerId) search.set("customerId", params.customerId);
   if (params.sampleId) search.set("sampleId", params.sampleId);
-  if (params.mode) search.set("mode", params.mode);
-  const suffix = search.toString();
-  void Taro.navigateTo({ url: `${ROUTES.quote}${suffix ? `?${suffix}` : ""}` });
+  if (params.quoteId) search.set("quoteId", params.quoteId);
+  void Taro.navigateTo({ url: `${ROUTES.quote}?${search.toString()}` });
 }
+
+/** 兼容旧调用名；实现只有 `enterQuote` 一份。 */
+export const openQuote = enterQuote;
 
 export function openCustomer(customerId: string): void {
   void Taro.navigateTo({ url: `${ROUTES.customer}?id=${encodeURIComponent(customerId)}` });

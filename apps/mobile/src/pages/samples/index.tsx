@@ -178,7 +178,7 @@ export default function SamplesPage() {
                   const sampleId = selected.id;
                   setSelected(null);
                   // 带上 sampleId：报价页据此预填面料，否则样品库入口等于断链（WAN-160 A）。
-                  openQuote({ sampleId, mode: "paste" });
+                  openQuote({ mode: "sample", sampleId });
                 }}
               >
                 用这个样品报价

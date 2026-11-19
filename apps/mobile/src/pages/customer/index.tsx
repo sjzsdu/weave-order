@@ -151,7 +151,7 @@ export default function CustomerPage() {
           >
             打电话
           </Button>
-          <Button onClick={() => openQuote({ customerId: customer.id, mode: "paste" })}>
+          <Button onClick={() => openQuote({ mode: "customer", customerId: customer.id })}>
             快速报价
           </Button>
         </View>
