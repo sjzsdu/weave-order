@@ -8,7 +8,7 @@ import { initPwa } from "./lib/pwa";
 import { api, syncQueue } from "./lib/runtime";
 import { createStartupNav } from "./lib/startup-nav";
 import { needsTenantOnboarding } from "./lib/tenant-onboarding";
-import { openStart } from "./lib/nav";
+import { openStart } from "./routes";
 import "./app.scss";
 
 /**

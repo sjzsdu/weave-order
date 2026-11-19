@@ -3,7 +3,7 @@ import type { PropsWithChildren, ReactNode } from "react";
 import type { CSSProperties } from "react";
 import { useEffect } from "react";
 import { sheetTabBar } from "../lib/sheet-tabbar";
-import { back } from "../lib/nav";
+import { back } from "../routes";
 
 /** 移动端基础组件：只对齐 tokens，不复用 DOM 组件（packages/ui 仅桌面）。 */
 

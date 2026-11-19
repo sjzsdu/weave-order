@@ -132,7 +132,7 @@ export default function MorePage() {
       if (picked) {
         setRole(picked);
         prefs.setRole(picked);
-        await Taro.showToast({ title: `首页已切换为${ROLE_LABEL[picked]}`, icon: "none" });
+        await Taro.showToast({ title: `身份已切换为${ROLE_LABEL[picked]}`, icon: "none" });
       }
     } catch {
       // 用户取消切换不处理。
@@ -215,10 +215,8 @@ export default function MorePage() {
 
   return (
     <Page>
-      <View className="page-title">更多</View>
-      <View className="page-sub">
-        离线队列、身份、安装与隐私。批量导入 / 模板 / 权限配置留在 PC。
-      </View>
+      <View className="page-title">我的</View>
+      <View className="page-sub">身份、离线队列、安装与隐私；批量的事留在 PC。</View>
 
       {IS_MOCK && (
         <Card className="card-flat">
@@ -312,26 +310,12 @@ export default function MorePage() {
         </View>
       </Card>
 
-      <SectionTitle title="样品" hint="图墙与拍照建样" />
-      <Card>
-        <View
-          className="list-row"
-          onClick={() => void Taro.navigateTo({ url: "/pages/samples/index" })}
-        >
-          <View>
-            <View className="list-title">样品库</View>
-            <View className="list-sub">看图墙、拍照建样品、用样品报价</View>
-          </View>
-          <Text className="link">打开</Text>
-        </View>
-      </Card>
-
-      <SectionTitle title="身份与审批" hint="角色只改首页排序，权限由服务端决定" />
+      <SectionTitle title="身份与审批" hint="身份只影响个性化，权限由服务端决定" />
       <Card>
         <View className="list-row" onClick={() => void switchRole()}>
           <View>
             <View className="list-title">当前身份</View>
-            <View className="list-sub">影响「今日」第一屏与快捷动作</View>
+            <View className="list-sub">影响「待办」的个性化，不影响权限</View>
           </View>
           <Text className="link">{ROLE_LABEL[role]}</Text>
         </View>

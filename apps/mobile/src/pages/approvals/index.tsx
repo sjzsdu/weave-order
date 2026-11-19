@@ -1,8 +1,7 @@
 import { Input, Text, Textarea, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { ApiError, queryKeys } from "@weave-order/core";
+import { useEffect, useState } from "react";
+import { ApiError } from "@weave-order/core";
 import type { ApprovalItem } from "@weave-order/schema";
 import {
   Amount,
@@ -11,6 +10,7 @@ import {
   Card,
   EmptyState,
   Loading,
+  NavBar,
   OfflineBanner,
   Page,
   SectionTitle,
@@ -18,32 +18,24 @@ import {
   Stat,
 } from "../../components/ui";
 import { SwipeCard } from "../../components/SwipeCard";
+import { useApprovalDecision } from "../../domain/approval/use-approval-decision";
 import { useApprovalQueue, useOfflineBanner } from "../../lib/hooks";
 import { formatMoneyShort, relativeTime } from "../../lib/format";
-import { verifyLargeAmount } from "../../lib/biometric";
 import { useVoiceNote } from "../../lib/recorder";
-import { api, offlineQueue, prefs } from "../../lib/runtime";
-import { enqueueOperation } from "../../lib/offline";
+import { api } from "../../lib/runtime";
 import { copyText } from "../../lib/clipboard";
-import { openCustomer, openQuote } from "../../lib/nav";
-
-interface UndoState {
-  item: ApprovalItem;
-  decision: "APPROVE" | "REJECT";
-  note?: string;
-}
+import { enterQuote, openCustomer } from "../../routes";
 
 const REJECT_REASONS = ["价格高了", "交期不行", "规格不对", "客户改需求", "其他"];
 
+/**
+ * 审批页：现在不是 tab（入口在待办「查看全部」与深链），所以有自己的导航栏。
+ * 批 / 驳逻辑全部走 `useApprovalDecision`，与待办内联批同一份实现。
+ */
 export default function ApprovalsPage() {
-  const queryClient = useQueryClient();
-  const { isLoading, refetch, items, hasMore, isFetchingNextPage, fetchNextPage } =
-    useApprovalQueue();
+  const { isLoading, items, hasMore, isFetchingNextPage, fetchNextPage } = useApprovalQueue();
   const banner = useOfflineBanner();
 
-  const [undo, setUndo] = useState<UndoState | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState<ApprovalItem | null>(null);
   const [reason, setReason] = useState(REJECT_REASONS[0] ?? "其他");
   const [note, setNote] = useState("");
@@ -53,17 +45,21 @@ export default function ApprovalsPage() {
   const [sharePdf, setSharePdf] = useState(true);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareExpires, setShareExpires] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   const voice = useVoiceNote();
 
-  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdown = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timeout.current) clearTimeout(timeout.current);
-      if (countdown.current) clearInterval(countdown.current);
-    };
-  }, []);
+  const decision = useApprovalDecision({
+    onApproved: (item) => {
+      if (item.kind === "quote") {
+        setShareFor(item);
+        setShareUrl(null);
+        setShareExpires(null);
+        return;
+      }
+      void Taro.showToast({ title: "已批准", icon: "success" });
+    },
+    onRejected: () => void Taro.showToast({ title: "已驳回", icon: "success" }),
+  });
 
   useEffect(() => {
     if (voice.transcript) {
@@ -73,109 +69,10 @@ export default function ApprovalsPage() {
     }
   }, [voice.transcript]);
 
-  const removeFromCache = (id: string) => {
-    queryClient.setQueryData(
-      queryKeys.approvalQueue(30),
-      (current: { pages: { items: ApprovalItem[] }[] } | undefined) =>
-        current
-          ? {
-              ...current,
-              pages: current.pages.map((page) => ({
-                ...page,
-                items: page.items.filter((item) => item.id !== id),
-              })),
-            }
-          : current,
-    );
-  };
-
-  const commit = async (state: UndoState) => {
-    setBusy(true);
-    try {
-      if (state.decision === "APPROVE" && state.item.amountCents !== null) {
-        const verified = await verifyLargeAmount(
-          state.item.amountCents,
-          prefs.getLargeApprovalThresholdCents(),
-        );
-        if (!verified.verified) {
-          await Taro.showModal({
-            title: "需要二次验证",
-            content: verified.message ?? "未通过验证，本次未提交。",
-            showCancel: false,
-          });
-          return;
-        }
-      }
-      const result = await api.decideApproval({
-        id: state.item.id,
-        kind: state.item.kind,
-        decision: state.decision,
-        ...(state.note ? { note: state.note.slice(0, 500) } : {}),
-      });
-      if (!result.ok) {
-        await Taro.showToast({ title: result.error.message, icon: "none" });
-        await refetch();
-        return;
-      }
-      removeFromCache(state.item.id);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.panorama });
-      if (state.decision === "APPROVE" && state.item.kind === "quote") {
-        setShareFor(state.item);
-        setShareUrl(null);
-        setShareExpires(null);
-      } else {
-        await Taro.showToast({
-          title: state.decision === "APPROVE" ? "已批准" : "已驳回",
-          icon: "success",
-        });
-      }
-    } catch (error) {
-      if (!(error instanceof ApiError)) {
-        await enqueueOperation(offlineQueue, {
-          kind: "quote.decide",
-          opId: `decide-${state.item.id}-${Date.now()}`,
-          payload: {
-            id: state.item.id,
-            kind: state.item.kind,
-            decision: state.decision,
-            ...(state.note ? { note: state.note.slice(0, 500) } : {}),
-          },
-        });
-        removeFromCache(state.item.id);
-        await Taro.showToast({ title: "已存本地，联网后提交", icon: "none" });
-      } else if (error.status === 409) {
-        await Taro.showModal({
-          title: "已被其他端处理",
-          content: "服务端版本已变化，已刷新队列；请确认后再操作。",
-          showCancel: false,
-        });
-        await refetch();
-      } else {
-        await Taro.showToast({ title: error.message, icon: "none" });
-      }
-    } finally {
-      setBusy(false);
-      setUndo(null);
-      if (countdown.current) clearInterval(countdown.current);
-    }
-  };
-
-  const schedule = (item: ApprovalItem, decision: "APPROVE" | "REJECT", decisionNote?: string) => {
-    setUndo({ item, decision, note: decisionNote });
-    setSecondsLeft(5);
-    if (timeout.current) clearTimeout(timeout.current);
-    if (countdown.current) clearInterval(countdown.current);
-    countdown.current = setInterval(() => setSecondsLeft((value) => Math.max(0, value - 1)), 1000);
-    timeout.current = setTimeout(() => {
-      void commit({ item, decision, note: decisionNote });
-    }, 5000);
-  };
-
-  const cancelUndo = () => {
-    if (timeout.current) clearTimeout(timeout.current);
-    if (countdown.current) clearInterval(countdown.current);
-    setUndo(null);
-    setSecondsLeft(0);
+  const openReject = (item: ApprovalItem) => {
+    setRejecting(item);
+    setNote("");
+    setReason(REJECT_REASONS[0] ?? "其他");
   };
 
   const confirmReject = () => {
@@ -184,12 +81,12 @@ export default function ApprovalsPage() {
     setRejecting(null);
     setNote("");
     voice.reset();
-    schedule(rejecting, "REJECT", fullNote);
+    decision.schedule(rejecting, "REJECT", fullNote);
   };
 
   const createShare = async () => {
     if (!shareFor) return;
-    setBusy(true);
+    setSharing(true);
     try {
       const days = Number(shareDays);
       const result = await api.createQuoteShare({
@@ -212,7 +109,7 @@ export default function ApprovalsPage() {
         await Taro.showToast({ title: "分享链接需要联网生成", icon: "none" });
       }
     } finally {
-      setBusy(false);
+      setSharing(false);
     }
   };
 
@@ -240,8 +137,7 @@ export default function ApprovalsPage() {
 
   return (
     <Page>
-      <View className="page-title">审批</View>
-      <View className="page-sub">大卡片、拇指区；左滑驳回、右滑通过，5 秒内可撤销。</View>
+      <NavBar title="审批" subtitle="批准立即生效，5 秒内可撤销" />
 
       {banner.show && <OfflineBanner text={banner.text} />}
 
@@ -254,7 +150,7 @@ export default function ApprovalsPage() {
         <View className="footnote">金额与成本校验全部在服务端完成；前端只提交「批 / 驳回」。</View>
       </Card>
 
-      <SectionTitle title="待你决定" hint="草稿用虚线，批准后生效" />
+      <SectionTitle title="待你决定" hint="右滑通过、左滑驳回" />
 
       {isLoading && items.length === 0 ? (
         <Loading />
@@ -265,25 +161,16 @@ export default function ApprovalsPage() {
           {items.map((item) => (
             <SwipeCard
               key={item.id}
-              disabled={busy}
-              onApprove={() => schedule(item, "APPROVE")}
-              onReject={() => {
-                setRejecting(item);
-                setNote("");
-                setReason(REJECT_REASONS[0] ?? "其他");
-              }}
+              disabled={decision.busy}
+              onApprove={() => decision.schedule(item, "APPROVE")}
+              onReject={() => openReject(item)}
             >
               <Card className="card-draft">
+                {/* 三行：客户 + 规格 / 摘要 / 金额 + 风险。 */}
                 <View className="row">
-                  <View>
-                    <View className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
-                      <Badge tone="warn">{item.kind === "quote" ? "报价草稿" : "寄样草稿"}</Badge>
-                      {typeof item.version === "number" && <Badge>v{item.version}</Badge>}
-                      <Text className="tiny">{relativeTime(item.createdAt)}</Text>
-                    </View>
-                    <View className="list-title" style={{ marginTop: 8 }}>
-                      {item.title}
-                    </View>
+                  <View className="pending-main">
+                    <View className="list-title">{item.title}</View>
+                    <View className="list-sub truncate">{item.summary}</View>
                   </View>
                   {item.amountCents !== null && (
                     <Amount size="lg">
@@ -292,39 +179,30 @@ export default function ApprovalsPage() {
                   )}
                 </View>
 
-                <View className="muted" style={{ marginTop: 10 }}>
-                  {item.summary}
-                </View>
-
-                <View className="section-head" style={{ margin: "16px 0 8px" }}>
-                  <View className="tiny">依据和缺什么都在摘要里；点下面看客户详情</View>
-                  <Text className="link" onClick={() => openCustomer(item.customerId)}>
-                    客户 360
-                  </Text>
+                <View className="pending-meta">
+                  <Badge tone="warn">{item.kind === "quote" ? "报价草稿" : "寄样草稿"}</Badge>
+                  {typeof item.version === "number" && <Badge>v{item.version}</Badge>}
+                  {item.escalated && <Badge tone="danger">已升级</Badge>}
+                  <Text className="tiny">{relativeTime(item.createdAt)}</Text>
                 </View>
 
                 <View className="actions">
-                  <Button
-                    variant="danger"
-                    small
-                    onClick={() => {
-                      setRejecting(item);
-                      setNote("");
-                      setReason(REJECT_REASONS[0] ?? "其他");
-                    }}
-                  >
+                  <Button variant="danger" small onClick={() => openReject(item)}>
                     驳回
+                  </Button>
+                  <Button variant="ghost" small onClick={() => openCustomer(item.customerId)}>
+                    客户
                   </Button>
                   {item.kind === "quote" && (
                     <Button
                       variant="ghost"
                       small
-                      onClick={() => openQuote({ mode: "edit", quoteId: item.id })}
+                      onClick={() => enterQuote({ mode: "edit", quoteId: item.id })}
                     >
                       改价
                     </Button>
                   )}
-                  <Button small onClick={() => schedule(item, "APPROVE")}>
+                  <Button small onClick={() => decision.schedule(item, "APPROVE")}>
                     批准
                   </Button>
                 </View>
@@ -344,13 +222,13 @@ export default function ApprovalsPage() {
         </View>
       )}
 
-      {undo && (
+      {decision.pending && (
         <View className="undo-bar">
           <Text>
-            {undo.decision === "APPROVE" ? "已批准" : "已驳回"} · {undo.item.title} · {secondsLeft}s
-            后提交
+            {decision.pending.decision === "APPROVE" ? "已批准" : "已驳回"} ·{" "}
+            {decision.pending.item.title} · {decision.secondsLeft}s 后提交
           </Text>
-          <Text className="undo-action" onClick={cancelUndo}>
+          <Text className="undo-action" onClick={decision.cancelUndo}>
             撤销
           </Text>
         </View>
@@ -423,12 +301,12 @@ export default function ApprovalsPage() {
               <Button variant="ghost" onClick={() => void nativeShare()}>
                 转发
               </Button>
-              <Button onClick={() => void createShare()} loading={busy}>
+              <Button onClick={() => void createShare()} loading={sharing}>
                 再生成一条
               </Button>
             </View>
           ) : (
-            <Button block onClick={() => void createShare()} loading={busy}>
+            <Button block onClick={() => void createShare()} loading={sharing}>
               生成分享链接
             </Button>
           )
@@ -484,7 +362,7 @@ export default function ApprovalsPage() {
 
       <View className="footnote">
         大额审批在你的阈值以上会要求二次验证：App 端 Face ID，小程序微信生物识别，H5 明确二次确认。
-        阈值可在「更多」里调整。
+        阈值在「我的」里调整。
       </View>
     </Page>
   );

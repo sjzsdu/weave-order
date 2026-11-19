@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@weave-order/core";
 import type { ImageMatch } from "@weave-order/schema";
-import { Badge, Button, Card, Page, SectionTitle } from "../../components/ui";
+import { Badge, Button, Card, NavBar, Page, SectionTitle } from "../../components/ui";
 import { useNetworkStatus } from "../../lib/hooks";
 import {
   compressImage,
@@ -15,7 +15,7 @@ import {
 import type { CompressedImage } from "../../lib/media";
 import { api, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
-import { openQuote } from "../../lib/nav";
+import { enterQuote, parseCameraMode } from "../../routes";
 import {
   buildSampleSaveFailureMessage,
   isMediaUploadError,
@@ -68,8 +68,8 @@ export default function CameraPage() {
   const [savingSample, setSavingSample] = useState(false);
 
   useDidShow(() => {
-    const pending = prefs.takeCameraMode();
-    if (pending && MODES.some((entry) => entry.id === pending)) setMode(pending as Mode);
+    const pending = parseCameraMode(prefs.takeCameraMode());
+    if (pending) setMode(pending);
   });
 
   const current = MODES.find((entry) => entry.id === mode) ?? MODES[0]!;
@@ -294,8 +294,9 @@ export default function CameraPage() {
 
   return (
     <Page>
-      <View className="page-title">相机</View>
-      <View className="page-sub">现场能力入口：能拍就不填。色卡屏幕色仅供参考，以实物为准。</View>
+      {/* 相机不再是 tab，而是从待办 / 样品页带 mode 打开的能力页，必须有返回。 */}
+      <NavBar title="相机" subtitle="现场能力：能拍就不填" />
+      <View className="page-sub">色卡屏幕色仅供参考，以实物为准。</View>
 
       <View className="grid-3">
         {MODES.map((entry) => (
@@ -482,7 +483,7 @@ export default function CameraPage() {
               <View className="actions">
                 <Button
                   small
-                  onClick={() => openQuote({ mode: "sample", sampleId: match.sample.id })}
+                  onClick={() => enterQuote({ mode: "sample", sampleId: match.sample.id })}
                 >
                   用这个报价
                 </Button>

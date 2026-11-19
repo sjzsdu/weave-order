@@ -1,76 +1,47 @@
-import Taro from "@tarojs/taro";
-import { prefs } from "./runtime";
-import { resolveBackAction } from "./back-nav";
-
-export const ROUTES = {
-  today: "/pages/today/index",
-  approvals: "/pages/approvals/index",
-  camera: "/pages/camera/index",
-  customers: "/pages/customers/index",
-  more: "/pages/more/index",
-  quote: "/pages/quote/index",
-  customer: "/pages/customer/index",
-  start: "/pages/start/index",
-} as const;
-
-export function goTab(page: (typeof ROUTES)[keyof typeof ROUTES]): void {
-  void Taro.switchTab({ url: page });
-}
-
-export function openStart(): void {
-  void Taro.reLaunch({ url: ROUTES.start });
-}
-
-export function openWorkspace(): void {
-  void Taro.reLaunch({ url: ROUTES.today });
-}
-
-/** 报价入口模式：决定预填什么，不决定权限。 */
-export type QuoteMode = "paste" | "camera" | "sample" | "customer" | "edit";
-
-export interface QuoteEntryParams {
-  mode: QuoteMode;
-  sampleId?: string;
-  customerId?: string;
-  quoteId?: string;
-}
+import { enterCamera as enterCameraRoute, parseCameraMode } from "../routes";
 
 /**
- * 所有报价入口的唯一形状（待办主按钮、客户行、样品「用它报价」、审批「改价」）。
- * 参数语义收在一处，新增入口只加调用点，不加新函数。
+ * 导航兼容层（仅为历史 import 保留）。
+ *
+ * 实现在 `src/routes.ts`：路由表、tab 标记、入口参数都在那里。
+ * 新代码请直接 `import ... from "../routes"`，这里只是转发，避免一次性改几十处 import。
  */
-export function enterQuote(params: QuoteEntryParams = { mode: "paste" }): void {
-  const search = new URLSearchParams();
-  search.set("mode", params.mode);
-  if (params.customerId) search.set("customerId", params.customerId);
-  if (params.sampleId) search.set("sampleId", params.sampleId);
-  if (params.quoteId) search.set("quoteId", params.quoteId);
-  void Taro.navigateTo({ url: `${ROUTES.quote}?${search.toString()}` });
-}
+export {
+  ROUTES,
+  ROUTE_PATHS,
+  TAB_ROUTES,
+  back,
+  consumeQuoteEntry,
+  enterCamera,
+  enterQuote,
+  goTab,
+  isTabPath,
+  openApprovals,
+  openCustomer,
+  openStart,
+  openWorkspace,
+  parseCameraMode,
+  takeQuoteEntry,
+} from "../routes";
+export type {
+  CameraEntryParams,
+  CameraMode,
+  QuoteEntryParams,
+  QuoteMode,
+  RouteName,
+  RoutePath,
+  TabPath,
+} from "../routes";
 
-/** 兼容旧调用名；实现只有 `enterQuote` 一份。 */
-export const openQuote = enterQuote;
+/** 兼容旧调用名：报价入口只有 `enterQuote` 一份实现。 */
+export { enterQuote as openQuote } from "../routes";
 
-export function openCustomer(customerId: string): void {
-  void Taro.navigateTo({ url: `${ROUTES.customer}?id=${encodeURIComponent(customerId)}` });
-}
-
-/** tabBar 页不能带参数：把相机模式放偏好里，切页后读取一次。 */
+/** @deprecated 用 `enterCamera({ mode })`：相机不是 tab 了，要带参数打开。 */
 export function openCamera(mode: string): void {
-  prefs.setCameraMode(mode);
-  goTab(ROUTES.camera);
-}
-
-/**
- * 返回上一页；页面栈只有一层（直接打开二级页 / PWA 冷启动）时回退到指定 tab。
- * navigateBack 在 H5 也可能失败，失败同样落到 tab，保证任何情况下都有出口。
- */
-export function back(fallbackTab: (typeof ROUTES)[keyof typeof ROUTES] = ROUTES.today): void {
-  const pages = typeof Taro.getCurrentPages === "function" ? Taro.getCurrentPages() : [];
-  const action = resolveBackAction(pages.length, fallbackTab);
-  if (action.kind === "tab") {
-    goTab(action.url);
+  const parsed = parseCameraMode(mode);
+  if (!parsed) {
+    console.error(`[nav] 未知的相机模式：${mode}`);
     return;
   }
-  void Taro.navigateBack({ delta: 1, fail: () => goTab(fallbackTab) });
+  enterCameraRoute({ mode: parsed });
 }

@@ -1,19 +1,9 @@
 import { Image, Input, Text, Textarea, View } from "@tarojs/components";
-import Taro, { useRouter } from "@tarojs/taro";
+import Taro, { useDidShow, useRouter } from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ApiError } from "@weave-order/core";
 import type { FabricSample, QuoteDraft, Unit } from "@weave-order/schema";
-import {
-  Amount,
-  Badge,
-  Button,
-  Card,
-  Field,
-  Loading,
-  NavBar,
-  Page,
-  Sheet,
-} from "../../components/ui";
+import { Amount, Badge, Button, Card, Field, Loading, Page, Sheet } from "../../components/ui";
 import { useCanApproveQuote, useCustomers } from "../../lib/hooks";
 import {
   centsToYuanInput,
@@ -28,10 +18,11 @@ import { verifyLargeAmount } from "../../lib/biometric";
 import { api, offlineQueue, prefs } from "../../lib/runtime";
 import { enqueueOperation } from "../../lib/offline";
 import { copyText, readClipboardText, shareText } from "../../lib/clipboard";
-import { openCamera } from "../../lib/nav";
 import { useVoiceNote } from "../../lib/recorder";
+import { createQuoteEntrySession } from "../../lib/entry-params";
+import type { QuoteEntrySession } from "../../lib/entry-params";
+import { enterCamera } from "../../routes";
 import {
-  entryParamsFromRoute,
   INITIAL_QUOTE_STATE,
   missingForDraft,
   primaryAction,
@@ -91,15 +82,33 @@ export default function QuotePage() {
   const [suggestions, setSuggestions] = useState<Record<string, number>>({});
   const [submitted, setSubmitted] = useState(false);
 
+  /**
+   * 入口参数只消费一次（WAN-183 第 2 轮 FAIL：Taro 的 `useDidShow` 先于挂载 effect，
+   * 两个消费点各自去读暂存值，后读的默认 paste 会覆盖先读到的 edit / customer）。
+   * 渲染期取一次并缓存，show 之后只在确实有新入口时才重置页面。
+   */
+  const entrySession = useRef<QuoteEntrySession | null>(null);
+  if (!entrySession.current) {
+    entrySession.current = createQuoteEntrySession({ take: () => prefs.takeQuoteEntry() });
+  }
+  const initialEntry = entrySession.current.mount(router.params);
   const entered = useRef(false);
 
-  // 入口只在首次渲染时解析一次，后续 state 由事件驱动。
   useEffect(() => {
     if (entered.current) return;
     entered.current = true;
-    const params = entryParamsFromRoute(router.params);
-    dispatch({ type: "enter", params });
-  }, [router.params]);
+    dispatch({ type: "enter", params: initialEntry });
+  }, [initialEntry]);
+
+  // tab 复用时从其它入口再进来：只有确实暂存过参数才重置，点 tabbar 不打断当前输入。
+  useDidShow(() => {
+    const next = entrySession.current?.resume();
+    if (!next) return;
+    dispatch({ type: "enter", params: next });
+    setParsed(null);
+    setPreset(null);
+    setNotice(null);
+  });
 
   const customer = useMemo(
     () => (customers.data ?? []).find((entry) => entry.id === state.customerId) ?? null,
@@ -607,7 +616,7 @@ export default function QuotePage() {
   };
 
   const title =
-    state.phase === "input" ? "快速报价" : state.phase === "candidates" ? "选面料" : "报价草稿";
+    state.phase === "input" ? "开报价" : state.phase === "candidates" ? "选面料" : "报价草稿";
 
   const subtitle =
     state.phase === "input"
@@ -618,7 +627,7 @@ export default function QuotePage() {
 
   return (
     <Page>
-      <NavBar title={title} />
+      <View className="page-title">{title}</View>
       <View className="page-sub">{subtitle}</View>
 
       {state.offlineQueued && state.offlineNote && (
@@ -698,7 +707,7 @@ export default function QuotePage() {
 
             <View className="actions">
               {state.mode === "camera" && (
-                <Button variant="ghost" onClick={() => openCamera("find")}>
+                <Button variant="ghost" onClick={() => enterCamera({ mode: "find" })}>
                   拍布找样
                 </Button>
               )}
@@ -817,7 +826,7 @@ export default function QuotePage() {
                 <Button variant="ghost" onClick={() => dispatch({ type: "back" })}>
                   改原话
                 </Button>
-                <Button variant="soft" onClick={() => openCamera("find")}>
+                <Button variant="soft" onClick={() => enterCamera({ mode: "find" })}>
                   拍布找样
                 </Button>
               </View>
