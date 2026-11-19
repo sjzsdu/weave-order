@@ -173,12 +173,15 @@ async function main(): Promise<void> {
       .insert(llmSettings)
       .values({
         scope: "GLOBAL",
-        provider: "litellm",
-        baseUrl: process.env.LITELLM_BASE_URL ?? "http://localhost:4000",
-        defaultModel: "deepseek-chat",
+        provider: "openai-compatible",
+        // 生产地址只放部署仓库 weave-order/.env；这里不写死任何网关地址。
+        baseUrl: process.env.LLM_BASE_URL ?? null,
+        // 模型 ID 只来自通用 LLM_* 变量；未配置时不落臆造的生产模型。
+        defaultModel: process.env.LLM_DEFAULT_MODEL ?? "unconfigured",
         dailyTokenBudget: 5_000_000,
         monthlyTokenBudget: 100_000_000,
         allowExternal: true,
+        keyRef: "LLM_API_KEY",
         updatedBy: "seed",
       })
       .onConflictDoNothing();

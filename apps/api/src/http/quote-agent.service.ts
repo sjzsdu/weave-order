@@ -54,7 +54,9 @@ export class QuoteAgentService {
     const env = loadEnv();
     const settings = await kernel.llmSettings.resolve();
     const provider =
-      env.LLM_PROVIDER === "litellm" && settings.allowExternal ? "litellm" : "local-rule";
+      env.LLM_PROVIDER === "openai-compatible" && settings.allowExternal
+        ? "openai-compatible"
+        : "local-rule";
     const llm = createLlmProvider(provider, { settings, usage: kernel.usage, env });
     this.checkpointer ??= await createPostgresCheckpointer(this.database.handle.pool);
     return createQuoteAgentGraph({

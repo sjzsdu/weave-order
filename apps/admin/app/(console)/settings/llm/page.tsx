@@ -39,7 +39,10 @@ export default async function LlmSettingsPage() {
             只计量成本，不收费。
           </p>
         </div>
-        <LlmTestButton baseUrl={global.baseUrl ?? undefined} />
+        <LlmTestButton
+          baseUrl={global.baseUrl ?? undefined}
+          keyRef={global.keyRef ?? "LLM_API_KEY"}
+        />
       </div>
 
       <div className="grid cols-2">

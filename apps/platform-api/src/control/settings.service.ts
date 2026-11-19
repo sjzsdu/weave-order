@@ -27,14 +27,14 @@ import { AuditService } from "./audit.service";
 import { currentMonthPeriod, toJson } from "./util";
 
 /**
- * 密钥引用白名单：只接受 LiteLLM 约定的密钥变量名
- * （`LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`，见 `.env` 与 docs/track-b-agents.md）。
+ * 密钥引用白名单：只接受通用网关约定的密钥变量名
+ * （`LLM_API_KEY` / `LLM_TENANT_KEY_<名称>`，名称可含下划线分段）。
  *
  * 其它任何名字（`DATABASE_URL`、`CASDOOR_*_SECRET`…）一律拒绝：
  * 绝不执行 `process.env[用户输入]`，否则最低权限账号可以把控制面进程的全部密钥发到任意地址。
  * 租户端 `apps/api/src/platform/llm.ts` 用同一规则（两包不共享源码，改一处须同步另一处）。
  */
-export const LLM_KEY_REF_PATTERN = /^LITELLM_(MASTER|TENANT)_KEY(?:_[A-Za-z0-9]+)*$/;
+export const LLM_KEY_REF_PATTERN = /^LLM_(?:API_KEY|TENANT_KEY(?:_[A-Za-z0-9]+)+)$/;
 
 export function isAllowedLlmKeyRef(name: string): boolean {
   return LLM_KEY_REF_PATTERN.test(name);
@@ -103,9 +103,10 @@ export class SettingsService {
     const current = existing[0];
     const now = new Date();
     const values = {
-      provider: input.provider ?? current?.provider ?? "litellm",
-      baseUrl: input.baseUrl ?? current?.baseUrl ?? null,
-      defaultModel: input.defaultModel ?? current?.defaultModel ?? "deepseek-chat",
+      provider: input.provider ?? current?.provider ?? "openai-compatible",
+      baseUrl: input.baseUrl ?? current?.baseUrl ?? process.env.LLM_BASE_URL ?? null,
+      defaultModel:
+        input.defaultModel ?? current?.defaultModel ?? process.env.LLM_DEFAULT_MODEL ?? "unconfigured",
       dailyTokenBudget:
         input.dailyTokenBudget !== undefined
           ? input.dailyTokenBudget
@@ -114,7 +115,7 @@ export class SettingsService {
         input.monthlyTokenBudget !== undefined
           ? input.monthlyTokenBudget
           : (current?.monthlyTokenBudget ?? null),
-      keyRef: input.keyRef ?? current?.keyRef ?? null,
+      keyRef: input.keyRef ?? current?.keyRef ?? "LLM_API_KEY",
       allowExternal: input.allowExternal ?? current?.allowExternal ?? true,
       version: (current?.version ?? 0) + 1,
       updatedBy: actor.sub,
@@ -142,13 +143,14 @@ export class SettingsService {
   }
 
   /**
-   * 测试连接：只验证可达性，不发送业务数据、不记录 Key。
+   * 连接测试：`GET {baseUrl}/models`，只验证网关连接、鉴权和模型列表，不发送业务数据。
    *
    * 安全约束（WAN-94）：
-   * - 目标地址只能来自服务端配置：`llm_settings` 已保存的行、`LITELLM_BASE_URL`
+   * - 目标地址只能来自服务端配置：`llm_settings` 已保存的行、`LLM_BASE_URL`
    *   或运维显式放行的 `LLM_ALLOWED_BASE_URLS`，白名单外一律 403；
    * - `keyRef` 必须命中受控枚举，禁止 `process.env[用户输入]`，否则 403（不发出任何出网请求）；
-   * - 每次尝试（含被拒绝的）都写审计：谁、目标地址、命中与否，不含密钥。
+   * - 每次尝试（含被拒绝的）都写审计：谁、目标地址、命中与否，不含密钥；
+   * - 4 秒超时；401/403、404、超时、非 2xx 与异常响应都返回明确错误，不把进程存活误报为成功。
    */
   async testLlm(
     actor: PlatformActor,
@@ -176,7 +178,7 @@ export class SettingsService {
         message: `keyRef 不在白名单内，未发起请求`,
       });
       throw forbidden(
-        `keyRef "${keyRef.slice(0, 128)}" 不在白名单内（只允许 LITELLM_MASTER_KEY / LITELLM_TENANT_KEY_*）`,
+        `keyRef "${keyRef.slice(0, 128)}" 不在白名单内（只允许 LLM_API_KEY / LLM_TENANT_KEY_<名称>）`,
       );
     }
 
@@ -188,13 +190,13 @@ export class SettingsService {
       if (origin) allowedOrigins.add(origin);
     }
     for (const origin of [
-      ...originsOfList(process.env.LITELLM_BASE_URL),
+      ...originsOfList(process.env.LLM_BASE_URL),
       ...originsOfList(process.env.LLM_ALLOWED_BASE_URLS),
     ]) {
       allowedOrigins.add(origin);
     }
 
-    const requested = (baseUrl ?? globalRow?.baseUrl ?? process.env.LITELLM_BASE_URL ?? "").replace(
+    const requested = (baseUrl ?? globalRow?.baseUrl ?? process.env.LLM_BASE_URL ?? "").replace(
       /\/+$/,
       "",
     );
@@ -209,39 +211,103 @@ export class SettingsService {
           message: "目标地址不在白名单内，未发起请求",
         });
         throw forbidden(
-          "测试目标地址不在白名单内（仅允许 llm_settings 已配置地址 / LITELLM_BASE_URL / LLM_ALLOWED_BASE_URLS）",
+          "测试目标地址不在白名单内（仅允许 llm_settings 已配置地址 / LLM_BASE_URL / LLM_ALLOWED_BASE_URLS）",
         );
       }
     }
 
-    if (!requested)
-      return { ok: false, status: null, latencyMs: 0, message: "未配置 LLM 网关地址" };
-    const key = keyRef ? process.env[keyRef] : process.env.LITELLM_MASTER_KEY;
+    if (!requested) {
+      const result = {
+        ok: false,
+        status: null,
+        latencyMs: 0,
+        message: "未配置 LLM_BASE_URL：请配置 openai-compatible 企业模型网关地址",
+      };
+      await this.recordLlmTest(actor, null, result);
+      return result;
+    }
+    const key = keyRef ? process.env[keyRef] : process.env.LLM_API_KEY;
+    if (!key) {
+      const result = {
+        ok: false,
+        status: null,
+        latencyMs: 0,
+        message: `Key 引用 ${keyRef ?? "LLM_API_KEY"} 未命中环境变量：请配置 openai-compatible 企业模型网关令牌`,
+      };
+      await this.recordLlmTest(actor, requested.slice(0, 128), result);
+      return result;
+    }
+
     const started = Date.now();
     try {
-      const response = await fetch(`${requested}/health/liveliness`, {
-        headers: key ? { Authorization: `Bearer ${key}` } : undefined,
+      const response = await fetch(`${requested}/models`, {
+        headers: { Authorization: `Bearer ${key}` },
         signal: AbortSignal.timeout(4000),
       });
+      const latencyMs = Date.now() - started;
+      if (!response.ok) {
+        const result = {
+          ok: false,
+          status: response.status,
+          latencyMs,
+          message:
+            response.status === 401 || response.status === 403
+              ? "网关鉴权失败（HTTP 401/403）：请检查 Key 引用是否命中有效令牌"
+              : response.status === 404
+                ? "网关没有 /models（HTTP 404）：请确认 LLM_BASE_URL 是 OpenAI 兼容的 /v1 地址"
+                : `企业模型网关返回 HTTP ${response.status}`,
+        };
+        await this.recordLlmTest(actor, requested.slice(0, 128), result);
+        return result;
+      }
+
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        const result = {
+          ok: false,
+          status: response.status,
+          latencyMs: Date.now() - started,
+          message: "网关 /models 未返回 JSON，无法确认模型列表",
+        };
+        await this.recordLlmTest(actor, requested.slice(0, 128), result);
+        return result;
+      }
+      const models = (payload as { data?: unknown } | null)?.data;
+      if (!Array.isArray(models)) {
+        const result = {
+          ok: false,
+          status: response.status,
+          latencyMs: Date.now() - started,
+          message: "网关 /models 响应缺少 data 模型列表，不能判定连接成功",
+        };
+        await this.recordLlmTest(actor, requested.slice(0, 128), result);
+        return result;
+      }
       const result = {
-        ok: response.ok,
+        ok: true,
         status: response.status,
         latencyMs: Date.now() - started,
-        message: response.ok ? "网关可达" : `网关返回 ${response.status}`,
+        message: `网关可达，模型列表返回 ${models.length} 个模型`,
       };
       await this.recordLlmTest(actor, requested.slice(0, 128), result);
       return result;
     } catch (cause) {
-      // 底层错误（fetch failed / ENOTFOUND）只写日志与审计，页面文案保持中文可读。
+      // 底层错误（超时 / fetch failed / ENOTFOUND）只写日志与审计，页面文案保持中文可读。
       console.error("[platform-api] LLM 网关探测失败", {
         target: requested.slice(0, 128),
         message: cause instanceof Error ? cause.message : String(cause),
       });
+      const timedOut =
+        cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
       const result = {
         ok: false,
         status: null,
         latencyMs: Date.now() - started,
-        message: "网关不可达，请检查网关地址、白名单与网络",
+        message: timedOut
+          ? "连接网关超时（4 秒），请检查网关地址与网络"
+          : "网关不可达，请检查网关地址、白名单与网络",
       };
       await this.recordLlmTest(actor, requested.slice(0, 128), result);
       return result;
@@ -557,12 +623,12 @@ function mapLlm(row: typeof llmSettings.$inferSelect | undefined): PlatformLlmSe
     return {
       scope: "GLOBAL",
       tenantId: null,
-      provider: "litellm",
+      provider: "openai-compatible",
       baseUrl: null,
-      defaultModel: "deepseek-chat",
+      defaultModel: process.env.LLM_DEFAULT_MODEL ?? "unconfigured",
       dailyTokenBudget: null,
       monthlyTokenBudget: null,
-      keyRef: null,
+      keyRef: "LLM_API_KEY",
       allowExternal: true,
       version: 0,
       updatedBy: null,

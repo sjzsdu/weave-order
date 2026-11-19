@@ -33,9 +33,9 @@ EMBEDDING_MAX_ATTEMPTS=3
 SEARCH_SEMANTIC_MIN_SCORE=0.5            # 实测无关文本 cosine 基线 0.37–0.49
 ```
 
-为什么直连 DashScope 而不是 LiteLLM 网关：本地网关只收录了对话模型，embedding 与对话的
+为什么 embedding 不复用对话网关：embedding 与对话的
 超时/重试/计费语义不同；直连可以把 base URL / key 都留在 env，不要求改网关配置并重启。
-以后网关收录该模型时，只需把 `EMBEDDING_BASE_URL` 改成 `http://localhost:4000/v1`。
+换用企业网关收录的 embedding 模型时，只需改 `EMBEDDING_BASE_URL`。
 
 ## 3. 数据库
 

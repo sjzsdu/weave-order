@@ -44,7 +44,7 @@ export async function waitForDatabase(handle: DatabaseHandle): Promise<void> {
 
 export async function createDemoContext(): Promise<DemoContext> {
   const env = loadEnv();
-  if (env.LLM_PROVIDER !== "litellm") {
+  if (env.LLM_PROVIDER !== "openai-compatible") {
     console.log(
       "\n⚠ 【模拟轨迹】LLM_PROVIDER=local-rule：下文跟进建议与意图识别均为本地规则产出，" +
         "不是真实模型调用，不得当作真实现场数据。",

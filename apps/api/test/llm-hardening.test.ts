@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LiteLlmProvider, createLlmProvider, isAllowedLlmKeyRef } from "../src/platform/llm";
+import { OpenAiCompatibleProvider, createLlmProvider, isAllowedLlmKeyRef } from "../src/platform/llm";
 import type { LlmUsageSink } from "../src/platform/llm";
 import type { LlmBudgetStatus, ResolvedLlmSettings } from "@weave-order/schema";
 
@@ -12,15 +12,15 @@ import type { LlmBudgetStatus, ResolvedLlmSettings } from "@weave-order/schema";
  */
 
 const baseSettings: ResolvedLlmSettings = {
-  provider: "litellm",
-  baseUrl: "http://litellm.test:4000",
-  defaultModel: "deepseek-chat",
-  reasoningModel: "deepseek-reasoner",
-  modelAllowlist: ["deepseek-chat", "deepseek-reasoner"],
+  provider: "openai-compatible",
+  baseUrl: "http://gateway.example.test:4000/v1",
+  defaultModel: "daily-model",
+  reasoningModel: "reason-model",
+  modelAllowlist: ["daily-model", "reason-model", "vision-model"],
   dailyTokenBudget: null,
   monthlyTokenBudget: null,
   params: {},
-  keyRef: "LITELLM_MASTER_KEY",
+  keyRef: "LLM_API_KEY",
   allowExternal: true,
   logPrompts: false,
   version: 1,
@@ -51,8 +51,10 @@ function usageSink(): LlmUsageSink {
 function devEnv() {
   return {
     NODE_ENV: "development" as const,
-    LITELLM_MASTER_KEY: "sk-local-dev",
-    LITELLM_TIMEOUT_MS: 1000,
+    LLM_BASE_URL: "http://gateway.example.test:4000/v1",
+    LLM_API_KEY: "sk-local-dev",
+    LLM_TIMEOUT_MS: 1000,
+    LLM_VISION_MODEL: "vision-model",
   };
 }
 
@@ -73,26 +75,28 @@ afterEach(() => {
 });
 
 describe("keyRef 白名单", () => {
-  it("只放行 LITELLM_MASTER_KEY / LITELLM_TENANT_KEY_*", () => {
-    expect(isAllowedLlmKeyRef("LITELLM_MASTER_KEY")).toBe(true);
-    expect(isAllowedLlmKeyRef("LITELLM_TENANT_KEY_T_0001")).toBe(true);
+  it("只放行 LLM_API_KEY / LLM_TENANT_KEY_<名称>", () => {
+    expect(isAllowedLlmKeyRef("LLM_API_KEY")).toBe(true);
+    expect(isAllowedLlmKeyRef("LLM_TENANT_KEY_T_0001")).toBe(true);
     expect(isAllowedLlmKeyRef("DATABASE_URL")).toBe(false);
     expect(isAllowedLlmKeyRef("PLATFORM_DATABASE_URL")).toBe(false);
     expect(isAllowedLlmKeyRef("CASDOOR_CLIENT_SECRET")).toBe(false);
-    expect(isAllowedLlmKeyRef("LITELLM_MASTER_KEYX")).toBe(false);
+    expect(isAllowedLlmKeyRef("LLM_API_KEYX")).toBe(false);
+    expect(isAllowedLlmKeyRef("LITELLM_MASTER_KEY")).toBe(false);
   });
 
   it("生产态下非白名单 keyRef 拒绝启动，且 fetch 从未被调用", () => {
     const fetchImpl = vi.fn();
     expect(() =>
-      createLlmProvider("litellm", {
+      createLlmProvider("openai-compatible", {
         settings: { ...baseSettings, keyRef: "PLATFORM_DATABASE_URL" },
         usage: usageSink(),
         fetchImpl,
         env: {
           NODE_ENV: "production",
-          LITELLM_MASTER_KEY: "sk-production",
-          LITELLM_TIMEOUT_MS: 1000,
+          LLM_BASE_URL: "https://gateway.example.test/v1",
+          LLM_API_KEY: "sk-production",
+          LLM_TIMEOUT_MS: 1000,
         },
       }),
     ).toThrow(/白名单/);
@@ -105,7 +109,7 @@ describe("keyRef 白名单", () => {
 
     // 非白名单 keyRef：直接拒绝，不读 process.env。
     expect(() =>
-      createLlmProvider("litellm", {
+      createLlmProvider("openai-compatible", {
         settings: { ...baseSettings, keyRef: "DATABASE_URL" },
         usage: usageSink(),
         fetchImpl,
@@ -115,8 +119,8 @@ describe("keyRef 白名单", () => {
 
     // 白名单 keyRef 但环境变量缺失：旧逻辑在 NODE_ENV≠production 时静默回退 sk-local-dev。
     expect(() =>
-      createLlmProvider("litellm", {
-        settings: { ...baseSettings, keyRef: "LITELLM_TENANT_KEY_T_9999" },
+      createLlmProvider("openai-compatible", {
+        settings: { ...baseSettings, keyRef: "LLM_TENANT_KEY_T_9999" },
         usage: usageSink(),
         fetchImpl,
         env: devEnv(),
@@ -126,13 +130,13 @@ describe("keyRef 白名单", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("非生产态下白名单 keyRef 未配置时仍可回退 LITELLM_MASTER_KEY（本地不阻塞）", () => {
-    const provider = createLlmProvider("litellm", {
-      settings: { ...baseSettings, keyRef: "LITELLM_TENANT_KEY_T_9999" },
+  it("非生产态下白名单 keyRef 未配置时仍可回退 LLM_API_KEY（本地不阻塞）", () => {
+    const provider = createLlmProvider("openai-compatible", {
+      settings: { ...baseSettings, keyRef: "LLM_TENANT_KEY_T_9999" },
       usage: usageSink(),
       env: devEnv(),
     });
-    expect(provider.name).toBe("litellm");
+    expect(provider.name).toBe("openai-compatible");
   });
 });
 
@@ -143,7 +147,7 @@ describe("params 白名单合并", () => {
       json: () =>
         Promise.resolve({
           id: "chatcmpl-1",
-          model: "deepseek-chat",
+          model: "daily-model",
           choices: [
             {
               message: {
@@ -163,7 +167,7 @@ describe("params 白名单合并", () => {
         }),
     }) as unknown as typeof fetch;
 
-    const provider = new LiteLlmProvider({
+    const provider = new OpenAiCompatibleProvider({
       settings: {
         ...baseSettings,
         params: {
@@ -178,6 +182,7 @@ describe("params 白名单合并", () => {
       usage: usageSink(),
       apiKey: "sk-tenant-1",
       timeoutMs: 1000,
+      visionModel: "vision-model",
       fetchImpl,
     });
 
@@ -192,7 +197,7 @@ describe("params 白名单合并", () => {
     const body = JSON.parse(raw) as Record<string, unknown>;
 
     // 模型仍走服务端白名单判定，params 覆盖不生效。
-    expect(body.model).toBe("deepseek-chat");
+    expect(body.model).toBe("daily-model");
     expect(raw).not.toContain("evil-model");
     // 消息由服务端构造，注入的 messages 被丢弃。
     expect(Array.isArray(body.messages)).toBe(true);

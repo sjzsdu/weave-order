@@ -483,23 +483,23 @@ pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
   演示：`pnpm --filter @weave-order/mobile dev`（本地 mock，无需后端）；真后端见 `apps/mobile/README.md`。
 - **验收**：`apps/api/test/tenancy.integration.test.ts` 覆盖「建租户→建成员→建客户→建样品→出报价草稿
   - 审计同事务」与跨租户 RLS 拦截；CI `.github/workflows/ci.yml` 常驻执行。
-- **本地基础设施**：`docker compose up -d` 增加 LiteLLM（`:4000`），配置在 `infra/litellm/config.yaml`。
+- **本地基础设施**：`docker compose up -d` 只起 PostgreSQL / Redis；真实模型经 `.env` 配置的 OpenAI 兼容企业网关调用，不再启动网关容器。
 
 契约与各 Track 开工约定详见 `docs/t0-foundation.md`。
 
-## Track B · 找样 / 报价智能体 + LiteLLM（WAN-84）
+## Track B · 找样 / 报价智能体 + 企业模型网关（WAN-84）
 
 在 T0 契约之上新增：
 
 - **agent**：`apps/api/src/agent/quoting-graph.ts`，客户原话 → 槽位 → 候选样品（确定性命中理由）
   → 内核定价 → `DRAFT`；缺客户 / 数量 / 样品 / 定价依据时返回 `NEEDS_INPUT` 并列出缺失项。
 - **工具**：T-006 `suggest_line_price`（只调内核，复用 Track A 的定价继承与管控夹取），与既有 T-001/T-002/T-003/T-004/T-005 一起通过 Zod 校验。
-- **LiteLLM**：`platform/llm.ts` 的 `LiteLlmProvider` 只请求 `LITELLM_BASE_URL/chat/completions`；
+- **企业模型网关**：`platform/llm.ts` 的 `OpenAiCompatibleProvider` 只请求 `LLM_BASE_URL/chat/completions`；
   `key_ref` 解析每租户虚拟 Key，模型白名单 + 日/月 token 预算在调用前拦截；手机号/邮箱/银行账号出网前脱敏。
 - **计量**：`token_usage`（`request_id` 唯一，幂等）+ `usage_monthly`（按月份 × 模型 × 任务累加）；
   prompt 只落 SHA-256，默认不落原文。
-- **设置**：`llm_settings` 一行 GLOBAL + 每租户覆盖；默认 `deepseek-chat`（日常）/ `deepseek-reasoner`（复杂）。
-- **验收**：`pnpm demo:quote` 与 `apps/api/test/{quote-agent,llm-litellm,quote.integration}.test.ts`。
+- **设置**：`llm_settings` 一行 GLOBAL + 每租户覆盖；模型 ID 由 `LLM_DEFAULT_MODEL` / `LLM_REASONING_MODEL` 提供，不在代码里固定。
+- **验收**：`pnpm demo:quote` 与 `apps/api/test/{quote-agent,llm-openai-compatible,quote.integration}.test.ts`。
 
 详见 `docs/track-b-agents.md`。
 
@@ -513,12 +513,12 @@ pgvector 索引与真实 embedding / LLM / 物流 / 渠道 provider。
 - **落库**：`POST /api/inbound/replies` → `inbound_messages`（幂等键
   `(tenant_id, channel, external_id)`），入库前脱敏；同一 `externalId` 重复提交返回首次识别结果，
   不会重复生成报价草稿。
-- **识别**：与跟进图同一个 LLM provider（`classifyReply`）；截图走 `qwen-vl-plus`
-  多模态模型（`SCREENSHOT_OCR`，token 进同一 reserve/settle 计量）。
+- **识别**：与跟进图同一个 LLM provider（`classifyReply`）；截图走 `LLM_VISION_MODEL`
+  指定的多模态模型（`SCREENSHOT_OCR`，token 进同一 reserve/settle 计量）。
 - **报价**：识别为询价且选择了面料时，复用 T-006 定价 + T-004 草稿，停在 `DRAFT` 等人类审批；
   草稿备注写明来源消息 id，审批卡可溯源。
 - **时间线**：`inbound_messages` 合并进客户 360 时间线（`kind=inbound_reply`）。
 - **合规**：原始 payload 默认保留 30 天（`INBOUND_RAW_RETENTION_DAYS`），
   定时执行 `pnpm --filter @weave-order/api maintain:inbound` 清空过期 `raw_payload`（业务行保留）。
-- **截图前置依赖**：截图识别必须启用 LiteLLM + DashScope key；`local-rule` 会明确报错，
-  不会假装识别。已有租户若自定义过模型白名单，迁移 0018 会把 `qwen-vl-plus` 补进白名单。
+- **截图前置依赖**：截图识别必须配置 openai-compatible 企业模型网关及 `LLM_VISION_MODEL`；`local-rule` 会明确报错，
+  不会假装识别。视觉模型必须同时出现在模型白名单中。

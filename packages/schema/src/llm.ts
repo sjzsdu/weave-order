@@ -4,8 +4,8 @@ import { EntityId, JsonValueSchema, Timestamp } from "./domain";
 /**
  * LLM 网关与计量契约。
  *
- * 所有模型调用只经 LiteLLM（OpenAI 兼容协议），不直连厂商；
- * 这里冻结的是「配置 / 用量 / 预算」的公共表示，换 Router 时 agent 与工具层不改。
+ * 所有真实模型调用只经通用 OpenAI 兼容企业网关，不直连上游厂商；
+ * 这里冻结的是「配置 / 用量 / 预算」的公共表示，换网关时 agent 与工具层不改。
  */
 export const LlmScope = z.enum(["GLOBAL", "TENANT"]);
 export type LlmScope = z.infer<typeof LlmScope>;
@@ -75,7 +75,8 @@ export type UpdateLlmSettingsInput = z.infer<typeof UpdateLlmSettingsInput>;
 export const ResolvedLlmSettings = z
   .object({
     provider: z.string(),
-    baseUrl: z.string().url(),
+    /** 未配置 LLM_BASE_URL 时为空串；provider 创建时 fail closed。 */
+    baseUrl: z.string().url().or(z.literal("")),
     defaultModel: z.string(),
     reasoningModel: z.string(),
     modelAllowlist: LlmModelAllowlist,

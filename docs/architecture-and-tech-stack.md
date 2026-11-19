@@ -8,7 +8,7 @@
 
 ## 0. 一句话结论
 
-织序是一套**「智能体干活、人只审批」的纺织业务操作系统**，由 **5 个端** + **1 个确定性内核** + **3 个外部依赖（Casdoor / LiteLLM / 数据面）** 组成。全栈 TypeScript 为主，前端一套 React 代码覆盖桌面 + 移动双端，打印代理用 Tauri 2，数据默认共享库 + RLS，登录交给 Casdoor，模型走 LiteLLM 网关。
+织序是一套**「智能体干活、人只审批」的纺织业务操作系统**，由 **5 个端** + **1 个确定性内核** + **3 个外部依赖（Casdoor / OpenAI 兼容企业网关 / 数据面）** 组成。全栈 TypeScript 为主，前端一套 React 代码覆盖桌面 + 移动双端，打印代理用 Tauri 2，数据默认共享库 + RLS，登录交给 Casdoor，真实模型走 OpenAI 兼容企业网关。
 
 ---
 
@@ -30,7 +30,7 @@
 | ---------------------------- | ------------------------------------------------- |
 | 确定性内核 + 工具层 + 智能体 | 后端模块化单体（NestJS），唯一业务写入口          |
 | Casdoor                      | 身份认证（OIDC/OAuth2），`sso.wnbgj.com`          |
-| LLM Router                   | LiteLLM Proxy，多模型网关，token 计量             |
+| LLM Provider                 | openai-compatible，通用 OpenAI 兼容企业网关，token 计量 |
 | 数据面                       | PostgreSQL（RLS）+ Redis + 对象存储；控制面库分离 |
 
 ---
@@ -52,7 +52,7 @@
 | 缓存 / 队列         | **Redis 7**（缓存）+ **BullMQ**（打印队列 / 异步任务）                              | 幂等 job、租户前缀 key                                                                        |
 | 对象存储            | **S3 兼容（腾讯云 COS / MinIO）**                                                   | 图片直传、PDF 快照，tenant 前缀隔离                                                           |
 | 身份认证            | **Casdoor**（自托管 `sso.wnbgj.com`）                                               | 不自研登录，一个租户一个 Organization                                                         |
-| LLM 网关            | **LiteLLM Proxy**（自托管）                                                         | 多模型、虚拟 Key、预算、用量日志最全；默认模型 DeepSeek                                       |
+| LLM 网关            | **OpenAI 兼容企业网关**（部署配置）                                                  | 地址/Key/模型全部来自环境变量；不直连上游厂商                                               |
 | 搜索                | PostgreSQL FTS + pgvector（起步），后接 Meilisearch/OpenSearch（可选）              | 先不做额外组件                                                                                |
 | 监控                | **Uptime Kuma + Plausible**（或 Sentry + Prometheus/Grafana）                       | 成本低、可自托管                                                                              |
 | 部署                | **腾讯云（CVM/RDS/COS/短信）容器化**；开发期可用 Railway/Vercel 快速验证            | 目标客户在国内，域名 `.cn` 需备案；.cn 访问稳定优先                                           |
@@ -169,7 +169,7 @@ flowchart TB
     OSS["对象存储 S3/COS<br/>tenant/<id> 前缀隔离"]
   end
 
-  LLM["LLM Router<br/>LiteLLM Proxy<br/>虚拟Key / 预算 / 计量"]
+  LLM["LLM Provider<br/>OpenAI 兼容企业网关<br/>Key引用 / 预算 / 计量"]
   EXT["模型厂商<br/>deepseek-chat / deepseek-reasoner<br/>客户自定义端点 vLLM"]
 
   D --> GW
@@ -207,7 +207,7 @@ flowchart TB
 
 ## 7. LLM 接入
 
-- 所有 agent 走 LiteLLM Proxy，不直连厂商；密钥只存服务端，每租户虚拟 Key + 模型白名单 + 预算限额 + 重试/降级。
+- 所有 agent 走通用 OpenAI 兼容企业网关，不直连上游厂商；密钥只存服务端，受控 Key 引用 + 模型白名单 + 预算限额。
 - 默认模型：`deepseek-chat`（日常报价/跟进，**默认**）、`deepseek-reasoner`（复杂报价/对账）、`qwen-plus`（备用/降级，后台可配）；租户默认白名单只开 `deepseek-chat` + `deepseek-reasoner`。
 - token 只计量不收费：`usage` 幂等落 `token_usage`，每日汇总 `usage_monthly`，按采购价做成本/毛利看板；敏感字段出网前脱敏。
 
@@ -225,7 +225,7 @@ flowchart TB
 
 | 项                                          | 估算                 | 备注                                  |
 | ------------------------------------------- | -------------------- | ------------------------------------- |
-| 计算（API + 3 个前端 + LiteLLM + 打印网关） | ¥300–600             | 2–3 台小规格 CVM                      |
+| 计算（API + 3 个前端 + 企业网关调用 + 打印网关） | ¥300–600             | 2–3 台小规格 CVM                      |
 | CDB PostgreSQL + Redis                      | ¥200–400             | 起步共享实例                          |
 | 对象存储 + CDN                              | ¥50–150              | 图片/PDF 快照                         |
 | LLM 用量                                    | 随量（¥0–3,000+）    | 按租户采购价核算，占比控在收入 15% 内 |
@@ -239,7 +239,7 @@ flowchart TB
 | 阶段 | 端                                     | 关键基础设施                                                     |
 | ---- | -------------------------------------- | ---------------------------------------------------------------- |
 | P0   | E1 + E2（PWA）+ E3                     | 共享库+RLS、Casdoor 登录、LLM 全局参数、报价链接、改稿 Patch     |
-| P1   | E4（v1）+ E5                           | schema-per-tenant、企业 SSO、LiteLLM 接入 + token 记账、打印中心 |
+| P1   | E4（v1）+ E5                           | schema-per-tenant、企业 SSO、OpenAI 兼容网关接入 + token 记账、打印中心 |
 | P2   | E4 完整                                | 独立库/每租户 KMS、SaaS 订阅账单、模板工作室 + AI 识样张         |
 | P3   | E1（Tauri 壳）+ E2（小程序）+ 客户门户 | 供应商协同、私有化、渠道商/多仓                                  |
 

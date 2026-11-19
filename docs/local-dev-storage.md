@@ -67,7 +67,7 @@ API_BASE=http://127.0.0.1:3010 SAMPLE_ID=<uuid> scripts/verify-media-e2e.sh
 `minio` / `minio-init` 已放进 `media` profile：
 
 ```bash
-# 日常开发：不需要对象存储时照旧，只起 PG / Redis / LiteLLM
+# 日常开发：不需要对象存储时照旧，只起 PG / Redis
 docker compose up -d
 
 # 能拉镜像时：显式起对象存储
@@ -79,7 +79,7 @@ MC_IMAGE=registry.example.com/minio/mc:RELEASE.2025-07-21T05-28-08Z \
   docker compose --profile media up -d minio minio-init
 ```
 
-默认 `docker compose up -d` 不会再尝试拉 minio 镜像，因此 PG/Redis/LiteLLM 的开发流程
+默认 `docker compose up -d` 不会再尝试拉 minio 镜像，因此 PG/Redis 的开发流程
 不受影响。`--profile media` 与脚本二选一即可，不要同时起（端口 9000/9001 冲突）。
 
 ## 环境变量契约（与 `.env` 一致）

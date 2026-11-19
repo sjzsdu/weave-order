@@ -4,8 +4,8 @@
  * 只用于「图向量服务不可用」时的兜底链路：视觉模型写一句中文描述，
  * 再走 S3 的文本语义检索。响应里必须标 `mode: "caption"`，绝不与图向量结果混用。
  *
- * 为什么不用 LiteLLM 网关：网关当前只收录对话模型，vision 模型不在其中；
- * 与 embedding 一样直连 DashScope 兼容端点，base_url / key / model 全部来自 env。
+ * 与 embedding 一样直连 DashScope 兼容端点，base_url / key / model 全部来自 env；
+ * 截图识别链路走通用 OpenAI 兼容企业网关，两条链路互不复用。
  */
 
 export interface CaptionInput {

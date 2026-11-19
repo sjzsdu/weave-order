@@ -129,10 +129,9 @@ function isFiniteVector(value: unknown, dimension: number): value is number[] {
 /**
  * 通义 `text-embedding-v3`（OpenAI 兼容 `/v1/embeddings`）。
  *
- * 为什么直连 DashScope 而不是走 LiteLLM 网关：
- * 本地网关当前只收录对话模型（deepseek / qwen），embedding 与对话的计费、超时、
- * 重试语义不同；直连可以把 base_url / key 都留在 env，不要求改网关配置并重启，
- * 也不用把 embedding key 注入网关。以后网关收录该模型时，只需改 `EMBEDDING_BASE_URL`。
+ * 为什么 embedding 不复用对话网关：embedding 与对话的计费、超时、重试语义不同；
+ * 直连可以把 base_url / key 都留在 env，不要求改网关配置并重启，也不用把
+ * embedding key 注入网关。以后网关收录该模型时，只需改 `EMBEDDING_BASE_URL`。
  */
 export class DashScopeTextEmbeddingProvider implements EmbeddingProvider {
   readonly name: string;

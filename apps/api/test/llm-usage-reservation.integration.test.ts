@@ -4,7 +4,7 @@ import type { ResolvedLlmSettings } from "@weave-order/schema";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { LiteLlmProvider } from "../src/platform/llm";
+import { OpenAiCompatibleProvider } from "../src/platform/llm";
 import type { LlmUsageSink } from "../src/platform/llm";
 import { UsageService } from "../src/kernel/usage.service";
 
@@ -80,15 +80,15 @@ function settingsWith(
   monthlyTokenBudget: number | null = null,
 ): ResolvedLlmSettings {
   return {
-    provider: "litellm",
-    baseUrl: "http://litellm.test:4000",
-    defaultModel: "deepseek-chat",
-    reasoningModel: "deepseek-reasoner",
-    modelAllowlist: ["deepseek-chat", "deepseek-reasoner"],
+    provider: "openai-compatible",
+    baseUrl: "http://gateway.example.test/v1",
+    defaultModel: "daily-model",
+    reasoningModel: "reason-model",
+    modelAllowlist: ["daily-model", "reason-model", "vision-model"],
     dailyTokenBudget,
     monthlyTokenBudget,
     params: {},
-    keyRef: "LITELLM_MASTER_KEY",
+    keyRef: "LLM_API_KEY",
     allowExternal: true,
     logPrompts: false,
     version: 1,
@@ -101,7 +101,7 @@ function successfulFetch(): typeof fetch {
     ok: true,
     json: () =>
       Promise.resolve({
-        model: "deepseek-chat",
+        model: "daily-model",
         choices: [
           {
             message: {
@@ -150,13 +150,14 @@ describe("LLM 预算预留—结算", () => {
     // 1) 无预算租户上校准一次「预留上限」：与实际 usage 无关，只取决于 prompt 长度。
     const calibrationTenant = randomUUID();
     let reservedPerCall = 0;
-    const calibration = new LiteLlmProvider({
+    const calibration = new OpenAiCompatibleProvider({
       settings: settingsWith(null),
       usage: trackedUsage(calibrationTenant, (tokens) => {
         reservedPerCall = tokens;
       }),
       apiKey: "sk",
       timeoutMs: 1000,
+      visionModel: "vision-model",
       fetchImpl: successfulFetch(),
       now: fixedClock,
     });
@@ -182,7 +183,7 @@ describe("LLM 预算预留—结算", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            model: "deepseek-chat",
+            model: "daily-model",
             choices: [
               {
                 message: {
@@ -222,11 +223,12 @@ describe("LLM 预算预留—结算", () => {
       budgetStatus: (daily, monthly) => trackedUsage(tenantId).budgetStatus(daily, monthly),
     };
 
-    const provider = new LiteLlmProvider({
+    const provider = new OpenAiCompatibleProvider({
       settings,
       usage,
       apiKey: "sk",
       timeoutMs: 1000,
+      visionModel: "vision-model",
       fetchImpl,
       now: fixedClock,
     });
@@ -295,7 +297,7 @@ describe("LLM 预算预留—结算", () => {
           ok: true,
           json: () =>
             Promise.resolve({
-              model: "deepseek-chat",
+              model: "daily-model",
               choices: [{ message: { content: "" } }],
               usage: { prompt_tokens: 64, completion_tokens: 0 },
             }),
@@ -307,7 +309,7 @@ describe("LLM 预算预留—结算", () => {
     for (const testCase of cases) {
       const tenantId = randomUUID();
       const service = new UsageService(requireDb(), tenantId);
-      const provider = new LiteLlmProvider({
+      const provider = new OpenAiCompatibleProvider({
         settings: settingsWith(null),
         usage: {
           reserve: (input) => service.reserve(input),
@@ -317,6 +319,7 @@ describe("LLM 预算预留—结算", () => {
         },
         apiKey: "sk",
         timeoutMs: 1000,
+        visionModel: "vision-model",
         fetchImpl: testCase.fetchImpl,
         now: fixedClock,
       });
@@ -343,8 +346,8 @@ describe("LLM 预算预留—结算", () => {
     const reservation = await service.reserve({
       requestId,
       task: "QUOTE_INTENT",
-      model: "deepseek-chat",
-      provider: "litellm",
+      model: "daily-model",
+      provider: "openai-compatible",
       promptHash: "a".repeat(64),
       reservedTokens: 500,
       dailyBudget: null,
@@ -355,7 +358,7 @@ describe("LLM 预算预留—结算", () => {
 
     const settleInput = {
       requestId,
-      model: "deepseek-chat",
+      model: "daily-model",
       promptTokens: 100,
       completionTokens: 20,
       cachedTokens: 0,

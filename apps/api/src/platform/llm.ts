@@ -14,6 +14,7 @@ import type {
   SampleShipment,
   TrackingSnapshot,
 } from "@weave-order/schema";
+import { DEV_LLM_API_KEY, isPlaceholderLlmKey } from "./env";
 import { redactSensitiveText } from "./privacy";
 import { isProductionLike } from "./runtime-mode";
 
@@ -84,9 +85,6 @@ export interface LlmProvider {
   /** 最近一次真实模型调用的用量回执；本地规则实现为 null。 */
   readonly lastUsage: LlmCallReceipt | null;
 }
-
-/** 视觉模型：截图识别专用，走同一 LiteLLM 通道，token 计入 SCREENSHOT_OCR 任务。 */
-export const SCREENSHOT_VISION_MODEL = "qwen-vl-plus";
 
 /** 多模态消息内容：文本或图片（OpenAI 兼容 image_url 协议）。 */
 export type ChatContentPart =
@@ -285,7 +283,9 @@ export class LocalRuleLlmProvider implements LlmProvider {
 
   extractReplyFromImage(_input: { imageUrl: string }): Promise<{ text: string }> {
     return Promise.reject(
-      new Error("截图识别需要真实视觉模型：请设置 LLM_PROVIDER=litellm 并配置视觉模型后重试。"),
+      new Error(
+        "截图识别需要真实视觉模型：请配置 openai-compatible 企业模型网关与 LLM_VISION_MODEL 后重试。",
+      ),
     );
   }
 }
@@ -326,30 +326,32 @@ function sanitizeChatParams(params: Record<string, unknown>): Record<string, unk
   return allowed;
 }
 
-export interface LiteLlmOptions {
+export interface OpenAiCompatibleOptions {
   settings: ResolvedLlmSettings;
   usage: LlmUsageSink;
   apiKey: string;
   timeoutMs: number;
+  /** 截图识别专用视觉模型 ID，来自 LLM_VISION_MODEL；不在 provider 内固定。 */
+  visionModel: string;
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }
 
 /**
- * LiteLLM（OpenAI 兼容）provider。
+ * 通用 OpenAI 兼容企业网关 provider。
  *
- * - 只请求 `LITELLM_BASE_URL/chat/completions`，不直连任何厂商。
- * - 每租户虚拟 Key 由 `settings.keyRef` 解析；Key 不进日志、不落库。
+ * - 只请求 `${settings.baseUrl}/chat/completions`，不直连任何上游模型厂商。
+ * - 网关令牌由 `settings.keyRef` 指向的受控环境变量解析；Key 不进日志、不落库。
  * - `request_id` 随请求头下发，响应 usage 幂等写 `token_usage`。
  * - 出网前统一脱敏；prompt 只落 SHA-256。
  */
-export class LiteLlmProvider implements LlmProvider {
-  readonly name = "litellm";
+export class OpenAiCompatibleProvider implements LlmProvider {
+  readonly name = "openai-compatible";
   private usage: LlmCallReceipt | null = null;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
 
-  constructor(private readonly options: LiteLlmOptions) {
+  constructor(private readonly options: OpenAiCompatibleOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
   }
@@ -459,7 +461,7 @@ export class LiteLlmProvider implements LlmProvider {
           content: [{ type: "image_url", image_url: { url: input.imageUrl } }],
         },
       ],
-      SCREENSHOT_VISION_MODEL,
+      this.options.visionModel,
     );
     const parsed = parseJsonObject(content);
     const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
@@ -472,18 +474,29 @@ export class LiteLlmProvider implements LlmProvider {
     fallbackModel: string,
   ): Promise<string> {
     const settings = this.options.settings;
-    // 按任务路由：截图识别走视觉模型；复杂报价/对账用 reasoner；超长意图也升到 reasoner。
+    const baseUrl = settings.baseUrl.replace(/\/+$/, "");
+    if (!baseUrl) {
+      throw new Error("未配置 LLM_BASE_URL：请配置 openai-compatible 企业模型网关地址后重试。");
+    }
+    // 按任务路由：截图识别走 LLM_VISION_MODEL；复杂报价/对账走 reasoningModel。
     const promptChars = messageText(messages).length;
     const model =
       task === "SCREENSHOT_OCR"
-        ? SCREENSHOT_VISION_MODEL
+        ? this.options.visionModel
         : task === "QUOTE_DRAFT" || (task === "QUOTE_INTENT" && promptChars > 1200)
           ? settings.reasoningModel
           : fallbackModel;
+    if (!model) {
+      throw new Error(
+        task === "SCREENSHOT_OCR"
+          ? "未配置 LLM_VISION_MODEL：请配置 openai-compatible 企业模型网关的视觉模型后重试。"
+          : "未配置模型 ID：请配置 openai-compatible 企业模型网关的 LLM_DEFAULT_MODEL / LLM_REASONING_MODEL 后重试。",
+      );
+    }
     if (!settings.modelAllowlist.includes(model)) {
       throw new Error(
         task === "SCREENSHOT_OCR"
-          ? `截图识别需要视觉模型 ${model}，但当前租户模型白名单未包含它；请在「设置 → 模型白名单」中加入 ${model} 后重试。`
+          ? `截图识别需要视觉模型 ${model}，但它不在当前模型白名单内；请把 LLM_VISION_MODEL 加入 LLM_MODEL_ALLOWLIST 后重试。`
           : `模型 ${model} 不在租户白名单内`,
       );
     }
@@ -521,7 +534,7 @@ export class LiteLlmProvider implements LlmProvider {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      response = await this.fetchImpl(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -546,7 +559,7 @@ export class LiteLlmProvider implements LlmProvider {
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       await this.markFailed(requestId);
-      throw new Error(`LiteLLM 调用失败：HTTP ${response.status} ${body.slice(0, 300)}`);
+      throw new Error(`企业模型网关调用失败：HTTP ${response.status} ${body.slice(0, 300)}`);
     }
 
     let payload: ChatResponse;
@@ -564,7 +577,7 @@ export class LiteLlmProvider implements LlmProvider {
     if (!content) {
       // 200 但空回复：若带 usage，按已知 token 计入；否则仍保留预留额度。
       await this.markFailed(requestId, { promptTokens, completionTokens, cachedTokens });
-      throw new Error("LiteLLM 返回为空：缺少 choices[0].message.content");
+      throw new Error("企业模型网关返回为空：缺少 choices[0].message.content");
     }
 
     await this.options.usage.settle({
@@ -679,10 +692,14 @@ function parseJsonObject(content: string): Record<string, unknown> {
 export interface CreateLlmOptions {
   settings: ResolvedLlmSettings;
   usage: LlmUsageSink;
+  /** 直接透传 loadEnv() 的结果；字段可选，便于测试构造最小环境。 */
   env?: {
     NODE_ENV?: "development" | "test" | "production";
-    LITELLM_MASTER_KEY: string;
-    LITELLM_TIMEOUT_MS: number;
+    AUTH_MODE?: "dev" | "oidc";
+    LLM_BASE_URL?: string;
+    LLM_API_KEY?: string;
+    LLM_TIMEOUT_MS?: number;
+    LLM_VISION_MODEL?: string;
   };
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -690,10 +707,10 @@ export interface CreateLlmOptions {
 
 /**
  * 密钥引用白名单（与控制面 `apps/platform-api/src/control/settings.service.ts` 同规则）：
- * 只接受 `LITELLM_MASTER_KEY` / `LITELLM_TENANT_KEY_*`（见 .env / docs/track-b-agents.md）。
+ * 只接受 `LLM_API_KEY` / `LLM_TENANT_KEY_<名称>`（名称可含下划线分段）。
  * 两包不共享源码，改这里必须同步控制面那份。
  */
-const LLM_KEY_REF_PATTERN = /^LITELLM_(MASTER|TENANT)_KEY(?:_[A-Za-z0-9]+)*$/;
+const LLM_KEY_REF_PATTERN = /^LLM_(?:API_KEY|TENANT_KEY(?:_[A-Za-z0-9]+)+)$/;
 
 export function isAllowedLlmKeyRef(name: string): boolean {
   return LLM_KEY_REF_PATTERN.test(name);
@@ -705,46 +722,60 @@ export function createLlmProvider(
   options?: CreateLlmOptions,
 ): LlmProvider {
   if (provider === "local-rule") return new LocalRuleLlmProvider();
-  if (provider === "litellm") {
-    if (!options) throw new Error("LLM_PROVIDER=litellm 需要 settings / usage 配置");
+  if (provider === "openai-compatible") {
+    if (!options) {
+      throw new Error("LLM_PROVIDER=openai-compatible 需要 settings / usage 配置");
+    }
     // 生产态判定统一走 isProductionLike（NODE_ENV=production 或 AUTH_MODE=oidc），
     // 避免 OIDC 已接入但 NODE_ENV 不是 production 时 fail-open（WAN-94）。
     const productionLike = isProductionLike({ ...process.env, ...options.env });
-    const keyRef = options.settings.keyRef;
-    const referenced = keyRef === "LITELLM_MASTER_KEY" ? undefined : keyRef;
-    // 白名单外的引用名（如 DATABASE_URL）绝不读取：先判后读，禁止 process.env[引用名]。
-    const resolvable = referenced && isAllowedLlmKeyRef(referenced) ? referenced : undefined;
-    if (referenced && !resolvable) {
+
+    const baseUrl = options.settings.baseUrl || options.env?.LLM_BASE_URL || process.env.LLM_BASE_URL;
+    if (!baseUrl) {
+      throw new Error(
+        "缺少 LLM_BASE_URL：请配置 openai-compatible 企业模型网关地址（含 /v1）后再调用模型。",
+      );
+    }
+
+    const explicitKeyRef = options.settings.keyRef;
+    const keyRef = explicitKeyRef ?? "LLM_API_KEY";
+    // 白名单外的引用名（如 DATABASE_URL）绝不读取：先判后读，禁止 process.env[用户输入]。
+    if (!isAllowedLlmKeyRef(keyRef)) {
       if (productionLike) {
         throw new Error(
-          `LLM keyRef "${referenced}" 不在白名单内（允许 LITELLM_MASTER_KEY / LITELLM_TENANT_KEY_*）；拒绝启动，请修正 llm_settings.key_ref`,
+          `LLM keyRef "${keyRef}" 不在白名单内（只允许 LLM_API_KEY / LLM_TENANT_KEY_<名称>）；请配置 openai-compatible 企业模型网关的合法 Key 引用。`,
         );
       }
-      // dev：白名单外的引用视为未配置，回退 LITELLM_MASTER_KEY（与旧的「未命中环境变量」同一路径）。
+      // dev：白名单外的引用视为未配置，回退 LLM_API_KEY。
     }
-    const keyFromRef = resolvable ? process.env[resolvable] : undefined;
-    const keyFromMaster = options.env?.LITELLM_MASTER_KEY ?? process.env.LITELLM_MASTER_KEY;
-    if (resolvable && !keyFromRef && productionLike) {
+    const resolvable = isAllowedLlmKeyRef(keyRef) ? keyRef : "LLM_API_KEY";
+    const keyFromRef =
+      resolvable === "LLM_API_KEY"
+        ? (options.env?.LLM_API_KEY ?? process.env.LLM_API_KEY)
+        : process.env[resolvable];
+    if (!keyFromRef && productionLike) {
       throw new Error(
-        `LLM keyRef "${resolvable}" 未命中环境变量/KMS；生产环境拒绝启动，请配置该密钥或修正 llm_settings.key_ref`,
+        `LLM keyRef "${resolvable}" 未命中环境变量/KMS；请配置 openai-compatible 企业模型网关的令牌后再启动。`,
       );
     }
-    const apiKey = keyFromRef ?? keyFromMaster ?? (productionLike ? "" : "sk-local-dev");
-    if (!apiKey || (productionLike && apiKey === "sk-local-dev")) {
+    const apiKey = keyFromRef ?? DEV_LLM_API_KEY;
+    if (productionLike && isPlaceholderLlmKey(apiKey)) {
       throw new Error(
-        "生产环境缺少 LiteLLM Key（keyRef 未命中且未配置 LITELLM_MASTER_KEY），拒绝以 dev 默认值启动",
+        "缺少有效的 LLM_API_KEY：占位 key 不能连接 openai-compatible 企业模型网关，请配置网关令牌。",
       );
     }
-    return new LiteLlmProvider({
-      settings: options.settings,
+
+    return new OpenAiCompatibleProvider({
+      settings: { ...options.settings, baseUrl },
       usage: options.usage,
       apiKey,
-      timeoutMs: options.env?.LITELLM_TIMEOUT_MS ?? 30_000,
+      timeoutMs: options.env?.LLM_TIMEOUT_MS ?? 30_000,
+      visionModel: options.env?.LLM_VISION_MODEL ?? process.env.LLM_VISION_MODEL ?? "",
       fetchImpl: options.fetchImpl,
       now: options.now,
     });
   }
   throw new Error(
-    `LLM_PROVIDER=${provider} 尚未接入；当前支持：local-rule / litellm。真实模型请实现 LlmProvider 后在此注册。`,
+    `LLM_PROVIDER=${provider} 不受支持；当前支持：local-rule / openai-compatible。请配置 openai-compatible 企业模型网关。`,
   );
 }

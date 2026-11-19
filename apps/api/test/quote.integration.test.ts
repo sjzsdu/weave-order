@@ -83,8 +83,8 @@ describe("报价 agent（集成）", () => {
     const usageInput = {
       requestId,
       task: "QUOTE_INTENT" as const,
-      model: "deepseek-chat",
-      provider: "litellm",
+      model: "daily-model",
+      provider: "openai-compatible",
       promptTokens: 100,
       completionTokens: 20,
       cachedTokens: 0,
@@ -99,18 +99,22 @@ describe("报价 agent（集成）", () => {
     expect(await kernel.usage.getByRequestId(requestId)).not.toBeNull();
   });
 
-  it("llm_settings：默认 deepseek-chat / deepseek-reasoner，租户可覆盖且写审计", async () => {
+  it("llm_settings：全局配置生效，租户可覆盖且写审计", async () => {
     if (!available || !kernel) return;
     const resolved = await kernel.llmSettings.resolve();
-    expect(resolved.defaultModel).toBe("deepseek-chat");
-    expect(resolved.reasoningModel).toBe("deepseek-reasoner");
-    expect(resolved.baseUrl).toBe("http://localhost:4000");
+    expect(resolved.provider).toBe("openai-compatible");
+    expect(resolved.defaultModel.length).toBeGreaterThan(0);
+    expect(resolved.reasoningModel.length).toBeGreaterThan(0);
+    expect(resolved.sources.defaultModel).toBe("GLOBAL");
+    // 历史全局行的 base_url 为空 → 回退 LLM_BASE_URL（未配置即空串，由 provider fail closed）。
+    expect(resolved.baseUrl).toBe(process.env.LLM_BASE_URL ?? "");
+    expect(resolved.keyRef).toBe("LLM_API_KEY");
 
     const updated = await kernel.llmSettings.upsertTenant(
       {
-        defaultModel: "deepseek-chat",
-        reasoningModel: "deepseek-reasoner",
-        modelAllowlist: ["deepseek-chat", "deepseek-reasoner", "qwen-plus"],
+        defaultModel: "daily-model",
+        reasoningModel: "reason-model",
+        modelAllowlist: ["daily-model", "reason-model", "vision-model"],
         dailyTokenBudget: 1_000_000,
         allowExternal: true,
       },
@@ -124,7 +128,7 @@ describe("报价 agent（集成）", () => {
     expect(after.sources.dailyTokenBudget).toBe("TENANT");
 
     await expect(
-      kernel.llmSettings.upsertTenant({ defaultModel: "gpt-4o" }, HUMAN),
+      kernel.llmSettings.upsertTenant({ defaultModel: "model-not-in-allowlist" }, HUMAN),
     ).rejects.toThrow(/白名单/);
   });
 });

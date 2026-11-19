@@ -25,17 +25,17 @@ export const llmSettings = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     scope: llmScopeEnum("scope").notNull(),
     tenantId: uuid("tenant_id"),
-    provider: varchar("provider", { length: 64 }).notNull().default("litellm"),
+    provider: varchar("provider", { length: 64 }).notNull().default("openai-compatible"),
+    /** 空表示回退到 LLM_BASE_URL；生产地址只放部署仓库 .env。 */
     baseUrl: varchar("base_url", { length: 512 }),
-    defaultModel: varchar("default_model", { length: 128 }).notNull().default("deepseek-chat"),
-    reasoningModel: varchar("reasoning_model", { length: 128 })
-      .notNull()
-      .default("deepseek-reasoner"),
+    /** 模型 ID 不写死在 schema：由 LLM_DEFAULT_MODEL / LLM_REASONING_MODEL 提供。 */
+    defaultModel: varchar("default_model", { length: 128 }).notNull(),
+    reasoningModel: varchar("reasoning_model", { length: 128 }).notNull(),
     modelAllowlist: jsonb("model_allowlist").$type<JsonValue>().notNull().default([]),
     dailyTokenBudget: bigint("daily_token_budget", { mode: "number" }),
     monthlyTokenBudget: bigint("monthly_token_budget", { mode: "number" }),
     params: jsonb("params").$type<JsonValue>().notNull().default({}),
-    keyRef: varchar("key_ref", { length: 255 }),
+    keyRef: varchar("key_ref", { length: 255 }).default("LLM_API_KEY"),
     allowExternal: boolean("allow_external").notNull().default(true),
     logPrompts: boolean("log_prompts").notNull().default(false),
     version: integer("version").notNull().default(1),

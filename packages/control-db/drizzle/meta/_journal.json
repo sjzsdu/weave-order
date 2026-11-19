@@ -15,6 +15,13 @@
       "when": 1794528657456,
       "tag": "0001_huge_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795013699847,
+      "tag": "0002_numerous_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

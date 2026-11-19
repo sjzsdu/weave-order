@@ -6,7 +6,7 @@ import { and, eq, or } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
-import { loadEnv } from "../platform/env";
+import { loadEnv, parseModelAllowlist } from "../platform/env";
 
 type Row = typeof llmSettings.$inferSelect;
 
@@ -46,9 +46,9 @@ function asStringArray(value: JsonValue): string[] {
 /**
  * LLM 参数解析：全局一行 + 租户一行（如有）逐字段覆盖。
  *
- * - 默认模型（日常）= deepseek-chat，复杂任务 = deepseek-reasoner。
+ * - 默认模型 / 复杂模型 / 白名单：TENANT → GLOBAL → LLM_* 环境变量。
  * - `allow_external=false` 的租户不调用外部模型，回退本地规则。
- * - `baseUrl` / `keyRef` 没配置时用环境变量，避免把环境写进数据库。
+ * - `baseUrl` / `keyRef` 没配置时用通用 LLM_* 环境变量，避免把环境写进数据库。
  */
 export class LlmSettingsService {
   constructor(
@@ -89,7 +89,7 @@ export class LlmSettingsService {
       return fallback;
     };
 
-    const baseUrl = tenant?.baseUrl ?? global?.baseUrl ?? env.LITELLM_BASE_URL;
+    const baseUrl = tenant?.baseUrl ?? global?.baseUrl ?? env.LLM_BASE_URL ?? "";
     sources.baseUrl = tenant?.baseUrl ? "TENANT" : global?.baseUrl ? "GLOBAL" : "ENV";
     sources.keyRef = tenant?.keyRef ? "TENANT" : global?.keyRef ? "GLOBAL" : "ENV";
     sources.dailyTokenBudget =
@@ -104,24 +104,28 @@ export class LlmSettingsService {
         : global?.monthlyTokenBudget != null
           ? "GLOBAL"
           : "GLOBAL";
-    sources.modelAllowlist = tenant?.modelAllowlist ? "TENANT" : "GLOBAL";
+    sources.modelAllowlist = tenant?.modelAllowlist
+      ? "TENANT"
+      : global?.modelAllowlist
+        ? "GLOBAL"
+        : "ENV";
 
     const allowlistFromRow = tenant?.modelAllowlist ?? global?.modelAllowlist ?? null;
     const modelAllowlist =
       allowlistFromRow === null
-        ? ["deepseek-chat", "deepseek-reasoner", "qwen-vl-plus"]
+        ? parseModelAllowlist(env.LLM_MODEL_ALLOWLIST)
         : asStringArray(allowlistFromRow);
 
     const resolved = ResolvedLlmSettings.parse({
-      provider: pick("provider", "litellm"),
+      provider: pick("provider", "openai-compatible"),
       baseUrl,
-      defaultModel: pick("defaultModel", "deepseek-chat"),
-      reasoningModel: pick("reasoningModel", "deepseek-reasoner"),
+      defaultModel: pick("defaultModel", env.LLM_DEFAULT_MODEL ?? "", true),
+      reasoningModel: pick("reasoningModel", env.LLM_REASONING_MODEL ?? "", true),
       modelAllowlist,
       dailyTokenBudget: tenant?.dailyTokenBudget ?? global?.dailyTokenBudget ?? null,
       monthlyTokenBudget: tenant?.monthlyTokenBudget ?? global?.monthlyTokenBudget ?? null,
       params: asRecord(tenant?.params ?? global?.params ?? {}),
-      keyRef: tenant?.keyRef ?? global?.keyRef ?? "LITELLM_MASTER_KEY",
+      keyRef: tenant?.keyRef ?? global?.keyRef ?? "LLM_API_KEY",
       allowExternal: pick("allowExternal", true),
       logPrompts: pick("logPrompts", false),
       version: tenant?.version ?? global?.version ?? 1,
@@ -136,6 +140,7 @@ export class LlmSettingsService {
       throw new KernelError("PERMISSION_DENIED", "LLM 设置变更必须由人类发起");
     }
     const parsed = UpdateLlmSettingsInput.parse(input);
+    const env = loadEnv();
     const current = await this.db
       .select()
       .from(llmSettings)
@@ -146,12 +151,13 @@ export class LlmSettingsService {
 
     const values = {
       tenantId: this.tenantId,
-      provider: parsed.provider ?? before?.provider ?? "litellm",
+      provider: parsed.provider ?? before?.provider ?? "openai-compatible",
       baseUrl: parsed.baseUrl === undefined ? (before?.baseUrl ?? null) : parsed.baseUrl,
-      defaultModel: parsed.defaultModel ?? before?.defaultModel ?? "deepseek-chat",
-      reasoningModel: parsed.reasoningModel ?? before?.reasoningModel ?? "deepseek-reasoner",
-      modelAllowlist: parsed.modelAllowlist ??
-        before?.modelAllowlist ?? ["deepseek-chat", "deepseek-reasoner", "qwen-vl-plus"],
+      defaultModel: parsed.defaultModel ?? before?.defaultModel ?? env.LLM_DEFAULT_MODEL ?? "",
+      reasoningModel:
+        parsed.reasoningModel ?? before?.reasoningModel ?? env.LLM_REASONING_MODEL ?? "",
+      modelAllowlist:
+        parsed.modelAllowlist ?? before?.modelAllowlist ?? parseModelAllowlist(env.LLM_MODEL_ALLOWLIST),
       dailyTokenBudget:
         parsed.dailyTokenBudget === undefined
           ? (before?.dailyTokenBudget ?? null)

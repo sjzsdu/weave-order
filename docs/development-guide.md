@@ -75,7 +75,7 @@ weave-order/
 │   ├── db/                         # Drizzle schema + 迁移 + RLS 策略
 │   ├── core/                       # 前端业务逻辑（hooks / API client / 离线队列）
 │   └── ui/                         # 设计系统（shadcn/ui + Tailwind tokens）
-├── infra/                          # Docker Compose / 腾讯云部署 / CI / LiteLLM 配置
+├── infra/                          # Docker Compose / 腾讯云部署 / CI
 ├── docs/                           # product-design / architecture / 本文
 ├── docker-compose.yml              # PostgreSQL(pgvector) + Redis（本地开发）
 ├── turbo.json
@@ -108,7 +108,7 @@ weave-order/
 
 - **Kernel（`kernel/`）**：唯一写业务表的模块。任何写操作必须走内核，且**同事务**写 `audit_log`；对外暴露幂等方法（`reviseDraft` / `confirm` / …），禁止在其他模块直接 import 数据库执行写。
 - **Tools（`tools/`）**：智能体唯一入口。每个工具 = 一个函数，输入输出用 `packages/schema` 的 Zod 校验；工具内部只调内核方法，不写业务逻辑、不查库旁路。
-- **Agents（`agents/`）**：LangGraph.js 编排，状态机 + PostgreSQL 检查点；只调 `tools/`，LLM 调用统一走 LiteLLM 网关（`platform/` 里的 router client），不直连厂商。
+- **Agents（`agents/`）**：LangGraph.js 编排，状态机 + PostgreSQL 检查点；只调 `tools/`，LLM 调用统一走 openai-compatible 企业网关（`platform/` 里的 provider client），不直连上游厂商。
 - **Approval（`approval/`）**：草稿/修订/审批，落 `revision_requests` / `draft_revisions`；审批卡必须带「出处（Provenance）+ 生效值与来源 + diff」。
 - **Print（`print/`）**：模板与数据分离——模板只能引用变量白名单，不能写业务逻辑/查库；打印任务幂等（`idempotency_key`），每次打印留痕（人/时间/模板版本/份数/设备/结果）。
 - **Billing（`billing/`）**：计量事件幂等（`idempotency_key`），每日汇总、每月出账；额度 80% 提醒、100% 只停 agent 新任务，**绝不阻断审批/查看/导出**。

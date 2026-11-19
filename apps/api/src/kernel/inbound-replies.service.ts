@@ -82,9 +82,11 @@ export class InboundRepliesService {
         });
       }
       if (!options.ocr) {
-        throw new KernelError("KERNEL_REJECTED", "截图识别需要启用 litellm 视觉模型", {
-          reason: "OCR_UNAVAILABLE",
-        });
+        throw new KernelError(
+          "KERNEL_REJECTED",
+          "截图识别需要配置 openai-compatible 企业模型网关与视觉模型",
+          { reason: "OCR_UNAVAILABLE" },
+        );
       }
       const resolveUrl = this.options.resolveImageUrl;
       if (!resolveUrl) {

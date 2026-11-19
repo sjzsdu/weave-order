@@ -3,7 +3,7 @@
 > 版本：v1.8 ｜ 日期：2026-11-12 ｜ 作者：巧匠（产品设计 & 增长）
 > v1.8 变更：定稿隔离升级默认价（§14.1）与 Router 默认模型（§15.4），关闭最后两项待定；其余按 v1.7。
 > v1.7 变更：确认「席位 + 动作」收费、token 只计量不收费（§14.2）；新增配置优先原则与配置中心（§14.11），模型/价格/限额/开关等统一进总后台。
-> v1.6 变更：接入 LLM Router（LiteLLM）与 token 计量（§14.2 / §15.4）；Casdoor 落地到 `sso.wnbgj.com`（§3.6）；新增「表单 + Chat→Patch」改稿（§7.8）；隔离升级包价格改为后台合同配置。
+> v1.6 变更：接入 LLM Provider（OpenAI 兼容企业网关）与 token 计量（§14.2 / §15.4）；Casdoor 落地到 `sso.wnbgj.com`（§3.6）；新增「表单 + Chat→Patch」改稿（§7.8）；隔离升级包价格改为后台合同配置。
 > v1.5 变更：确认共享库+RLS 默认、schema/独立库仅作升级项；LLM 不做自部署，改为平台端参数设置；数据区域改为按合同启用；新增 Casdoor 统一登录（§3.6）。
 > v1.4 变更：新增多租户隔离（共享库+RLS / schema-per-tenant / 独立库）与 LLM 部署设计，见 §15。
 > v1.3 变更：打印代理（Print Agent）与每家公司个性化（模板工作室 + AI 识样张）、总后台版本化价格表与租户合同价、开票设置可配（§4.4 / §14.1 / §14.3 / §14.5）。
@@ -1156,7 +1156,7 @@ Agent 出的东西要调整，**不是二选一**。三种入口，按场景用�
 | `tenant_security_profiles` | tenant_id, data_region, allow_external_llm, retention_days, kms_key_ref | P0 |
 | `llm_settings` | scope, tenant_id, provider, base_url, model, params_json, key_ref, allow_external, log_prompts, version, updated_by | P0 |
 | `llm_call_stats` | tenant_id, task, provider, model, latency_ms, tokens, error_code, at | P1 |
-| `llm_routers` | name, base_url, kind (litellm/oneapi), status, key_ref | P1 |
+| `llm_routers` | name, base_url, kind (openai-compatible), status, key_ref | P1 |
 | `model_prices` | model, input_per_1k, output_per_1k, cached_per_1k, sell_markup, effective_from | P1 |
 | `token_usage` | tenant_id, request_id, task, model, prompt_tokens, completion_tokens, cached_tokens, cost, at | P1 |
 | `data_export_jobs` | tenant_id, scope, status, file_key, requested_by, expires_at | P1 |
@@ -1223,7 +1223,7 @@ Agent 出的东西要调整，**不是二选一**。三种入口，按场景用�
 | 阶段 | 已有路线 | 本次设计新增 | 端 |
 | ---- | -------- | ------------ | -- |
 | **P0 阶段一**（4–6 周） | 真实数据入口、真智能体报价、可改价审批、PDF 出口、最小身份 | 设计系统 v1、审批卡/diff/出处、3+1 IA、定价继承表（系统/公司/个人 + 管控夹取）、**表单 + Chat→Patch 改稿**、报价链接（客户视图/接受/撤回）、手机 PWA 审批 + 拍照找样 + 客户分享、**共享库 + RLS + 跨租户测试、Casdoor 登录（OIDC + 租户组织映射）、LLM 设置页（全局参数 + 敏感字段脱敏）**、`tenants/users/idp_* /memberships/pricing_policies/quote_shares/tenant_data_planes/llm_settings/revision_requests` | PC + 手机 PWA + 客户 |
-| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、企业 SSO（Casdoor SAML/OIDC）、LLM Router 接入（LiteLLM）+ token 记账 + 租户模型白名单** | PC + 手机 PWA + 客户 |
+| **P1 阶段二**（4–6 周） | 寄样跟进产品化、中断可视化、建议落库、人工兜底 | 订单/发货单/箱唛/打印中心（模板、队列、打印代理安装包）、拣货扫码复核、模板参数覆盖 + 自定义字段、移动扫码/拍签收/盘点/离线队列、客户留言与回复、拜访签到、回款凭证、agent 成员与自主等级配置、**schema-per-tenant 升级与迁移、企业 SSO（Casdoor SAML/OIDC）、LLM Provider 接入（openai-compatible）+ token 记账 + 租户模型白名单** | PC + 手机 PWA + 客户 |
 | **P2 阶段三**（4–6 周） | 决策增量闭环、建议质量可度量 | 客户 360 与上下文可视化、链接访问时间线与分享分析、对账/回款、库存出入库、自然语言取数、团队数据范围与客户交接、**SaaS 订阅与账单（控制面）、平台总管理端 v1、价格表/租户覆盖/开票设置、模板工作室 + AI 识样张、独立库/每租户 KMS、token 账单与毛利看板** | PC 为主 |
 | **P3 阶段四**（6–8 周） | 订单履约、对账 | 客户自助门户（寄样进度/历史报价/对账单）、供应商协同、Tauri 外设壳、小程序（仅当客户侧验证成立）、洗水唛/吊牌、渠道商/多仓 | PC + 手机 + 客户侧 |
 
@@ -1699,13 +1699,13 @@ CREATE POLICY tenant_isolation ON quotes
 | 低成本/备用 | DeepSeek `deepseek-chat` | 主模型故障时降级 |
 | 预留 | 火山、Azure、OpenAI 兼容 | 有合同再开 |
 
-租户白名单默认只开 `qwen-plus` + `deepseek-chat`；要更强的模型由主管在平台端勾选，费用进成本看板。所有供应商/模型都在「LLM 设置」里改，不写死。
+模型白名单由 `LLM_MODEL_ALLOWLIST` / `llm_settings` 提供；要换模型由主管改配置，费用进成本看板。所有模型 ID 都在配置里改，不写死在 Provider。
 
-**LLM Router（你计划做的）**：不自己写路由，直接接成熟开源网关——LiteLLM Proxy、OneAPI、Higress AI Gateway、Kong AI Gateway 都行。建议 **LiteLLM**（多模型、虚拟 Key、预算、用量日志最全）。
+**LLM Provider（已实现）**：通过 `openai-compatible` 连接企业自有的 OpenAI 兼容网关；网关可以是任意部署形态，代码不绑定具体产品。
 
 ```mermaid
 flowchart LR
-  A["织序 agent"] -->|"OpenAI 协议 + 租户虚拟 Key"| R["LLM Router<br/>LiteLLM / OneAPI"]
+  A["织序 agent"] -->|"OpenAI 协议 + 租户虚拟 Key"| R["LLM Provider<br/>OpenAI 兼容企业网关"]
   R --> M1["阿里百炼<br/>qwen-plus"]
   R --> M2["火山 / DeepSeek"]
   R --> M3["客户自定义端点<br/>vLLM"]
@@ -1827,7 +1827,7 @@ flowchart LR
 7. 开票：按「老规矩」默认 **6% 增值税专用发票、价税分离、收款后开票**；发票类型/税率/开票主体/时机在**总后台「开票设置」**可改，按租户生效。见 §14.3。
 8. 打印：**做一个真正的打印代理（Print Agent）**，本地常驻、自动发现打印机、离线补打、本地渲染与校准；每家公司通过「参数覆盖 → 字段布局 → 模板工作室 → 模板包」自定义，并可用 **AI 识样张**从旧单据生成模板。见 §4.4。
 9. 数据隔离：**默认共享库 + RLS**，企业版可升级 **schema-per-tenant**，旗舰/私有化用独立库/实例；**升级包价格在总后台按合同配置**（不写死）。见 §14.1 / §15。
-10. LLM：**不自建模型**；总后台「LLM 设置」提供参数口子，接入 **LiteLLM 等开源 Router**，每家公司可配模型，**token 全程记账**，当前只用于成本与未来定价、不收费。见 §15.4。
+10. LLM：**不自建模型**；总后台「LLM 设置」提供参数口子，接入 **OpenAI 兼容企业网关**，每家公司可配模型，**token 全程记账**，当前只用于成本与未来定价、不收费。见 §15.4。
 11. 登录：**交给 Casdoor**（已部署 `https://sso.wnbgj.com`），一个租户一个 Organization，平台管理员独立应用 + 强制 MFA；我们只保留角色/数据范围映射，不存密码。见 §3.6。
 12. 改稿：**表单改值、Chat 改意图、统一落成 Patch**；Chat 不直接写数据，所有修改走内核版本与审计。见 §7.8。
 13. 配置优先：**凡是会变、且不同公司可能不同的，都进总后台配置**（价格、税率、模型、限额、开关、模板、保留期等），版本化 + 审计 + 回滚；内核铁律不配置。见 §14.11。

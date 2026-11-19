@@ -11,8 +11,32 @@ export const DEV_PERSONAL_TOKEN_PEPPER = "dev-only-personal-token-pepper-change-
 /** 开通链接（onboarding ticket）的本地占位密钥；生产必须覆盖，且与平台侧一致。 */
 export const DEV_ONBOARDING_SECRET = "dev-only-onboarding-secret-change-me-0001";
 
-/** 仅本地/测试使用的 LiteLLM 占位 key；生产 + litellm provider 时拒绝启动。 */
-export const DEV_LITELLM_MASTER_KEY = "sk-local-dev";
+/** 仅本地/测试使用的网关占位 key；生产 + openai-compatible provider 时拒绝启动。 */
+export const DEV_LLM_API_KEY = "sk-local-dev";
+
+/** 明显的占位凭据：生产态出现任意一个都视为未配置（fail closed）。 */
+export function isPlaceholderLlmKey(value: string): boolean {
+  const key = value.trim();
+  return (
+    key.length === 0 ||
+    key === DEV_LLM_API_KEY ||
+    /^<.*>$/.test(key) ||
+    /^(?:change[-_]?me|your[-_]?(?:api[-_]?)?key|sk[-_]?xxx+)$/i.test(key)
+  );
+}
+
+/** `LLM_MODEL_ALLOWLIST` 的逗号分隔解析；空值/空白项一律忽略。 */
+export function parseModelAllowlist(value: string | undefined): string[] {
+  if (!value) return [];
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
 
 /**
  * 本地 MinIO 的占位凭据（docker-compose.yml 同值）；生产出现即拒绝启动。
@@ -106,13 +130,23 @@ const EnvSchema = z.object({
   /** caption 用的视觉模型（OpenAI 兼容 chat/completions）。 */
   CAPTION_MODEL: z.string().min(1).default("qwen3-vl-plus"),
   CAPTION_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/compatible-mode/v1"),
-  /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key） */
-  LLM_PROVIDER: z.string().min(1).default("local-rule"),
-  /** LLM 网关（LiteLLM，OpenAI 兼容）；agent 只认这个地址，不直连厂商。 */
-  LITELLM_BASE_URL: z.string().url().default("http://localhost:4000"),
-  LITELLM_MASTER_KEY: z.string().min(1).default(DEV_LITELLM_MASTER_KEY),
+  /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key）或 openai-compatible。 */
+  LLM_PROVIDER: z.enum(["local-rule", "openai-compatible"]).default("local-rule"),
+  /**
+   * 通用 OpenAI 兼容企业网关地址（含 /v1，**代码不设生产默认值**）。
+   * 本地开发地址只放源码仓库的 .env；生产地址只放部署仓库 weave-order/.env。
+   */
+  LLM_BASE_URL: z.string().url().optional(),
+  /** 网关令牌；只存环境变量，不写库、不落日志。 */
+  LLM_API_KEY: z.string().min(1).optional(),
   /** 单次调用超时（毫秒）。 */
-  LITELLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  /** 未保存数据库设置时的模型 fallback / seed 来源（不指定任何厂商固定值）。 */
+  LLM_DEFAULT_MODEL: z.string().min(1).optional(),
+  LLM_REASONING_MODEL: z.string().min(1).optional(),
+  LLM_VISION_MODEL: z.string().min(1).optional(),
+  /** 逗号分隔的模型白名单；未配置时为空，调用模型前必须显式配置。 */
+  LLM_MODEL_ALLOWLIST: z.string().optional(),
   /** 物流 provider：local-deterministic（默认，本地确定性） */
   LOGISTICS_PROVIDER: z.string().min(1).default("local-deterministic"),
   /** 客户回复来源：local-scripted（默认，便于演示与测试） */
@@ -233,17 +267,22 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       "生产/OIDC 模式必须显式配置 ONBOARDING_SECRET（≥32 字节随机值），否则任何人都能伪造开通链接、自建公司空间。",
     );
   }
-  // 与 secret 同一处、同一风格：只有真的会调用 LiteLLM 时才要求 key，local-rule 不阻断启动。
-  // 请求期 provider 创建还有一层兜底（防止绕过 loadEnv 直接构造 provider）。
-  if (
-    isProductionLike(env) &&
-    env.LLM_PROVIDER === "litellm" &&
-    env.LITELLM_MASTER_KEY === DEV_LITELLM_MASTER_KEY
-  ) {
-    throw new Error(
-      "生产/OIDC 模式使用 LLM_PROVIDER=litellm 时必须显式配置 LITELLM_MASTER_KEY；" +
-        "否则会以公开的 dev 占位 key 连接模型网关。",
-    );
+  // 与 secret 同一处、同一风格：只有真的会调用企业网关时才要求 URL + Key，
+  // local-rule / 开发环境不因缺网关凭据而阻断启动。请求期 provider 创建还有一层兜底。
+  if (isProductionLike(env) && env.LLM_PROVIDER === "openai-compatible") {
+    if (!env.LLM_BASE_URL || isLoopbackUrl(env.LLM_BASE_URL)) {
+      throw new Error(
+        "生产/OIDC 模式使用 LLM_PROVIDER=openai-compatible 时必须配置 LLM_BASE_URL" +
+          "（企业 OpenAI 兼容网关的 /v1 地址，例如 https://gateway.example.com/v1）；" +
+          "未配置或指向本机时拒绝启动。",
+      );
+    }
+    if (isPlaceholderLlmKey(env.LLM_API_KEY ?? "")) {
+      throw new Error(
+        "生产/OIDC 模式使用 LLM_PROVIDER=openai-compatible 时必须配置有效的 LLM_API_KEY" +
+          "（网关令牌）；占位 key 或未配置时拒绝启动。",
+      );
+    }
   }
   // 语义检索同理：选了真实 provider 却没有 key，就直接拒绝启动，不退回哈希向量。
   if (

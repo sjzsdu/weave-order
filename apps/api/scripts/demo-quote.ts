@@ -112,8 +112,8 @@ async function main(): Promise<void> {
     const usage = {
       requestId,
       task: "QUOTE_INTENT" as const,
-      model: "deepseek-chat",
-      provider: "litellm",
+      model: process.env.LLM_DEFAULT_MODEL ?? "demo-model",
+      provider: "openai-compatible",
       promptTokens: 128,
       completionTokens: 42,
       cachedTokens: 0,
@@ -145,10 +145,12 @@ async function main(): Promise<void> {
   section("结论");
   ok("客户原话 → 槽位 → 3 个候选（命中理由）→ DRAFT（定价依据 + 缺失项）全链路跑通");
   ok("agent 只调 tools；金额由内核计算；草稿永不自动确认");
-  if (llm.name === "litellm") {
-    ok("LLM 调用经 LiteLLM 网关，usage 已按 request_id 幂等记账");
+  if (llm.name === "openai-compatible") {
+    ok("LLM 调用经 OpenAI 兼容企业网关，usage 已按 request_id 幂等记账");
   } else {
-    ok("本地规则模式（零 key）；将 LLM_PROVIDER=litellm 并配置 LITELLM_BASE_URL 即切换真实模型");
+    ok(
+      "本地规则模式（零 key）；将 LLM_PROVIDER=openai-compatible 并配置 LLM_BASE_URL / LLM_API_KEY 即切换真实模型",
+    );
   }
 
   await handle.pool.end();

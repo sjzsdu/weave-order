@@ -395,7 +395,7 @@ CAPTION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 | `EMBEDDING_PROVIDER`                 | `dashscope-text-v3` / `local-stub`               | 是                 | 名字拼错（如 `text-embedding-v3`）→ 首个请求 5xx「尚未接入」；`local-stub` → 不做语义检索                               |
 | `EMBEDDING_MODEL`                    | `text-embedding-v3`                              | 否                 | 改成模型不支持的维度 → 上游 400；模型名错 → 上游 404，接口 5xx                                                          |
 | `EMBEDDING_DIMENSION`                | `1024`                                           | 是                 | ≠1024 且真实 provider → 启动即抛「与 vector(1024) 不一致」                                                              |
-| `EMBEDDING_BASE_URL`                 | 通义兼容端点                                     | 否                 | 指到 LiteLLM 但网关未收录模型 → 404/400，语义检索 5xx                                                                   |
+| `EMBEDDING_BASE_URL`                 | 通义兼容端点                                     | 否                 | 网关未收录该模型 → 404/400，语义检索 5xx                                                                   |
 | `EMBEDDING_API_KEY`                  | DashScope key                                    | 真实 provider 必填 | 缺 key → 启动即抛「需要 EMBEDDING_API_KEY」（不静默回退哈希）                                                           |
 | `EMBEDDING_TIMEOUT_MS`               | `20000`                                          | 否                 | 过小 → 高峰期 embedding 超时、接口 5xx；重试掩盖不了，先看上游延迟                                                      |
 | `EMBEDDING_MAX_ATTEMPTS`             | `3`                                              | 否                 | 设为 1 → 瞬时 429/5xx 直接暴露；过大 → 故障时请求堆积                                                                   |

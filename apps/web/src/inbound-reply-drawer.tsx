@@ -171,8 +171,8 @@ export function InboundReplyDrawer({
               />
               {file && <span className="text-xs font-normal text-ink-400">{file.name}</span>}
               <span className="text-xs font-normal text-ink-400">
-                截图识别需要真实的视觉模型（LiteLLM + DashScope
-                key）；本地规则模式会明确报错，不会假装识别。
+                截图识别需要 openai-compatible 企业模型网关配置视觉模型（LLM_VISION_MODEL）；
+                本地规则模式会明确报错，不会假装识别。
               </span>
             </label>
           )}

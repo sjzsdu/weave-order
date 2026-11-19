@@ -115,7 +115,7 @@ pnpm db:migrate
 | Track        | 可依赖                                                                      | 仍待落地（本 Track 负责）          |
 | ------------ | --------------------------------------------------------------------------- | ---------------------------------- |
 | A 内核与审批 | 全部实体契约、订单/应收/改稿表、内核租户绑定、审计                          | 订单/应收/改稿的内核方法与审批链路 |
-| B 智能体     | 工具 I/O 契约、`ToolResult`、LiteLLM 地址/密钥约定、租户绑定内核            | 新工具实现、token 计量落库         |
+| B 智能体     | 工具 I/O 契约、`ToolResult`、企业网关地址/密钥引用约定、租户绑定内核            | 新工具实现、token 计量落库         |
 | C 桌面 Web   | `packages/core` API client/hooks、`packages/ui` tokens/组件、`/api/auth/me` | Next.js 端页面与设计系统扩展       |
 | D 移动       | `apps/mobile` Taro 五 Tab 骨架、离线队列、core hooks                        | 业务页面与相机直传                 |
 | E 客户报价页 | `quote_shares` 契约与表、`CustomerQuoteView`                                | 分享 API、token 校验与 SSR 页面    |
@@ -128,7 +128,7 @@ pnpm db:migrate
 ## 6. 本地验收
 
 ```bash
-docker compose up -d                 # PostgreSQL(pgvector) + Redis + LiteLLM
+docker compose up -d                 # PostgreSQL(pgvector) + Redis
 pnpm install
 pnpm build                           # schema → db → api → web → mobile
 pnpm db:migrate                      # 迁移 + 角色 + RLS

@@ -1170,8 +1170,9 @@ export function LlmSettingsForm({ settings }: { settings: PlatformLlmSettings })
     monthlyTokenBudget: settings.monthlyTokenBudget?.toString() ?? "",
     keyRef: settings.keyRef ?? "",
   });
-  const set = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((current) => ({ ...current, [key]: event.target.value }));
+  const set = (key: keyof typeof form) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm((current) => ({ ...current, [key]: event.target.value }));
 
   return (
     <FormShell
@@ -1199,20 +1200,23 @@ export function LlmSettingsForm({ settings }: { settings: PlatformLlmSettings })
     >
       <div className="form row">
         <Field label="Provider" name="provider">
-          <input value={form.provider} onChange={set("provider")} />
+          <select value={form.provider} onChange={set("provider")}>
+            <option value="openai-compatible">openai-compatible（企业网关）</option>
+            <option value="local-rule">local-rule（本地规则）</option>
+          </select>
         </Field>
-        <Field label="网关地址" name="baseUrl">
+        <Field label="OpenAI 兼容企业网关地址" name="baseUrl">
           <input
             value={form.baseUrl}
             onChange={set("baseUrl")}
-            placeholder="http://localhost:4000"
+            placeholder="https://gateway.example.com/v1"
           />
         </Field>
         <Field label="默认模型" name="defaultModel">
           <input value={form.defaultModel} onChange={set("defaultModel")} />
         </Field>
         <Field label="Key 引用（环境变量名）" name="keyRef">
-          <input value={form.keyRef} onChange={set("keyRef")} placeholder="LITELLM_MASTER_KEY" />
+          <input value={form.keyRef} onChange={set("keyRef")} placeholder="LLM_API_KEY" />
         </Field>
         <Field label="日 token 预算" name="dailyTokenBudget">
           <input
@@ -1244,7 +1248,9 @@ export function LlmOverrideForm({
 }) {
   const { pending, error, success, submit } = useSubmit();
   const [tenantId, setTenantId] = useState(tenants[0]?.id ?? "");
-  const [model, setModel] = useState("deepseek-chat");
+  const [model, setModel] = useState(
+    settings.find((item) => item.scope === "GLOBAL")?.defaultModel ?? "unconfigured",
+  );
   const [baseUrl, setBaseUrl] = useState("");
   const existing = settings.find((item) => item.tenantId === tenantId);
 
@@ -1334,7 +1340,13 @@ export function LlmOverrideForm({
   );
 }
 
-export function LlmTestButton({ baseUrl }: { baseUrl?: string }) {
+export function LlmTestButton({
+  baseUrl,
+  keyRef,
+}: {
+  baseUrl?: string;
+  keyRef?: string;
+}) {
   const [result, setResult] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -1350,7 +1362,7 @@ export function LlmTestButton({ baseUrl }: { baseUrl?: string }) {
               const body = await mutate<{ ok?: boolean; latencyMs?: number; message?: string }>(
                 "/settings/llm/test",
                 "POST",
-                { baseUrl },
+                { baseUrl, keyRef: keyRef || "LLM_API_KEY" },
               );
               setResult(
                 body.ok

@@ -77,7 +77,7 @@ describe("本地确定性 LLM provider", () => {
 
   it("未知 provider 显式报错", () => {
     expect(createLlmProvider("local-rule").name).toBe("local-rule-v1");
-    expect(() => createLlmProvider("openai")).toThrow(/尚未接入/);
+    expect(() => createLlmProvider("openai")).toThrow(/不受支持/);
   });
 });
 

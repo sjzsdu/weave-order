@@ -19,9 +19,9 @@
 
 | Track            | 端 / 域                              | 阶段 | 交付物（验收）                                                                                | 依赖              |
 | ---------------- | ------------------------------------ | ---- | --------------------------------------------------------------------------------------------- | ----------------- |
-| **T0** 地基      | 契约 + 内核骨架                      | P0   | monorepo 脚手架跑通；schema/db/gateway 骨架；本地 docker-compose（PG+pgvector+Redis+LiteLLM） | —                 |
+| **T0** 地基      | 契约 + 内核骨架                      | P0   | monorepo 脚手架跑通；schema/db/gateway 骨架；本地 docker-compose（PG+pgvector+Redis） | —                 |
 | **A** 内核与审批 | 后端 `apps/api`                      | P0   | 报价「原话→草稿→改价→审批→confirm」后端全链路；定价继承+管控夹取                              | T0                |
-| **B** 智能体     | 后端 `apps/api/agents`               | P0   | 找样/报价 agent 出 `DRAFT`；LiteLLM 接入 + token 计量                                         | T0（与 A 并行）   |
+| **B** 智能体     | 后端 `apps/api/agents`               | P0   | 找样/报价 agent 出 `DRAFT`；OpenAI 兼容企业网关接入 + token 计量                                         | T0（与 A 并行）   |
 | **C** 桌面 Web   | E1 `apps/web`                        | P0   | 三窗口（工作台/审批/全景）+ 组织设置 + 设计系统 `packages/ui`                                 | T0 + A（可 mock） |
 | **D** 移动       | E2 `apps/mobile`                     | P0   | 今日/审批/相机/客户；手机粘贴原话→改价→批→分享链接                                            | T0 + A（可 mock） |
 | **E** 客户报价页 | E3 `apps/quote` 独立 Next.js 应用    | P0   | 客户无登录打开 `/s/[token]` 可看/接受/提问；`quote_shares`                                    | T0 + A            |

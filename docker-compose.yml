@@ -33,7 +33,7 @@ services:
   # 对象存储：本地用 MinIO 模拟 S3（生产走腾讯云 COS）。API 默认连 localhost:9000。
   # bucket 由 minio-init 建好并开放匿名读（只用于本地：图片 URL 直接可看，免签名）。
   #
-  # 放在 `media` profile 里：Docker Hub 不可达时 `docker compose up -d` 仍能起 PG/Redis/LiteLLM，
+  # 放在 `media` profile 里：Docker Hub 不可达时 `docker compose up -d` 仍能起 PG/Redis，
   # 不会因为拉不到 minio 镜像而整体报错。需要 S1 图片链路时二选一：
   #   - 能拉镜像：docker compose --profile media up -d minio minio-init
   #   - 拉不到镜像：scripts/dev-storage-up.sh（官方二进制，端口/凭据/bucket 完全一致）
@@ -77,30 +77,6 @@ services:
         mc mb --ignore-existing "local/$$S3_BUCKET" &&
         mc anonymous set download "local/$$S3_BUCKET"
     restart: "no"
-
-  # 模型网关：智能体只认 LITELLM_BASE_URL，不直连厂商。
-  # 无 DEEPSEEK_API_KEY 时仍可启动，仅模型调用失败（不影响内核/前端开发）。
-  litellm:
-    image: ghcr.io/berriai/litellm:main-stable
-    container_name: weave-order-litellm
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
-    environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-    volumes:
-      - ./infra/litellm/config.yaml:/app/config.yaml:ro
-    ports:
-      - "4000:4000"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:4000/health/liveliness'')"',
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 12
 
 volumes:
   weave_pgdata:

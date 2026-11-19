@@ -177,12 +177,14 @@ export class InboundIntakeService {
     });
   }
 
-  /** provider 与报价 agent 同源：生产 litellm，本地零 key 规则；截图必须真实视觉模型。 */
+  /** provider 与报价 agent 同源：openai-compatible 企业网关，本地零 key 规则；截图必须真实视觉模型。 */
   private async provider(kernel: Kernel): Promise<LlmProvider> {
     const env = loadEnv();
     const settings = await kernel.llmSettings.resolve();
     const name =
-      env.LLM_PROVIDER === "litellm" && settings.allowExternal ? "litellm" : "local-rule";
+      env.LLM_PROVIDER === "openai-compatible" && settings.allowExternal
+        ? "openai-compatible"
+        : "local-rule";
     return createLlmProvider(name, { settings, usage: kernel.usage, env });
   }
 }
