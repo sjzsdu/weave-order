@@ -21,6 +21,16 @@ export const auditLog = pgTable(
     actorId: varchar("actor_id", { length: 128 }).notNull(),
     /** 审批人当时的角色快照（智能体/系统为空），用于还原「当时他有没有这个权限」。 */
     actorRole: memberRoleEnum("actor_role"),
+    /**
+     * 操作人姓名快照（智能体/系统可为空）。成员改名或离职后，日志仍能显示当时是谁。
+     * 历史行为 NULL，前端回退「成员」，不做猜测性回填。
+     */
+    actorName: varchar("actor_name", { length: 128 }),
+    /**
+     * 对象名称快照（客户名 / 报价号 / 订单号）。实体改名后日志仍可读，不必回查业务表。
+     * 历史行为 NULL，前端回退「业务记录」。
+     */
+    entityLabel: varchar("entity_label", { length: 255 }),
     action: varchar("action", { length: 64 }).notNull(),
     entityType: varchar("entity_type", { length: 64 }).notNull(),
     entityId: uuid("entity_id").notNull(),

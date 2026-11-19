@@ -5,8 +5,6 @@ import { pgEnum } from "drizzle-orm/pg-core";
  * 契约的唯一来源仍是 Zod Schema；这里只是它在 PostgreSQL 上的物理表示，
  * 变更时必须两边同步（边界测试会校验取值集合一致）。
  */
-export const customerTierEnum = pgEnum("customer_tier", ["VIP", "REGULAR", "NEW", "COLD"]);
-
 export const currencyEnum = pgEnum("currency", ["CNY", "USD", "EUR", "HKD"]);
 
 export const unitEnum = pgEnum("unit", ["meter", "kilogram", "yard", "piece"]);

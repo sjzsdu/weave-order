@@ -2,6 +2,8 @@ export * from "./common";
 export * from "./domain";
 export * from "./tenancy";
 export * from "./capabilities";
+export * from "./field-options";
+export * from "./navigation";
 export * from "./personas";
 export * from "./entities";
 export * from "./customer";

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   Currency,
-  CustomerTier,
   DataScope,
   IsolationMode,
   LlmScope,
@@ -23,7 +22,6 @@ import {
 import {
   actorTypeEnum,
   currencyEnum,
-  customerTierEnum,
   dataScopeEnum,
   isolationModeEnum,
   deviceAuthStatusEnum,
@@ -49,10 +47,6 @@ import {
  * 否则会出现「契约接受、写库失败」这类只在线上才炸的问题。
  */
 describe("数据库枚举与契约枚举一致", () => {
-  it("客户等级", () => {
-    expect(customerTierEnum.enumValues).toEqual(CustomerTier.options);
-  });
-
   it("币种", () => {
     expect(currencyEnum.enumValues).toEqual(Currency.options);
   });

@@ -169,6 +169,13 @@
       "when": 1795013690349,
       "tag": "0023_uneven_zemo",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795087005934,
+      "tag": "0024_mysterious_angel",
+      "breakpoints": true
     }
   ]
 }
