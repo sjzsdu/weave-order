@@ -261,6 +261,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
 
           <div className="mx-auto hidden md:block">
             <CommandBar
+              // 结果区属于当前页：换页后重新收起，状态不跟着常驻外壳跨页残留。
+              key={pathname}
               onSubmit={async (text) => (await intentChannel.submit(text, "command-bar")) !== null}
               commands={[
                 {

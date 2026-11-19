@@ -17,6 +17,9 @@ export interface CommandItem {
  * - 命中 `commands` 里的固定命令 → 执行命令（跳转/打开表单），不当意图提交；
  * - 其余文字 → 交给 `onSubmit`，就地展开结果：绝不跳页、绝不清空到用户看不到去向。
  * `onSubmit` 返回 `false` 表示未被服务端接收，此时原文保留在输入框里。
+ *
+ * 结果区（`feedback`）展开后会一直留在顶栏下方，因此必须有多种收起来的路：
+ * 点输入框外面、按 Esc、点输入框里的关闭按钮。只靠 Esc 会让鼠标用户以为面板关不掉。
  */
 export function CommandBar({
   onSubmit,
@@ -37,6 +40,10 @@ export function CommandBar({
   const [activeIndex, setActiveIndex] = useState(-1);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  // 只有键盘关闭才把焦点还给入口按钮；点外面时焦点应留在用户点的地方。
+  const returnFocusRef = useRef(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -44,7 +51,6 @@ export function CommandBar({
         event.preventDefault();
         setOpen(true);
       }
-      if (event.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -52,6 +58,33 @@ export function CommandBar({
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
+  }, [open]);
+
+  // 面板展开时才挂监听：点外面、按 Esc 都要能收起，不能只留一个没人知道的快捷键。
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      returnFocusRef.current = true;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // 收起后入口按钮才重新挂载，只能等这次渲染完成再把焦点还回去。
+  useEffect(() => {
+    if (open || !returnFocusRef.current) return;
+    returnFocusRef.current = false;
+    triggerRef.current?.focus();
   }, [open]);
 
   // 输入变化后旧的键盘选中位置就失效了，重置到「没有选中」= 默认走意图通道。
@@ -64,6 +97,11 @@ export function CommandBar({
     setValue("");
     setOpen(false);
     command.run();
+  };
+
+  const closeAndRestoreFocus = () => {
+    returnFocusRef.current = true;
+    setOpen(false);
   };
 
   const submit = async () => {
@@ -106,7 +144,7 @@ export function CommandBar({
   };
 
   return (
-    <div className="relative flex items-center gap-3">
+    <div ref={containerRef} className="relative flex items-center gap-3">
       {open ? (
         <>
           <div className="flex min-w-[280px] items-center gap-2 rounded-md border border-indigo-600/40 bg-surface px-3 py-1.5">
@@ -124,6 +162,15 @@ export function CommandBar({
             {submitting && (
               <span className="whitespace-nowrap text-xs text-indigo-600">正在提交…</span>
             )}
+            <button
+              type="button"
+              aria-label="关闭命令栏"
+              title="关闭（Esc）"
+              onClick={closeAndRestoreFocus}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-base leading-none text-ink-400 hover:bg-paper hover:text-ink-700"
+            >
+              ×
+            </button>
           </div>
           {visibleCommands.length > 0 && (
             <ul
@@ -166,6 +213,7 @@ export function CommandBar({
         </>
       ) : (
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => setOpen(true)}
           className={cn(
