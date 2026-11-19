@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  CustomerTier,
+  CustomerTierCode,
   EntityId,
   JsonValueSchema,
   Money,
@@ -24,7 +24,7 @@ export const CreateCustomerInput = z
   .object({
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
-    tier: CustomerTier.default("REGULAR"),
+    tier: CustomerTierCode.default("REGULAR"),
     contactName: z.string().max(255).nullable().optional(),
     contactPhone: z.string().max(64).nullable().optional(),
     contactEmail: z.string().email().max(255).nullable().optional(),
@@ -228,6 +228,28 @@ export const AuditAction = z.enum([
   "PRINT_LABEL_REISSUED",
   "PRINT_DISCREPANCY_FLAGGED",
   "PRINT_SCAN_RECORDED",
+  // 字段选项（客户等级 / 样品品类 / 样品成分 / 联系人角色）
+  "FIELD_OPTION_CREATED",
+  "FIELD_OPTION_UPDATED",
+  "FIELD_OPTION_DELETED",
+  /** 合并是唯一会回写业务数据的选项操作。 */
+  "FIELD_OPTION_MERGED",
+  "FIELD_OPTION_REORDERED",
+  // 多联系人
+  "CONTACT_CREATED",
+  "CONTACT_UPDATED",
+  "CONTACT_ARCHIVED",
+  "CONTACT_PRIMARY_CHANGED",
+  // 客户档案的关键字段变更（单独动作，日志页才能筛选和高亮）
+  "CUSTOMER_RENAMED",
+  "CUSTOMER_TIER_CHANGED",
+  "CUSTOMER_OWNER_CHANGED",
+  // 成员权限
+  "MEMBERSHIP_ROLE_CHANGED",
+  "MEMBERSHIP_SCOPE_CHANGED",
+  "MEMBERSHIP_LIMIT_CHANGED",
+  "IMPORT_COMPLETED",
+  "AUDIT_EXPORTED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -244,6 +266,10 @@ export const AuditLogEntry = z
     actorId: z.string().min(1).max(128),
     /** 审批人当时的角色快照（智能体/系统为空），用于还原审批时点的权限。 */
     actorRole: MemberRole.nullable().optional(),
+    /** 操作人姓名快照；历史行（本列上线前）为 null。 */
+    actorName: z.string().max(128).nullable().optional(),
+    /** 对象名称快照；历史行（本列上线前）为 null。 */
+    entityLabel: z.string().max(255).nullable().optional(),
     action: AuditAction,
     entityType: z.string().min(1).max(64),
     entityId: EntityId,

@@ -43,6 +43,17 @@ export const Capability = z.enum([
   "print.template.publish.html",
   "receivable.read",
   "panorama.orders.view",
+  /** 全公司操作日志（含导出）；没有它的角色只能看自己的操作。 */
+  "audit.read.all",
+  "audit.read.own",
+  /** 联系人手机/邮箱明文；缺失时读模型层掩码（仅 VIEWER 缺失）。 */
+  "contact.pii.view",
+  "quote.workbench.view",
+  "field_options.manage",
+  /** 数据导入入口；缺它的人看不到设置里的导入分栏。 */
+  "data.import",
+  /** 用量与订阅只读可见（账单由平台侧维护）。 */
+  "billing.view",
 ]);
 export type Capability = z.infer<typeof Capability>;
 
@@ -70,6 +81,34 @@ export const CAPABILITY_ROLES: Readonly<Record<Capability, readonly MemberRole[]
   "receivable.read": ["OWNER", "MANAGER", "SALES", "FINANCE", "VIEWER"],
   // 财务的默认工作面是应收，订单不在一级入口；其余角色都能看订单漏斗。
   "panorama.orders.view": ["OWNER", "MANAGER", "SALES", "MERCHANDISER", "SAMPLE_ADMIN", "VIEWER"],
+  // 审计范围：OWNER/MANAGER 看全公司，其余角色只能看自己的操作（服务端强制过滤）。
+  "audit.read.all": ["OWNER", "MANAGER"],
+  "audit.read.own": [
+    "OWNER",
+    "MANAGER",
+    "SALES",
+    "MERCHANDISER",
+    "SAMPLE_ADMIN",
+    "FINANCE",
+    "VIEWER",
+  ],
+  // 联系人 PII：只对观察者席位掩码。跟单要打电话确认交期、样品管理要寄样地址，
+  // 掩码只会把人赶回微信，数据反而流出系统（巧匠 WAN-174 第 3 条）。
+  "contact.pii.view": ["OWNER", "MANAGER", "SALES", "MERCHANDISER", "SAMPLE_ADMIN", "FINANCE"],
+  // 报价工作台：销售写、只读席位读；跟单与财务的日常工作面不在这里。
+  "quote.workbench.view": ["OWNER", "MANAGER", "SALES", "VIEWER"],
+  // 字段选项是公司共享字典，产品结论是任何成员都能增删改合并排序。
+  "field_options.manage": [
+    "OWNER",
+    "MANAGER",
+    "SALES",
+    "MERCHANDISER",
+    "SAMPLE_ADMIN",
+    "FINANCE",
+    "VIEWER",
+  ],
+  "data.import": ["OWNER", "MANAGER", "SALES", "MERCHANDISER", "SAMPLE_ADMIN"],
+  "billing.view": ["OWNER"],
 };
 
 /**

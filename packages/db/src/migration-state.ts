@@ -265,6 +265,34 @@ const RULES: Rule[] = [
     },
   },
   {
+    // 对象的「后写者胜」归属靠这两条：前一条迁移建的表/枚举被后续迁移有意删除时，
+    // 由后一条 DROP 断言拥有它，前面的 CREATE 不再被判成「对象缺失」。
+    re: new RegExp(String.raw`^DROP\s+TYPE\s+(?:IF\s+EXISTS\s+)?${QUALIFIED}`, "i"),
+    build: (m) => {
+      const { schema, name } = splitQualified(m[1] ?? "");
+      return claim(
+        "type",
+        `type:${schema}.${name}`,
+        `type ${schema}.${name}（应已删除）`,
+        false,
+        [schema, name],
+      );
+    },
+  },
+  {
+    re: new RegExp(String.raw`^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?${QUALIFIED}`, "i"),
+    build: (m) => {
+      const { schema, name } = splitQualified(m[1] ?? "");
+      return claim(
+        "table",
+        `table:${schema}.${name}`,
+        `table ${schema}.${name}（应已删除）`,
+        false,
+        [schema, name],
+      );
+    },
+  },
+  {
     re: new RegExp(
       String.raw`^CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?${QNAME}\s+ON\s+${QUALIFIED}`,
       "i",

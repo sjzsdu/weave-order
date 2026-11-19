@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import type { Customer, CustomerTier } from "@weave-order/schema";
+import type { Customer, CustomerTierCode } from "@weave-order/schema";
 import { ApiError } from "@weave-order/core";
 import { Button } from "@weave-order/ui";
 import { useApi } from "@/providers";
 
-export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTier; label: string }> = [
+export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTierCode; label: string }> = [
   { value: "NEW", label: "新客" },
   { value: "REGULAR", label: "常规" },
   { value: "VIP", label: "VIP" },
@@ -16,7 +16,7 @@ export const CUSTOMER_TIER_OPTIONS: Array<{ value: CustomerTier; label: string }
 
 export interface CustomerDraft {
   name: string;
-  tier: CustomerTier;
+  tier: CustomerTierCode;
   contactName: string;
   contactPhone: string;
   contactEmail: string;
@@ -171,7 +171,7 @@ export function CustomerForm({
           <Field label="等级" error={errors.tier}>
             <select
               value={draft.tier}
-              onChange={(event) => update("tier", event.target.value as CustomerTier)}
+              onChange={(event) => update("tier", event.target.value)}
               className={FIELD_CLASS}
             >
               {CUSTOMER_TIER_OPTIONS.map((option) => (

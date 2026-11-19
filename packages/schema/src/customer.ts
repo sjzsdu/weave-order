@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Customer, CustomerContext, CustomerTier, EntityId, Money, Timestamp } from "./domain";
+import { Customer, CustomerContext, CustomerTierCode, EntityId, Money, Timestamp } from "./domain";
 
 /**
  * 客户 360 读模型。
@@ -14,7 +14,8 @@ export const CustomerListOptions = z
     /** 名称 / 编号 / 联系人 模糊搜索（字面量匹配）。 */
     query: z.string().trim().min(1).max(100).optional(),
     owner: z.enum(["mine", "all"]).optional(),
-    tier: CustomerTier.optional(),
+    /** 等级 code（不是 label）；筛选项来自 `field_options(customer.tier)`。 */
+    tier: CustomerTierCode.optional(),
     overdueOnly: z.boolean().optional(),
     limit: z.number().int().min(1).max(200).optional(),
   })

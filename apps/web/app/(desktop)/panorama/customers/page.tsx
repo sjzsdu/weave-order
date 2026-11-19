@@ -69,7 +69,7 @@ function CustomersPageContent() {
       limit: PAGE_SIZE,
       owner,
       ...(debouncedQuery ? { query: debouncedQuery } : {}),
-      ...(tier ? { tier: tier as CustomerListOptions["tier"] } : {}),
+      ...(tier ? { tier } : {}),
       ...(overdueOnly ? { overdueOnly: true } : {}),
     }),
     [owner, debouncedQuery, tier, overdueOnly],

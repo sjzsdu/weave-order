@@ -67,6 +67,24 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   PRINT_LABEL_REISSUED: "补打了标签",
   PRINT_DISCREPANCY_FLAGGED: "标记了打印差异",
   PRINT_SCAN_RECORDED: "记录了扫码",
+  // 字段选项 / 多联系人 / 客户档案 / 成员权限（WAN-176）
+  FIELD_OPTION_CREATED: "新增了字段选项",
+  FIELD_OPTION_UPDATED: "修改了字段选项",
+  FIELD_OPTION_DELETED: "停用了字段选项",
+  FIELD_OPTION_MERGED: "合并了字段选项",
+  FIELD_OPTION_REORDERED: "调整了字段选项顺序",
+  CONTACT_CREATED: "新增了联系人",
+  CONTACT_UPDATED: "修改了联系人",
+  CONTACT_ARCHIVED: "归档了联系人",
+  CONTACT_PRIMARY_CHANGED: "更换了主要联系人",
+  CUSTOMER_RENAMED: "修改了客户名称",
+  CUSTOMER_TIER_CHANGED: "调整了客户等级",
+  CUSTOMER_OWNER_CHANGED: "更换了客户负责人",
+  MEMBERSHIP_ROLE_CHANGED: "调整了成员角色",
+  MEMBERSHIP_SCOPE_CHANGED: "调整了成员数据范围",
+  MEMBERSHIP_LIMIT_CHANGED: "调整了成员审批额度",
+  IMPORT_COMPLETED: "完成了数据导入",
+  AUDIT_EXPORTED: "导出了操作日志",
 };
 
 /** 未映射动作的兜底：绝不把 SCREAMING_SNAKE 枚举直接丢到用户面前。 */
@@ -118,6 +136,8 @@ export function memberRoleLabel(role: string | null | undefined): string {
 export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   customer: "客户",
   customer_context: "客户背景",
+  customer_contact: "联系人",
+  field_option: "字段选项",
   sample: "样品",
   sample_image: "样品图片",
   sample_shipment: "寄样单",
