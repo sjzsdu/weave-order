@@ -20,6 +20,7 @@ import { QuoteAgentService } from "./quote-agent.service";
 import {
   ApprovalController,
   AuditController,
+  AuditLogController,
   CatalogController,
   ContactsController,
   HealthController,
@@ -111,6 +112,7 @@ const providers: Provider[] = [
     ContactsController,
     QuoteController,
     AuditController,
+    AuditLogController,
     ApprovalController,
     PanoramaController,
     ImportController,

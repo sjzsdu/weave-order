@@ -19,6 +19,7 @@ export * from "./llm";
 export * from "./inbound";
 export * from "./kernel";
 export * from "./labels";
+export * from "./audit-log";
 export * from "./approval";
 export * from "./import";
 export * from "./auth";

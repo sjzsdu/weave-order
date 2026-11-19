@@ -83,4 +83,33 @@ export class HumanActorService {
     }
     return fn(fallbackKernel, DEV_HUMAN_CONTEXT);
   }
+
+  /**
+   * 请求返回后继续跑的任务（目前只有异步导出）。
+   *
+   * 必须重新开一个租户作用域：`run` 的 finally 会在响应返回时释放连接，
+   * 若后台任务继续持有那个 kernel，查询会落在已归还连接池的 client 上。
+   * 失败不冒泡到请求：任务状态由导出 job 自己记录。
+   */
+  async runDetached<T>(
+    authorization: string | undefined,
+    fallbackKernel: Kernel,
+    fn: (kernel: Kernel) => Promise<T>,
+  ): Promise<void> {
+    try {
+      if (authorization) {
+        const { membership } = await this.auth.authenticate(authorization);
+        const scope = await this.auth.openScope(membership);
+        try {
+          await fn(scope.kernel);
+        } finally {
+          await scope.release();
+        }
+        return;
+      }
+      await fn(fallbackKernel);
+    } catch {
+      // 导出失败已经写进 audit_export_jobs.error；这里不再制造未处理拒绝。
+    }
+  }
 }

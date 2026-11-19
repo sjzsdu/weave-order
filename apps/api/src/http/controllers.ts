@@ -18,6 +18,9 @@ import {
 } from "@nestjs/common";
 import {
   ApprovalKind,
+  AuditAction,
+  AuditExportInput,
+  AuditLogSummaryRange,
   OrderStatus,
   ReceivableBucket,
   ReviseQuoteDraftResult,
@@ -26,6 +29,11 @@ import { CustomerListOptions, CustomerTimelineKind } from "@weave-order/schema";
 import type { PricingKey } from "@weave-order/schema";
 import { ZodError } from "zod";
 import { createApprovalService } from "../approval";
+import {
+  AuditExportNotFoundError,
+  AuditLogNotFoundError,
+} from "../kernel/audit-log.service";
+import type { AuditLogQuery } from "../kernel/audit-log.service";
 import { isKernelError } from "../kernel";
 import { narrowPricingContext } from "../kernel/pricing-scope";
 import { QuoteAgentService } from "./quote-agent.service";
@@ -918,6 +926,205 @@ export class AuditController {
       { scope: "read" },
     );
   }
+}
+
+/**
+ * 操作日志（WAN-179）：只读、可筛选、可导出。
+ *
+ * 范围由服务端按 `audit.read.all` 判定；没有它的角色在同一个端点上只看到
+ * `actor_id = 自己` 的记录（响应里的 `scope` 告诉前端该标「我的操作」）。
+ * 旧的 `GET /api/audit` 保留给动态流，两者不共用展示逻辑，但共用账本。
+ */
+@Controller("api/audit/log")
+export class AuditLogController {
+  constructor(
+    @Inject(KERNEL) private readonly kernel: Kernel,
+    @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
+  ) {}
+
+  @Get()
+  async list(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("actorId") actorId?: string,
+    @Query("actor") actor?: string,
+    @Query("action") action?: string | string[],
+    @Query("entityType") entityType?: string,
+    @Query("keyword") keyword?: string,
+    @Query("highRisk") highRisk?: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return await kernel.auditLog.list(
+            parseAuditQuery({
+              from,
+              to,
+              actorId,
+              actor,
+              action,
+              entityType,
+              keyword,
+              highRisk,
+              cursor,
+              limit,
+            }),
+            ctx,
+          );
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  @Get("summary")
+  async summary(@Query("range") range?: string, @Headers("authorization") authorization?: string) {
+    const parsed = AuditLogSummaryRange.safeParse(nonEmpty(range) ?? "30d");
+    if (!parsed.success) throw new BadRequestException(`未知摘要区间：${range}`);
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => kernel.auditLog.summary(parsed.data, ctx),
+      { scope: "read" },
+    );
+  }
+
+  @Get("export/:jobId")
+  async exportStatus(
+    @Param("jobId") jobId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return { job: await kernel.auditLog.exportJob(jobId, ctx) };
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  /** 详情：字段级 before/after，敏感金额在服务端按查看者能力裁剪。 */
+  @Get(":seq")
+  async detail(@Param("seq") seq: string, @Headers("authorization") authorization?: string) {
+    const value = Number(seq);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new BadRequestException(`审计序号不合法：${seq}`);
+    }
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          return { entry: await kernel.auditLog.detail(value, ctx) };
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+
+  /** 异步导出：建 job 后立即返回；前端轮询 export/:jobId 拿下载地址。 */
+  @Post("export")
+  async export(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    const parsed = AuditExportInput.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "导出条件不合法");
+    }
+    const input = parsed.data;
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) => {
+        try {
+          const job = await kernel.auditLog.createExport(
+            {
+              from: input.from ? new Date(input.from) : undefined,
+              to: input.to ? new Date(input.to) : undefined,
+              actorId: input.actorId,
+              actor: input.actor,
+              actions: input.action,
+              entityType: input.entityType,
+              keyword: input.keyword,
+              highRisk: input.highRisk,
+            },
+            ctx,
+          );
+          // 后台生成 CSV 用独立租户会话：响应返回时请求的会话会被释放。
+          void this.human.runDetached(authorization, this.kernel, (scoped) =>
+            scoped.auditLog.runExport(job.id),
+          );
+          return { job };
+        } catch (error) {
+          rethrowAudit(error);
+        }
+      },
+      { scope: "read" },
+    );
+  }
+}
+
+/** 审计读接口的错误映射：越权与不存在都按 404，不泄漏记录是否存在。 */
+function rethrowAudit(error: unknown): never {
+  if (error instanceof AuditLogNotFoundError || error instanceof AuditExportNotFoundError) {
+    throw new NotFoundException(error.message);
+  }
+  rethrowHttp(error);
+}
+
+/** 把查询串解析成内核查询：多值 action 支持 `action=A,B` 与重复参数两种写法。 */
+function parseAuditQuery(raw: {
+  from?: string;
+  to?: string;
+  actorId?: string;
+  actor?: string;
+  action?: string | string[];
+  entityType?: string;
+  keyword?: string;
+  highRisk?: string;
+  cursor?: string;
+  limit?: string;
+}): AuditLogQuery {
+  const actionsRaw = Array.isArray(raw.action)
+    ? raw.action
+    : (raw.action ?? "").split(",").map((token) => token.trim());
+  const actions = actionsRaw
+    .flatMap((token) => token.split(","))
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const parsed = AuditAction.safeParse(token);
+      if (!parsed.success) throw new BadRequestException(`未知审计动作：${token}`);
+      return parsed.data;
+    });
+  const cursor = raw.cursor ? Number(raw.cursor) : undefined;
+  if (cursor !== undefined && (!Number.isInteger(cursor) || cursor <= 0)) {
+    throw new BadRequestException(`游标不合法：${raw.cursor}`);
+  }
+  return {
+    from: parseDate(raw.from, "开始时间"),
+    to: parseDate(raw.to, "结束时间"),
+    actorId: nonEmpty(raw.actorId),
+    actor: nonEmpty(raw.actor),
+    actions: actions.length > 0 ? actions : undefined,
+    entityType: nonEmpty(raw.entityType),
+    keyword: nonEmpty(raw.keyword)?.slice(0, 100),
+    highRisk: raw.highRisk === "1" || raw.highRisk === "true",
+    cursor,
+    limit: raw.limit ? clampLimit(raw.limit, 50, 200) : undefined,
+  };
 }
 
 /**

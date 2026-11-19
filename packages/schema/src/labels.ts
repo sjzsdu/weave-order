@@ -172,3 +172,55 @@ export function auditEntityLabel(entityType: string | null | undefined): string 
   if (!entityType) return UNKNOWN_AUDIT_ENTITY_LABEL;
   return AUDIT_ENTITY_LABEL[entityType] ?? UNKNOWN_AUDIT_ENTITY_LABEL;
 }
+
+/**
+ * 审计 before/after 的字段名 → 中文。
+ *
+ * 账本字段是内核写下的英文键（`costFloorAmount`），直接渲染等于把表结构摊给用户。
+ * 未收录的键回落到原文而不是「字段」——至少能看出改的是哪一列。
+ */
+export const AUDIT_FIELD_LABEL: Record<string, string> = {
+  code: "编号",
+  name: "名称",
+  label: "名称",
+  tier: "客户等级",
+  status: "状态",
+  category: "品类",
+  composition: "成分",
+  unit: "单位",
+  costFloorAmount: "成本低价",
+  costFloorCurrency: "成本币种",
+  amount: "金额",
+  currency: "币种",
+  unitPriceAmount: "单价",
+  total: "合计",
+  totalAmount: "总额",
+  quantity: "数量",
+  value: "取值",
+  key: "策略键",
+  priority: "优先级",
+  locked: "是否锁定",
+  phone: "手机",
+  email: "邮箱",
+  wechat: "微信",
+  role: "角色",
+  note: "备注",
+  isPrimary: "主要联系人",
+  active: "启用",
+  sortOrder: "排序",
+  trackingNumber: "运单号",
+  paidAmount: "已收金额",
+  dueDate: "交期",
+  archivedAt: "归档时间",
+  actorName: "操作人",
+  reviewerName: "审批人",
+};
+
+export function auditFieldLabel(field: string): string {
+  return AUDIT_FIELD_LABEL[field] ?? field;
+}
+
+/** 审计可见范围：「全公司」/「我的操作」，页面顶部与导出说明共用。 */
+export function auditScopeLabel(scope: "ALL" | "OWN"): string {
+  return scope === "ALL" ? "全公司" : "我的操作";
+}
