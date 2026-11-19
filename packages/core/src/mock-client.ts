@@ -54,23 +54,38 @@ const NOW = "2026-11-12T09:00:00.000Z";
 const EXPIRES = "2026-11-26T09:00:00.000Z";
 
 /** 演示模式的字典：与真实预置项同名同 code，便于本地点通治理交互。 */
+function mockOption(
+  fieldKey: FieldOption["fieldKey"],
+  code: string,
+  label: string,
+  sortOrder: number,
+): FieldOption {
+  return {
+    id: `mock-option-${code.toLowerCase()}`,
+    tenantId: TENANT_ID,
+    fieldKey,
+    code,
+    label,
+    normalized: label.toLowerCase(),
+    sortOrder,
+    active: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
 const mockFieldOptions: FieldOption[] = [
-  { code: "NEW", label: "新客", sortOrder: 10 },
-  { code: "REGULAR", label: "常规", sortOrder: 20 },
-  { code: "VIP", label: "VIP", sortOrder: 30 },
-  { code: "COLD", label: "沉睡", sortOrder: 40 },
-].map((option) => ({
-  id: `mock-option-${option.code.toLowerCase()}`,
-  tenantId: TENANT_ID,
-  fieldKey: "customer.tier" as const,
-  code: option.code,
-  label: option.label,
-  normalized: option.label.toLowerCase(),
-  sortOrder: option.sortOrder,
-  active: true,
-  createdAt: NOW,
-  updatedAt: NOW,
-}));
+  mockOption("customer.tier", "NEW", "新客", 10),
+  mockOption("customer.tier", "REGULAR", "常规", 20),
+  mockOption("customer.tier", "VIP", "VIP", 30),
+  mockOption("customer.tier", "COLD", "沉睡", 40),
+  mockOption("sample.category", "CAT-KNIT", "针织", 10),
+  mockOption("sample.category", "CAT-WOVEN", "梭织", 20),
+  mockOption("sample.category", "CAT-NONWOVEN", "无纺", 30),
+  mockOption("sample.composition", "COMP-COTTON", "100% 棉", 10),
+  mockOption("sample.composition", "COMP-POLYESTER", "100% 涤纶", 20),
+  mockOption("sample.composition", "COMP-COTTON-POLY", "棉涤混纺", 30),
+];
 
 const customer = {
   id: CUSTOMER_ID,
