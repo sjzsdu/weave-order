@@ -130,7 +130,14 @@ export const ReviseItemQuoteInput = z
   .strict();
 export type ReviseItemQuoteInput = z.infer<typeof ReviseItemQuoteInput>;
 
-/** 确认报价（`POST /quotes/:id/confirm`）。 */
+/**
+ * 确认报价（`POST /quotes/:id/confirm`）。
+ *
+ * 幂等契约：
+ * - 带同一个 `idempotencyKey` 重试：返回首次确认结果（200），不新增审计；
+ * - 已确认后不带 key（或换 key）再次确认：409，避免把「另一次确认」误当成重试。
+ * 并发两次无 key 确认仍然只有一次成功（行锁 + 状态判断）。
+ */
 export const ConfirmItemQuoteInput = z
   .object({
     baseVersion: z.number().int().positive().optional(),

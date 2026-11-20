@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { randomUUID } from "node:crypto";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { ImportBatchResult } from "@weave-order/schema";
@@ -139,6 +140,93 @@ describe("HTTP 面（e2e）", () => {
     expect(decided.data?.status).toBe("SENT");
     expect(decided.data?.actorType).toBe("HUMAN");
   });
+
+  it("报价确认端点：越权 403 / 不存在 404 / 已确认无幂等键 409 / 同键重放 200", async (ctx) => {
+    const database = db;
+    if (!available || !database) {
+      ctx.skip();
+      return;
+    }
+    const kernel = createKernel(database);
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const customer = await kernel.customers.create(
+      { code: `E2E-CFM-C-${suffix}`, name: "确认端点客户" },
+      HUMAN,
+    );
+    const sample = await kernel.samples.create(
+      {
+        code: `E2E-CFM-S-${suffix}`,
+        name: "确认端点面料",
+        unit: "meter",
+        costFloor: { amount: 1200, currency: "CNY" },
+      },
+      HUMAN,
+    );
+    const draftResponse = await fetch(`${baseUrl}/api/tools/generate-quote-draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customerId: customer.id,
+        currency: "CNY",
+        items: [
+          {
+            fabricSampleId: sample.id,
+            quantity: { value: 100, unit: "meter" },
+            unitPrice: { amount: 1800, currency: "CNY" },
+          },
+        ],
+      }),
+    });
+    expect(draftResponse.status).toBe(201);
+    const draftBody = (await draftResponse.json()) as {
+      ok: boolean;
+      data?: { draft: { id: string } };
+    };
+    const quoteId = draftBody.data?.draft.id;
+    expect(quoteId).toBeDefined();
+
+    const confirmAs = (authorization: string | null, body: unknown) =>
+      fetch(`${baseUrl}/api/quotes/${quoteId}/confirm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authorization ? { Authorization: authorization } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+    // 未授权角色：SALES 没有 quote.confirm，必须是 403 而不是 500。
+    const sales = await confirmAs("Bearer dev:demo-sales:demo", {});
+    expect(sales.status, await sales.text()).toBe(403);
+
+    // 报价不存在：404。
+    const missing = await fetch(`${baseUrl}/api/quotes/${randomUUID()}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(missing.status).toBe(404);
+
+    const idempotencyKey = `http-confirm-${suffix}`;
+    const first = await confirmAs(null, { idempotencyKey });
+    const firstText = await first.text();
+    expect(first.status, firstText).toBe(200);
+    const firstBody = JSON.parse(firstText) as Record<string, unknown>;
+    expect(firstBody.status).toBe("SENT");
+
+    // 同一个 key 是重试：200 且 body 相同。
+    const replay = await confirmAs(null, { idempotencyKey });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(firstBody);
+
+    // 已确认后无 key 再确认不是「重试」，是状态冲突：409。
+    const noKey = await confirmAs(null, {});
+    expect(noKey.status).toBe(409);
+
+    // 已确认后换一个 key 也不是重试：409。
+    const otherKey = await confirmAs(null, { idempotencyKey: `${idempotencyKey}-2` });
+    expect(otherKey.status).toBe(409);
+  }, 30_000);
 
   it("HTTP 复测：100%棉 按字面量匹配，matchedOn 非空", async (ctx) => {
     const database = db;

@@ -134,6 +134,15 @@ export function rethrowHttp(error: unknown): never {
     ) {
       throw new ConflictException(error.message);
     }
+    // 报价的状态冲突不是「参数写错」：已确认/已过期/版本落后都是当前资源状态
+    // 与请求不兼容，409 让前端能区分「改内容重试」还是「刷新后重试」。
+    if (
+      error.details.reason === "INVALID_STATE_TRANSITION" ||
+      error.details.reason === "VERSION_CONFLICT" ||
+      error.details.reason === "QUOTE_EXPIRED"
+    ) {
+      throw new ConflictException(error.message);
+    }
     throw new BadRequestException(error.message);
   }
   // 缺表 / 缺列是「服务还没部署完」，不是用户输入错：明确 503 并给出可执行的原因，
@@ -604,15 +613,19 @@ export class QuoteController {
     @Headers("idempotency-key") idempotencyHeader: string | undefined,
     @Headers("authorization") authorization?: string,
   ) {
-    const parsed = ConfirmItemQuoteInput.parse(body ?? {});
-    const idempotencyKey = parsed.idempotencyKey ?? nonEmpty(idempotencyHeader);
-    return this.human.run(
-      authorization,
-      this.kernel,
-      async (kernel, ctx) =>
-        kernel.quotes.confirmDraft(id, ctx, parsed.baseVersion, idempotencyKey),
-      { scope: "write" },
-    );
+    try {
+      const parsed = ConfirmItemQuoteInput.parse(body ?? {});
+      const idempotencyKey = parsed.idempotencyKey ?? nonEmpty(idempotencyHeader);
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) =>
+          kernel.quotes.confirmDraft(id, ctx, parsed.baseVersion, idempotencyKey),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
   }
 
   /** 复制文本：编号 / 客户 / 样品 / 数量 / 单价 / 合计 / 有效期。 */

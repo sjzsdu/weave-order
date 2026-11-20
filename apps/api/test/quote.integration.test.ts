@@ -101,6 +101,9 @@ describe("报价 agent（集成）", () => {
 
   it("llm_settings：全局配置生效，租户可覆盖且写审计", async () => {
     if (!available || !kernel) return;
+    // 该用例会写一条 TENANT 覆盖行；复用型本地库若残留上一次的行，
+    // 第一次 resolve 就会读到 TENANT 而不是 GLOBAL。跑前跑后各清一次，保证可重复。
+    await handle!.pool.query("DELETE FROM llm_settings WHERE tenant_id = $1", [kernel.tenantId]);
     const resolved = await kernel.llmSettings.resolve();
     expect(resolved.provider).toBe("openai-compatible");
     expect(resolved.defaultModel.length).toBeGreaterThan(0);
@@ -130,5 +133,6 @@ describe("报价 agent（集成）", () => {
     await expect(
       kernel.llmSettings.upsertTenant({ defaultModel: "model-not-in-allowlist" }, HUMAN),
     ).rejects.toThrow(/白名单/);
+    await handle!.pool.query("DELETE FROM llm_settings WHERE tenant_id = $1", [kernel.tenantId]);
   });
 });
