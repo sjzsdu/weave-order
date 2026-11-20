@@ -10,6 +10,7 @@ import {
   CustomerTimelinePage,
   DemoSceneResponse,
   FieldOption,
+  ItemQuoteListResponse,
   PrintCenterSnapshot,
   PrintDevices,
   PrintJobList,
@@ -17,6 +18,7 @@ import {
   PrintTemplateList,
   PanoramaSnapshot,
   QuoteDetail,
+  QuoteConfirmation,
   QuoteListResponse,
   QuoteShareStats,
   QuoteShareStatsList,
@@ -1686,6 +1688,39 @@ export function createMockApiClient(): ApiClient {
         },
         allowedTransitions: [],
       }),
+    listItemQuotes: () =>
+      Promise.resolve(
+        ItemQuoteListResponse.parse({
+          quotes: [
+            {
+              id: QUOTE_ID,
+              itemId: mockItemDetail.item.id,
+              quoteNumber: `BJ-20261112-${QUOTE_ID.slice(0, 4).toUpperCase()}`,
+              status: "DRAFT",
+              currency: draft.currency,
+              total: draft.total,
+              version: 1,
+              expiresAt: draft.expiresAt,
+              createdAt: draft.createdAt,
+              confirmedBy: null,
+              confirmedAt: null,
+            },
+          ],
+        }),
+      ),
+    createItemQuote: () => Promise.reject(new Error("演示模式不发起新报价")),
+    quoteBasis: () => Promise.reject(new Error("演示模式没有报价依据")),
+    reviseItemQuote: () => Promise.reject(new Error("演示模式不改价")),
+    confirmQuote: () =>
+      Promise.resolve(
+        QuoteConfirmation.parse({
+          quoteId: QUOTE_ID,
+          status: "SENT",
+          confirmedBy: "demo-owner",
+          confirmedAt: NOW,
+        }),
+      ),
+    quoteCopyText: () => Promise.reject(new Error("演示模式不生成报价文本")),
     shipment: () =>
       Promise.resolve(
         ShipmentView.parse({

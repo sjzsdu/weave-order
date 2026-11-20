@@ -74,7 +74,7 @@ describe("HTTP 面（e2e）", () => {
     expect(auditBody.entries.length).toBeLessThanOrEqual(3);
   });
 
-  it("通过 HTTP 走 T-004 生成 DRAFT，确认只经 /api/approvals/decide（HUMAN 唯一入口）", async (ctx) => {
+  it("通过 HTTP 走 T-004 生成 DRAFT，确认走 /api/approvals/decide（D1 后确认即定稿）", async (ctx) => {
     const database = db;
     if (!available || !database) {
       ctx.skip();
@@ -122,11 +122,9 @@ describe("HTTP 面（e2e）", () => {
     const quoteId = body.data?.draft.id;
     expect(quoteId).toBeDefined();
 
-    // 旧路由 POST /api/quotes/:id/confirm 已删除：不存在第二个 HUMAN 写入口。
-    const legacy = await fetch(`${baseUrl}/api/quotes/${quoteId}/confirm`, { method: "POST" });
-    expect(legacy.status).toBe(404);
-
     // 人类确认统一走审批窗口 decide：状态转 SENT，且 actorType 固定 HUMAN。
+    // D1 之后 decide 仍然保留（页面不展示），WAN-197 的事项工作面走
+    // POST /api/quotes/:id/confirm，两者落到同一个内核确认逻辑。
     const decide = await fetch(`${baseUrl}/api/approvals/decide`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

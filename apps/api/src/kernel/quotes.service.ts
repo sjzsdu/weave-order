@@ -1,6 +1,7 @@
 import {
   customers,
   draftRevisions,
+  items,
   quoteItems,
   quotes,
   revisionRequests,
@@ -9,10 +10,16 @@ import {
 import type { Db } from "@weave-order/db";
 import {
   ApprovalItem,
+  CreateItemQuoteInput,
   DraftRevision,
+  ItemQuoteListResponse,
+  ItemQuoteRevisionResult,
+  QuoteBasis,
+  QuoteCopyText,
   QuoteApprovalView,
   QuoteDetail,
   QuoteListResponse,
+  ReviseItemQuoteInput,
   ReviseQuoteDraftInput,
   RevisionDiff,
   T004GenerateQuoteDraftInput,
@@ -52,11 +59,13 @@ import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
 import { isOwnerInScope, ownerScopeFilter } from "./data-scope";
-import { formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
-import { currencyOf, toIso } from "./mappers";
+import { formatCents, formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
+import { currencyOf, toIso, toIsoOrNull } from "./mappers";
+import { isProductionLike } from "../platform/runtime-mode";
 import { priceFloorOf, requireSampleCostFloor } from "./price-rules";
 import { numericValue } from "./pricing.service";
 import type { PricingService } from "./pricing.service";
+import type { QuotePricingService } from "./quote-pricing.service";
 import type { SampleService } from "./samples.service";
 
 type QuoteRow = typeof quotes.$inferSelect;
@@ -275,6 +284,7 @@ export class QuoteService {
     private readonly customers: CustomerService,
     private readonly samples: SampleService,
     private readonly pricing: PricingService,
+    private readonly quotePricing: QuotePricingService,
     private readonly tenantId: string,
   ) {}
 
@@ -283,6 +293,30 @@ export class QuoteService {
     // 入口按驱动者的数据范围判客户归属：越权当成不存在（与其它读路径同一套语义），
     // 智能体因此不能替 OWN 成员碰同事名下的客户。定价计算本身仍不受范围限制。
     const customer = await this.customers.getById(parsed.customerId, ctx);
+
+    // 事项内发起的报价必须真的挂在事项上，且客户与事项一致。
+    // 不能默默忽略 itemId：那样事项完成校验会退回「客户 + 样品」的模糊匹配。
+    let itemId: string | null = null;
+    if (parsed.itemId) {
+      const itemRows = await this.db
+        .select()
+        .from(items)
+        .where(and(eq(items.id, parsed.itemId), eq(items.tenantId, this.tenantId)))
+        .limit(1);
+      const item = itemRows[0];
+      if (!item) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `事项不存在：${parsed.itemId}`, {
+          resourceType: "item",
+          resourceId: parsed.itemId,
+        });
+      }
+      if (item.customerId !== parsed.customerId) {
+        throw new KernelError("KERNEL_REJECTED", "报价客户与事项客户不一致", {
+          reason: "ITEM_CUSTOMER_MISMATCH",
+        });
+      }
+      itemId = item.id;
+    }
 
     const sampleIds = parsed.items.map((item) => item.fabricSampleId);
     const samplesById = await this.samples.getManyByIds(sampleIds);
@@ -433,6 +467,7 @@ export class QuoteService {
         .values({
           tenantId: this.tenantId,
           customerId: parsed.customerId,
+          itemId,
           status: "DRAFT",
           currency: parsed.currency,
           subtotalAmount,
@@ -514,6 +549,355 @@ export class QuoteService {
       draft: mapQuote(row, lines, requirement),
       version: row.version,
       status: row.status,
+      itemId: row.itemId,
+      quoteNumber: quoteNumberOf(row),
+      confirmedBy: row.confirmedBy,
+      confirmedAt: toIsoOrNull(row.confirmedAt),
+      baselineTotal: baseline ? { amount: baseline.totalAmount, currency: row.currency } : null,
+      pendingDiff: (row.pendingDiff as unknown as RevisionDiff[]) ?? [],
+    });
+  }
+
+  /** 事项内发起报价：数量取事项，价格可由用户指定或由内核给建议价。 */
+  async createForItem(itemId: string, input: unknown, ctx: KernelContext): Promise<QuoteDetail> {
+    const parsed = CreateItemQuoteInput.parse(input);
+    const itemRows = await this.db
+      .select()
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
+      .limit(1);
+    const item = itemRows[0];
+    if (!item) {
+      throw new KernelError("RESOURCE_NOT_FOUND", `事项不存在：${itemId}`, {
+        resourceType: "item",
+        resourceId: itemId,
+      });
+    }
+    if (item.status === "COMPLETED" || item.status === "CLOSED") {
+      throw new KernelError("KERNEL_REJECTED", "已结束的事项不能再发起报价", {
+        reason: "ITEM_TERMINAL",
+      });
+    }
+    if (!item.customerId || !item.sampleId || item.quantityMilli === null) {
+      throw new KernelError("KERNEL_REJECTED", "事项还缺客户、样品或数量，不能发起报价", {
+        reason: "ITEM_INCOMPLETE",
+      });
+    }
+
+    const quantity = parsed.quantity ?? {
+      value: milliToQuantity(item.quantityMilli),
+      unit: item.unit,
+    };
+    if (quantity.unit !== item.unit) {
+      throw new KernelError(
+        "KERNEL_REJECTED",
+        `数量单位 ${quantity.unit} 与事项单位 ${item.unit} 不一致`,
+        { reason: "UNIT_MISMATCH" },
+      );
+    }
+
+    let unitPrice = parsed.unitPrice;
+    if (!unitPrice) {
+      const suggested = await this.quotePricing.suggestLinePrice({
+        customerId: item.customerId,
+        fabricSampleId: item.sampleId,
+        quantity,
+        currency: parsed.currency,
+      });
+      unitPrice = suggested.suggestedUnitPrice;
+    }
+
+    const remarks = [parsed.remarks, parsed.rawText].filter(Boolean).join("；");
+    const draft = await this.generateDraft(
+      {
+        customerId: item.customerId,
+        itemId,
+        currency: parsed.currency,
+        validityDays: parsed.validityDays,
+        ...(remarks ? { remarks } : {}),
+        items: [
+          {
+            fabricSampleId: item.sampleId,
+            quantity,
+            unitPrice,
+          },
+        ],
+      },
+      ctx,
+    );
+    return this.get(draft.id);
+  }
+
+  /** 事项下的报价版本列表（同一事项可以有多份，直到其中一份被确认）。 */
+  async listForItem(itemId: string): Promise<ItemQuoteListResponse> {
+    const itemRows = await this.db
+      .select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
+      .limit(1);
+    if (!itemRows[0]) {
+      throw new KernelError("RESOURCE_NOT_FOUND", `事项不存在：${itemId}`, {
+        resourceType: "item",
+        resourceId: itemId,
+      });
+    }
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.tenantId, this.tenantId), eq(quotes.itemId, itemId)))
+      .orderBy(desc(quotes.createdAt), desc(quotes.id));
+    return ItemQuoteListResponse.parse({
+      quotes: rows.map((row) => ({
+        id: row.id,
+        itemId: row.itemId,
+        quoteNumber: quoteNumberOf(row),
+        status: row.status,
+        currency: currencyOf(row.currency),
+        total: { amount: row.totalAmount, currency: row.currency },
+        version: row.version,
+        expiresAt: toIso(row.expiresAt),
+        createdAt: toIso(row.createdAt),
+        confirmedBy: row.confirmedBy,
+        confirmedAt: toIsoOrNull(row.confirmedAt),
+      })),
+    });
+  }
+
+  /**
+   * 报价依据（实时查，不缓存）。
+   *
+   * 历史成交只取同租户、同样品、已确认（SENT/ACCEPTED）的报价；
+   * 成本底线与毛利按当前生效策略现算，和「改价时内核校验」同一口径。
+   */
+  async basis(quoteId: string, ctx?: KernelContext): Promise<QuoteBasis> {
+    const { row, lines } = await this.loadQuote(quoteId, ctx);
+    const sampleRows = await this.db
+      .select()
+      .from(samples)
+      .where(
+        and(
+          eq(samples.tenantId, this.tenantId),
+          inArray(
+            samples.id,
+            lines.map((line) => line.sampleId),
+          ),
+        ),
+      );
+    const sampleById = new Map(sampleRows.map((sample) => [sample.id, sample]));
+
+    const basisLines = [];
+    for (const line of lines) {
+      const sample = sampleById.get(line.sampleId);
+      const sampleFloor = requireSampleCostFloor(sample, row.currency);
+      const pricingContext: PricingContext = {
+        customerId: row.customerId,
+        ...(sample?.category ? { categoryId: sample.category } : {}),
+      };
+      const marginResolved = await this.pricing.resolve("pricing.min_margin_pct", pricingContext);
+      const companyFloorResolved = await this.pricing.resolve(
+        "pricing.cost_floor_amount",
+        pricingContext,
+      );
+      const minMarginPct = numericValue(marginResolved.value);
+      const companyFloor = numericValue(companyFloorResolved.value) ?? 0;
+      const priceFloor = priceFloorOf(sample, row.currency, minMarginPct ?? 0, companyFloor);
+      const marginAmount = line.unitPriceAmount - sampleFloor;
+      basisLines.push({
+        lineIndex: line.lineIndex,
+        sampleId: line.sampleId,
+        sampleCode: sample?.code ?? "—",
+        sampleName: sample?.name ?? line.description,
+        quantity: { value: milliToQuantity(line.quantityMilli), unit: line.unit },
+        unitPrice: { amount: line.unitPriceAmount, currency: row.currency },
+        lineTotal: { amount: line.lineTotalAmount, currency: row.currency },
+        sampleCostFloor: { amount: sampleFloor, currency: row.currency },
+        companyCostFloor: { amount: companyFloor, currency: row.currency },
+        priceFloor: { amount: priceFloor, currency: row.currency },
+        minMarginPct,
+        marginAmount: { amount: marginAmount, currency: row.currency },
+        marginBps:
+          line.unitPriceAmount > 0 ? Math.round((marginAmount * 10_000) / line.unitPriceAmount) : 0,
+        floorSource: `samples.cost_floor(${sample?.code ?? "?"}) + pricing_policies.min_margin_pct（${marginResolved.source.scopeType}）`,
+      });
+    }
+
+    const sampleIds = [...new Set(lines.map((line) => line.sampleId))];
+    const historyRows =
+      sampleIds.length > 0
+        ? await this.db
+            .select({
+              quoteId: quotes.id,
+              quoteCreatedAt: quotes.createdAt,
+              status: quotes.status,
+              confirmedAt: quotes.confirmedAt,
+              customerName: customers.name,
+              quantityMilli: quoteItems.quantityMilli,
+              unit: quoteItems.unit,
+              unitPriceAmount: quoteItems.unitPriceAmount,
+            })
+            .from(quoteItems)
+            .innerJoin(quotes, eq(quoteItems.quoteId, quotes.id))
+            .innerJoin(customers, eq(quotes.customerId, customers.id))
+            .where(
+              and(
+                eq(quotes.tenantId, this.tenantId),
+                inArray(quoteItems.sampleId, sampleIds),
+                inArray(quotes.status, ["SENT", "ACCEPTED"]),
+                sql`${quotes.id} <> ${quoteId}`,
+              ),
+            )
+            .orderBy(desc(quotes.confirmedAt), desc(quotes.createdAt))
+            .limit(10)
+        : [];
+
+    const history = historyRows.map((entry) => ({
+      quoteId: entry.quoteId,
+      // 历史行只需要稳定编号，按 id 段取即可。
+      quoteNumber: quoteNumberOf({ id: entry.quoteId, createdAt: entry.quoteCreatedAt }),
+      customerName: entry.customerName,
+      status: entry.status,
+      unitPrice: { amount: entry.unitPriceAmount, currency: row.currency },
+      quantity: { value: milliToQuantity(entry.quantityMilli), unit: entry.unit },
+      confirmedAt: toIso(entry.confirmedAt ?? entry.quoteCreatedAt),
+    }));
+    const lastDeal = history[0];
+
+    return QuoteBasis.parse({
+      quoteId,
+      itemId: row.itemId,
+      currency: row.currency,
+      generatedAt: new Date().toISOString(),
+      lines: basisLines,
+      history,
+      lastDealUnitPrice: lastDeal?.unitPrice ?? null,
+      lastDealAt: lastDeal?.confirmedAt ?? null,
+    });
+  }
+
+  /** 改价：保留 baselineSnapshot，返回「原价 → 新价 → 差额」。 */
+  async reviseForItem(
+    quoteId: string,
+    input: unknown,
+    ctx: KernelContext,
+  ): Promise<ItemQuoteRevisionResult> {
+    const parsed = ReviseItemQuoteInput.parse(input);
+    // 先读改前状态：改价后同一行已经变了，「原价」必须来自改前的账本。
+    const before = await this.loadQuote(quoteId, ctx);
+    const sampleRows = await this.db
+      .select({ id: samples.id, code: samples.code })
+      .from(samples)
+      .where(
+        and(
+          eq(samples.tenantId, this.tenantId),
+          inArray(
+            samples.id,
+            before.lines.map((line) => line.sampleId),
+          ),
+        ),
+      );
+    const codeBySample = new Map(sampleRows.map((sample) => [sample.id, sample.code]));
+    const result = await this.reviseDraft(
+      {
+        quoteId,
+        baseVersion: parsed.baseVersion,
+        source: "INLINE",
+        instruction: parsed.note ?? "事项内改价",
+        lines: parsed.lines,
+        ...(parsed.validityDays ? { validityDays: parsed.validityDays } : {}),
+        ...(parsed.remarks !== undefined ? { remarks: parsed.remarks } : {}),
+      },
+      ctx,
+    );
+    const changes = parsed.lines.map((patch) => {
+      const previous = before.lines[patch.lineIndex];
+      const next = result.draft.items.find((item) => item.lineIndex === patch.lineIndex);
+      if (!previous || !next) {
+        throw new KernelError("KERNEL_REJECTED", `行号越界：${patch.lineIndex}`, {
+          reason: "LINE_INDEX_OUT_OF_RANGE",
+        });
+      }
+      const beforeAmount = previous.unitPriceAmount;
+      const delta = next.unitPrice.amount - beforeAmount;
+      return {
+        lineIndex: patch.lineIndex,
+        sampleCode: codeBySample.get(previous.sampleId) ?? "—",
+        beforeUnitPrice: { amount: beforeAmount, currency: before.row.currency },
+        afterUnitPrice: next.unitPrice,
+        delta: { amount: delta, currency: before.row.currency },
+        deltaPctBps: beforeAmount > 0 ? Math.round((delta * 10_000) / beforeAmount) : 0,
+        beforeLineTotal: {
+          amount: previous.lineTotalAmount,
+          currency: before.row.currency,
+        },
+        afterLineTotal: next.lineTotal,
+      };
+    });
+    return ItemQuoteRevisionResult.parse({
+      quoteId,
+      version: result.draft.version,
+      status: result.draft.status,
+      total: result.draft.total,
+      changes,
+    });
+  }
+
+  /** 复制文本：纯文本 + 编号 / 客户 / 样品 / 数量 / 单价 / 合计 / 有效期。 */
+  async copyText(quoteId: string, ctx?: KernelContext): Promise<QuoteCopyText> {
+    const { row, lines } = await this.loadQuote(quoteId, ctx);
+    const [customer] = await this.db
+      .select({ name: customers.name })
+      .from(customers)
+      .where(and(eq(customers.id, row.customerId), eq(customers.tenantId, this.tenantId)))
+      .limit(1);
+    const sampleRows = await this.db
+      .select({ id: samples.id, code: samples.code, name: samples.name })
+      .from(samples)
+      .where(
+        and(
+          eq(samples.tenantId, this.tenantId),
+          inArray(
+            samples.id,
+            lines.map((line) => line.sampleId),
+          ),
+        ),
+      );
+    const sampleById = new Map(sampleRows.map((sample) => [sample.id, sample]));
+    const quoteNumber = quoteNumberOf(row);
+    const unitLabel = (unit: string) =>
+      ({ meter: "米", kilogram: "公斤", yard: "码", piece: "件" })[unit] ?? unit;
+    const quantityText = lines
+      .map((line) => `${milliToQuantity(line.quantityMilli)} ${unitLabel(line.unit)}`)
+      .join(" + ");
+    const unitPriceText = lines
+      .map((line) => `¥${formatCents(line.unitPriceAmount)}/${unitLabel(line.unit)}`)
+      .join("；");
+    const totalText = `¥${formatCents(row.totalAmount)}`;
+    const expiresDay = row.expiresAt.toISOString().slice(0, 10);
+    const text = [
+      `【报价单 ${quoteNumber}】`,
+      `客户：${customer?.name ?? "—"}`,
+      ...lines.map((line, index) => {
+        const sample = sampleById.get(line.sampleId);
+        return `样品 ${index + 1}：${sample?.name ?? line.description}（${sample?.code ?? "—"}）`;
+      }),
+      `数量：${quantityText}`,
+      `单价：${unitPriceText}`,
+      `合计：${totalText}`,
+      `有效期：${row.validityDays} 天（至 ${expiresDay}）`,
+      "价格含税，大货交期以确认后回签为准。",
+    ].join("\n");
+
+    return QuoteCopyText.parse({
+      quoteId,
+      quoteNumber,
+      customerName: customer?.name ?? "—",
+      sampleNames: lines.map((line) => sampleById.get(line.sampleId)?.name ?? line.description),
+      quantityText,
+      unitPriceText,
+      totalText,
+      validityDays: row.validityDays,
+      expiresAt: toIso(row.expiresAt),
+      text,
     });
   }
 
@@ -1067,20 +1451,34 @@ export class QuoteService {
     });
   }
 
-  /** 人类审批窗口确认报价草稿：DRAFT -> SENT。智能体无权确认。 */
+  /**
+   * 确认价格：DRAFT -> SENT。智能体无权确认。
+   *
+   * D1 已取消审批：这里只校验 `quote.confirm` capability 与确认人审计，
+   * `requiredApprovalRole` 不再参与判断（字段保留，P0 不触发）。
+   * 非草稿状态若携带同一个幂等键，返回原确认结果，不重复写审计。
+   */
   async confirmDraft(
     quoteId: string,
     ctx: KernelContext,
     baseVersion?: number,
+    idempotencyKey?: string,
   ): Promise<QuoteConfirmation> {
     if (ctx.actor.type !== "HUMAN") {
+      throw new KernelError("PERMISSION_DENIED", "报价确认必须由人类执行，智能体无权确认");
+    }
+    // 与 assertCanApprove 同一条 fail-closed 纪律：生产态缺角色直接拒绝，
+    // 仅本地/测试兼容无角色上下文。
+    const role = ctx.actor.role ?? (isProductionLike(process.env) ? undefined : "OWNER");
+    if (!role || !hasCapability(role, "quote.confirm")) {
       throw new KernelError(
         "PERMISSION_DENIED",
-        "报价确认必须由人类在审批窗口执行，智能体无权确认",
+        `角色 ${role ?? "未知"} 没有确认价格的权限（需要老板/主管）`,
       );
     }
     const confirmedAt = new Date();
     let confirmedVersion = 0;
+    let existing: QuoteConfirmation | null = null;
 
     // 「读状态 → 判状态 → 改状态」必须在同一个事务里对同一行加锁完成。
     // 事务外判 DRAFT + UPDATE 只带版本谓词但不自增版本，会让并发两次确认都成功。
@@ -1097,6 +1495,24 @@ export class QuoteService {
           resourceType: "quote",
           resourceId: quoteId,
         });
+      }
+      // 幂等重放：同一次点击的第二次请求直接返回第一次的结果。
+      if (
+        row.status === "SENT" &&
+        row.confirmedBy !== null &&
+        idempotencyKey !== undefined &&
+        row.confirmIdempotencyKey === idempotencyKey
+      ) {
+        existing = {
+          quoteId,
+          status: "SENT",
+          confirmedBy: row.confirmedBy,
+          // confirmedBy 非空即已确认，confirmedAt 由同一事务写入。
+          confirmedAt: toIso(row.confirmedAt!),
+          // 首次确认返回「被确认的那一版」；确认时版本 +1，所以回放要减回去。
+          version: Math.max(1, row.version - 1),
+        };
+        return;
       }
       if (row.status !== "DRAFT") {
         throw new KernelError("KERNEL_REJECTED", `报价单不是草稿状态：${row.status}`, {
@@ -1125,20 +1541,13 @@ export class QuoteService {
         .orderBy(asc(quoteItems.position));
       const lines = itemRows.map((item, index) => lineFromRow(item, index));
 
-      const baseline = parseBaseline(row);
-      const policies = await resolveApprovalPolicies(this.pricing, {
-        customerId: row.customerId,
-      });
-      // 以落库的审批要求为准，不用 customerId 单点重算放宽个人/品类限额。
-      const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
-      assertCanApprove(ctx.actor.role, requirement, ctx.actor.approvalLimitAmount);
-
       const updated = await tx
         .update(quotes)
         .set({
           status: "SENT",
           confirmedBy: ctx.actor.id,
           confirmedAt,
+          confirmIdempotencyKey: idempotencyKey ?? null,
           version: row.version + 1,
           updatedAt: confirmedAt,
         })
@@ -1173,14 +1582,14 @@ export class QuoteService {
             status: "SENT",
             version: row.version + 1,
             confirmedBy: ctx.actor.id,
-            requiredApprovalRole: requirement.role,
-            changePctBps: requirement.changePctBps,
+            idempotencyKey: idempotencyKey ?? null,
             lineCount: lines.length,
           },
         },
         this.tenantId,
       );
     });
+    if (existing) return existing;
     return {
       quoteId,
       status: "SENT",
@@ -1365,9 +1774,7 @@ export class QuoteService {
         pendingApproval: quote.status === "DRAFT",
       })),
       nextCursor:
-        hasMore && last
-          ? encodeCursor({ createdAt: toIso(last.createdAt), id: last.id })
-          : null,
+        hasMore && last ? encodeCursor({ createdAt: toIso(last.createdAt), id: last.id }) : null,
     });
   }
 
@@ -1508,4 +1915,15 @@ function mapDraftRevision(row: DraftRevisionRow): DraftRevision {
     actorId: row.actorId,
     createdAt: toIso(row.createdAt),
   });
+}
+
+/**
+ * 展示用报价编号：`BJ-YYYYMMDD-XXXX`。
+ *
+ * 报价表没有独立编号列（P0 不新增序列），用创建日期 + id 前缀派生：
+ * 同一天内 4 位十六进制足够区分；它只用于人读与复制文本，不是可寻址标识。
+ */
+function quoteNumberOf(row: { id: string; createdAt: Date }): string {
+  const day = row.createdAt.toISOString().slice(0, 10).replace(/-/g, "");
+  return `BJ-${day}-${row.id.slice(0, 4).toUpperCase()}`;
 }

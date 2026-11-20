@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ItemStatus } from "@weave-order/schema";
-import { Badge, Button, Card, EmptyState, Spinner } from "@weave-order/ui";
+import { Badge, Button, Card, EmptyState, Spinner, formatMoney } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { ITEM_STATUS_LABEL, ITEM_STATUS_TONE, itemQuantityText } from "@/item-format";
+
+const QUOTE_STATUS_TEXT: Record<string, string> = {
+  DRAFT: "待确认价格",
+  SENT: "已确认价格",
+  ACCEPTED: "客户已接受",
+  REJECTED: "已驳回",
+  EXPIRED: "已过期",
+};
 
 const TRANSITION_LABEL: Partial<Record<ItemStatus, string>> = {
   WAITING_INPUT: "等待补充",
@@ -26,6 +34,7 @@ export default function ItemDetailPage() {
   const params = useParams<{ id: string }>();
   const itemId = params?.id;
   const api = useApi();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const key = ["item", itemId] as const;
 
@@ -37,6 +46,22 @@ export default function ItemDetailPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [quotePrice, setQuotePrice] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const quotesQuery = useQuery({
+    queryKey: ["item", itemId, "quotes"],
+    queryFn: () => api.listItemQuotes(itemId),
+    enabled: Boolean(itemId),
+  });
+  const confirmedQuote = quotesQuery.data?.quotes.find(
+    (quote) => quote.status === "SENT" || quote.status === "ACCEPTED",
+  );
+  const copyQuery = useQuery({
+    queryKey: ["quote", confirmedQuote?.id, "copy-text"],
+    queryFn: () => api.quoteCopyText(confirmedQuote!.id),
+    enabled: Boolean(confirmedQuote),
+  });
 
   const transition = useMutation({
     mutationFn: (status: ItemStatus) => api.transitionItem(itemId, { status }),
@@ -57,6 +82,33 @@ export default function ItemDetailPage() {
     onError: (error) =>
       setFeedback(error instanceof Error ? error.message : "完成失败：还缺可观察的业务结果"),
   });
+  const createQuote = useMutation({
+    mutationFn: () => {
+      const cents = quotePrice.trim() ? Math.round(Number(quotePrice) * 100) : undefined;
+      if (cents !== undefined && (!Number.isFinite(cents) || cents <= 0)) {
+        throw new Error("单价必须大于 0");
+      }
+      return api.createItemQuote(
+        itemId,
+        cents ? { unitPrice: { amount: cents, currency: "CNY" } } : {},
+      );
+    },
+    onSuccess: (quote) => {
+      void queryClient.invalidateQueries({ queryKey: ["item", itemId, "quotes"] });
+      router.push(`/items/${itemId}/quotes/${quote.draft.id}`);
+    },
+    onError: (error) => setFeedback(error instanceof Error ? error.message : "报价生成失败"),
+  });
+
+  const copyResult = async () => {
+    if (!copyQuery.data) return;
+    try {
+      await navigator.clipboard.writeText(copyQuery.data.text);
+      setCopied(true);
+    } catch {
+      setFeedback("浏览器拒绝了剪贴板权限，请手动全选复制");
+    }
+  };
 
   if (itemQuery.isLoading) return <Spinner label="正在读取事项…" />;
   if (itemQuery.isError || !itemQuery.data) {
@@ -77,6 +129,7 @@ export default function ItemDetailPage() {
   );
   const canClose = allowedTransitions.includes("CLOSED");
   const busy = transition.isPending || complete.isPending;
+  const quotes = quotesQuery.data?.quotes ?? [];
 
   return (
     <div className="grid gap-4 pb-24 md:pb-6">
@@ -171,6 +224,100 @@ export default function ItemDetailPage() {
           </div>
         </Card>
       </div>
+
+      {/* 旅程 A：报价是这件事的主线，不另开审批入口。 */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-ink-700">报价</h2>
+          {quotes.length > 0 ? (
+            <span className="text-xs text-ink-400">同一事项可以有多个版本，确认其中一份即定稿</span>
+          ) : null}
+        </div>
+        {quotes.length > 0 ? (
+          <ul className="mt-3 grid gap-2">
+            {quotes.map((quote) => (
+              <li key={quote.id}>
+                <Link
+                  href={`/items/${itemId}/quotes/${quote.id}`}
+                  className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-sm hover:bg-paper"
+                >
+                  <span className="font-medium text-ink-900">{quote.quoteNumber}</span>
+                  <span className="text-ink-700">{formatMoney(quote.total)}</span>
+                  <span className="text-ink-400">
+                    {QUOTE_STATUS_TEXT[quote.status] ?? quote.status}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {!terminal && quotes.length === 0 ? (
+          <div className="mt-3 grid gap-2 sm:flex sm:items-end">
+            <label className="grid flex-1 gap-1 text-sm">
+              <span className="text-ink-400">单价（元，留空由系统按成本底线给建议价）</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={quotePrice}
+                onChange={(event) => setQuotePrice(event.target.value)}
+                className="min-h-11 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+                aria-label="报价单价（元）"
+              />
+            </label>
+            <Button
+              variant="secondary"
+              className="min-h-11"
+              disabled={createQuote.isPending}
+              onClick={() => createQuote.mutate()}
+            >
+              {createQuote.isPending ? "正在生成…" : "发起报价"}
+            </Button>
+          </div>
+        ) : null}
+        {!terminal && quotes.length > 0 && !confirmedQuote ? (
+          <p className="mt-3 text-xs text-ink-400">
+            还有未确认的报价版本，打开其中一份完成确认即可定稿。
+          </p>
+        ) : null}
+      </Card>
+
+      {item.status === "COMPLETED" && confirmedQuote ? (
+        <Card className="border-l-4 border-l-emerald-600 p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-emerald-700">事项已完成</p>
+          <h2 className="mt-1 text-lg font-semibold text-ink-900">
+            {confirmedQuote.quoteNumber} · {formatMoney(confirmedQuote.total)}
+          </h2>
+          <p className="mt-1 text-sm text-ink-400">
+            确认人 {confirmedQuote.confirmedBy ?? "—"}
+            {confirmedQuote.confirmedAt
+              ? ` · ${new Date(confirmedQuote.confirmedAt).toLocaleString("zh-CN")}`
+              : ""}
+            ｜ 价格已定稿，可随时复制给客户
+          </p>
+          {copyQuery.data ? (
+            <>
+              <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-md bg-paper p-3 text-sm text-ink-900">
+                {copyQuery.data.text}
+              </pre>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button variant="primary" className="min-h-11" onClick={() => void copyResult()}>
+                  {copied ? "已复制" : "复制报价文本"}
+                </Button>
+                <Link
+                  href={`/items/${itemId}/quotes/${confirmedQuote.id}`}
+                  className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm text-ink-900 hover:bg-paper"
+                >
+                  查看报价与依据
+                </Link>
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 text-xs text-ink-400">正在整理报价文本…</p>
+          )}
+        </Card>
+      ) : null}
 
       {!terminal ? (
         <div className="rounded-lg border border-line bg-surface p-3">

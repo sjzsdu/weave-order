@@ -7,6 +7,7 @@ import {
   Get,
   Headers,
   HttpException,
+  HttpCode,
   HttpStatus,
   Inject,
   NotFoundException,
@@ -21,6 +22,7 @@ import {
   AuditAction,
   AuditExportInput,
   AuditLogSummaryRange,
+  ConfirmItemQuoteInput,
   OrderStatus,
   QuoteListFilter,
   QuoteStatus,
@@ -549,6 +551,79 @@ export class QuoteController {
     try {
       return await this.human.run(authorization, this.kernel, async (kernel, ctx) =>
         kernel.quotes.get(id, ctx),
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 报价依据：历史成交 / 成本底线 / 毛利 / 来源单据，实时查。 */
+  @Get("quotes/:id/basis")
+  async basis(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.quotes.basis(id, ctx),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 事项内改价：保留 baseline，返回「原价 → 新价 → 差额」。 */
+  @Post("quotes/:id/revise")
+  @HttpCode(200)
+  async revisePrices(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.quotes.reviseForItem(id, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /**
+   * 确认价格：D1 取消审批，确认即定稿（DRAFT → SENT）。
+   * 幂等键可从 body 或 `Idempotency-Key` 头传入。
+   */
+  @Post("quotes/:id/confirm")
+  @HttpCode(200)
+  async confirm(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyHeader: string | undefined,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const parsed = ConfirmItemQuoteInput.parse(body ?? {});
+    const idempotencyKey = parsed.idempotencyKey ?? nonEmpty(idempotencyHeader);
+    return this.human.run(
+      authorization,
+      this.kernel,
+      async (kernel, ctx) =>
+        kernel.quotes.confirmDraft(id, ctx, parsed.baseVersion, idempotencyKey),
+      { scope: "write" },
+    );
+  }
+
+  /** 复制文本：编号 / 客户 / 样品 / 数量 / 单价 / 合计 / 有效期。 */
+  @Get("quotes/:id/copy-text")
+  async copyText(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.quotes.copyText(id, ctx),
+        { scope: "read" },
       );
     } catch (error) {
       rethrowHttp(error);

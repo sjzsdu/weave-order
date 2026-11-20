@@ -70,14 +70,14 @@ const ALL_ROLES: MemberRole[] = [
 const NON_QUOTE_ROLES: MemberRole[] = ["MERCHANDISER", "SAMPLE_ADMIN", "FINANCE", "VIEWER"];
 
 /**
- * 产品矩阵（docs/product-design.md §3.3）：
- * 批准报价 ≤5万：owner / manager / sales；≤20万：owner / manager；>20万：owner。
- * 其余角色（merchandiser / sample_admin / finance / viewer）任何金额都无审批权。
+ * D1 已确认取消报价审批（WAN-190）：确认价格只看 `quote.confirm` capability，
+ * 金额阈值与 `requiredApprovalRole` 不再参与判定（字段保留但不触发）。
+ * 默认拥有 `quote.confirm` 的是老板 / 主管；销售需要显式授权，
+ * 其余角色任何金额都不能定稿。
  */
 function allowedRolesFor(amountCents: number): MemberRole[] {
-  if (amountCents <= SALES_LIMIT) return ["OWNER", "MANAGER", "SALES"];
-  if (amountCents <= MANAGER_LIMIT) return ["OWNER", "MANAGER"];
-  return ["OWNER"];
+  void amountCents;
+  return ["OWNER", "MANAGER"];
 }
 
 const AMOUNT_CASES = [
@@ -98,37 +98,16 @@ type MatrixRow = {
   pending: PendingFix | null;
 };
 
-/**
- * 当前实现里必红的 10 行归 WAN-93：`roleApprovalLevel` 把
- * merchandiser / sample_admin / viewer 当成 SALES、把 finance 当成 MANAGER，
- * 于是「当前等级 ≥ 产品矩阵要求的等级」的角色会被误放行（越权审批）。
- * 这个判定只用来标记哪几行现在必红，不参与断言；
- * WAN-93 落地后连同 pending 一起删除即可恢复全量常驻。
- */
-const LEVEL_RANK = { SALES: 1, MANAGER: 2, OWNER: 3 } as const;
-type ApprovalLevelName = keyof typeof LEVEL_RANK;
-
-function requiredLevelFor(amountCents: number): ApprovalLevelName {
-  if (amountCents <= SALES_LIMIT) return "SALES";
-  if (amountCents <= MANAGER_LIMIT) return "MANAGER";
-  return "OWNER";
-}
-
-function currentLevelFor(role: MemberRole): ApprovalLevelName {
-  if (role === "OWNER") return "OWNER";
-  if (role === "MANAGER" || role === "FINANCE") return "MANAGER";
-  return "SALES";
-}
-
 function pendingFor(
   role: MemberRole,
   amountCents: number,
   verdict: "允许" | "拒绝",
 ): PendingFix | null {
-  if (verdict !== "拒绝") return null;
-  const wronglyAllowed =
-    LEVEL_RANK[currentLevelFor(role)] >= LEVEL_RANK[requiredLevelFor(amountCents)];
-  return wronglyAllowed ? "WAN-93" : null;
+  void role;
+  void amountCents;
+  void verdict;
+  // D1 之后没有「按金额分段」的越权行：矩阵全部常驻执行。
+  return null;
 }
 
 const MATRIX: MatrixRow[] = ALL_ROLES.flatMap((role) =>
@@ -145,7 +124,6 @@ const MATRIX: MatrixRow[] = ALL_ROLES.flatMap((role) =>
 );
 
 const ACTIVE_MATRIX = MATRIX.filter((row) => row.pending === null);
-const SUSPENDED_MATRIX = MATRIX.filter((row) => row.pending !== null);
 
 interface World {
   baseUrl: string;
@@ -462,14 +440,6 @@ const MATRIX_TITLE = "审批矩阵：$role 报价 $amount 分（$label）→ 按
 describe("角色越权矩阵（7 角色 × 阈值金额，真实 HTTP 审批入口）", () => {
   // 常驻：三角色正向矩阵 + 阈值以上/以下的已有正确拒绝，当前全绿。
   it.each(ACTIVE_MATRIX)(MATRIX_TITLE, assertMatrixRow, 30_000);
-
-  // 挂起：依赖 WAN-93（角色能力表；当前实现给非报价角色留了业务员/主管级审批权）。
-  describe.skipIf(SUSPENDED_UNTIL_FIXED["WAN-93"])(
-    "【挂起】越权审批行（WAN-93：角色能力表）",
-    () => {
-      it.each(SUSPENDED_MATRIX)(MATRIX_TITLE, assertMatrixRow, 30_000);
-    },
-  );
 });
 
 /**
@@ -498,16 +468,27 @@ describe("成员级审批额度（memberships.approval_limit_amount）", () => {
     30_000,
   );
 
-  it(`SALES 未配置额度 → 回落公司阈值，批准 ${OVER_LIMIT_QUOTE_CENTS} 分报价应当成功`, async () => {
+  it(`D1：SALES 默认没有 quote.confirm，未配置额度也不能确认 ${OVER_LIMIT_QUOTE_CENTS} 分报价`, async () => {
     const scope = requireWorld();
     const quoteId = await newDraft(scope, OVER_LIMIT_QUOTE_CENTS);
     const outcome = await decide(scope, "SALES", quoteId);
-    const context = `未配置额度的 SALES 批准 ${OVER_LIMIT_QUOTE_CENTS} 分报价：回执 ${JSON.stringify(outcome)}`;
+    const context = `D1 下 SALES 确认 ${OVER_LIMIT_QUOTE_CENTS} 分报价：回执 ${JSON.stringify(outcome)}`;
 
-    expect(outcome.ok, `${context} —— 未配置成员额度时应回落公司级阈值（业务员 5 万分）`).toBe(
-      true,
-    );
-    expect(outcome.status, `${context} —— 批准成功后草稿必须落为 SENT`).toBe("SENT");
+    expect(
+      outcome.ok,
+      `${context} —— D1 取消审批后确认只看 quote.confirm，销售默认不具备，不能被金额阈值放行`,
+    ).toBe(false);
+    expect(deniedByAuthz(outcome), `${context} —— 拒绝必须是权限拒绝`).toBe(true);
+  }, 30_000);
+
+  it(`D1：MANAGER 有 quote.confirm，可以确认 ${OVER_LIMIT_QUOTE_CENTS} 分报价`, async () => {
+    const scope = requireWorld();
+    const quoteId = await newDraft(scope, OVER_LIMIT_QUOTE_CENTS);
+    const outcome = await decide(scope, "MANAGER", quoteId);
+    const context = `D1 下 MANAGER 确认 ${OVER_LIMIT_QUOTE_CENTS} 分报价：回执 ${JSON.stringify(outcome)}`;
+
+    expect(outcome.ok, `${context} —— 主管应有确认价格的权限`).toBe(true);
+    expect(outcome.status, `${context} —— 确认成功后草稿必须落为 SENT`).toBe("SENT");
   }, 30_000);
 });
 

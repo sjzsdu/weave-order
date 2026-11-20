@@ -117,4 +117,39 @@ export class ItemController {
       rethrowHttp(error);
     }
   }
+
+  /** 事项下的报价版本（同一事项可以有多份，直到其中一份被确认）。 */
+  @Get("items/:id/quotes")
+  async quotes(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel) => kernel.quotes.listForItem(id),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
+  /** 在事项里发起报价：走现有报价工具链（建议价 + 生成草稿），草稿绑定 itemId。 */
+  @Post("items/:id/quotes")
+  @HttpCode(201)
+  async createQuote(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.quotes.createForItem(id, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
 }

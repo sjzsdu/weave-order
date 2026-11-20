@@ -121,7 +121,8 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   );
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
-  const quotes = new QuoteService(db, customers, samples, pricing, tenantId);
+  const quotePricing = new QuotePricingService(customers, samples, pricing);
+  const quotes = new QuoteService(db, customers, samples, pricing, quotePricing, tenantId);
   const orders = new OrderService(db, customers, pricing, tenantId);
   const orderShipments = new OrderShipmentService(db, tenantId);
   const receivables = new ReceivableService(db, tenantId);
@@ -158,7 +159,6 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const importing = new ImportService(db, customers, samples, sampleIndex, tenantId);
   const tenancy = new TenancyService(db);
   const access = new AccessService(db);
-  const quotePricing = new QuotePricingService(customers, samples, pricing);
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
   const intents = new IntentService(db, tenantId);

@@ -180,7 +180,7 @@ stateDiagram-v2
 
 **单据（报价）**
 
-D1 已确认取消报价审批，P0 状态机只保留 `DRAFT → CONFIRMED`（确认即定稿）。`requiredApprovalRole` 字段保留在表里但 P0 不触发；不实现 `PENDING_APPROVAL` 分支、审批队列与审批卡。确认仍是权限动作（`quote.confirm` capability），并记录确认人审计。
+D1 已确认取消报价审批，P0 的定稿动作是 `DRAFT → SENT`（确认价格即定稿）。现有报价状态机没有 `CONFIRMED` 值，WAN-197 明确**不新造状态值**：API 契约与 UI 把 `SENT` 展示为「已确认价格」，不出现「已发送」字样。`requiredApprovalRole` 字段保留在表里但 P0 不触发；不实现 `PENDING_APPROVAL` 分支、审批队列与审批卡。确认仍是权限动作（`quote.confirm` capability），并记录确认人审计。
 
 ---
 
@@ -314,10 +314,11 @@ POST /items/:id/complete        # 完成（必须有可观察业务结果，kern
 ### 5.4 报价
 
 ```
-POST /items/:id/quotes          # 在事项内发起报价（走现有 quote agent）
+POST /items/:id/quotes          # 在事项内发起报价（走现有报价工具链：建议价 + 生成草稿）
+GET  /items/:id/quotes          # 事项下的报价版本（同一事项可有多份，直到一份被确认）
 GET  /quotes/:id/basis          # 依据抽屉（历史成交/成本/毛利/来源单据）
 POST /quotes/:id/revise         # 改价（diff，保留 baselineSnapshot）
-POST /quotes/:id/confirm        # 确认（幂等键；D1 已取消审批，确认即 CONFIRMED，记录确认人审计）
+POST /quotes/:id/confirm        # 确认价格（幂等键；DRAFT → SENT，校验 quote.confirm，记录确认人审计）
 GET  /quotes/:id/copy-text      # 复制文本（编号/客户/样品/数量/单价/合计/有效期）
 ```
 
