@@ -1239,8 +1239,9 @@ taro-textarea-core.textarea textarea {
 .chip {
   display: inline-flex;
   align-items: center;
-  height: 64px;
-  padding: 0 24px;
+  /* 大写 PX 不参与 rem 缩放：设计 px 64 在 360 宽只有 33 CSS px，达不到 44 命中区。 */
+  min-height: 44PX;
+  padding: 10px 24px;
   border: 1px solid $line;
   border-radius: 999px;
   background: $surface;
