@@ -135,6 +135,17 @@ const EnvSchema = z.object({
   /** caption 用的视觉模型（OpenAI 兼容 chat/completions）。 */
   CAPTION_MODEL: z.string().min(1).default("qwen3-vl-plus"),
   CAPTION_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+  // ---- OCR（统一输入：名片 / 面料标签）----
+  /** OCR key；缺省回调 DASHSCOPE_API_KEY。未配置时 OCR 显式不可用，任务进入 NEEDS_INPUT。 */
+  OCR_API_KEY: z.string().min(1).optional(),
+  /** OpenAI 兼容端点（与 spike 脚本一致，便于同一套样本复跑）。 */
+  OCR_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+  /** 专用 OCR 模型：只负责出文本，不负责理解字段。 */
+  OCR_OCR_MODEL: z.string().min(1).default("qwen3.5-ocr"),
+  /** 文本字段抽取模型。 */
+  OCR_EXTRACT_MODEL: z.string().min(1).default("qwen-plus"),
+  OCR_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  OCR_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
   /** 智能体 LLM provider：local-rule（默认，确定性规则，无需 key）或 openai-compatible。 */
   LLM_PROVIDER: z.enum(["local-rule", "openai-compatible"]).default("local-rule"),
   /**

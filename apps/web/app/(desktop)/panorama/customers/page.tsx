@@ -427,7 +427,7 @@ function CreatedToast({
       <span className="font-medium text-ink-900">客户「{customer.name}」已建</span>
       <span className="text-xs text-ink-400">{customer.code}</span>
       <Link
-        href={`/today?intent=${encodeURIComponent(`给${customer.name}报价：`)}`}
+        href={`/inbound?text=${encodeURIComponent(`给${customer.name}报价：`)}&customerId=${encodeURIComponent(customer.id)}`}
         className="text-indigo-600 underline underline-offset-2"
       >
         用他报第一张价 →

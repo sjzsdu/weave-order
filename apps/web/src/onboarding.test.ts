@@ -28,16 +28,15 @@ describe("开张清单", () => {
     const [customer, sample, quote, approve] = onboardingSteps(zero);
     expect(customer?.href).toBe("/panorama/customers?new=1");
     expect(sample?.href).toBe("/panorama/samples?new=1");
-    expect(quote?.href).toContain("/today?intent=");
+    expect(quote?.href).toContain("/inbound?text=");
     expect(approve?.href).toBe("/approvals");
   });
 
-  it("第③步带上刚建的客户名与开张标记，工作台据此注入 context", () => {
+  it("第③步带上刚建的客户名，统一输入页据此预填", () => {
     const href = quoteHref({ customerName: "杭州青禾服饰", sampleCode: "AUD-001" });
     const url = new URL(href, "https://app.wnbgj.com");
-    expect(url.pathname).toBe("/today");
-    expect(url.searchParams.get("intent")).toBe("给杭州青禾服饰报第一张价：");
-    expect(url.searchParams.get("onboard")).toBe("quote");
+    expect(url.pathname).toBe("/inbound");
+    expect(url.searchParams.get("text")).toBe("给杭州青禾服饰报第一张价：");
 
     const guess = onboardingSteps(zero, { customerName: "杭州青禾服饰" })[2];
     expect(guess?.hint).toContain("杭州青禾服饰");

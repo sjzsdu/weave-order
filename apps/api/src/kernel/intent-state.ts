@@ -47,6 +47,25 @@ export function canTransitionIntent(from: IntentStatus, to: IntentStatus): boole
   return TRANSITIONS[from].includes(to);
 }
 
+/**
+ * 统一输入可以「从等待点继续」：理解卡纠正后重新整理、或确认后开始执行。
+ *
+ * 与 `TRANSITIONS` 分开，是为了不把「SUCCEEDED 可被重新开启」扩散到旧报价意图：
+ * 旧路径仍然一经成功就是终态，只有 `/inbound/:id/{start,revise}` 使用这张表。
+ */
+const RESUMABLE: readonly IntentStatus[] = [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "NEEDS_INPUT",
+  "FAILED",
+  "TIMEOUT",
+];
+
+export function canRestartIntent(from: IntentStatus): boolean {
+  return RESUMABLE.includes(from);
+}
+
 export function assertIntentTransition(from: IntentStatus, to: IntentStatus): void {
   if (!canTransitionIntent(from, to)) {
     throw new KernelError("KERNEL_REJECTED", `意图不能从 ${from} 变成 ${to}`, {
