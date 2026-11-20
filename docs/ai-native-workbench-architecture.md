@@ -1,21 +1,21 @@
 # AI 原生业务工作台 · 架构评估与设计
 
-> 版本：v0.1 ｜ 日期：2026-11-20 ｜ 作者：鲁班（首席架构师）
-> 评估对象：`docs/ai-native-workbench-requirements.html` v0.2 + `docs/ai-native-workbench-design-supplement.md` v0.1
+> 版本：v0.2 ｜ 日期：2026-11-20 ｜ 作者：鲁班（首席架构师）
+> 评估对象：`docs/ai-native-workbench-requirements.html` v0.2 + `docs/ai-native-workbench-design-supplement.md` v0.2
+> v0.2 变更：按创始人/产品设计已确认的 D1（取消报价审批）、D3（模板后置）、D4（事项/资源/设置）、D7（客户报价链接入 P0a）修订定稿；D9（存量迁移）保留选项。
 > 用途：回答「P0a 能不能开工、还差什么」，给出可被工程直接拆成任务的架构设计。
-> 边界：本轮只评估与设计，不实现业务代码；不替创始人拍板商业决策（D1/D3/D4/D7），只给技术影响与工作量差异。
+> 边界：本轮只评估与设计，不实现业务代码。D1（取消报价审批）、D3（模板后置）、D4（事项/资源/设置）、D7（客户报价链接入 P0a）已由创始人/产品设计确认（2026-11-20），本文按此定稿；D9（存量迁移）仍未定，保留选项。
 
 ---
 
 ## 0. 结论先行
 
-**P0a 报价闭环可以开工，但必须先补三件「冻结件」再动手写业务代码**，否则会按错误的信息架构和领域模型返工。三件冻结件是：
+D1/D3/D4/D7 已确认，**P0a 可以开工，只剩两件「冻结件」**：
 
-1. **D1（报价审批）、D4（信息架构）必须拍板**——这决定数据模型里「事项」是否独立聚合根、以及旧三窗口（today/approvals/panorama）是改造还是新增。这两项不动，工程只能做「评估原型」，不能做正式实现。
-2. **领域模型里新增「业务事项（Item）」聚合根**——现有代码完全没有对应实体，它是新工作台和旧「聊天式报价」的本质区别，必须先在 schema 层冻结，再铺 UI。
-3. **OCR（名片/面料标签）是最高的技术风险**——不是「接个模型就行」，中文名片识别与面料标签的字段抽取准确率直接决定「零初始化报价成功率 ≥ 80%」能不能达标，必须先做一次性可行性 spike。
+1. **冻结 schema**——`items`、`resource_fields`、`sources`、`ocr_results` 四张表 + `intents` 扩展 + capability 枚举 + `quoteShareEvents` 接受意向事件，在 `packages/schema` 落地。这是唯一必须串行的环节，冻结后其余切片可并行。
+2. **OCR（名片/面料标签）spike**——最高的技术风险，不是「接个模型就行」。中文名片与面料标签的字段抽取准确率直接决定「零初始化报价成功率 ≥ 80%」能不能达标，必须先做一次性 spike（20 张真实名片 + 20 张面料标签）。
 
-好消息是：**现有代码比设计稿以为的成熟得多**。报价内核、意图通道、打印流水线、分享链接、多租户隔离、审计幂等这些「P0 的新能力」其实大部分已经存在，P0a 的真实新工作量集中在「事项聚合根 + 资源草稿态 + 字段出处 + OCR + 信息架构重组」这五块，而不是从零搭报价。
+好消息是：**现有代码比设计稿以为的成熟得多**。报价内核、意图通道、打印流水线、分享链接、多租户隔离、审计幂等这些「P0 的新能力」其实大部分已经存在，P0a 的真实新工作量集中在「事项聚合根 + 资源草稿态 + 字段出处 + OCR + 信息架构重组 + 客户报价链接公开面」这六块，而不是从零搭报价。
 
 ---
 
@@ -30,15 +30,15 @@
 | 报价智能体 | `apps/api/src/agent/quoting-graph.ts`、`quoting-state.ts` | **复用+改造** | LangGraph + PostgreSQL checkpointer，失败/重试/恢复已就绪。需接 OCR 产物作为槽位输入 |
 | 客户/样品内核 | `kernel/customers.service.ts`、`samples.service.ts`、`customer-aggregates.ts` | **改造** | 现有客户/样品「直接 ACTIVE」，无草稿态、无字段出处。需加 draft 状态 + 字段级 provenance |
 | 打印流水线 | `apps/api/src/print/*`、`apps/print-agent/*`、`packages/db/src/schema/print.ts` | **复用** | 已含 printTemplates/printTemplateVersions（变量白名单）、documentSnapshots（1:1 快照）、printJobs（幂等键）、printJobEvents、qr.ts、pdf.ts、labels.ts、template-engine。P0b/P0c 是「给它喂样卡模板」，不是重写 |
-| 分享链接 | `apps/api/src/kernel/shares.service.ts`、`shares/`、`apps/quote/*`、`packages/db/src/schema/shares.ts` | **复用** | 已含 tokenHash、expiresAt、revokedAt、事件回传。D7 若保留，直接复用；P0a 默认关闭 |
+| 分享链接 | `apps/api/src/kernel/shares.service.ts`、`shares/`、`apps/quote/*`、`packages/db/src/schema/shares.ts` | **复用+改造** | 已含 tokenHash、expiresAt、revokedAt、事件回传。D7 已确认入 P0a，直接复用并补公开页水印、可选手机尾号验证、接受意向事件、租户级关闭开关 |
 | 多租户 | `kernel/tenancy.service.ts`、`gateway/*`、`tenants`/`memberships` 表 | **复用** | 已含 SHARED_RLS / SCHEMA / DATABASE 三级隔离、actor/role/dataScope。P0 沿用 RLS |
 | 媒体隔离 | `apps/api/src/media/media.service.ts` | **复用** | object_key 已按 `tenant/<id>/<scope>/<uuid>` 前缀隔离 + 服务端签发 presign。原件、样卡 PDF 直接沿用 |
 | 审计 | `kernel/audit.ts`、`audit-log.service.ts` | **复用** | 已含 append-only 审计 + actor |
-| 桌面 Web 三窗口 | `apps/web/app/(desktop)/today|approvals|panorama|settings|logs` | **改造** | 不删除，新增 `items`（事项）入口作为首页；today 降为「最近事项」的别名路由，approvals 降为「可选复核」入口，panorama 映射为「资源」 |
+| 桌面 Web 三窗口 | `apps/web/app/(desktop)/today|approvals|panorama|settings|logs` | **改造** | 不删除，新增 `items`（事项）入口作为首页；today 合并为事项视图（最近/待我处理），approvals 不再展示（D1 取消审批），panorama 改为资源 |
 | 移动端 | `apps/mobile/*` | **改造** | 已有相机按 mode、客户排序、样品图墙、报价单屏。P0a 加「名片/面料/标签」三模式 + 事项页 |
-| 客户报价页 | `apps/quote/*` | **保留不动** | D7 拍板前不动，P0a 只用复制文本 |
+| 客户报价页 | `apps/quote/*` | **复用+改造** | 复用 `/s/[token]` 公开页（SSR、无登录）与 `quote_shares` tokenHash/expiresAt/revokedAt；D7 已确认入 P0a，补客户名水印、可选手机尾号验证、接受意向记录、租户级关闭开关 |
 
-**没有要下线的模块**。旧三窗口与新 IA 是「同一套数据、两种导航视角」，不是两套产品。
+**没有要下线的模块**。旧三窗口与新 IA 是「同一套数据、两种导航视角」；唯一例外是 approvals 在 D1 取消审批后不再展示，但代码保留（通过路由映射 + 功能开关关闭），不是删除。
 
 ---
 
@@ -49,7 +49,7 @@ flowchart TB
   subgraph Client["客户端"]
     Web["apps/web 桌面<br/>事项/资源/设置"]
     Mobile["apps/mobile<br/>拍照/事项/确认"]
-    QuoteApp["apps/quote<br/>客户报价页 (D7)"]
+    QuoteApp["apps/quote<br/>客户无登录报价页 (P0a)"]
     PrintAgent["apps/print-agent<br/>标签机打印 (P0b)"]
   end
 
@@ -180,7 +180,7 @@ stateDiagram-v2
 
 **单据（报价）**
 
-沿用现有 `quote_status`：`DRAFT → CONFIRMED`（取消审批时确认即定稿）；D1 若保留复核，则 `DRAFT → PENDING_APPROVAL → CONFIRMED/REJECTED`。
+D1 已确认取消报价审批，P0 状态机只保留 `DRAFT → CONFIRMED`（确认即定稿）。`requiredApprovalRole` 字段保留在表里但 P0 不触发；不实现 `PENDING_APPROVAL` 分支、审批队列与审批卡。确认仍是权限动作（`quote.confirm` capability），并记录确认人审计。
 
 ---
 
@@ -317,7 +317,7 @@ POST /items/:id/complete        # 完成（必须有可观察业务结果，kern
 POST /items/:id/quotes          # 在事项内发起报价（走现有 quote agent）
 GET  /quotes/:id/basis          # 依据抽屉（历史成交/成本/毛利/来源单据）
 POST /quotes/:id/revise         # 改价（diff，保留 baselineSnapshot）
-POST /quotes/:id/confirm        # 确认（幂等键；D1 关=直接 CONFIRMED，开=进复核）
+POST /quotes/:id/confirm        # 确认（幂等键；D1 已取消审批，确认即 CONFIRMED，记录确认人审计）
 GET  /quotes/:id/copy-text      # 复制文本（编号/客户/样品/数量/单价/合计/有效期）
 ```
 
@@ -331,6 +331,22 @@ POST /print/preview             # 真实数据 1:1 预览（返回渲染产物�
 POST /print/jobs                # 发起打印（幂等键 = 单据+模板版本+份数+操作人）
 GET  /print/jobs/:id            # 打印状态 / 补打入口
 ```
+
+### 5.6 客户报价链接（P0a，D7 已确认）
+
+```
+POST /quotes/:id/shares          # 生成客户链接（有效期/是否允许接受意向/是否尾号验证）
+  → { token(仅返回一次), url, expiresAt }
+GET  /s/:token                   # 公开页（无登录，apps/quote 渲染，SSR）
+POST /s/:token/accept            # 接受意向（幂等，记录事件，不建订单）
+POST /s/:token/message           # 留言
+POST /quotes/:id/shares/:sid/revoke  # 撤回（业务员）
+GET  /quotes/:id/shares          # 链接状态与客户动作（查看/接受/留言）
+```
+
+- token 高熵随机，服务端只存哈希（沿用 `quote_shares.tokenHash`）；链接不可枚举，不把价格/客户名写进 URL。
+- 过期/撤回立即失效，显示统一说明不泄露报价内容；支持按租户关闭，关闭后已生成链接立即失效。
+- 接受意向写入 `quoteShareEvents`（新增 `ACCEPTED` 事件），业务员可见「已表达接受意向，尚未下单」，不自动创建订单。
 
 ---
 
@@ -352,7 +368,7 @@ GET  /print/jobs/:id            # 打印状态 / 补打入口
 | `resource.merge` | 可合并客户/样品 | 老板；合并是不可逆动作 |
 | `print.execute` | 可发起打印/补打 | 全员（打印本身低风险） |
 
-「取消审批」不是删权限，而是把 `quote.confirm` 从「必须有上级批准」改成「角色授权即可执行」，保留审计。D1 若拍板多人公司开复核，`quote.confirm` 加「按金额/毛利触发 `requiredApprovalRole`」的策略钩子（现有 quotes 表已有 `requiredApprovalRole` 字段，无需改造）。
+D1 已确认取消报价审批：`quote.confirm` 是角色授权动作，确认即定稿并记录确认人审计。`requiredApprovalRole` 字段保留但 P0 不触发；未来若需要监督，做确认后提醒或报表，不恢复阻塞式审批。这样「确认权限」与「审计」都保留，只是去掉了「必须上级批准」这一步。
 
 ### 6.3 审计
 
@@ -399,6 +415,7 @@ GET  /print/jobs/:id            # 打印状态 / 补打入口
 3. **事项聚合根与旧「聊天式报价」的并行期（中风险）**。旧 intents→quote 流与新 items 流会并存一段。必须明确「新输入默认进事项流」，旧报价只读，否则出现两套报价入口。
 4. **信息架构重组的体验回退（低风险，但影响口碑）**。把 today/approvals/panorama 换成 items/资源/设置，存量用户有迁移成本。用「别名路由 + 灰度开关」平滑过渡（见 §9）。
 5. **模板 1:1 与浏览器打印边距（低风险，P0b）**。浏览器打印边距不可控，热敏标签机尤其如此。P0b 明确「PDF/A4 + 80×50mm 标签 + 打印前实际扫码验证」，不承诺浏览器直打热敏，把直连放打印代理（P1）。
+6. **客户报价链接的公开面安全（中风险，P0a 新增）**。无登录公开页是新的信任边界：token 泄露、链接被转发给非客户、接受意向被滥用、隐私泄露。P0a 用「高熵 token 只存哈希 + 有效期 + 撤回 + 客户名水印 + 可选尾号验证 + 频率限制 + 租户级关闭开关」兑底，但需要把「链接被转发给非客户」这一现实风险写进验收，接受意向只能作为线索，不能作为下单依据。
 
 ---
 
@@ -435,7 +452,7 @@ GET  /print/jobs/:id            # 打印状态 / 补打入口
 5. **OCR/意图失败重试？独立队列+补偿？** LangGraph + PG checkpointer 承载意图/报价重试；OCR 走 Redis 背压 + `ocr_results` 状态表，失败降级人工逐字段。**不加独立队列框架**。
 6. **报价依据从哪取？缓存/实时取舍？** 历史成交价实时查 quotes 表（有索引，数据量小无需缓存）；成本从 samples.costFloorAmount + pricingPolicies；毛利在 `quote-pricing.service` 实时算。P0 不做缓存，试点数据量撑得住。
 7. **模板渲染服务端还是客户端？PDF/标签 1:1？** 服务端渲染（现有 pdf.ts/template-engine），字段白名单（现有 documentSnapshots）；1:1 靠固定物理尺寸 + 真实数据预览 + 打印前扫码验证。
-8. **二维码 URL 鉴权/有效期/撤回？** 复用 quoteShares 的 tokenHash + expiresAt + revokedAt 模式；样卡码内容不含价格/客户名（沿用 orderBoxes QR「不含商业信息」原则），未登录只显示样品编号 + 联系业务员。
+8. **二维码与客户报价链接 token 如何生成/存储/鉴权/过期/撤回？接受意向如何记录？** 复用 quoteShares 的 tokenHash（服务端只存哈希）+ expiresAt + revokedAt + quoteShareEvents（事件回传）。客户报价链接新增：客户名水印、可选手机尾号验证、接受意向事件（`quoteShareEvents` 加 ACCEPTED 事件，不自动下单）。样卡二维码沿用 orderBoxes QR「不含商业信息」原则，未登录只显示样品编号 + 联系业务员。
 9. **移动端离线队列与冲突合并？** `packages/core` 已有离线队列；拍照先入本地队列，恢复后按时间序提交；冲突显示两版让用户选（补充文档 §6.7 已定，沿用）。
 10. **存量映射？迁移脚本+双读期？** 见 §9。一条「补 status 默认值」迁移 + 租户级影子读灰度，不需要大批量回填。
 11. **权限如何表达确认/合并/打印？** 见 §6.2，新增 `quote.confirm`/`resource.merge`/`print.execute` 三个 capability，沿用 role+dataScope+actor。
@@ -451,7 +468,7 @@ GET  /print/jobs/:id            # 打印状态 / 补打入口
 
 ```mermaid
 flowchart LR
-  F1["冻结件<br/>D1+D4 拍板<br/>schema 冻结 items/resource_fields/sources"]
+  F1["冻结件<br/>schema 冻结<br/>items/resource_fields/sources/ocr_results"]
   P0a1["P0a-1 领域内核<br/>items + 草稿 + 出处"]
   P0a2["P0a-2 OCR spike<br/>名片/标签"]
   P0a3["P0a-3 统一输入<br/>理解卡 + 三意图"]
@@ -479,46 +496,47 @@ flowchart LR
 
 | 切片 | 单人周（量级） | 主要风险 | 主要新工作 vs 复用 |
 | --- | --- | --- | --- |
-| 冻结件（schema + D1/D4 决策） | 0.5–1 | 决策延迟阻塞一切 | 纯设计，无代码 |
-| P0a 报价闭环 | 5–7 | OCR 准确率（§8.1） | 事项聚合根（新）+ 资源草稿/出处（新）+ OCR（新）+ IA 重组（改）；报价内核/意图/agent/审计复用 |
+| 冻结件（schema 冻结） | 0.5–1 | 契约冻结质量决定并行效率 | 纯设计，无代码 |
+| P0a 报价闭环 | 6–8 | OCR 准确率（§8）+ 公开链接安全（§8） | 事项聚合根（新）+ 资源草稿/出处（新）+ OCR（新）+ IA 重组（改）+ 客户报价链接公开面（改）；报价内核/意图/agent/审计/分享复用 |
 | P0b 实体样卡 | 1.5–2 | 浏览器打印边距 | 样卡模板 + 二维码（薄层新增）；print 流水线全复用 |
 | P0c 模板自定义 | 2–3 | 编辑器 + 字段绑定 + 版本 | 编辑器 UI（新）；printTemplates 版本/变量白名单复用 |
 | P0d 试点收敛 | 1 | 埋点口径 | 埋点 + 复盘，无新功能 |
 
-**注意**：补充文档把 P0a 定为 4 周（2×2），我的判断是 **5–7 单人周**，差异来自补充文档低估了「事项聚合根 + 资源草稿 + 字段出处 + IA 重组」这四块是全新领域层，而非「在现有报价上加 UI」。报价内核确实复用，但「一事贯穿」的数据模型是从零建的。这个差异应该在开工前和创始人对齐，而不是开工后才发现。
+**注意**：补充文档 v0.2 把 P0a 定为 4–5 周（2×2 + 客户链接 1 周），我的判断是 **6–8 单人周**。差异来自两部分：一是「事项聚合根 + 资源草稿 + 字段出处 + IA 重组」是全新领域层；二是客户报价链接入 P0a 后新增了公开面安全（水印、尾号验证、接受意向、滥用防护），不只是「复用 quote_shares 加个页面」。报价内核确实复用，但「一事贯穿」的数据模型与「对外公开面」都是从零建的。
 
 ### 11.3 开工建议（本 issue 要回答的核心）
 
-**P0a 可以开工，前提是先做三件冻结件：**
+**P0a 可以开工，D1/D3/D4/D7 已不再阻塞，只剩两件冻结件：**
 
-1. **拍板 D1、D4**（创始人，半天决策）：审批是否默认关闭、信息架构是否用「事项/资源/设置」。这两项决定 items 聚合根和旧三窗口的处置方式。
-2. **冻结 schema**（架构师，0.5–1 周）：`items`、`resource_fields`、`sources`、`ocr_results` 四张表 + `intents` 扩展 + capability 枚举，在 `packages/schema` 落地，作为并行开工契约。
-3. **OCR spike**（工程，0.5 周，可与 schema 并行）：拿真实名片/标签样本测准确率，定「关键字段 ≥ 90% 或降级人工录入」的口径，避免把验收建立在未验证的 OCR 上。
+1. **冻结 schema**（架构师，0.5–1 周）：`items`、`resource_fields`、`sources`、`ocr_results` 四张表 + `intents` 扩展 + 三个 capability + `quoteShareEvents` 接受意向事件，在 `packages/schema` 落地，作为并行开工契约。
+2. **OCR spike**（工程，0.5 周，可与 schema 并行）：拿真实名片/标签样本测准确率，定「关键字段 ≥ 90% 或降级人工录入」的口径，避免把验收建立在未验证的 OCR 上。
 
 **必须先砍 / 延后的**：
 
 - 模板编辑器（P0c）**不要在 P0a 同期做**，等 P0b 的真实打印反馈（阶段门 G2 会决定它降级还是继续）。
-- 客户报价链接（D7）**默认关闭**，P0a 只用复制文本；若创始人拍板保留，复用 quoteShares 加一个租户开关，工作量 +0.5 周。
 - 受控标签治理、批量合并、库存、完整「今天」**全部留在 P1**，不进入 P0a。
+- 客户报价链接只做「单条链接 + 接受意向」，**不做客户账号体系、不做客户历史报价门户**（P1）。
 
-**明确的技术结论**：打印代理在 P0a/P0b **不是必要的**（P0b 走浏览器打印/PDF），P1 再上；`apps/quote`、`apps/print-agent` 不改造、不下线，保持现状等 D7/D2 拍板。
+**明确的技术结论**：打印代理在 P0a/P0b **不是必要的**（P0b 走浏览器打印/PDF），P1 再上；`apps/quote` 复用 `/s/[token]` 公开页并补安全措施，`apps/print-agent` 不改造、不下线。
 
 ---
 
-## 12. 对补充文档 §2 冲突裁决的技术影响
+## 12. 已确认决策与技术落点
 
-> 不替创始人做商业决定，只给每种选择的技术影响与工作量差异。
+> D1/D3/D4/D7 已由创始人/产品设计确认（2026-11-20），本节记录「决策 → 技术落点」，不再是选项对比。D9 仍未定，保留选项。
 
-| 决策 | 选项 A（建议） | 选项 B | 技术影响差异 |
-| --- | --- | --- | --- |
-| **D1 报价审批** | P0 默认不阻塞，保留 `quote.confirm` 权限 + 复核策略钩子 | 保留阻塞式审批（现 product-design） | A 复用现有 quotes 表 `requiredApprovalRole` 字段但默认不触发，几乎零成本；B 需要保留审批队列 + 全景聚合 + 审批卡 UI，多 2–3 周。两者共享同一数据模型，**A 是 B 的前置**，先 A 后 B 不返工 |
-| **D3 模板是否 P0** | 拆到 P0c，P0b 只用默认模板 | 模板编辑器进 P0 | A 让 P0b 复用现有 printTemplates 直接上线；B 把编辑器+字段绑定+版本+试打塞进 P0，P0 总工期 +2–3 周，且没有真实打印反馈就做编辑器是「先造工具再找需求」 |
-| **D4 信息架构** | 事项/资源/设置（事项为中心） | 保留 3+1（today/approvals/panorama） | A 需要新增 items 首页 + 别名路由，1 周；B 则「事项」无处安放，新工作台的核心理念（一事贯穿）无法在 UI 落地，等于放弃需求稿的核心。**这是唯一一个 A 明显优于 B 的决策** |
-| **D7 客户报价链接** | P0a 复制文本，链接放 P1/租户开关 | 链接进 P0a | A 零成本；B 复用 quoteShares + quote 页 + 隐私/有效期/撤回/水印，+0.5 周，且引入「对外发送」的信任边界要重新设计 |
-| **D9 存量迁移** | 增量模型，不批量回填，租户级灰度 | 全量回填存量 | A 一条 status 迁移 + 灰度开关，0.5 周；B 全量生成历史事项需要写回填脚本 + 处理脏数据 + 双读验证，2–3 周且风险高，不推荐 |
+| 决策 | 定稿结论 | 技术落点 |
+| --- | --- | --- |
+| **D1 取消报价审批** | P0 状态机只保留 `DRAFT → CONFIRMED`；不实现审批队列/审批卡/PENDING_APPROVAL | `quote_status` 去掉审批分支；`requiredApprovalRole` 字段保留但不触发；`quote.confirm` 保留角色权限 + 确认人审计；不写审批策略、不写审批队列 |
+| **D3 模板后置** | P0b 只用系统默认模板，P0c 才做自定义 | P0b 复用现有 `printTemplates` 塞入默认样卡模板；编辑器/字段绑定/版本/试打 UI 全部留到 P0c，不在 P0a/P0b 动工 |
+| **D4 信息架构** | 采用「事项 / 资源 / 设置」，事项是首页 | 新增 `items` 首页路由；`/today` 合并为事项视图（最近/待我处理），`/approvals` 不再展示（路由映射 + 功能开关关闭），`/panorama` 改为资源；items 聚合根 + 别名路由是确定方案 |
+| **D7 客户报价链接入 P0a** | 无登录链接纳入 P0a，手动分享不自动发送，接受是意向不是下单 | 复用 `quote_shares`（tokenHash/expiresAt/revokedAt）+ `apps/quote` `/s/[token]` 公开页；新增水印、可选手机尾号验证、接受意向事件、租户级关闭开关（见 §5.6、§8） |
+| **D9 存量迁移** | 仍未定 | 保留 §9 的「增量模型 vs 全量回填」两个选项与工作量差异，等创始人拍板 |
+
+**落地要求**：D1/D3/D4/D7 已定，工程可据此拆 P0a 任务。D9 未定，迁移脚本先按「增量模型 + 租户级灰度」实现（该路径是全量回填的超集，先做不返工），等拍板后再决定是否补全量回填。
 
 ---
 
 ## 13. 一句话
 
-现有代码比设计稿假设的成熟得多，报价/打印/分享/多租户/审计大部分已经就绪；P0a 的真实新工作是「事项聚合根 + 资源草稿态 + 字段出处 + OCR + 信息架构重组」。**先拍板 D1/D4、冻结 schema、spike OCR，P0a 就能开工且可被工程直接拆成任务。** 别把模板编辑器（P0c）和客户链接（D7）提前塞进 P0a，它们会拖慢闭环的验证。
+现有代码比设计稿假设的成熟得多，报价/打印/分享/多租户/审计大部分已经就绪；P0a 的真实新工作是「事项聚合根 + 资源草稿态 + 字段出处 + OCR + 信息架构重组 + 客户报价链接公开面」。D1/D3/D4/D7 已确认，**冻结 schema、spike OCR，P0a 就能开工且可被工程直接拆成任务。** 别把模板编辑器（P0c）提前塞进 P0a；客户报价链接已入 P0a，按「单条链接 + 接受意向」最小范围做。
