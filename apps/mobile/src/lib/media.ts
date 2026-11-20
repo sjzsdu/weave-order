@@ -315,3 +315,87 @@ export async function persistImage(
   else await store.put(key, image.path);
   return key;
 }
+
+/**
+ * 统一输入的附件直传：返回 objectKey 而不是 publicUrl。
+ *
+ * 服务端只接受 objectKey（不收外链，避免 SSRF），所以拍照入队/提交都必须
+ * 拿 presign 的服务端 key，而不是拼一个可读 URL。
+ */
+export async function uploadInboundImage(
+  image: CompressedImage,
+  api: MobileApi,
+): Promise<{ objectKey: string; publicUrl: string }> {
+  const presign = await api.presignMedia({
+    mimeType: image.mimeType,
+    byteSize: image.byteSize,
+    purpose: "inbound",
+  });
+  if (presign.publicUrl.startsWith("mock://")) {
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    return { objectKey: presign.objectKey, publicUrl: presign.publicUrl };
+  }
+  if (image.blob) {
+    await uploadWithFetch(presign.uploadUrl, {
+      method: "PUT",
+      headers: presign.headers,
+      body: image.blob,
+    });
+    return { objectKey: presign.objectKey, publicUrl: presign.publicUrl };
+  }
+  const fileSystem = (
+    Taro as unknown as {
+      getFileSystemManager?: () => { readFileSync(path: string): ArrayBuffer };
+    }
+  ).getFileSystemManager?.();
+  if (!fileSystem) throw new Error("当前端不支持读取本地图片");
+  const data = fileSystem.readFileSync(image.path);
+  let response: { statusCode: number };
+  try {
+    response = await Taro.request({
+      url: presign.uploadUrl,
+      method: "PUT",
+      header: { ...presign.headers, "Content-Type": image.mimeType },
+      data,
+    });
+  } catch (error) {
+    throw toMediaUploadError(error);
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw uploadHttpError(response.statusCode);
+  }
+  return { objectKey: presign.objectKey, publicUrl: presign.publicUrl };
+}
+
+/** 离线队列补传：从本地 Blob/路径上传并返回 objectKey。 */
+export async function uploadStoredInboundMedia(
+  stored: Blob | string,
+  api: MobileApi,
+): Promise<{ objectKey: string; publicUrl: string }> {
+  if (typeof stored === "string") {
+    // 小程序存的是持久文件路径：先读成压缩描述再走同一条直传。
+    const info = await Taro.getFileInfo({ filePath: stored });
+    return uploadInboundImage(
+      {
+        path: stored,
+        byteSize: "size" in info ? info.size : 0,
+        mimeType: "image/jpeg",
+        width: 0,
+        height: 0,
+      },
+      api,
+    );
+  }
+  const byteSize = stored.size;
+  const presign = await api.presignMedia({
+    mimeType: "image/jpeg",
+    byteSize,
+    purpose: "inbound",
+  });
+  await uploadWithFetch(presign.uploadUrl, {
+    method: "PUT",
+    headers: presign.headers,
+    body: stored,
+  });
+  return { objectKey: presign.objectKey, publicUrl: presign.publicUrl };
+}

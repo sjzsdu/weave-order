@@ -75,7 +75,7 @@ export function onboardingSteps(
 export function quoteHref(context: OnboardingQuoteContext): string {
   const name = context.customerName?.trim();
   const text = name ? `给${name}报第一张价：` : "给客户报第一张价：";
-  return `/today?intent=${encodeURIComponent(text)}&onboard=quote`;
+  return `/inbound?text=${encodeURIComponent(text)}&source=onboarding`;
 }
 
 function quoteHint(context: OnboardingQuoteContext): string {

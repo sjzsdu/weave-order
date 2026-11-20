@@ -3,7 +3,9 @@ import type { Db, Tx } from "@weave-order/db";
 import { IntentView, SubmitIntentInput } from "@weave-order/schema";
 import type {
   IntentDraft,
+  IntentUnderstanding,
   IntentView as IntentViewType,
+  SubmitInboundInput,
   SubmitIntentInput as SubmitIntentInputType,
   SubmitIntentResult,
 } from "@weave-order/schema";
@@ -13,6 +15,7 @@ import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
 import {
   assertIntentTransition,
+  canRestartIntent,
   intentCancelDeadline,
   intentNotice,
   isIntentCancellable,
@@ -39,21 +42,27 @@ const EXECUTOR_STATE = "CONNECTED" as const;
 function mapRow(row: IntentRow): IntentViewType {
   const executorState = row.executorState === "CONNECTED" ? "CONNECTED" : "NOT_CONNECTED";
   const draft = row.result ?? null;
+  // 理解卡已就绪但尚未执行：SUCCEEDED 指的是「这次理解成功了」，不是「业务完成了」。
+  const awaitingConfirm = row.status === "SUCCEEDED" && row.understanding !== null && !draft;
   return IntentView.parse({
     id: row.id,
     tenantId: row.tenantId,
     text: row.text,
     source: row.source,
     status: row.status,
-    statusLabel: INTENT_STATUS_LABEL[row.status],
+    statusLabel: awaitingConfirm ? "理解卡已就绪，待确认" : INTENT_STATUS_LABEL[row.status],
     executorState,
-    notice: intentNotice({
-      status: row.status,
-      executorState,
-      failureReason: row.failureReason,
-    }),
+    notice: awaitingConfirm
+      ? "先确认理解卡，或逐字段纠正后再执行。"
+      : intentNotice({
+          status: row.status,
+          executorState,
+          failureReason: row.failureReason,
+        }),
     failureReason: row.failureReason,
     draft,
+    attachments: row.attachments ?? [],
+    understanding: row.understanding ?? null,
     cancellableUntil: isIntentCancellable(row.status, row.createdAt)
       ? toIso(intentCancelDeadline(row.createdAt))
       : null,
@@ -184,9 +193,126 @@ export class IntentService {
   }
 
   /**
-   * 执行器接线后由后台任务调用。当前没有任何调用方 —— 保留是为了让
-   * 状态机只有一条写入口，接入那天不需要再改表结构。
+   * 统一输入：文本可空，但必须有至少一个附件；幂等键与旧意图共用同一列。
+   * `text` 为空时落一句可读占位，读模型 `IntentView.text` 要求非空。
    */
+  async submitInbound(
+    input: SubmitInboundInput,
+    ctx: KernelContext,
+  ): Promise<{ intent: IntentViewType; created: boolean; row: IntentRow }> {
+    const text = input.text?.trim() || "（图片输入，无文字说明）";
+    const inserted = await this.db
+      .insert(intents)
+      .values({
+        tenantId: this.tenantId,
+        clientRequestId: input.clientRequestId,
+        source: input.source,
+        text,
+        context: input.context ?? null,
+        status: "QUEUED",
+        executorState: EXECUTOR_STATE,
+        submittedBy: ctx.actor.id,
+      })
+      .onConflictDoNothing({ target: [intents.tenantId, intents.clientRequestId] })
+      .returning();
+    const created = inserted.length > 0;
+    const row = inserted[0] ?? (await this.findByClientRequestId(input.clientRequestId));
+    return { intent: mapRow(row), created, row };
+  }
+
+  /** 附件（`sources`）在提交之后创建，创建成功后回写到意图行。 */
+  async attachSources(id: string, sourceIds: string[]): Promise<void> {
+    if (sourceIds.length === 0) return;
+    await this.db
+      .update(intents)
+      .set({ attachments: sourceIds, updatedAt: new Date() })
+      .where(and(eq(intents.tenantId, this.tenantId), eq(intents.id, id)));
+  }
+
+  /** 理解/执行重新开始：允许从 SUCCEEDED / NEEDS_INPUT / FAILED 继续，不重述背景。 */
+  async resumeRunning(id: string): Promise<IntentViewType> {
+    const row = await this.find(id);
+    if (row.status === "CANCELLED") {
+      throw new KernelError("KERNEL_REJECTED", "这条输入已撤销，不能再执行", {
+        reason: "INTENT_CANCELLED",
+        resourceType: "intent",
+        resourceId: id,
+      });
+    }
+    if (!canRestartIntent(row.status)) {
+      throw new KernelError("KERNEL_REJECTED", `当前状态 ${row.status} 不能重新开始`, {
+        reason: "INTENT_NOT_RESUMABLE",
+        resourceType: "intent",
+        resourceId: id,
+      });
+    }
+    if (row.status === "RUNNING") return mapRow(row);
+    const rows = await this.db
+      .update(intents)
+      .set({
+        status: "RUNNING",
+        executorState: "CONNECTED",
+        startedAt: new Date(),
+        finishedAt: null,
+        failureReason: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(intents.tenantId, this.tenantId), eq(intents.id, id)))
+      .returning();
+    return mapRow(this.requireRow(rows[0], id));
+  }
+
+  /** 理解卡就绪 / 还差信息。SUCCEEDED 在此只表示「理解完成」，业务结果看 `result`。 */
+  async saveUnderstanding(
+    id: string,
+    understanding: IntentUnderstanding,
+    ready: boolean,
+    reason: string | null,
+  ): Promise<IntentViewType> {
+    const row = await this.find(id);
+    if (row.status === "CANCELLED") return mapRow(row);
+    const rows = await this.db
+      .update(intents)
+      .set({
+        status: ready ? "SUCCEEDED" : "NEEDS_INPUT",
+        understanding,
+        failureReason: ready ? null : (reason ?? "还差一些信息").slice(0, 500),
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(intents.tenantId, this.tenantId), eq(intents.id, id)))
+      .returning();
+    return mapRow(this.requireRow(rows[0], id));
+  }
+
+  /** 执行完成后由执行器回写草稿指针；`result` 只存主产物。 */
+  async completeInbound(
+    id: string,
+    draft: IntentDraft,
+    understanding: IntentUnderstanding,
+  ): Promise<IntentViewType> {
+    const row = await this.find(id);
+    if (row.status === "CANCELLED") return mapRow(row);
+    const rows = await this.db
+      .update(intents)
+      .set({
+        status: "SUCCEEDED",
+        result: draft,
+        understanding,
+        failureReason: null,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(intents.tenantId, this.tenantId), eq(intents.id, id)))
+      .returning();
+    return mapRow(this.requireRow(rows[0], id));
+  }
+
+  /** 供统一输入服务读取原始行（understanding / attachments 不经过读模型）。 */
+  async getRow(id: string): Promise<IntentRow> {
+    return this.find(id);
+  }
+
   async markRunning(id: string): Promise<IntentViewType> {
     const row = await this.find(id);
     assertIntentTransition(row.status, "RUNNING");

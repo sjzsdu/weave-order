@@ -263,7 +263,11 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             <CommandBar
               // 结果区属于当前页：换页后重新收起，状态不跟着常驻外壳跨页残留。
               key={pathname}
-              onSubmit={async (text) => (await intentChannel.submit(text, "command-bar")) !== null}
+              onSubmit={(text) => {
+                // 统一输入：⌘K 不再直接落 `/api/intents`，原话带到 /inbound 同一辆车上。
+                router.push(`/inbound?text=${encodeURIComponent(text)}`);
+                return Promise.resolve(true);
+              }}
               commands={[
                 {
                   label: "建客户",
@@ -284,8 +288,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
               feedback={
                 <div className="grid gap-2">
                   <p className="text-xs text-ink-400">
-                    打「建客户 / 建样品 / 导入客户」回车直达，其他文字交给小织；结果展开在这里，10
-                    分钟内可撤销。
+                    打「建客户 / 建样品 /
+                    导入客户」回车直达；其他文字带到统一输入页，先出理解卡再执行。
                   </p>
                   {intentChannel.submitError && (
                     <p className="rounded-md border border-vermilion-600/30 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">

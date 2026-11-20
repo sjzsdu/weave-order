@@ -25,7 +25,14 @@ import {
 } from "../../lib/hooks";
 import { formatMoneyShort, greeting, relativeTime } from "../../lib/format";
 import { IS_MOCK } from "../../lib/runtime";
-import { ROUTE_PATHS, enterQuote, goTab, openApprovals, openCustomer } from "../../routes";
+import {
+  ROUTE_PATHS,
+  enterCamera,
+  enterQuote,
+  goTab,
+  openApprovals,
+  openCustomer,
+} from "../../routes";
 
 /**
  * 待办（原「今日」）：一屏只回答一个问题 —— 今天有什么必须由我决定。
@@ -86,6 +93,17 @@ export default function TodayPage() {
       <Button block onClick={() => enterQuote({ mode: "paste" })}>
         ＋ 开一个报价
       </Button>
+      <View className="row" style={{ marginTop: 8, gap: 8 }}>
+        <Button small onClick={() => enterCamera({ mode: "bizcard" })}>
+          拍名片
+        </Button>
+        <Button small onClick={() => enterCamera({ mode: "fabric" })}>
+          拍面料
+        </Button>
+        <Button small onClick={() => enterCamera({ mode: "label" })}>
+          拍标签
+        </Button>
+      </View>
 
       {banner.show && (
         <View style={{ marginTop: 16 }}>

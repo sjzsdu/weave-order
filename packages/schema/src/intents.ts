@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EntityId, JsonValueSchema, Timestamp } from "./domain";
+import { ResourceFieldSourceKind, ResourceFieldStatus } from "./resources";
 
 /**
  * 意图通道契约。
@@ -68,6 +69,58 @@ export const IntentDraft = z
 export type IntentDraft = z.infer<typeof IntentDraft>;
 
 /**
+ * 理解卡上的一个字段：值、出处、是否待补。
+ *
+ * `pending` 与 `required` 分开：克重/门幅不是报价阻塞项（可以先空着），
+ * 但按 OCR spike 结论必须人工录入，所以 pending 且文案提示「不要猜」。
+ */
+export const InboundFieldCard = z
+  .object({
+    fieldName: z.string().min(1).max(64),
+    label: z.string().min(1).max(64),
+    value: JsonValueSchema,
+    /** OCR / 人工 / 历史。理解卡必须让人看出这条值从哪来。 */
+    sourceKind: ResourceFieldSourceKind,
+    sourceId: EntityId.nullable(),
+    status: ResourceFieldStatus,
+    /** 该字段是否阻塞执行（如客户名、样品名、报价数量）。 */
+    required: z.boolean(),
+    /** OCR 未识别 / 按规则必须人工录入：UI 高亮为待补，且不得预填猜测值。 */
+    pending: z.boolean(),
+    /** 给用户的一句提示（「克重必须人工录入」）。 */
+    help: z.string().max(200).nullable().default(null),
+  })
+  .strict();
+export type InboundFieldCard = z.infer<typeof InboundFieldCard>;
+
+/** 一条输入可以派生出多个任务；`sourceId` 指向产生它的原件。 */
+export const InboundTaskKind = z.enum(["quote", "sample", "customer"]);
+export type InboundTaskKind = z.infer<typeof InboundTaskKind>;
+
+export const InboundTaskStatus = z.enum([
+  "READY",
+  "PENDING",
+  "RUNNING",
+  "SUCCEEDED",
+  "NEEDS_INPUT",
+  "FAILED",
+]);
+export type InboundTaskStatus = z.infer<typeof InboundTaskStatus>;
+
+export const InboundTask = z
+  .object({
+    kind: InboundTaskKind,
+    sourceId: EntityId.nullable(),
+    label: z.string().min(1).max(255),
+    status: InboundTaskStatus,
+    resourceId: EntityId.nullable().default(null),
+    resourceType: z.enum(["customer", "sample", "quote", "item"]).nullable().default(null),
+    message: z.string().max(500).nullable().default(null),
+  })
+  .strict();
+export type InboundTask = z.infer<typeof InboundTask>;
+
+/**
  * 理解卡快照：模型对这次输入的解读，用户在 `start` 之前确认或纠正。
  *
  * `slots` 是抽取到的槽位（客户名 / 样品名 / 数量 ...），`pendingQuestions`
@@ -80,6 +133,10 @@ export const IntentUnderstanding = z
     summary: z.string().min(1).max(500),
     slots: z.record(z.string().max(64), JsonValueSchema),
     pendingQuestions: z.array(z.string().min(1).max(255)).max(20),
+    /** 逐字段的值与出处；未识别 / 必须人工录入的字段值为空且 pending=true。 */
+    fields: z.array(InboundFieldCard).max(60).default([]),
+    /** 一份输入可派生的多个任务（名片→建客户、标签→建样品、文本→报价）。 */
+    tasks: z.array(InboundTask).max(10).default([]),
   })
   .strict();
 export type IntentUnderstanding = z.infer<typeof IntentUnderstanding>;

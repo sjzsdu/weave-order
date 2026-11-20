@@ -39,6 +39,8 @@ import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
 import { FieldOptionsController } from "./field-options.controllers";
 import { InboundController } from "./inbound.controllers";
+import { InboundInputController } from "./inbound-input.controllers";
+import { InboundExecutorService } from "./inbound-executor.service";
 import { IntentController } from "./intents.controllers";
 import { IntentExecutorService } from "./intent-executor.service";
 import { OnboardingStateController } from "./onboarding-state.controller";
@@ -81,6 +83,7 @@ const providers: Provider[] = [
   QuoteAgentService,
   IntentExecutorService,
   InboundIntakeService,
+  InboundExecutorService,
   PrintAgentAuthService,
   PrintAgentHub,
   {
@@ -131,6 +134,7 @@ const providers: Provider[] = [
     MediaController,
     FieldOptionsController,
     InboundController,
+    InboundInputController,
     IntentController,
     OnboardingStateController,
     SampleController,

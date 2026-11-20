@@ -11,7 +11,7 @@ import type { CameraMode } from "./entry-params";
 export type CameraField = "tracking" | "note";
 
 /** 拍摄后的去向：找样检索 / 建样品 / 取证入队 / 只是录入单号。 */
-export type CameraOutcome = "find" | "sample" | "proof" | "input";
+export type CameraOutcome = "find" | "sample" | "proof" | "input" | "inbound";
 
 export type ProofKind = "SIGNATURE" | "CARGO" | "RECEIPT";
 
@@ -97,6 +97,33 @@ export const CAMERA_MODE_SPECS: Record<CameraMode, CameraModeSpec> = {
     fields: ["note"],
     proofKind: "RECEIPT",
     emptyHint: "凭证四角要完整，离线时先存本地队列。",
+  },
+  bizcard: {
+    title: "拍名片",
+    subtitle: "名片建客户",
+    desc: "拍一张名片，小织先出理解卡；联系人、电话可预填，主营必须自己填。",
+    outcome: "inbound",
+    captureLabel: "拍名片",
+    fields: [],
+    emptyHint: "名片尽量平铺占满画面；离线时先存本地，联网后按时间序提交。",
+  },
+  fabric: {
+    title: "拍面料",
+    subtitle: "面料建样/报价",
+    desc: "拍面料本体或标签，识别成分；克重、门幅、批号必须人工填。",
+    outcome: "inbound",
+    captureLabel: "拍面料",
+    fields: [],
+    emptyHint: "光线均匀、标签文字清晰；离线时会先入本地队列。",
+  },
+  label: {
+    title: "拍标签",
+    subtitle: "标签建样品",
+    desc: "拍面料商的米样标签，成分可预填，品名/克重/门幅/批号留空待补。",
+    outcome: "inbound",
+    captureLabel: "拍标签",
+    fields: [],
+    emptyHint: "标签四角完整；识别不清会留空并标为待补，不会猜。",
   },
 };
 

@@ -11,6 +11,7 @@ import {
   persistImage,
   uploadImage,
   uploadImageToPresignedUrl,
+  uploadInboundImage,
 } from "../../lib/media";
 import type { CompressedImage } from "../../lib/media";
 import { api, mediaStore, offlineQueue, prefs } from "../../lib/runtime";
@@ -99,6 +100,7 @@ export default function CameraPage() {
         // 拍完停在表单：品名/成分/克重填好再保存，避免“拍完就丢”。
         setResultText(null);
       } else if (spec.outcome === "proof") await runProof(compressed);
+      else if (spec.outcome === "inbound") await runInbound(compressed);
     } catch (caught) {
       setError(
         caught instanceof Error && /cancel/i.test(caught.message)
@@ -140,6 +142,49 @@ export default function CameraPage() {
     } catch (caught) {
       setError(userFacingErrorMessage(caught, "找样失败，请重试"));
     }
+  };
+
+  /**
+   * 名片 / 面料 / 标签：统一输入。
+   * 在线直接提交 `POST /api/inbound`；离线只入队（照片落 IndexedDB，不存 base64），
+   * 联网后按入队时间序补传，opId 作为 clientRequestId 保证重试不重复。
+   */
+  const runInbound = async (compressed: CompressedImage) => {
+    const kind =
+      mode === "bizcard"
+        ? "bizcard"
+        : mode === "label"
+          ? "label"
+          : mode === "fabric"
+            ? "fabric"
+            : "auto";
+    if (network.online) {
+      try {
+        const uploaded = await uploadInboundImage(compressed, api);
+        await api.submitInbound({
+          source: "mobile-camera",
+          clientRequestId: `inbound-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          attachments: [{ objectKey: uploaded.objectKey, mimeType: "image/jpeg", kind }],
+        });
+        setResultText("已提交，小织正在生成理解卡；到桌面「事项」里确认或补字段。");
+        return;
+      } catch (caught) {
+        if (caught instanceof ApiError) {
+          setError(caught.message);
+          return;
+        }
+        // 在线却失败不能静默入队：用户会误以为已经提交成功。
+        setError(userFacingErrorMessage(caught, "提交失败，请重试"));
+        return;
+      }
+    }
+    const mediaKey = await persistImage(compressed, mediaStore);
+    await enqueueOperation(offlineQueue, {
+      kind: "inbound.submit",
+      opId: `inbound-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      payload: { mediaKey, kind },
+    });
+    setResultText(`已存本地（${(compressed.byteSize / 1024).toFixed(0)}KB）· 联网后按时间序提交`);
   };
 
   const runProof = async (compressed: CompressedImage) => {

@@ -46,7 +46,7 @@ export function SampleSavedToast({
       <span className="font-medium text-ink-900">{sampleSavedTitle(feedback)}</span>
       <span className="text-xs text-ink-400">{feedback.code}</span>
       <Link
-        href={`/today?intent=${encodeURIComponent(`用${feedback.name}报价：`)}`}
+        href={`/inbound?text=${encodeURIComponent(`用${feedback.name}报价：`)}&sampleId=${encodeURIComponent(feedback.id)}`}
         className="text-indigo-600 underline underline-offset-2"
       >
         用它报价 →

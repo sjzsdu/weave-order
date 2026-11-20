@@ -25,8 +25,23 @@ const CUSTOMER_FIELDS = [
   "contactName",
   "contactPhone",
   "contactEmail",
+  // 名片上常见但主表没有列：只存在字段矩阵里，仍可逐字段确认/改正。
+  "title",
+  "address",
+  "business",
 ] as const;
-const SAMPLE_FIELDS = ["code", "name", "composition", "category", "weight", "unit"] as const;
+const SAMPLE_FIELDS = [
+  "code",
+  "name",
+  "composition",
+  "category",
+  "weight",
+  "unit",
+  // 标签上的规格：存矩阵，不写主表（报价只读 weight/unit，其余供溯源）。
+  "width",
+  "lot",
+  "supplier",
+] as const;
 
 const FIELDS_BY_TYPE: Record<ResourceType, readonly string[]> = {
   customer: CUSTOMER_FIELDS,

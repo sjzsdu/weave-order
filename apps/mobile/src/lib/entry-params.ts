@@ -59,7 +59,17 @@ function toEntry(candidate: Record<string, unknown>, mode: QuoteMode): QuoteEntr
  * 相机入口模式。WAN-185 会把每个 mode 的字段（品名 / 成分 / 运单号）收进各自的
  * 分支，这里先固定取值集合，页面不用再自己猜字符串。
  */
-export const CAMERA_MODES = ["find", "waybill", "sample", "signature", "cargo", "receipt"] as const;
+export const CAMERA_MODES = [
+  "find",
+  "waybill",
+  "sample",
+  "signature",
+  "cargo",
+  "receipt",
+  "bizcard",
+  "fabric",
+  "label",
+] as const;
 export type CameraMode = (typeof CAMERA_MODES)[number];
 
 export const cameraEntrySchema = z.discriminatedUnion("mode", [
@@ -69,6 +79,9 @@ export const cameraEntrySchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("signature") }),
   z.object({ mode: z.literal("cargo") }),
   z.object({ mode: z.literal("receipt") }),
+  z.object({ mode: z.literal("bizcard") }),
+  z.object({ mode: z.literal("fabric") }),
+  z.object({ mode: z.literal("label") }),
 ]);
 export type CameraEntryParams = z.infer<typeof cameraEntrySchema>;
 
