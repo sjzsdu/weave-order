@@ -73,7 +73,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   box_labels,
   scan_events,
   intents,
-  onboarding_state
+  onboarding_state,
+  -- P0a：事项聚合根 + 字段出处 / 原件 / OCR（WAN-191）
+  items,
+  sources,
+  resource_fields,
+  ocr_results
 TO weave_app;
 
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO weave_app;
@@ -127,7 +132,12 @@ DECLARE
     'box_labels',
     'scan_events',
     'intents',
-    'onboarding_state'
+    'onboarding_state',
+    -- P0a：事项聚合根 + 字段出处 / 原件 / OCR（WAN-191）
+    'items',
+    'sources',
+    'resource_fields',
+    'ocr_results'
   ];
 BEGIN
   FOREACH t IN ARRAY business_tables LOOP

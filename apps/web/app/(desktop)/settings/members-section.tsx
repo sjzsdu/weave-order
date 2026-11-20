@@ -1,14 +1,12 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import type {
-  Capability,
-  Currency,
-  DataScope,
-  MemberRole,
-  TeamInvite,
+import type { Capability, Currency, DataScope, MemberRole, TeamInvite } from "@weave-order/schema";
+import {
+  CAPABILITY_ROLES,
+  Capability as CapabilityEnum,
+  memberRoleLabel,
 } from "@weave-order/schema";
-import { CAPABILITY_ROLES, Capability as CapabilityEnum, memberRoleLabel } from "@weave-order/schema";
 import { Badge, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { track } from "@/analytics";
@@ -49,6 +47,7 @@ const CAPABILITY_LABEL: Record<Capability, string> = {
   "sample.cost.view": "查看成本底线",
   "quote.write": "起草 / 修改报价",
   "quote.approve": "审批报价",
+  "quote.confirm": "确认最终价格",
   "quote.workbench.view": "使用报价工作台",
   "quote.price.override": "越过建议价定价",
   "pricing.cross_person.read": "查看他人定价",
@@ -57,7 +56,9 @@ const CAPABILITY_LABEL: Record<Capability, string> = {
   "member.invite": "邀请 / 管理成员",
   "member.owner.grant": "授予老板角色",
   "settings.edit": "编辑组织设置",
+  "resource.merge": "合并客户 / 样品",
   "print.template.publish.html": "发布打印模板",
+  "print.execute": "发起打印 / 补打",
   "receivable.read": "查看应收",
   "panorama.orders.view": "查看订单",
   "audit.read.all": "查看全公司日志",
@@ -270,7 +271,9 @@ export function MembersSection({
                         <td className="px-3 py-2">
                           <span className="text-xs">{memberLabel(item)}</span>
                           {item.email ? (
-                            <span className="mt-0.5 block text-[11px] text-ink-400">{item.email}</span>
+                            <span className="mt-0.5 block text-[11px] text-ink-400">
+                              {item.email}
+                            </span>
                           ) : null}
                         </td>
                         <td className="px-3 py-2 text-xs">
@@ -304,8 +307,8 @@ export function MembersSection({
                               ))}
                             </select>
                           ) : (
-                            (SCOPE_OPTIONS.find((option) => option.value === item.dataScope)?.label ??
-                            "本人")
+                            (SCOPE_OPTIONS.find((option) => option.value === item.dataScope)
+                              ?.label ?? "本人")
                           )}
                         </td>
                         <td className="px-3 py-2 text-xs">
@@ -394,7 +397,10 @@ export function MembersSection({
           <p className="mt-1 text-xs text-ink-400">
             生成一条 7 天有效的专属链接，复制到微信或邮件发给对方；对方登录后点接受即加入。
           </p>
-          <form onSubmit={(event) => void invite(event)} className="mt-3 flex flex-wrap items-end gap-2">
+          <form
+            onSubmit={(event) => void invite(event)}
+            className="mt-3 flex flex-wrap items-end gap-2"
+          >
             <label className="grid gap-1 text-[11px] text-ink-400">
               同事邮箱
               <input
@@ -445,7 +451,9 @@ export function MembersSection({
             ) : null}
             <button
               type="submit"
-              disabled={busy || !email.includes("@") || (channel === "sms" && phone.trim().length < 6)}
+              disabled={
+                busy || !email.includes("@") || (channel === "sms" && phone.trim().length < 6)
+              }
               className="inline-flex min-h-9 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
             >
               {busy ? "生成中…" : "生成邀请链接"}
@@ -521,9 +529,7 @@ export function MembersSection({
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-ink-400">
-          当前登录角色：{memberRoleLabel(role)}
-        </p>
+        <p className="mt-2 text-[11px] text-ink-400">当前登录角色：{memberRoleLabel(role)}</p>
       </section>
     </div>
   );

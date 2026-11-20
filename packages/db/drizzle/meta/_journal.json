@@ -211,6 +211,13 @@
       "when": 1795097131000,
       "tag": "0029_illegal_mariko_yashida",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795180921732,
+      "tag": "0030_brave_sue_storm",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ const detail = ApprovalDetail.parse({
     code: "KH-018",
     name: "杭州青禾服饰",
     tier: "VIP",
+    status: "AVAILABLE",
     contactName: null,
     contactPhone: null,
     contactEmail: null,

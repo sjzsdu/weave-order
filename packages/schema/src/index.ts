@@ -6,6 +6,8 @@ export * from "./field-options";
 export * from "./navigation";
 export * from "./personas";
 export * from "./entities";
+export * from "./items";
+export * from "./resources";
 export * from "./customer";
 export * from "./contact";
 export * from "./workspace";

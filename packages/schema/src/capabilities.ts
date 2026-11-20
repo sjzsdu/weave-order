@@ -34,6 +34,11 @@ export const Capability = z.enum([
   "sample.cost.view",
   "quote.write",
   "quote.approve",
+  /**
+   * 确认最终价格（D1：确认即定稿，不再走审批）。与 `quote.approve` 分开是因为
+   * 未来可能恢复「确认后提醒」而不再恢复阻塞式审批；P0 里它只决定谁能定稿。
+   */
+  "quote.confirm",
   "quote.price.override",
   "pricing.cross_person.read",
   "pricing.policy.edit",
@@ -42,7 +47,11 @@ export const Capability = z.enum([
   /** 授予 / 调整 OWNER 成员：只有老板能改老板，避免主管互相提权。 */
   "member.owner.grant",
   "settings.edit",
+  /** 合并客户/样品（不可逆动作，默认只有老板）。 */
+  "resource.merge",
   "print.template.publish.html",
+  /** 发起打印 / 补打（打印本身低风险，全员可用）。 */
+  "print.execute",
   "receivable.read",
   "panorama.orders.view",
   /** 全公司操作日志（含导出）；没有它的角色只能看自己的操作。 */
@@ -73,6 +82,8 @@ export const CAPABILITY_ROLES: Readonly<Record<Capability, readonly MemberRole[]
   "sample.cost.view": ["OWNER", "MANAGER", "FINANCE", "SAMPLE_ADMIN"],
   "quote.write": ["OWNER", "MANAGER", "SALES"],
   "quote.approve": ["OWNER", "MANAGER", "SALES"],
+  // 确认最终价格：老板 / 主管；销售需要显式授权才出现在这里。
+  "quote.confirm": ["OWNER", "MANAGER"],
   "quote.price.override": ["OWNER", "MANAGER"],
   "pricing.cross_person.read": ["OWNER", "MANAGER"],
   "pricing.policy.edit": ["OWNER", "MANAGER"],
@@ -80,7 +91,18 @@ export const CAPABILITY_ROLES: Readonly<Record<Capability, readonly MemberRole[]
   "member.invite": ["OWNER", "MANAGER"],
   "member.owner.grant": ["OWNER"],
   "settings.edit": ["OWNER", "MANAGER"],
+  // 合并会改变历史引用关系，默认只给老板；需要时再单独授权。
+  "resource.merge": ["OWNER"],
   "print.template.publish.html": ["OWNER"],
+  "print.execute": [
+    "OWNER",
+    "MANAGER",
+    "SALES",
+    "MERCHANDISER",
+    "SAMPLE_ADMIN",
+    "FINANCE",
+    "VIEWER",
+  ],
   "receivable.read": ["OWNER", "MANAGER", "SALES", "FINANCE", "VIEWER"],
   // 财务的默认工作面是应收，订单不在一级入口；其余角色都能看订单漏斗。
   "panorama.orders.view": ["OWNER", "MANAGER", "SALES", "MERCHANDISER", "SAMPLE_ADMIN", "VIEWER"],

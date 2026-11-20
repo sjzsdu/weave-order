@@ -26,13 +26,16 @@ import {
   T004GenerateQuoteDraftResult,
   T006SuggestLinePriceResult,
   IntentView,
+  isSampleStatusAvailable,
   roleCapabilities,
 } from "@weave-order/schema";
 import type {
   ApprovalDecisionInput,
+  IntentSource,
   JsonValue,
   OnboardingState,
   OnboardingStepKey,
+  SampleStatus,
 } from "@weave-order/schema";
 import type { ApiClient } from "./api-client";
 
@@ -100,6 +103,7 @@ const customer = {
   code: "KH-018",
   name: "杭州青禾服饰",
   tier: "VIP" as const,
+  status: "AVAILABLE" as const,
   contactName: "周敏",
   contactPhone: "138****6621",
   contactEmail: "zhoumin@example.com",
@@ -349,11 +353,19 @@ const mockSamples = [
   },
 ];
 
-/** 档位按出现次数倒序、同次数按字面升序，只统计当前状态且非空的值。 */
-function mockTiers(status: "ACTIVE" | "ARCHIVED" | "ALL", key: "composition" | "weight") {
+/** 档位按出现次数倒序、同次数按字面升序，只统计当前状态且非空的值。
+ * `ACTIVE` 与 `AVAILABLE` 是同一个「可用」语义（后者为 P0a 新值）。
+ */
+function mockTiers(status: SampleStatus | "ALL", key: "composition" | "weight") {
   const counts = new Map<string, number>();
   for (const item of mockSamples) {
-    if (status !== "ALL" && item.status !== status) continue;
+    if (
+      status !== "ALL" &&
+      item.status !== status &&
+      !(isSampleStatusAvailable(item.status) && isSampleStatusAvailable(status))
+    ) {
+      continue;
+    }
     const value = item[key];
     if (!value) continue;
     counts.set(value, (counts.get(value) ?? 0) + 1);
@@ -548,9 +560,10 @@ export function createMockApiClient(): ApiClient {
   let mockIntentSeq = 0;
   const submitMockIntent = (input: {
     text: string;
-    source: "today" | "command-bar" | "customer-360";
+    source: IntentSource;
     clientRequestId: string;
     context?: JsonValue;
+    attachmentIds?: string[];
   }) => {
     // 与真实服务端同样的幂等语义：同一次提交复用同一条意图。
     const existing = mockIntentsByRequest.get(input.clientRequestId);

@@ -42,6 +42,7 @@ interface CustomerListRow {
   code: string;
   name: string;
   tier: string;
+  status: CustomerListItem["status"];
   contact_name: string | null;
   contact_phone: string | null;
   contact_email: string | null;
@@ -166,6 +167,7 @@ function mapListItem(row: CustomerListRow, role?: MemberRole): CustomerListItem 
     code: row.code,
     name: row.name,
     tier: row.tier,
+    status: row.status,
     contactName: row.contact_name,
     contactPhone: masked ? maskPhone(row.contact_phone) : row.contact_phone,
     contactEmail: masked ? maskEmail(row.contact_email) : row.contact_email,
@@ -263,6 +265,7 @@ export async function loadCustomerList(
         customers.code,
         customers.name,
         customers.tier,
+        customers.status,
         pc.name AS contact_name,
         pc.phone AS contact_phone,
         pc.email AS contact_email,
