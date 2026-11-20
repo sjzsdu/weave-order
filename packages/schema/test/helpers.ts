@@ -16,6 +16,7 @@ export function makeCustomer(overrides: Partial<Customer> = {}): Customer {
     code: "C001",
     name: "杭州织造有限公司",
     tier: "VIP",
+    status: "AVAILABLE",
     contactName: "张三",
     contactPhone: "13800000000",
     contactEmail: "zhangsan@example.com",

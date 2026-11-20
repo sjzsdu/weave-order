@@ -16,6 +16,7 @@ function item(overrides: Partial<CustomerListItem> = {}): CustomerListItem {
     code: "KH-001",
     name: "杭州青禾服饰",
     tier: "VIP",
+    status: "AVAILABLE",
     contactName: "周敏",
     contactPhone: "13800000000",
     contactEmail: null,

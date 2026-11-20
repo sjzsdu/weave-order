@@ -110,6 +110,7 @@ function mapCustomer(
     code: row.code,
     name: row.name,
     tier: row.tier,
+    status: row.status,
     contactName: primary?.name ?? null,
     contactPhone: masked ? maskPhone(primary?.phone) : (primary?.phone ?? null),
     contactEmail: masked ? maskEmail(primary?.email) : (primary?.email ?? null),
@@ -212,13 +213,9 @@ export class CustomerService {
     const tier = this.fieldOptions
       ? await this.fieldOptions.resolveTierCode(parsed.tier, ctx)
       : parsed.tier;
-    const hasContact = Boolean(
-      parsed.contactName || parsed.contactPhone || parsed.contactEmail,
-    );
+    const hasContact = Boolean(parsed.contactName || parsed.contactPhone || parsed.contactEmail);
     // 投影必须与即将写入的联系人行逐字一致：只有手机/邮箱时联系人名落「主要联系人」。
-    const projectedContactName = hasContact
-      ? (parsed.contactName ?? "主要联系人")
-      : null;
+    const projectedContactName = hasContact ? (parsed.contactName ?? "主要联系人") : null;
     const rows = await tx
       .insert(customers)
       .values({
@@ -449,12 +446,7 @@ export class CustomerService {
     const ownerId = owner?.owner_id ?? null;
     const ownerName = memberDisplayName(owner?.owner_name);
     // 顺序执行：RLS 会话绑定单连接，不能与上面的查询交错。
-    const contacts = await loadActiveContacts(
-      this.db,
-      this.tenantId,
-      customerId,
-      ctx?.actor.role,
-    );
+    const contacts = await loadActiveContacts(this.db, this.tenantId, customerId, ctx?.actor.role);
     return Customer360.parse({ customer, ownerId, ownerName, context, summary, contacts });
   }
 

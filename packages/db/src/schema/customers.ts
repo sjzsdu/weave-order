@@ -16,6 +16,7 @@ import type {
   PaymentPattern,
   PricingBehavior,
 } from "@weave-order/schema";
+import { resourceStatusEnum } from "./enums";
 
 /** 客户主表。只能由 kernel 写入。 */
 export const customers = pgTable(
@@ -29,6 +30,11 @@ export const customers = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     /** 等级 code（`field_options` 的 `customer.tier`）；varchar 不设外键，新等级可直接录入。 */
     tier: varchar("tier", { length: 64 }).notNull().default("REGULAR"),
+    /**
+     * 资源生命周期（P0a）：`DRAFT` 不参与去重建议与历史价取数，`AVAILABLE` 可用，
+     * `ARCHIVED` 归档。存量行由列默认值直接落为 `AVAILABLE`，不做批量回填。
+     */
+    status: resourceStatusEnum("status").notNull().default("AVAILABLE"),
     contactName: varchar("contact_name", { length: 255 }),
     contactPhone: varchar("contact_phone", { length: 64 }),
     contactEmail: varchar("contact_email", { length: 255 }),
@@ -41,6 +47,8 @@ export const customers = pgTable(
     uniqueIndex("customers_tenant_code_idx").on(table.tenantId, table.code),
     index("customers_tenant_owner_idx").on(table.tenantId, table.ownerId),
     index("customers_tenant_tier_idx").on(table.tenantId, table.tier),
+    // 客户列表默认只看 `AVAILABLE`（草稿不进去重建议、不进报价取数）。
+    index("customers_tenant_status_idx").on(table.tenantId, table.status),
     index("customers_name_idx").on(table.name),
   ],
 );

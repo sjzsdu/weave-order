@@ -9,7 +9,52 @@ export const currencyEnum = pgEnum("currency", ["CNY", "USD", "EUR", "HKD"]);
 
 export const unitEnum = pgEnum("unit", ["meter", "kilogram", "yard", "piece"]);
 
-export const sampleStatusEnum = pgEnum("sample_status", ["ACTIVE", "ARCHIVED"]);
+export const sampleStatusEnum = pgEnum("sample_status", [
+  "ACTIVE",
+  "ARCHIVED",
+  // P0a 资源生命周期：`DRAFT` 草稿态，`AVAILABLE` 可用态。
+  // `ACTIVE` 保留为 `AVAILABLE` 的历史别名（存量行不重写）。
+  "DRAFT",
+  "AVAILABLE",
+]);
+
+/** 客户/联系人的资源生命周期（样品用自己的 `sample_status`，取值多一个历史别名）。 */
+export const resourceStatusEnum = pgEnum("resource_status", ["DRAFT", "AVAILABLE", "ARCHIVED"]);
+
+/** 字段出处矩阵覆盖的资源类型。 */
+export const resourceTypeEnum = pgEnum("resource_type", ["customer", "contact", "sample"]);
+
+/** 字段级状态：已确认 / 待确认 / 已修改 / 有冲突。 */
+export const resourceFieldStatusEnum = pgEnum("resource_field_status", [
+  "CONFIRMED",
+  "PENDING",
+  "EDITED",
+  "CONFLICT",
+]);
+
+/** 字段出处类别；`manual` = 人工录入（无原件）。 */
+export const resourceFieldSourceKindEnum = pgEnum("resource_field_source_kind", [
+  "bizcard",
+  "label",
+  "history",
+  "manual",
+  "llm",
+]);
+
+/** 原件类型：图片 / PDF / 文本。 */
+export const sourceKindEnum = pgEnum("source_kind", ["IMAGE", "PDF", "TEXT"]);
+
+/** OCR 结果状态；失败行必须能重新被重试任务捞到。 */
+export const ocrStatusEnum = pgEnum("ocr_status", ["PENDING", "SUCCEEDED", "FAILED"]);
+
+/** 业务事项状态机（契约 `ItemStatus` 的物理表示）。 */
+export const itemStatusEnum = pgEnum("item_status", [
+  "IN_PROGRESS",
+  "WAITING_INPUT",
+  "WAITING_DECISION",
+  "COMPLETED",
+  "CLOSED",
+]);
 
 /** 样品图片用途。契约侧 `SampleImageVariant` 必须与这里取值一致。 */
 export const sampleImageVariantEnum = pgEnum("sample_image_variant", [
@@ -213,4 +258,10 @@ export const intentStatusEnum = pgEnum("intent_status", [
 ]);
 
 /** 意图提交入口（契约 `IntentSource` 的物理表示）。 */
-export const intentSourceEnum = pgEnum("intent_source", ["today", "command-bar", "customer-360"]);
+export const intentSourceEnum = pgEnum("intent_source", [
+  "today",
+  "command-bar",
+  "customer-360",
+  "mobile-camera",
+  "upload",
+]);

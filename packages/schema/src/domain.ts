@@ -84,6 +84,16 @@ export type Quantity = z.infer<typeof Quantity>;
 export const CustomerTierCode = z.string().min(1).max(64);
 export type CustomerTierCode = z.infer<typeof CustomerTierCode>;
 
+/**
+ * 资源生命周期状态（文档 §3.2），客户/样品/联系人共用同一组语义。
+ *
+ * `DRAFT`：OCR/输入产出，允许缺非关键字段，不参与去重建议与历史价取数；
+ * `AVAILABLE`：用户确认后可参与报价与建议；
+ * `ARCHIVED`：归档仍可读，但不进入新建议。
+ */
+export const ResourceStatus = z.enum(["DRAFT", "AVAILABLE", "ARCHIVED"]);
+export type ResourceStatus = z.infer<typeof ResourceStatus>;
+
 export const Customer = z.object({
   id: EntityId,
   /** 数据归属租户；由网关注入、内核落账，前端不得传。 */
@@ -91,6 +101,8 @@ export const Customer = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   tier: CustomerTierCode,
+  /** 资源生命周期：草稿不参与去重建议与历史价取数。 */
+  status: ResourceStatus,
   contactName: z.string().nullable(),
   contactPhone: z.string().nullable(),
   /**
@@ -202,9 +214,22 @@ export const CustomerContext = z.object({
 });
 export type CustomerContext = z.infer<typeof CustomerContext>;
 
-/** 样品状态。 */
-export const SampleStatus = z.enum(["ACTIVE", "ARCHIVED"]);
+/**
+ * 样品状态。
+ *
+ * `ACTIVE` 是 P0a 前的历史取值，语义等价于 `AVAILABLE`：存量行默认仍是
+ * `ACTIVE`，读模型与筛选也必须把它当「可用」处理。之所以不在这里直接改名，
+ * 是因为库里已有大量 ACTIVE 行与按 ACTIVE 过滤的界面/HTTP 参数，一次性重写
+ * 会留下一段「库是 AVAILABLE、界面按 ACTIVE 判断」的空窗期。
+ * 这两个新取值随 P0a 契约冻结先行到位，数据重写与界面切换由 WAN-193 落地。
+ */
+export const SampleStatus = z.enum(["ACTIVE", "AVAILABLE", "DRAFT", "ARCHIVED"]);
 export type SampleStatus = z.infer<typeof SampleStatus>;
+
+/** 「可用」的样品状态：ACTIVE 是 AVAILABLE 的历史别名。 */
+export function isSampleStatusAvailable(status: SampleStatus): boolean {
+  return status === "ACTIVE" || status === "AVAILABLE";
+}
 
 /** 面料样品（完整实体，内核读写）。 */
 export const FabricSample = z.object({

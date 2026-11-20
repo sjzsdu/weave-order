@@ -18,6 +18,7 @@ function listRow(ownerName: string | null) {
     code: "C261117-0001",
     name: "走查测试客户",
     tier: "NEW",
+    status: "AVAILABLE",
     contact_name: null,
     contact_phone: null,
     contact_email: null,

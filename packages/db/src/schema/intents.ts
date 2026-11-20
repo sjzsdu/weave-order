@@ -8,7 +8,8 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { IntentDraft, JsonValue } from "@weave-order/schema";
+import { sql } from "drizzle-orm";
+import type { IntentDraft, IntentUnderstanding, JsonValue } from "@weave-order/schema";
 import { intentSourceEnum, intentStatusEnum } from "./enums";
 
 /**
@@ -40,8 +41,18 @@ export const intents = pgTable(
     executorState: varchar("executor_state", { length: 32 }).notNull().default("NOT_CONNECTED"),
     /** 失败 / 超时的人话原因。 */
     failureReason: text("failure_reason"),
-    /** 成功产出的草稿指针（审批对象）。 */
+    /** 成功产出的草稿指针（报价 / 建样 / 建档）。 */
     result: jsonb("result").$type<IntentDraft>(),
+    /**
+     * 关联原件（`sources` ID，有序）。多图分组假设靠这个数组传下去，
+     * 不另建一张关联表：附件是先于结果存在的一次性输入，不需要跨意图复用。
+     */
+    attachments: uuid("attachments")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    /** 理解卡快照（kind / summary / slots / pendingQuestions），供用户确认或纠正。 */
+    understanding: jsonb("understanding").$type<IntentUnderstanding>(),
     submittedBy: varchar("submitted_by", { length: 128 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

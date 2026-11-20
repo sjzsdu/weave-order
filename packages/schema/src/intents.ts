@@ -8,8 +8,20 @@ import { EntityId, JsonValueSchema, Timestamp } from "./domain";
  * 前端只负责展示。这样刷新页面、重启服务、换设备都不会丢失「我说过什么」。
  */
 
-/** 提交入口：页内 composer / 顶栏 ⌘K / 客户 360 的快捷动作。 */
-export const IntentSource = z.enum(["today", "command-bar", "customer-360"]);
+/**
+ * 提交入口：页内 composer / 顶栏 ⌘K / 客户 360 的快捷动作 /
+ * 移动端拍照（`mobile-camera`）/ 上传图片或 PDF（`upload`）。
+ *
+ * 新增两个入口是 P0a「统一输入」的契约前提：手机拍名片与拖拽上传走同一条
+ * 意图通道，服务端不为每个入口各写一套。
+ */
+export const IntentSource = z.enum([
+  "today",
+  "command-bar",
+  "customer-360",
+  "mobile-camera",
+  "upload",
+]);
 export type IntentSource = z.infer<typeof IntentSource>;
 
 /**
@@ -35,15 +47,42 @@ export type IntentStatus = z.infer<typeof IntentStatus>;
 export const IntentExecutorState = z.enum(["NOT_CONNECTED", "CONNECTED"]);
 export type IntentExecutorState = z.infer<typeof IntentExecutorState>;
 
-/** 执行成功产出的草稿指针。只允许指向当前产品里真实存在的审批对象。 */
+/**
+ * 意图能产出的三类结果（文档 §5.1 的「理解卡」kind）：
+ * 报价 / 建样 / 建档。`unknown` 只出现在理解阶段，不写进 `result`。
+ */
+export const IntentKind = z.enum(["quote", "sample", "customer", "unknown"]);
+export type IntentKind = z.infer<typeof IntentKind>;
+
+/**
+ * 执行成功产出的草稿指针。
+ * P0a 起泛化为「报价 / 建样 / 建档」，向后兼容：历史行只有 `kind=quote`。
+ */
 export const IntentDraft = z
   .object({
-    kind: z.enum(["quote"]),
+    kind: z.enum(["quote", "sample", "customer"]),
     id: EntityId,
     title: z.string().min(1).max(255),
   })
   .strict();
 export type IntentDraft = z.infer<typeof IntentDraft>;
+
+/**
+ * 理解卡快照：模型对这次输入的解读，用户在 `start` 之前确认或纠正。
+ *
+ * `slots` 是抽取到的槽位（客户名 / 样品名 / 数量 ...），`pendingQuestions`
+ * 是必须由人补齐的问题。两者分开是因为「缺什么」不能藏进 `summary` 文案里，
+ * 否则前端无法逐项纠正。
+ */
+export const IntentUnderstanding = z
+  .object({
+    kind: IntentKind,
+    summary: z.string().min(1).max(500),
+    slots: z.record(z.string().max(64), JsonValueSchema),
+    pendingQuestions: z.array(z.string().min(1).max(255)).max(20),
+  })
+  .strict();
+export type IntentUnderstanding = z.infer<typeof IntentUnderstanding>;
 
 export const SubmitIntentInput = z
   .object({
@@ -56,6 +95,11 @@ export const SubmitIntentInput = z
     clientRequestId: z.string().trim().min(8).max(128),
     /** 客户 360 / 开张清单带过来的上下文，原样落库供执行器使用。 */
     context: JsonValueSchema.optional(),
+    /**
+     * 已上传成功的原件 ID（`sources`）。图片与 PDF 都先直传对象存储，
+     * 再把 ID 挂在意图上；文本本身仍在 `text` 里，不重复存两份。
+     */
+    attachmentIds: z.array(EntityId).max(20).optional(),
   })
   .strict();
 export type SubmitIntentInput = z.infer<typeof SubmitIntentInput>;
@@ -75,6 +119,10 @@ export const IntentView = z
     notice: z.string().max(500).nullable(),
     failureReason: z.string().max(500).nullable(),
     draft: IntentDraft.nullable(),
+    /** 关联的原件（`sources` ID，有序）。历史行没有附件，给默认空数组。 */
+    attachments: z.array(EntityId).default([]),
+    /** 理解卡快照；理解尚未产出时为空。 */
+    understanding: IntentUnderstanding.nullable().default(null),
     /** 撤销截止时间；null 表示已不可撤销（终态或超过 10 分钟）。 */
     cancellableUntil: Timestamp.nullable(),
     createdAt: Timestamp,

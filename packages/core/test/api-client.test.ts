@@ -8,6 +8,7 @@ const CUSTOMER = {
   code: "C001",
   name: "杭州织造",
   tier: "VIP",
+  status: "AVAILABLE",
   contactName: null,
   contactPhone: null,
   contactEmail: null,
