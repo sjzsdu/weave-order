@@ -10,6 +10,7 @@ import {
   Inject,
   Ip,
   Param,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
@@ -242,6 +243,29 @@ export class QuoteSharesController {
     return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
       ok: true,
       data: await kernel.shares.revoke(shareId, ctx),
+    }));
+  }
+
+  /**
+   * 租户级公开面开关。关闭后已生成的链接立即失效（公开路由按 INVALID_LINK 返回），
+   * 同时不允许再生成新链接；业务员仍可查看/撤回存量链接。
+   */
+  @Get("settings/quote-sharing")
+  async getSharingSettings(@Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      ok: true,
+      data: await kernel.shares.getSharingSettings(ctx),
+    }));
+  }
+
+  @Patch("settings/quote-sharing")
+  async updateSharingSettings(
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      ok: true,
+      data: await kernel.shares.updateSharingSettings(body ?? {}, ctx),
     }));
   }
 }

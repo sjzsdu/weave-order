@@ -206,6 +206,8 @@ export const AuditAction = z.enum([
   "RECEIVABLE_PAYMENT_RECORDED",
   "QUOTE_SHARE_CREATED",
   "QUOTE_SHARE_REVOKED",
+  /** 租户级客户报价链接开关：影响公开面是否对外可用。 */
+  "QUOTE_SHARING_UPDATED",
   "REVISION_REQUESTED",
   "REVISION_RESOLVED",
   "DECISION_DELTA_RECORDED",

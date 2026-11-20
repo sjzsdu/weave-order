@@ -1,7 +1,17 @@
-import { createDb, DEFAULT_TENANT_ID, quoteShares, quotes, tenants } from "@weave-order/db";
+import {
+  auditLog,
+  createDb,
+  DEFAULT_TENANT_ID,
+  orders,
+  quoteShareEvents,
+  quoteShares,
+  quotes,
+  tenants,
+} from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import type { CustomerQuotePage } from "@weave-order/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createKernel, QuoteLinkError } from "../src/kernel";
@@ -18,6 +28,14 @@ const DATABASE_URL =
 
 const HUMAN: KernelContext = { actor: { type: "HUMAN", id: "e3-sales" } };
 const AGENT: KernelContext = { actor: { type: "AGENT", id: "e3-agent" } };
+const OWNER: KernelContext = {
+  actor: { type: "HUMAN", id: "e3-owner", role: "OWNER" },
+  dataScope: "ALL",
+};
+const SALES: KernelContext = {
+  actor: { type: "HUMAN", id: "e3-sales-2", role: "SALES" },
+  dataScope: "OWN",
+};
 const VISITOR = { ip: "203.0.113.9", userAgent: "vitest-agent" };
 
 let available = false;
@@ -230,12 +248,31 @@ describe("客户报价链接（集成）", () => {
       code: "PHONE_TAIL_REQUIRED",
     });
 
+    const ordersBefore = await database
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.tenantId, DEFAULT_TENANT_ID));
+
     const accepted = await share.accept(created.token, { phoneTail: "6621" }, VISITOR);
     expect(accepted.alreadyAccepted).toBe(false);
     expect(accepted.nextStep).toContain("成交意向");
     const again = await share.accept(created.token, { phoneTail: "6621" }, VISITOR);
     expect(again.alreadyAccepted).toBe(true);
     expect(again.acceptedAt).toBe(accepted.acceptedAt);
+
+    // 幂等不只是「返回同一个 acceptedAt」：事件表只能有一条 ACCEPTED，订单表不能多行。
+    const acceptedEvents = await database
+      .select({ id: quoteShareEvents.id })
+      .from(quoteShareEvents)
+      .where(
+        and(eq(quoteShareEvents.shareId, created.share.id), eq(quoteShareEvents.event, "ACCEPTED")),
+      );
+    expect(acceptedEvents).toHaveLength(1);
+    const ordersAfter = await database
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.tenantId, DEFAULT_TENANT_ID));
+    expect(ordersAfter).toHaveLength(ordersBefore.length);
 
     const question = await share.ask(
       created.token,
@@ -304,5 +341,85 @@ describe("客户报价链接（集成）", () => {
     const tampered = `${created.token.slice(0, -2)}xx`;
     await expect(share.view(tampered, VISITOR)).rejects.toBeInstanceOf(QuoteLinkError);
     await expect(share.view(tampered, VISITOR)).rejects.toMatchObject({ code: "INVALID_LINK" });
+  }, 30_000);
+
+  /**
+   * 用独立租户而不是默认租户：vitest 按文件并行，改默认租户的开关会把同进程其它用例带崩。
+   * 独立租户还能顺便验证「按租户生效」——另一个租户的链接不受影响。
+   */
+  it("租户开关关闭后，已生成链接立即失效、不能新建；重新开启立即恢复", async (ctx) => {
+    if (!available || !publicPool) ctx.skip();
+    const pool = publicPool;
+    if (!pool) throw new Error("数据库不可用");
+    const database = db;
+    if (!database) throw new Error("数据库不可用");
+
+    const tenantId = randomUUID();
+    await database.insert(tenants).values({
+      id: tenantId,
+      slug: `e3-switch-${suffix()}`,
+      name: "开关测试公司",
+      settings: {
+        salesContact: { name: "李娜", phone: "13800136621", wechatQrUrl: null },
+      },
+    });
+    const kernel = createKernel(database, undefined, { tenantId });
+    const share = new PublicShareService(pool);
+    const { quoteId } = await approvedQuote(kernel);
+    const created = await kernel.shares.createForQuote(quoteId, {}, HUMAN);
+
+    await expect(share.view(created.token, VISITOR)).resolves.toBeTruthy();
+    await expect(kernel.shares.getSharingSettings(OWNER)).resolves.toEqual({ enabled: true });
+
+    await kernel.shares.updateSharingSettings({ enabled: false }, OWNER);
+    await expect(kernel.shares.getSharingSettings(OWNER)).resolves.toEqual({ enabled: false });
+
+    // 已生成的链接立即失效；三种客户写操作同样被挡在 requireActiveShare。
+    await expect(share.view(created.token, VISITOR)).rejects.toMatchObject({
+      code: "INVALID_LINK",
+    });
+    await expect(share.accept(created.token, {}, VISITOR)).rejects.toMatchObject({
+      code: "INVALID_LINK",
+    });
+    await expect(share.ask(created.token, { message: "还在吗" }, VISITOR)).rejects.toMatchObject({
+      code: "INVALID_LINK",
+    });
+    await expect(share.recordPdf(created.token, VISITOR)).rejects.toMatchObject({
+      code: "INVALID_LINK",
+    });
+
+    // 关闭期间不再签发新链接，但业务员仍能看到 / 撤回存量链接。
+    await expect(kernel.shares.createForQuote(quoteId, {}, HUMAN)).rejects.toMatchObject({
+      code: "KERNEL_REJECTED",
+      details: { reason: "SHARING_DISABLED" },
+    });
+    await expect(kernel.shares.listForQuote(quoteId)).resolves.toMatchObject({
+      shares: [{ shareId: created.share.id }],
+    });
+
+    // 审计留痕，且只改开关、不覆盖销售名片等既有设置。
+    const audits = await database
+      .select({ action: auditLog.action, before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenantId), eq(auditLog.action, "QUOTE_SHARING_UPDATED")));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.before).toMatchObject({ enabled: true });
+    expect(audits[0]?.after).toMatchObject({ enabled: false });
+    const tenantRows = await database
+      .select({ settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId));
+    expect(tenantRows[0]?.settings).toMatchObject({
+      quoteSharingEnabled: false,
+      salesContact: { name: "李娜" },
+    });
+
+    // 角色权限：SALES 没有 settings.edit，不能自己把公开面打开。
+    await expect(
+      kernel.shares.updateSharingSettings({ enabled: true }, SALES),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+
+    await kernel.shares.updateSharingSettings({ enabled: true }, OWNER);
+    await expect(share.view(created.token, VISITOR)).resolves.toBeTruthy();
   }, 30_000);
 });

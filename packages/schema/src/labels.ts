@@ -41,6 +41,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   RECEIVABLE_PAYMENT_RECORDED: "登记了回款",
   QUOTE_SHARE_CREATED: "生成了客户报价链接",
   QUOTE_SHARE_REVOKED: "撤回了客户报价链接",
+  QUOTE_SHARING_UPDATED: "更新了客户报价链接开关",
   // 系统 / 身份 / 运维动作：只在审计页出现，说清楚做了什么
   TENANT_CREATED: "创建了公司",
   TENANT_SWITCHED: "切换了公司",

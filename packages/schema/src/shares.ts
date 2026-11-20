@@ -89,6 +89,26 @@ export type CreatedQuoteShare = z.infer<typeof CreatedQuoteShare>;
 export const RevokeQuoteShareInput = z.object({ shareId: EntityId }).strict();
 export type RevokeQuoteShareInput = z.infer<typeof RevokeQuoteShareInput>;
 
+/**
+ * 租户级报价链接开关（`tenants.settings.quoteSharingEnabled`）。
+ *
+ * 未写入时视为开启：存量租户不需要迁移，只有显式关闭才会让公开面立刻失效。
+ * 关闭后已生成的链接也立即失效 —— 开关必须参与每次公开请求的判定，不能只挡新建。
+ */
+export const QuoteSharingSettings = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict();
+export type QuoteSharingSettings = z.infer<typeof QuoteSharingSettings>;
+
+export const UpdateQuoteSharingSettingsInput = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict();
+export type UpdateQuoteSharingSettingsInput = z.infer<typeof UpdateQuoteSharingSettingsInput>;
+
 /** 客户视图（公开路由）——刻意只含客户可见字段。 */
 export const CustomerQuoteView = z
   .object({
