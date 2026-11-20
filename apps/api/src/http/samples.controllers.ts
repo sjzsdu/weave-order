@@ -24,13 +24,13 @@ import { rethrowHttp } from "./controllers";
 import type { HumanActorService } from "./human-actor.service";
 import { HUMAN_ACTOR, KERNEL, MEDIA_SERVICE } from "./tokens";
 
-const SAMPLE_STATUS_FILTERS = ["ACTIVE", "ARCHIVED", "ALL"] as const;
+const SAMPLE_STATUS_FILTERS = ["ACTIVE", "AVAILABLE", "DRAFT", "ARCHIVED", "ALL"] as const;
 type SampleStatusFilter = (typeof SAMPLE_STATUS_FILTERS)[number];
 
 function parseStatus(raw: string | undefined): SampleStatusFilter {
   if (raw === undefined || raw === "") return "ACTIVE";
   if ((SAMPLE_STATUS_FILTERS as readonly string[]).includes(raw)) return raw as SampleStatusFilter;
-  throw new BadRequestException("status 只接受 ACTIVE / ARCHIVED / ALL");
+  throw new BadRequestException("status 只接受 AVAILABLE / ACTIVE / DRAFT / ARCHIVED / ALL");
 }
 
 function parseLimit(raw: string | undefined): number | undefined {

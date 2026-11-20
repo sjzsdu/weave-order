@@ -315,6 +315,34 @@ const sample = {
   createdAt: NOW,
 };
 
+const mockItemDetail = {
+  item: {
+    id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    tenantId: TENANT_ID,
+    status: "IN_PROGRESS" as const,
+    customerId: CUSTOMER_ID,
+    sampleId: SAMPLE_ID,
+    quantityMilli: 150000,
+    unit: "meter" as const,
+    currentStage: "正在处理",
+    nextAction: "确认最终价格",
+    sourceIntentId: null,
+    createdBy: MEMBERSHIP_ID,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  customer: { id: CUSTOMER_ID, code: "KH-018", name: "杭州青禾服饰", status: "AVAILABLE" as const },
+  sample: {
+    id: SAMPLE_ID,
+    code: "FM-220",
+    name: "32S 精梳棉汗布 220g",
+    status: "AVAILABLE" as const,
+  },
+  allowedTransitions: ["WAITING_INPUT", "WAITING_DECISION", "COMPLETED", "CLOSED"] as Array<
+    "WAITING_INPUT" | "WAITING_DECISION" | "COMPLETED" | "CLOSED"
+  >,
+};
+
 /**
  * 图墙的演示样本：至少 2 个成分、3 个克重档位，否则本地跑不出筛选效果。
  * 顺序就是真实服务端的「创建时间倒序」近似，供 mock 分页稳定取前 N 条。
@@ -760,6 +788,142 @@ export function createMockApiClient(): ApiClient {
         contactEmail: input.contactEmail ?? null,
       }),
 
+    createCustomerDraft: (input) =>
+      Promise.resolve({
+        customer: {
+          ...customer,
+          code: "C000000-0001",
+          name: input.name ?? "待确认客户",
+          status: "DRAFT" as const,
+          contactName: input.contactName ?? null,
+          contactPhone: input.contactPhone ?? null,
+          contactEmail: input.contactEmail ?? null,
+        },
+        created: true,
+        fields: [
+          {
+            fieldName: "name",
+            value: input.name ?? null,
+            status: "PENDING" as const,
+            sourceKind: "bizcard" as const,
+            sourceId: input.sourceId,
+            updatedAt: NOW,
+            candidates: [],
+          },
+          {
+            fieldName: "contactPhone",
+            value: input.contactPhone ?? null,
+            status: "CONFLICT" as const,
+            sourceKind: "bizcard" as const,
+            sourceId: input.sourceId,
+            updatedAt: NOW,
+            candidates: [
+              { value: "13800006621", sourceKind: "bizcard" as const, sourceId: input.sourceId },
+              { value: "13800006622", sourceKind: "llm" as const, sourceId: null },
+            ],
+          },
+        ],
+      }),
+
+    confirmCustomer: () => Promise.resolve({ ...customer, status: "AVAILABLE" as const }),
+
+    previewCustomerMerge: (_sourceId, targetCustomerId) =>
+      Promise.resolve({
+        sourceCustomerId: CUSTOMER_ID,
+        targetCustomerId,
+        counts: {
+          quotes: 2,
+          orders: 1,
+          sampleShipments: 1,
+          receivables: 0,
+          items: 1,
+          contacts: 1,
+          decisionDeltas: 0,
+        },
+        contactConflicts: [],
+        previewToken: "mock-preview-token",
+        expiresAt: NOW,
+      }),
+
+    mergeCustomer: (_sourceId, input) =>
+      Promise.resolve({
+        customer: { ...customer, id: input.targetCustomerId },
+        moved: {
+          quotes: 2,
+          orders: 1,
+          sampleShipments: 1,
+          receivables: 0,
+          items: 1,
+          contacts: 1,
+          decisionDeltas: 0,
+        },
+        skippedContactCount: 0,
+        undoUntil: NOW,
+        undoToken: "mock-undo-token",
+      }),
+
+    undoCustomerMerge: () =>
+      Promise.resolve({
+        customer,
+        reverted: {
+          quotes: 2,
+          orders: 1,
+          sampleShipments: 1,
+          receivables: 0,
+          items: 1,
+          contacts: 1,
+          decisionDeltas: 0,
+        },
+      }),
+
+    customerFields: () =>
+      Promise.resolve({
+        resourceType: "customer" as const,
+        resourceId: CUSTOMER_ID,
+        resourceStatus: "AVAILABLE" as const,
+        fields: [
+          {
+            fieldName: "name",
+            value: customer.name,
+            status: "CONFIRMED" as const,
+            sourceKind: "bizcard" as const,
+            sourceId: null,
+            updatedAt: NOW,
+            candidates: [],
+          },
+          {
+            fieldName: "contactPhone",
+            value: null,
+            status: "CONFLICT" as const,
+            sourceKind: "bizcard" as const,
+            sourceId: null,
+            updatedAt: NOW,
+            candidates: [
+              { value: "13800006621", sourceKind: "bizcard" as const, sourceId: null },
+              { value: "13800006622", sourceKind: "llm" as const, sourceId: null },
+            ],
+          },
+        ],
+        pendingCount: 1,
+      }),
+
+    updateCustomerFields: (_customerId, input) =>
+      Promise.resolve({
+        resourceType: "customer" as const,
+        resourceId: CUSTOMER_ID,
+        resourceStatus: "AVAILABLE" as const,
+        fields: input.fields.map((field) => ({
+          fieldName: field.fieldName,
+          value: field.value,
+          status: "CONFIRMED" as const,
+          sourceKind: "manual" as const,
+          sourceId: null,
+          updatedAt: NOW,
+          candidates: [],
+        })),
+        pendingCount: 0,
+      }),
+
     importBatch: (batch) => {
       const customers = batch.customers ?? [];
       const samples = batch.samples ?? [];
@@ -930,6 +1094,68 @@ export function createMockApiClient(): ApiClient {
         name: input.name,
         composition: input.composition ?? null,
         weight: input.weight ?? null,
+      }),
+
+    createSampleDraft: (input) =>
+      Promise.resolve({
+        sample: {
+          ...sample,
+          code: "S000000-0001",
+          name: input.name ?? "待确认样品",
+          composition: input.composition ?? null,
+          weight: input.weight ?? null,
+          status: "DRAFT" as const,
+        },
+        created: true,
+        fields: [
+          {
+            fieldName: "name",
+            value: input.name ?? null,
+            status: "PENDING" as const,
+            sourceKind: "label" as const,
+            sourceId: input.sourceId,
+            updatedAt: NOW,
+            candidates: [],
+          },
+        ],
+      }),
+
+    confirmSample: () => Promise.resolve({ ...sample, status: "AVAILABLE" as const }),
+
+    sampleFields: () =>
+      Promise.resolve({
+        resourceType: "sample" as const,
+        resourceId: SAMPLE_ID,
+        resourceStatus: "AVAILABLE" as const,
+        fields: [
+          {
+            fieldName: "composition",
+            value: sample.composition,
+            status: "CONFIRMED" as const,
+            sourceKind: "label" as const,
+            sourceId: null,
+            updatedAt: NOW,
+            candidates: [],
+          },
+        ],
+        pendingCount: 0,
+      }),
+
+    updateSampleFields: (_sampleId, input) =>
+      Promise.resolve({
+        resourceType: "sample" as const,
+        resourceId: SAMPLE_ID,
+        resourceStatus: "AVAILABLE" as const,
+        fields: input.fields.map((field) => ({
+          fieldName: field.fieldName,
+          value: field.value,
+          status: "CONFIRMED" as const,
+          sourceKind: "manual" as const,
+          sourceId: null,
+          updatedAt: NOW,
+          candidates: [],
+        })),
+        pendingCount: 0,
       }),
 
     updateSample: (_id, input) =>
@@ -1404,6 +1630,54 @@ export function createMockApiClient(): ApiClient {
     reprintBox: () => Promise.reject(new Error("演示模式不补打")),
     voidBox: () => Promise.reject(new Error("演示模式不作废箱")),
     resolveDiscrepancy: () => Promise.reject(new Error("演示模式不处理差异")),
+    listItems: () =>
+      Promise.resolve({
+        items: [mockItemDetail],
+        nextCursor: null,
+        hasMore: false,
+      }),
+    getItem: () => Promise.resolve(mockItemDetail),
+    createItem: (input) => {
+      const missing = [
+        ...(input.customerId ? [] : ["customerId" as const]),
+        ...(input.sampleId ? [] : ["sampleId" as const]),
+        ...(input.quantity ? [] : ["quantity" as const]),
+      ];
+      if (missing.length > 0) {
+        return Promise.resolve({
+          outcome: "NEEDS_INPUT" as const,
+          item: null,
+          missingFields: missing,
+          message: "还缺客户、样品或数量，补齐后再建事项",
+        });
+      }
+      return Promise.resolve({
+        outcome: "CREATED" as const,
+        item: mockItemDetail.item,
+        missingFields: [],
+        message: "事项已创建",
+      });
+    },
+    transitionItem: (_itemId, input) =>
+      Promise.resolve({
+        ...mockItemDetail,
+        item: { ...mockItemDetail.item, status: input.status },
+        allowedTransitions:
+          input.status === "COMPLETED" || input.status === "CLOSED"
+            ? []
+            : mockItemDetail.allowedTransitions,
+      }),
+    completeItem: () =>
+      Promise.resolve({
+        ...mockItemDetail,
+        item: {
+          ...mockItemDetail.item,
+          status: "COMPLETED" as const,
+          currentStage: "已完成",
+          nextAction: "查看结果",
+        },
+        allowedTransitions: [],
+      }),
     shipment: () =>
       Promise.resolve(
         ShipmentView.parse({

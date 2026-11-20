@@ -1,23 +1,34 @@
 import {
+  auditLog,
   customerContacts,
   customerContexts,
   customers,
   decisionDeltas,
+  inboundMessages,
+  items,
   orders,
   quotes,
+  receivables,
   sampleShipmentItems,
   sampleShipments,
   samples,
 } from "@weave-order/db";
 import type { CustomerContactRow, Db, Tx } from "@weave-order/db";
 import {
+  CreateCustomerDraftInput,
   CreateCustomerInput,
   CreateCustomerRequest,
   Customer360,
+  CustomerDraftResponse,
+  CustomerMergePreview,
+  CustomerMergeResult,
+  CustomerMergeUndoResult,
   hasCapability,
   maskEmail,
   maskPhone,
   normalizePhone,
+  MergeCustomerInput,
+  UndoCustomerMergeInput,
 } from "@weave-order/schema";
 import type { MemberRole } from "@weave-order/schema";
 import type {
@@ -30,6 +41,7 @@ import type {
   CustomerTimelineKind,
   CustomerTimelinePage,
   DecisionDelta,
+  DraftFieldInput,
   JsonValue,
   FabricSampleSummary,
   FollowupPreference,
@@ -39,7 +51,7 @@ import type {
   QuoteSummary,
   T003GetCustomerHistoryData,
 } from "@weave-order/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { loadActiveContacts, loadPrimaryContactRow } from "./contact-read";
@@ -49,6 +61,8 @@ import type { FieldOptionsService } from "./field-options.service";
 import { memberDisplayName } from "./member-label";
 import { ownerScopeFilter } from "./data-scope";
 import { currencyOf, toIso } from "./mappers";
+import { createMergeToken, verifyMergeToken } from "./merge-token";
+import type { ResourceFieldService } from "./resource-fields.service";
 
 const DEFAULT_PRICING_BEHAVIOR: PricingBehavior = {
   sensitivity: "MEDIUM",
@@ -142,6 +156,10 @@ export class CustomerService {
      * 否则导入/API/智能体都能写下悬挂 code（历史客户会显示成原始字符串）。
      */
     private readonly fieldOptions?: FieldOptionsService,
+    /** 字段出处矩阵；草稿 / 逐字段确认 / 合并预览共用。 */
+    private readonly resourceFields?: ResourceFieldService,
+    /** 合并票据签名密钥（预览与撤销窗口共用）。 */
+    private readonly mergeSecret: string = "weave-order-local-merge-secret",
   ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<Customer> {
@@ -295,6 +313,748 @@ export class CustomerService {
       this.tenantId,
     );
     return mapCustomer(row, primaryContact, ctx.actor.role);
+  }
+
+  /**
+   * 从名片/文本建客户草稿（`sourceId` 幂等）。
+   *
+   * 草稿允许缺名称等非关键字段：主表先落占位值，字段矩阵里保持 PENDING，
+   * 确认页据此显示「待补充」。草稿不参与去重建议与历史价取数。
+   */
+  async createDraft(input: unknown, ctx: KernelContext): Promise<CustomerDraftResponse> {
+    const parsed = CreateCustomerDraftInput.parse(input);
+    const existing = await this.findByDraftSource(parsed.sourceId);
+    if (existing) {
+      return this.draftResponse(existing, false);
+    }
+
+    const prefix = customerCodePrefix();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const code = formatCustomerCode(prefix, await this.nextCustomerSequence(prefix));
+      try {
+        const customer = await this.db.transaction(async (tx) => {
+          const rows = await tx
+            .insert(customers)
+            .values({
+              tenantId: this.tenantId,
+              ownerId: ctx.ownerId ?? null,
+              code,
+              name: parsed.name ?? "待确认客户",
+              tier: parsed.tier ?? "REGULAR",
+              status: "DRAFT",
+              draftSourceId: parsed.sourceId,
+              contactName: parsed.contactName ?? null,
+              contactPhone: parsed.contactPhone ?? null,
+              contactEmail: parsed.contactEmail ?? null,
+            })
+            .returning();
+          const row = rows[0];
+          if (!row) {
+            throw new KernelError("KERNEL_REJECTED", "客户草稿写入未返回记录", {
+              reason: "INSERT_RETURNED_NO_ROW",
+            });
+          }
+          if (parsed.contactName || parsed.contactPhone || parsed.contactEmail) {
+            await tx.insert(customerContacts).values({
+              tenantId: this.tenantId,
+              customerId: row.id,
+              name: parsed.contactName ?? "主要联系人",
+              phone: parsed.contactPhone ?? null,
+              phoneNormalized: normalizePhone(parsed.contactPhone),
+              email: parsed.contactEmail ?? null,
+              isPrimary: true,
+            });
+          }
+          await tx.insert(customerContexts).values({
+            customerId: row.id,
+            tenantId: this.tenantId,
+            preferenceNotes: [],
+            pricingBehavior: DEFAULT_PRICING_BEHAVIOR,
+            paymentPattern: DEFAULT_PAYMENT_PATTERN,
+            followupPreference: DEFAULT_FOLLOWUP_PREFERENCE,
+            decisionDeltas: [] as DecisionDelta[],
+          });
+
+          const fields = this.draftFieldInputs(parsed, "bizcard");
+          await this.resourceFields?.writeDraftFields(tx, "customer", row.id, fields);
+          if (!fields.some((field) => field.fieldName === "name")) {
+            await this.resourceFields?.markPending(tx, "customer", row.id, "name");
+          }
+          await appendAudit(
+            tx,
+            ctx,
+            {
+              action: "CUSTOMER_DRAFT_CREATED",
+              entityType: "customer",
+              entityId: row.id,
+              before: null,
+              after: { sourceId: parsed.sourceId, fieldCount: fields.length },
+              entityLabel: row.name,
+            },
+            this.tenantId,
+          );
+          return row;
+        });
+        return this.draftResponse(customer, true);
+      } catch (error) {
+        const duplicateSource = await this.findByDraftSource(parsed.sourceId);
+        if (duplicateSource) return this.draftResponse(duplicateSource, false);
+        if (!isUniqueViolation(error)) throw error;
+        // 撞的是客户编号：重算序号再试；撞草稿幂等键的并发请求已在上面处理。
+      }
+    }
+    throw new KernelError("KERNEL_REJECTED", "客户编号连续冲突，请稍后重试", {
+      reason: "CUSTOMER_CODE_EXISTS",
+    });
+  }
+
+  private draftFieldInputs(
+    parsed: ReturnType<typeof CreateCustomerDraftInput.parse>,
+    sourceKind: DraftFieldInput["sourceKind"],
+  ): DraftFieldInput[] {
+    const fields: DraftFieldInput[] = [];
+    const topLevel: Array<[string, string | null | undefined]> = [
+      ["name", parsed.name],
+      ["tier", parsed.tier],
+      ["contactName", parsed.contactName],
+      ["contactPhone", parsed.contactPhone],
+      ["contactEmail", parsed.contactEmail],
+    ];
+    for (const [fieldName, value] of topLevel) {
+      if (value === undefined || value === null || value === "") continue;
+      fields.push({ fieldName, value, sourceKind, sourceId: parsed.sourceId });
+    }
+    for (const field of parsed.fields ?? []) fields.push(field);
+    return fields;
+  }
+
+  private async findByDraftSource(sourceId: string): Promise<CustomerRow | null> {
+    const rows = await this.db
+      .select()
+      .from(customers)
+      .where(and(eq(customers.tenantId, this.tenantId), eq(customers.draftSourceId, sourceId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  private async draftResponse(row: CustomerRow, created: boolean): Promise<CustomerDraftResponse> {
+    const primary = await loadPrimaryContactRow(this.db, this.tenantId, row.id);
+    const fields = this.resourceFields
+      ? await this.resourceFields.list("customer", row.id, row.status)
+      : [];
+    return CustomerDraftResponse.parse({
+      customer: mapCustomer(row, primary),
+      created,
+      fields,
+    });
+  }
+
+  /** 草稿 → 可用。幂等：已可用直接返回；必填字段未确认则拒绝并列出字段。 */
+  async confirmDraft(customerId: string, ctx: KernelContext): Promise<Customer> {
+    const rows = await this.db
+      .select()
+      .from(customers)
+      .where(and(eq(customers.id, customerId), eq(customers.tenantId, this.tenantId)))
+      .limit(1);
+    const before = rows[0];
+    if (!before) {
+      throw new KernelError("CUSTOMER_NOT_FOUND", `客户不存在：${customerId}`, { customerId });
+    }
+    if (before.status === "AVAILABLE") {
+      const primary = await loadPrimaryContactRow(this.db, this.tenantId, customerId);
+      return mapCustomer(before, primary, ctx.actor.role);
+    }
+    if (before.status !== "DRAFT") {
+      throw new KernelError("KERNEL_REJECTED", "只有草稿客户可以确认可用", {
+        reason: "CUSTOMER_NOT_DRAFT",
+      });
+    }
+    await this.resourceFields?.assertRequiredConfirmed("customer", customerId, ["name"]);
+
+    const updated = await this.db.transaction(async (tx) => {
+      const next = await tx
+        .update(customers)
+        .set({ status: "AVAILABLE", updatedAt: new Date() })
+        .where(and(eq(customers.id, customerId), eq(customers.tenantId, this.tenantId)))
+        .returning();
+      const row = next[0];
+      if (!row) {
+        throw new KernelError("CUSTOMER_NOT_FOUND", `客户不存在：${customerId}`, { customerId });
+      }
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "CUSTOMER_CONFIRMED",
+          entityType: "customer",
+          entityId: customerId,
+          before: { status: "DRAFT" },
+          after: { status: "AVAILABLE" },
+          entityLabel: row.name,
+        },
+        this.tenantId,
+      );
+      return row;
+    });
+    const primary = await loadPrimaryContactRow(this.db, this.tenantId, customerId);
+    return mapCustomer(updated, primary, ctx.actor.role);
+  }
+
+  /**
+   * 合并影响预览。
+   *
+   * 只读，不做任何写入；返回签名票据把「用户看到的这份预览」绑定到下一次确认。
+   */
+  async previewMerge(
+    sourceCustomerId: string,
+    targetCustomerId: string,
+    ctx: KernelContext,
+  ): Promise<CustomerMergePreview> {
+    this.assertCanMerge(ctx);
+    if (sourceCustomerId === targetCustomerId) {
+      throw new KernelError("KERNEL_REJECTED", "不能把客户合并到自己", {
+        reason: "MERGE_SELF",
+      });
+    }
+    const source = await this.requireCustomerRow(sourceCustomerId);
+    const target = await this.requireCustomerRow(targetCustomerId);
+    if (source.status === "ARCHIVED") {
+      throw new KernelError("KERNEL_REJECTED", "已归档客户不能再合并", {
+        reason: "MERGE_SOURCE_ARCHIVED",
+      });
+    }
+    if (target.status !== "AVAILABLE") {
+      throw new KernelError("KERNEL_REJECTED", "只能合并到可用客户", {
+        reason: "MERGE_TARGET_NOT_AVAILABLE",
+      });
+    }
+
+    const counts = await this.mergeCounts(sourceCustomerId);
+    const contactConflicts = await this.mergeContactConflicts(sourceCustomerId, targetCustomerId);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    return CustomerMergePreview.parse({
+      sourceCustomerId,
+      targetCustomerId,
+      counts,
+      contactConflicts,
+      previewToken: createMergeToken(this.mergeSecret, {
+        purpose: "preview",
+        tenantId: this.tenantId,
+        sourceCustomerId,
+        targetCustomerId,
+        exp: expiresAt.getTime(),
+      }),
+      expiresAt: expiresAt.toISOString(),
+    });
+  }
+
+  /**
+   * 执行合并：把源客户的单据与联系人迁到目标客户，源客户归档。
+   *
+   * 联系人遇到目标客户已有的手机/邮箱时**不迁**（留在源客户下，随归档保留），
+   * 因为数据库的部分唯一索引不允许同客户重复联系方式；预览已提前展示这一影响。
+   */
+  async merge(
+    sourceCustomerId: string,
+    input: unknown,
+    ctx: KernelContext,
+  ): Promise<CustomerMergeResult> {
+    this.assertCanMerge(ctx);
+    const parsed = MergeCustomerInput.parse(input);
+    const payload = this.verifyToken(parsed.previewToken, "preview");
+    if (
+      payload.sourceCustomerId !== sourceCustomerId ||
+      payload.targetCustomerId !== parsed.targetCustomerId
+    ) {
+      throw new KernelError("KERNEL_REJECTED", "合并预览与本次目标不一致，请重新预览", {
+        reason: "MERGE_PREVIEW_MISMATCH",
+      });
+    }
+    const source = await this.requireCustomerRow(sourceCustomerId);
+    const target = await this.requireCustomerRow(parsed.targetCustomerId);
+    if (source.status === "ARCHIVED") {
+      throw new KernelError("KERNEL_REJECTED", "已归档客户不能再合并", {
+        reason: "MERGE_SOURCE_ARCHIVED",
+      });
+    }
+    if (target.status !== "AVAILABLE") {
+      throw new KernelError("KERNEL_REJECTED", "只能合并到可用客户", {
+        reason: "MERGE_TARGET_NOT_AVAILABLE",
+      });
+    }
+
+    const moved = await this.db.transaction(async (tx) => {
+      const ids = {
+        quotes: (
+          await tx
+            .select({ id: quotes.id })
+            .from(quotes)
+            .where(and(eq(quotes.tenantId, this.tenantId), eq(quotes.customerId, sourceCustomerId)))
+        ).map((row) => row.id),
+        orders: (
+          await tx
+            .select({ id: orders.id })
+            .from(orders)
+            .where(and(eq(orders.tenantId, this.tenantId), eq(orders.customerId, sourceCustomerId)))
+        ).map((row) => row.id),
+        sampleShipments: (
+          await tx
+            .select({ id: sampleShipments.id })
+            .from(sampleShipments)
+            .where(
+              and(
+                eq(sampleShipments.tenantId, this.tenantId),
+                eq(sampleShipments.customerId, sourceCustomerId),
+              ),
+            )
+        ).map((row) => row.id),
+        receivables: (
+          await tx
+            .select({ id: receivables.id })
+            .from(receivables)
+            .where(
+              and(
+                eq(receivables.tenantId, this.tenantId),
+                eq(receivables.customerId, sourceCustomerId),
+              ),
+            )
+        ).map((row) => row.id),
+        items: (
+          await tx
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.tenantId, this.tenantId), eq(items.customerId, sourceCustomerId)))
+        ).map((row) => row.id),
+        decisionDeltas: (
+          await tx
+            .select({ id: decisionDeltas.id })
+            .from(decisionDeltas)
+            .where(
+              and(
+                eq(decisionDeltas.tenantId, this.tenantId),
+                eq(decisionDeltas.customerId, sourceCustomerId),
+              ),
+            )
+        ).map((row) => row.id),
+      };
+      if (ids.quotes.length > 0) {
+        await tx
+          .update(quotes)
+          .set({ customerId: target.id })
+          .where(inArray(quotes.id, ids.quotes));
+      }
+      if (ids.orders.length > 0) {
+        await tx
+          .update(orders)
+          .set({ customerId: target.id })
+          .where(inArray(orders.id, ids.orders));
+      }
+      if (ids.sampleShipments.length > 0) {
+        await tx
+          .update(sampleShipments)
+          .set({ customerId: target.id })
+          .where(inArray(sampleShipments.id, ids.sampleShipments));
+      }
+      if (ids.receivables.length > 0) {
+        await tx
+          .update(receivables)
+          .set({ customerId: target.id })
+          .where(inArray(receivables.id, ids.receivables));
+      }
+      if (ids.items.length > 0) {
+        await tx
+          .update(items)
+          .set({ customerId: target.id, updatedAt: new Date() })
+          .where(inArray(items.id, ids.items));
+      }
+      if (ids.decisionDeltas.length > 0) {
+        await tx
+          .update(decisionDeltas)
+          .set({ customerId: target.id })
+          .where(inArray(decisionDeltas.id, ids.decisionDeltas));
+      }
+      // 入站消息不参与「业务历史」合并，但归属随客户走，客户 360 才不会断层。
+      await tx
+        .update(inboundMessages)
+        .set({ customerId: target.id })
+        .where(
+          and(
+            eq(inboundMessages.tenantId, this.tenantId),
+            eq(inboundMessages.customerId, sourceCustomerId),
+          ),
+        );
+
+      const sourceContacts = await tx
+        .select()
+        .from(customerContacts)
+        .where(
+          and(
+            eq(customerContacts.tenantId, this.tenantId),
+            eq(customerContacts.customerId, sourceCustomerId),
+            isNull(customerContacts.archivedAt),
+          ),
+        );
+      const conflicts = new Set(
+        (await this.mergeContactConflicts(sourceCustomerId, target.id, tx)).map(
+          (item) => item.contactId,
+        ),
+      );
+      const movedContacts: string[] = [];
+      const demotedPrimaryContacts: string[] = [];
+      for (const contact of sourceContacts) {
+        if (conflicts.has(contact.id)) continue;
+        const demote = contact.isPrimary;
+        await tx
+          .update(customerContacts)
+          .set({ customerId: target.id, isPrimary: false, updatedAt: new Date() })
+          .where(eq(customerContacts.id, contact.id));
+        movedContacts.push(contact.id);
+        if (demote) demotedPrimaryContacts.push(contact.id);
+      }
+
+      await tx
+        .update(customers)
+        .set({ status: "ARCHIVED", updatedAt: new Date() })
+        .where(eq(customers.id, sourceCustomerId));
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "CUSTOMER_MERGED",
+          entityType: "customer",
+          entityId: sourceCustomerId,
+          before: { status: source.status, name: source.name, code: source.code },
+          after: {
+            targetCustomerId: target.id,
+            targetName: target.name,
+            sourceStatusBefore: source.status,
+            moved: ids,
+            movedContacts,
+            demotedPrimaryContacts,
+            skippedContacts: [...conflicts],
+          },
+          entityLabel: source.name,
+        },
+        this.tenantId,
+      );
+      return {
+        quotes: ids.quotes.length,
+        orders: ids.orders.length,
+        sampleShipments: ids.sampleShipments.length,
+        receivables: ids.receivables.length,
+        items: ids.items.length,
+        contacts: movedContacts.length,
+        decisionDeltas: ids.decisionDeltas.length,
+        skippedContactCount: conflicts.size,
+      };
+    });
+
+    const undoUntil = new Date(Date.now() + 10 * 60 * 1000);
+    return CustomerMergeResult.parse({
+      customer: mapCustomer(
+        target,
+        await loadPrimaryContactRow(this.db, this.tenantId, target.id),
+        ctx.actor.role,
+      ),
+      moved: {
+        quotes: moved.quotes,
+        orders: moved.orders,
+        sampleShipments: moved.sampleShipments,
+        receivables: moved.receivables,
+        items: moved.items,
+        contacts: moved.contacts,
+        decisionDeltas: moved.decisionDeltas,
+      },
+      skippedContactCount: moved.skippedContactCount,
+      undoUntil: undoUntil.toISOString(),
+      undoToken: createMergeToken(this.mergeSecret, {
+        purpose: "undo",
+        tenantId: this.tenantId,
+        sourceCustomerId,
+        targetCustomerId: target.id,
+        exp: undoUntil.getTime(),
+      }),
+    });
+  }
+
+  /** 撤销窗口内完整回滚一次合并（依据审计行里的被迁移 id 列表）。 */
+  async undoMerge(
+    sourceCustomerId: string,
+    input: unknown,
+    ctx: KernelContext,
+  ): Promise<CustomerMergeUndoResult> {
+    const parsed = UndoCustomerMergeInput.parse(input);
+    const payload = this.verifyToken(parsed.undoToken, "undo");
+    if (payload.sourceCustomerId !== sourceCustomerId) {
+      throw new KernelError("KERNEL_REJECTED", "撤销票据与客户不一致", {
+        reason: "MERGE_UNDO_MISMATCH",
+      });
+    }
+    const auditRows = await this.db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, this.tenantId),
+          eq(auditLog.entityId, sourceCustomerId),
+          inArray(auditLog.action, ["CUSTOMER_MERGED", "CUSTOMER_MERGE_UNDONE"]),
+        ),
+      )
+      .orderBy(desc(auditLog.seq))
+      .limit(1);
+    const latest = auditRows[0];
+    if (!latest || latest.action !== "CUSTOMER_MERGED") {
+      throw new KernelError("KERNEL_REJECTED", "没有可撤销的合并，或已撤销过", {
+        reason: "MERGE_UNDO_NOT_AVAILABLE",
+      });
+    }
+    const snapshot = latest.after as unknown as {
+      targetCustomerId: string;
+      sourceStatusBefore: string;
+      moved: Record<string, string[]>;
+      movedContacts: string[];
+      demotedPrimaryContacts: string[];
+    } | null;
+    if (!snapshot || snapshot.targetCustomerId !== payload.targetCustomerId) {
+      throw new KernelError("KERNEL_REJECTED", "撤销票据与合并记录不一致", {
+        reason: "MERGE_UNDO_MISMATCH",
+      });
+    }
+
+    const reverted = await this.db.transaction(async (tx) => {
+      const moved = snapshot.moved;
+      const movedQuotes = moved.quotes ?? [];
+      const movedOrders = moved.orders ?? [];
+      const movedShipments = moved.sampleShipments ?? [];
+      const movedReceivables = moved.receivables ?? [];
+      const movedItems = moved.items ?? [];
+      const movedDeltas = moved.decisionDeltas ?? [];
+      if (movedQuotes.length > 0) {
+        await tx
+          .update(quotes)
+          .set({ customerId: sourceCustomerId })
+          .where(inArray(quotes.id, movedQuotes));
+      }
+      if (movedOrders.length > 0) {
+        await tx
+          .update(orders)
+          .set({ customerId: sourceCustomerId })
+          .where(inArray(orders.id, movedOrders));
+      }
+      if (movedShipments.length > 0) {
+        await tx
+          .update(sampleShipments)
+          .set({ customerId: sourceCustomerId })
+          .where(inArray(sampleShipments.id, movedShipments));
+      }
+      if (movedReceivables.length > 0) {
+        await tx
+          .update(receivables)
+          .set({ customerId: sourceCustomerId })
+          .where(inArray(receivables.id, movedReceivables));
+      }
+      if (movedItems.length > 0) {
+        await tx
+          .update(items)
+          .set({ customerId: sourceCustomerId, updatedAt: new Date() })
+          .where(inArray(items.id, movedItems));
+      }
+      if (movedDeltas.length > 0) {
+        await tx
+          .update(decisionDeltas)
+          .set({ customerId: sourceCustomerId })
+          .where(inArray(decisionDeltas.id, movedDeltas));
+      }
+      await tx
+        .update(inboundMessages)
+        .set({ customerId: sourceCustomerId })
+        .where(eq(inboundMessages.customerId, payload.targetCustomerId));
+
+      if (snapshot.movedContacts.length > 0) {
+        await tx
+          .update(customerContacts)
+          .set({ customerId: sourceCustomerId, updatedAt: new Date() })
+          .where(inArray(customerContacts.id, snapshot.movedContacts));
+      }
+      for (const contactId of snapshot.demotedPrimaryContacts) {
+        await tx
+          .update(customerContacts)
+          .set({ isPrimary: true })
+          .where(eq(customerContacts.id, contactId));
+      }
+      const restored = await tx
+        .update(customers)
+        .set({
+          status: snapshot.sourceStatusBefore as "DRAFT" | "AVAILABLE" | "ARCHIVED",
+          updatedAt: new Date(),
+        })
+        .where(and(eq(customers.id, sourceCustomerId), eq(customers.tenantId, this.tenantId)))
+        .returning();
+      const row = restored[0];
+      if (!row) {
+        throw new KernelError("CUSTOMER_NOT_FOUND", `客户不存在：${sourceCustomerId}`, {
+          customerId: sourceCustomerId,
+        });
+      }
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "CUSTOMER_MERGE_UNDONE",
+          entityType: "customer",
+          entityId: sourceCustomerId,
+          before: { status: "ARCHIVED" },
+          after: { status: row.status, targetCustomerId: payload.targetCustomerId },
+          entityLabel: row.name,
+        },
+        this.tenantId,
+      );
+      return row;
+    });
+
+    return CustomerMergeUndoResult.parse({
+      customer: mapCustomer(
+        reverted,
+        await loadPrimaryContactRow(this.db, this.tenantId, sourceCustomerId),
+        ctx.actor.role,
+      ),
+      reverted: {
+        quotes: (snapshot.moved.quotes ?? []).length,
+        orders: (snapshot.moved.orders ?? []).length,
+        sampleShipments: (snapshot.moved.sampleShipments ?? []).length,
+        receivables: (snapshot.moved.receivables ?? []).length,
+        items: (snapshot.moved.items ?? []).length,
+        contacts: snapshot.movedContacts.length,
+        decisionDeltas: (snapshot.moved.decisionDeltas ?? []).length,
+      },
+    });
+  }
+
+  private assertCanMerge(ctx: KernelContext): void {
+    const role = ctx.actor.role;
+    if (role && !hasCapability(role, "resource.merge")) {
+      throw new KernelError("PERMISSION_DENIED", "当前角色不能合并客户（需要老板权限）");
+    }
+  }
+
+  private verifyToken(token: string, purpose: "preview" | "undo") {
+    try {
+      const payload = verifyMergeToken(this.mergeSecret, token);
+      if (payload.purpose !== purpose || payload.tenantId !== this.tenantId) {
+        throw new Error("TOKEN_SCOPE_INVALID");
+      }
+      return payload;
+    } catch {
+      throw new KernelError("KERNEL_REJECTED", "预览已过期或无效，请重新预览", {
+        reason: "MERGE_TOKEN_INVALID",
+      });
+    }
+  }
+
+  private async requireCustomerRow(customerId: string): Promise<CustomerRow> {
+    const rows = await this.db
+      .select()
+      .from(customers)
+      .where(and(eq(customers.id, customerId), eq(customers.tenantId, this.tenantId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      throw new KernelError("CUSTOMER_NOT_FOUND", `客户不存在：${customerId}`, { customerId });
+    }
+    return row;
+  }
+
+  private async mergeCounts(customerId: string) {
+    const rows = await this.db.execute<{
+      quotes: string;
+      orders: string;
+      sample_shipments: string;
+      receivables: string;
+      items: string;
+      decision_deltas: string;
+    }>(sql`
+      SELECT
+        (SELECT count(*) FROM quotes WHERE tenant_id = ${this.tenantId} AND customer_id = ${customerId}) AS quotes,
+        (SELECT count(*) FROM orders WHERE tenant_id = ${this.tenantId} AND customer_id = ${customerId}) AS orders,
+        (SELECT count(*) FROM sample_shipments WHERE tenant_id = ${this.tenantId} AND customer_id = ${customerId}) AS sample_shipments,
+        (SELECT count(*) FROM receivables WHERE tenant_id = ${this.tenantId} AND customer_id = ${customerId}) AS receivables,
+        (SELECT count(*) FROM items WHERE tenant_id = ${this.tenantId} AND customer_id = ${customerId}) AS items,
+        (SELECT count(*) FROM decision_deltas WHERE tenant_id = ${this.tenantId} AND customer_id = ${customerId}) AS decision_deltas
+    `);
+    const row = rows.rows[0];
+    return {
+      quotes: Number(row?.quotes ?? 0),
+      orders: Number(row?.orders ?? 0),
+      sampleShipments: Number(row?.sample_shipments ?? 0),
+      receivables: Number(row?.receivables ?? 0),
+      items: Number(row?.items ?? 0),
+      contacts: Number(
+        (
+          await this.db
+            .select({ value: count() })
+            .from(customerContacts)
+            .where(
+              and(
+                eq(customerContacts.tenantId, this.tenantId),
+                eq(customerContacts.customerId, customerId),
+                isNull(customerContacts.archivedAt),
+              ),
+            )
+        )[0]?.value ?? 0,
+      ),
+      decisionDeltas: Number(row?.decision_deltas ?? 0),
+    };
+  }
+
+  private async mergeContactConflicts(
+    sourceId: string,
+    targetId: string,
+    executor: Db | Tx = this.db,
+  ) {
+    const [sourceContacts, targetContacts] = [
+      await executor
+        .select()
+        .from(customerContacts)
+        .where(
+          and(
+            eq(customerContacts.tenantId, this.tenantId),
+            eq(customerContacts.customerId, sourceId),
+            isNull(customerContacts.archivedAt),
+          ),
+        ),
+      await executor
+        .select()
+        .from(customerContacts)
+        .where(
+          and(
+            eq(customerContacts.tenantId, this.tenantId),
+            eq(customerContacts.customerId, targetId),
+            isNull(customerContacts.archivedAt),
+          ),
+        ),
+    ];
+    const phones = new Set(
+      targetContacts.map((row) => row.phoneNormalized).filter((value): value is string => !!value),
+    );
+    const emails = new Set(
+      targetContacts
+        .map((row) => row.email?.toLowerCase())
+        .filter((value): value is string => !!value),
+    );
+    const targetHasPrimary = targetContacts.some((row) => row.isPrimary);
+    const conflicts: Array<{ contactId: string; reason: "PHONE" | "EMAIL" | "PRIMARY" }> = [];
+    for (const contact of sourceContacts) {
+      const reason =
+        contact.phoneNormalized && phones.has(contact.phoneNormalized)
+          ? "PHONE"
+          : contact.email && emails.has(contact.email.toLowerCase())
+            ? "EMAIL"
+            : contact.isPrimary && targetHasPrimary
+              ? "PRIMARY"
+              : null;
+      if (reason) conflicts.push({ contactId: contact.id, reason });
+    }
+    return conflicts;
   }
 
   /** 单条读取；`ctx` 带数据范围时越权一律按「不存在」处理。 */

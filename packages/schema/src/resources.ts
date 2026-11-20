@@ -124,6 +124,29 @@ export const OcrResult = z
 export type OcrResult = z.infer<typeof OcrResult>;
 
 /** 资源读模型里的「字段 + 出处」视图（`GET /customers/:id/fields` 的行）。 */
+export const ResourceFieldCandidate = z
+  .object({
+    value: JsonValueSchema,
+    sourceKind: ResourceFieldSourceKind,
+    sourceId: EntityId.nullable(),
+  })
+  .strict();
+export type ResourceFieldCandidate = z.infer<typeof ResourceFieldCandidate>;
+
+/**
+ * CONFLICT 行的存储形状：两个以上来源给出不同值。
+ *
+ * 冲突值不能只保留「最后写入的那个」——用户就失去了做选择的依据。
+ * 因此 CONFLICT 行的 `value` 存 `{ candidates: [...] }`，GET 时展开为
+ * `candidates`，PATCH 选中某个候选后回到普通标量值。
+ */
+export const ResourceFieldConflictValue = z
+  .object({
+    candidates: z.array(ResourceFieldCandidate).min(2),
+  })
+  .strict();
+export type ResourceFieldConflictValue = z.infer<typeof ResourceFieldConflictValue>;
+
 export const ResourceFieldView = ResourceField.pick({
   fieldName: true,
   value: true,
@@ -131,5 +154,49 @@ export const ResourceFieldView = ResourceField.pick({
   sourceKind: true,
   sourceId: true,
   updatedAt: true,
+}).extend({
+  /** CONFLICT 行的候选值与各自出处；非冲突行为空数组。 */
+  candidates: z.array(ResourceFieldCandidate).default([]),
 });
 export type ResourceFieldView = z.infer<typeof ResourceFieldView>;
+
+/** 草稿创建时提交的一个字段（OCR / 理解卡 / 人工补录共用）。 */
+export const DraftFieldInput = z
+  .object({
+    fieldName: z.string().min(1).max(64),
+    value: JsonValueSchema,
+    sourceKind: ResourceFieldSourceKind.default("manual"),
+    /** 出处原件；无原件（人工录入 / 模型直抽）为 null。 */
+    sourceId: EntityId.nullable().optional(),
+  })
+  .strict();
+export type DraftFieldInput = z.infer<typeof DraftFieldInput>;
+
+/** `PATCH /customers/:id/fields` 的单行：逐字段确认或改正。 */
+export const UpdateResourceFieldInput = z
+  .object({
+    fieldName: z.string().min(1).max(64),
+    value: JsonValueSchema,
+  })
+  .strict();
+export type UpdateResourceFieldInput = z.infer<typeof UpdateResourceFieldInput>;
+
+export const UpdateResourceFieldsInput = z
+  .object({
+    fields: z.array(UpdateResourceFieldInput).min(1).max(50),
+  })
+  .strict();
+export type UpdateResourceFieldsInput = z.infer<typeof UpdateResourceFieldsInput>;
+
+export const ResourceFieldsResponse = z
+  .object({
+    resourceType: ResourceType,
+    resourceId: EntityId,
+    /** 资源状态：草稿页据此决定「确认可用」按钮是否可用。 */
+    resourceStatus: z.enum(["DRAFT", "AVAILABLE", "ARCHIVED"]),
+    fields: z.array(ResourceFieldView),
+    /** 仍为 PENDING / CONFLICT 的字段数（确认页的「还有 N 项待确认」）。 */
+    pendingCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ResourceFieldsResponse = z.infer<typeof ResourceFieldsResponse>;

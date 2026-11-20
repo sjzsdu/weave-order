@@ -2,6 +2,7 @@ import { Image, Input, Text, View } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FabricSample } from "@weave-order/schema";
+import { isSampleStatusAvailable } from "@weave-order/schema";
 import { Badge, Button, Card, EmptyState, Page, Sheet } from "../../components/ui";
 import { api, IS_MOCK } from "../../lib/runtime";
 import { userFacingErrorMessage } from "../../lib/upload-failure";
@@ -294,8 +295,12 @@ export default function SamplesPage() {
               {[selected.composition ?? "成分未填", selected.weight ?? "克重未填"].join(" · ")}
             </Text>
             <View className="label">状态</View>
-            <Badge tone={selected.status === "ACTIVE" ? "accent" : "warn"}>
-              {selected.status === "ACTIVE" ? "在售" : "已归档"}
+            <Badge tone={isSampleStatusAvailable(selected.status) ? "accent" : "warn"}>
+              {selected.status === "DRAFT"
+                ? "草稿"
+                : isSampleStatusAvailable(selected.status)
+                  ? "在售"
+                  : "已归档"}
             </Badge>
             <View className="footnote">移动端只做看图与建样品；改规格、排序图片请到 PC 图墙。</View>
             <View className="actions">

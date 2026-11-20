@@ -16,6 +16,23 @@ import {
   CreatedQuoteShare,
   CreateCustomerContactInput,
   CreateCustomerRequest,
+  CreateCustomerDraftInput,
+  CustomerDraftResponse,
+  CustomerMergePreview,
+  CustomerMergeResult,
+  CustomerMergeUndoResult,
+  CreateItemInput,
+  CreateSampleDraftInput,
+  ItemCreateResult,
+  ItemDetail,
+  ItemListQuery,
+  ItemListResponse,
+  MergeCustomerInput,
+  ResourceFieldsResponse,
+  SampleDraftResponse,
+  TransitionItemInput,
+  UndoCustomerMergeInput,
+  UpdateResourceFieldsInput,
   CreateQuoteShareInput,
   CreateSampleInput,
   CreateSampleShipmentInput,
@@ -478,6 +495,61 @@ export function createApiClient(options: ApiClientOptions) {
       CustomerResponse.parse(await post("/api/customers", CreateCustomerRequest.parse(input)))
         .customer,
 
+    /** 从名片/文本建客户草稿（sourceId 幂等）。 */
+    createCustomerDraft: async (input: z.input<typeof CreateCustomerDraftInput>) =>
+      CustomerDraftResponse.parse(
+        await post("/api/customers/draft", CreateCustomerDraftInput.parse(input)),
+      ),
+
+    confirmCustomer: async (customerId: string) =>
+      CustomerResponse.parse(
+        await post(`/api/customers/${encodeURIComponent(customerId)}/confirm`, {}),
+      ).customer,
+
+    /** 合并影响预览：先看会动哪些数据，再拿票据确认。 */
+    previewCustomerMerge: async (sourceCustomerId: string, targetCustomerId: string) =>
+      CustomerMergePreview.parse(
+        await post(`/api/customers/${encodeURIComponent(sourceCustomerId)}/merge/preview`, {
+          targetCustomerId,
+        }),
+      ),
+
+    mergeCustomer: async (sourceCustomerId: string, input: z.input<typeof MergeCustomerInput>) =>
+      CustomerMergeResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(sourceCustomerId)}/merge`,
+          MergeCustomerInput.parse(input),
+        ),
+      ),
+
+    undoCustomerMerge: async (
+      sourceCustomerId: string,
+      input: z.input<typeof UndoCustomerMergeInput>,
+    ) =>
+      CustomerMergeUndoResult.parse(
+        await post(
+          `/api/customers/${encodeURIComponent(sourceCustomerId)}/merge/undo`,
+          UndoCustomerMergeInput.parse(input),
+        ),
+      ),
+
+    /** 字段出处矩阵：每个字段的 value + status + source。 */
+    customerFields: async (customerId: string) =>
+      ResourceFieldsResponse.parse(
+        await request(`/api/customers/${encodeURIComponent(customerId)}/fields`),
+      ),
+
+    updateCustomerFields: async (
+      customerId: string,
+      input: z.input<typeof UpdateResourceFieldsInput>,
+    ) =>
+      ResourceFieldsResponse.parse(
+        await request(`/api/customers/${encodeURIComponent(customerId)}/fields`, {
+          method: "PATCH",
+          body: JSON.stringify(UpdateResourceFieldsInput.parse(input)),
+        }),
+      ),
+
     /** 客户联系人：未归档，主要联系人在前；VIEWER 拿到的手机 / 邮箱已掩码。 */
     customerContacts: async (customerId: string) =>
       CustomerContactsResponse.parse(
@@ -642,6 +714,32 @@ export function createApiClient(options: ApiClientOptions) {
 
     createSample: async (input: z.input<typeof CreateSampleInput>) =>
       SampleResponse.parse(await post("/api/samples", CreateSampleInput.parse(input))).sample,
+
+    /** 从面料标签/文本建样品草稿（sourceId 幂等）。 */
+    createSampleDraft: async (input: z.input<typeof CreateSampleDraftInput>) =>
+      SampleDraftResponse.parse(
+        await post("/api/samples/draft", CreateSampleDraftInput.parse(input)),
+      ),
+
+    confirmSample: async (sampleId: string) =>
+      SampleResponse.parse(await post(`/api/samples/${encodeURIComponent(sampleId)}/confirm`, {}))
+        .sample,
+
+    sampleFields: async (sampleId: string) =>
+      ResourceFieldsResponse.parse(
+        await request(`/api/samples/${encodeURIComponent(sampleId)}/fields`),
+      ),
+
+    updateSampleFields: async (
+      sampleId: string,
+      input: z.input<typeof UpdateResourceFieldsInput>,
+    ) =>
+      ResourceFieldsResponse.parse(
+        await request(`/api/samples/${encodeURIComponent(sampleId)}/fields`, {
+          method: "PATCH",
+          body: JSON.stringify(UpdateResourceFieldsInput.parse(input)),
+        }),
+      ),
 
     updateSample: async (id: string, input: z.input<typeof UpdateSampleInput>) =>
       SampleResponse.parse(
@@ -1115,6 +1213,35 @@ export function createApiClient(options: ApiClientOptions) {
       z
         .object({ shipment: ShipmentView })
         .parse(await post(`/api/print/boxes/${boxId}/resolve-discrepancy`, { note })),
+
+    /** 事项列表：状态过滤 + 游标分页。 */
+    listItems: async (query: z.input<typeof ItemListQuery> = {}) => {
+      const parsed = ItemListQuery.parse(query);
+      const params = new URLSearchParams();
+      if (parsed.status) params.set("status", parsed.status);
+      if (parsed.filter) params.set("filter", parsed.filter);
+      if (parsed.cursor) params.set("cursor", parsed.cursor);
+      if (parsed.limit !== undefined) params.set("limit", String(parsed.limit));
+      const qs = params.toString();
+      return ItemListResponse.parse(await request(`/api/items${qs ? `?${qs}` : ""}`));
+    },
+
+    getItem: async (itemId: string) =>
+      ItemDetail.parse(await request(`/api/items/${encodeURIComponent(itemId)}`)),
+
+    createItem: async (input: z.input<typeof CreateItemInput>) =>
+      ItemCreateResult.parse(await post("/api/items", CreateItemInput.parse(input))),
+
+    transitionItem: async (itemId: string, input: z.input<typeof TransitionItemInput>) =>
+      ItemDetail.parse(
+        await post(
+          `/api/items/${encodeURIComponent(itemId)}/transition`,
+          TransitionItemInput.parse(input),
+        ),
+      ),
+
+    completeItem: async (itemId: string) =>
+      ItemDetail.parse(await post(`/api/items/${encodeURIComponent(itemId)}/complete`, {})),
   };
 }
 

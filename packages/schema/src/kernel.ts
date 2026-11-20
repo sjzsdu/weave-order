@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   CustomerTierCode,
   EntityId,
+  FabricSample,
   JsonValueSchema,
   Money,
   Quantity,
@@ -11,6 +12,7 @@ import {
   Unit,
 } from "./domain";
 import { MemberRole } from "./tenancy";
+import { DraftFieldInput, ResourceFieldView } from "./resources";
 /**
  * 确定性内核的输入契约。
  *
@@ -57,7 +59,7 @@ export const CreateSampleInput = z
     weight: z.string().max(64).nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
-    status: SampleStatus.default("ACTIVE"),
+    status: SampleStatus.default("AVAILABLE"),
     /**
      * 已上传成功的图片 objectKey（有序）。
      * 桌面/移动端先直传对象存储，再把 key 交给内核挂到样品上。
@@ -68,6 +70,37 @@ export const CreateSampleInput = z
   })
   .strict();
 export type CreateSampleInput = z.infer<typeof CreateSampleInput>;
+
+/**
+ * 从面料标签/文本建样品草稿（P0a）。
+ *
+ * `sourceId` 是幂等键：同一张标签重复提交只得到同一个草稿。
+ * 样品编号由服务端生成（`SYYMMDD-NNNN`），调用方不传 code。
+ */
+export const CreateSampleDraftInput = z
+  .object({
+    sourceId: EntityId,
+    name: z.string().min(1).max(255).optional(),
+    composition: z.string().max(255).nullable().optional(),
+    category: z.string().max(64).nullable().optional(),
+    weight: z.string().max(64).nullable().optional(),
+    unit: Unit.default("meter"),
+    costFloor: Money.nullable().optional(),
+    /** OCR / 理解卡产出的逐字段候选（含出处）；同字段多候选落成 CONFLICT。 */
+    fields: z.array(DraftFieldInput).max(50).optional(),
+  })
+  .strict();
+export type CreateSampleDraftInput = z.infer<typeof CreateSampleDraftInput>;
+
+export const SampleDraftResponse = z
+  .object({
+    sample: FabricSample,
+    /** true = 本次新建；false = 命中同 sourceId 的已有草稿（幂等）。 */
+    created: z.boolean(),
+    fields: z.array(ResourceFieldView),
+  })
+  .strict();
+export type SampleDraftResponse = z.infer<typeof SampleDraftResponse>;
 
 /**
  * 更新面料样品（部分字段）。
@@ -244,6 +277,18 @@ export const AuditAction = z.enum([
   "CUSTOMER_RENAMED",
   "CUSTOMER_TIER_CHANGED",
   "CUSTOMER_OWNER_CHANGED",
+  // P0a 资源草稿 / 字段出处 / 合并 / 事项状态机
+  "CUSTOMER_DRAFT_CREATED",
+  "CUSTOMER_CONFIRMED",
+  "CUSTOMER_FIELDS_UPDATED",
+  "CUSTOMER_MERGED",
+  "CUSTOMER_MERGE_UNDONE",
+  "SAMPLE_DRAFT_CREATED",
+  "SAMPLE_CONFIRMED",
+  "SAMPLE_FIELDS_UPDATED",
+  "ITEM_CREATED",
+  "ITEM_STATUS_CHANGED",
+  "ITEM_COMPLETED",
   // 成员权限
   "MEMBERSHIP_ROLE_CHANGED",
   "MEMBERSHIP_SCOPE_CHANGED",

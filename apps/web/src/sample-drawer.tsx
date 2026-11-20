@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, SampleImage, Unit } from "@weave-order/schema";
+import { isSampleStatusAvailable } from "@weave-order/schema";
 import { Badge, Button, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { canRetryImage, imageStatusBadges, thumbnailNote } from "@/sample-image-status";
@@ -234,8 +235,12 @@ export function SampleDrawer({
                   <Row
                     label="状态"
                     value={
-                      <Badge tone={sample.status === "ACTIVE" ? "info" : "neutral"}>
-                        {sample.status === "ACTIVE" ? "在售" : "已归档"}
+                      <Badge tone={isSampleStatusAvailable(sample.status) ? "info" : "neutral"}>
+                        {sample.status === "DRAFT"
+                          ? "草稿"
+                          : isSampleStatusAvailable(sample.status)
+                            ? "在售"
+                            : "已归档"}
                       </Badge>
                     }
                   />
@@ -265,7 +270,7 @@ export function SampleDrawer({
               >
                 建寄样单
               </Button>
-              {sample.status === "ACTIVE" && (
+              {isSampleStatusAvailable(sample.status) && (
                 <Button
                   variant="ghost"
                   className="min-h-9 px-3 text-xs text-rose-700"

@@ -6,8 +6,8 @@ import {
   pgTable,
   text,
   timestamp,
-  uuid,
   uniqueIndex,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 import type {
@@ -35,6 +35,11 @@ export const customers = pgTable(
      * `ARCHIVED` 归档。存量行由列默认值直接落为 `AVAILABLE`，不做批量回填。
      */
     status: resourceStatusEnum("status").notNull().default("AVAILABLE"),
+    /**
+     * 草稿幂等键：同一张名片（`sources.id`）重复提交只建一个草稿。
+     * 只对草稿有意义；确认可用后仍保留，便于回溯「这个客户从哪张原件长出来」。
+     */
+    draftSourceId: uuid("draft_source_id"),
     contactName: varchar("contact_name", { length: 255 }),
     contactPhone: varchar("contact_phone", { length: 64 }),
     contactEmail: varchar("contact_email", { length: 255 }),
@@ -49,6 +54,10 @@ export const customers = pgTable(
     index("customers_tenant_tier_idx").on(table.tenantId, table.tier),
     // 客户列表默认只看 `AVAILABLE`（草稿不进去重建议、不进报价取数）。
     index("customers_tenant_status_idx").on(table.tenantId, table.status),
+    // 草稿幂等：同一张原件只建一个客户草稿（确认后仍占住，避免重复建）。
+    uniqueIndex("customers_tenant_draft_source_idx")
+      .on(table.tenantId, table.draftSourceId)
+      .where(sql`${table.draftSourceId} is not null`),
     index("customers_name_idx").on(table.name),
   ],
 );

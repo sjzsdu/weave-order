@@ -46,6 +46,8 @@ import { DemoScenesController } from "../demo/scenes.controller";
 import { demoScenesEnabled } from "../demo/scene-catalog";
 import { InboundIntakeService } from "./inbound-intake.service";
 import { SampleController } from "./samples.controllers";
+import { ItemController } from "./items.controllers";
+import { ResourceController } from "./resources.controllers";
 import {
   AGENT_ACTOR,
   HUMAN_ACTOR,
@@ -132,6 +134,8 @@ const providers: Provider[] = [
     IntentController,
     OnboardingStateController,
     SampleController,
+    ItemController,
+    ResourceController,
     OnboardingController,
     TeamController,
     CreditsController,

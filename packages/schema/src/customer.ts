@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CustomerContact } from "./contact";
 import { Customer, CustomerContext, CustomerTierCode, EntityId, Money, Timestamp } from "./domain";
+import { DraftFieldInput, ResourceFieldView } from "./resources";
 
 /**
  * 客户 360 读模型。
@@ -24,6 +25,8 @@ export const CustomerListOptions = z
      * 排序只在服务端做：前端拿到什么顺序就显示什么顺序，不再二次排序。
      */
     sort: z.enum(["recent", "followup"]).optional(),
+    /** 草稿客户默认不进列表（不参与去重建议）；草稿确认页显式要求时才带上。 */
+    includeDrafts: z.boolean().optional(),
     limit: z.number().int().min(1).max(200).optional(),
   })
   .strict();
@@ -74,6 +77,98 @@ export const CustomerSummary = z
   })
   .strict();
 export type CustomerSummary = z.infer<typeof CustomerSummary>;
+
+/**
+ * 从名片/文本建客户草稿（P0a）。
+ *
+ * `sourceId` 是幂等键：同一张原件重复提交只会得到同一个草稿。
+ * 字段可缺省——草稿允许缺非关键字段，确认可用时再由内核要求必填项齐备。
+ */
+export const CreateCustomerDraftInput = z
+  .object({
+    sourceId: EntityId,
+    name: z.string().min(1).max(255).optional(),
+    contactName: z.string().max(255).nullable().optional(),
+    contactPhone: z.string().max(64).nullable().optional(),
+    contactEmail: z.string().email().max(255).nullable().optional(),
+    tier: CustomerTierCode.optional(),
+    /** OCR / 理解卡产出的逐字段候选（含出处）；同一字段多个候选会落成 CONFLICT。 */
+    fields: z.array(DraftFieldInput).max(50).optional(),
+  })
+  .strict();
+export type CreateCustomerDraftInput = z.infer<typeof CreateCustomerDraftInput>;
+
+export const CustomerDraftResponse = z
+  .object({
+    customer: Customer,
+    /** true = 本次新建；false = 命中同 sourceId 的已有草稿（幂等）。 */
+    created: z.boolean(),
+    fields: z.array(ResourceFieldView),
+  })
+  .strict();
+export type CustomerDraftResponse = z.infer<typeof CustomerDraftResponse>;
+
+/** 合并前的影响预览：先看会动哪些数据，再确认。 */
+export const CustomerMergePreview = z
+  .object({
+    sourceCustomerId: EntityId,
+    targetCustomerId: EntityId,
+    counts: z
+      .object({
+        quotes: z.number().int().nonnegative(),
+        orders: z.number().int().nonnegative(),
+        sampleShipments: z.number().int().nonnegative(),
+        receivables: z.number().int().nonnegative(),
+        items: z.number().int().nonnegative(),
+        contacts: z.number().int().nonnegative(),
+        decisionDeltas: z.number().int().nonnegative(),
+      })
+      .strict(),
+    /** 目标客户已有同手机/邮箱联系人：这些联系人不会迁移，留在源客户下。 */
+    contactConflicts: z.array(
+      z.object({ contactId: EntityId, reason: z.enum(["PHONE", "EMAIL", "PRIMARY"]) }).strict(),
+    ),
+    /** 预览确认票据（10 分钟内有效）；合并时必须原样回传。 */
+    previewToken: z.string().min(1),
+    expiresAt: Timestamp,
+  })
+  .strict();
+export type CustomerMergePreview = z.infer<typeof CustomerMergePreview>;
+
+export const MergeCustomerInput = z
+  .object({
+    targetCustomerId: EntityId,
+    previewToken: z.string().min(1),
+  })
+  .strict();
+export type MergeCustomerInput = z.infer<typeof MergeCustomerInput>;
+
+export const CustomerMergeResult = z
+  .object({
+    customer: Customer,
+    moved: CustomerMergePreview.shape.counts,
+    skippedContactCount: z.number().int().nonnegative(),
+    /** 撤销窗口截止时间；窗口内可用 `undoToken` 完整回滚。 */
+    undoUntil: Timestamp,
+    undoToken: z.string().min(1),
+  })
+  .strict();
+export type CustomerMergeResult = z.infer<typeof CustomerMergeResult>;
+
+export const UndoCustomerMergeInput = z
+  .object({
+    undoToken: z.string().min(1),
+  })
+  .strict();
+export type UndoCustomerMergeInput = z.infer<typeof UndoCustomerMergeInput>;
+
+export const CustomerMergeUndoResult = z
+  .object({
+    customer: Customer,
+    reverted: CustomerMergePreview.shape.counts,
+  })
+  .strict();
+export type CustomerMergeUndoResult = z.infer<typeof CustomerMergeUndoResult>;
 
 /**
  * 客户 360 首屏：档案 + 上下文 + 汇总 + 联系人。

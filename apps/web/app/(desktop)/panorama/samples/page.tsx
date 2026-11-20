@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, FieldKey } from "@weave-order/schema";
+import { isSampleStatusAvailable } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
@@ -379,7 +380,13 @@ function SampleCard({
         <span className="block px-3 py-2">
           <span className="flex items-center justify-between gap-2">
             <span className="truncate text-sm font-medium text-ink-900">{sample.name}</span>
-            <Badge tone="neutral">{sample.status === "ACTIVE" ? sample.code : "已归档"}</Badge>
+            <Badge tone="neutral">
+              {sample.status === "DRAFT"
+                ? "草稿"
+                : isSampleStatusAvailable(sample.status)
+                  ? sample.code
+                  : "已归档"}
+            </Badge>
           </span>
           <span className="mt-0.5 block truncate text-xs text-ink-400">
             {[sample.composition, sample.weight].filter(Boolean).join(" · ") || "规格未填"}

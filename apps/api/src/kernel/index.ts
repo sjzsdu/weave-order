@@ -26,6 +26,7 @@ import { FieldOptionsService } from "./field-options.service";
 import { ImportService } from "./import.service";
 import { InboundRepliesService } from "./inbound-replies.service";
 import { IntentService } from "./intents.service";
+import { ItemService } from "./items.service";
 import { OrderService } from "./orders.service";
 import { OrderShipmentService } from "./order-shipments.service";
 import { OnboardingStateService } from "./onboarding-state.service";
@@ -33,6 +34,7 @@ import { PricingService } from "./pricing.service";
 import { QuoteService } from "./quotes.service";
 import { ReceivableService } from "./receivables.service";
 import { RevisionService } from "./revisions.service";
+import { ResourceFieldService } from "./resource-fields.service";
 import { ImageIndexService } from "./image-index.service";
 import { MediaMaintenanceService } from "./media-maintenance.service";
 import { SampleImageService } from "./sample-images.service";
@@ -57,6 +59,8 @@ export interface KernelOptions {
   publicAppUrl?: string;
   /** 对象存储；缺省按环境变量创建。测试可注入假实现，避免真实网络。 */
   storage?: ObjectStorage;
+  /** 合并预览 / 撤销票据的签名密钥；缺省回落到 QUOTE_SHARE_SECRET 或本地固定值。 */
+  mergeSecret?: string;
   /** 图像 embedding provider；缺省按环境变量创建（默认 local-stub，无 key 可跑）。 */
   imageEmbedder?: ImageEmbeddingProvider;
   /** 送模型前的缩图长边（0 = 关闭）。单测用假图片时需要关掉。 */
@@ -83,7 +87,10 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     options.imageEmbedder ??
     createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
   const fieldOptions = new FieldOptionsService(db, tenantId);
-  const customers = new CustomerService(db, tenantId, fieldOptions);
+  const resourceFields = new ResourceFieldService(db, tenantId);
+  const mergeSecret =
+    options.mergeSecret ?? process.env.MERGE_UNDO_SECRET ?? env.QUOTE_SHARE_SECRET ?? "weave-order-local-merge-secret";
+  const customers = new CustomerService(db, tenantId, fieldOptions, resourceFields, mergeSecret);
   const contacts = new ContactService(db, tenantId, customers);
   const storage = options.storage ?? createObjectStorageFromEnv(env);
   const sampleImages = new SampleImageService(db, tenantId, storage, env);
@@ -102,6 +109,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     sampleIndex,
     imageIndex,
     thumbs,
+    resourceFields,
   );
   const pricing = new PricingService(db, tenantId);
   const shipments = new ShipmentService(db, customers, tenantId);
@@ -146,6 +154,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
   const intents = new IntentService(db, tenantId);
+  const items = new ItemService(db, tenantId);
   const onboardingState = new OnboardingStateService(db, tenantId);
   const inboundReplies = new InboundRepliesService(db, tenantId, {
     retentionDays: env.INBOUND_RAW_RETENTION_DAYS,
@@ -170,6 +179,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     tenantId,
     access,
     fieldOptions,
+    resourceFields,
     customers,
     contacts,
     samples,
@@ -193,6 +203,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     llmSettings,
     usage,
     intent: intents,
+    items,
     onboardingState,
     inboundReplies,
     shares,
