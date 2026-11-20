@@ -216,7 +216,7 @@ export function SharePanel({
                 : expired
                   ? { label: "已过期", tone: "warning" as const }
                   : share.acceptedAt
-                    ? { label: "客户已接受", tone: "success" as const }
+                    ? { label: "已表达接受意向", tone: "success" as const }
                     : { label: "等待查看", tone: "info" as const };
               return (
                 <li
@@ -250,7 +250,8 @@ export function SharePanel({
                     )}
                     {share.acceptedAt && (
                       <span className="text-moss-600">
-                        接受于 {new Date(share.acceptedAt).toLocaleString("zh-CN")}
+                        接受于 {new Date(share.acceptedAt).toLocaleString("zh-CN")} ·
+                        仅为意向，尚未下单
                       </span>
                     )}
                   </div>
