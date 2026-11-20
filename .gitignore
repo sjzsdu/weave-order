@@ -52,3 +52,6 @@ data/ocr-spike/manifest.json
 data/ocr-spike/*.jpg
 data/ocr-spike/*.png
 data/ocr-spike/ocr-text.json
+.review/
+apps/mobile/dist-review
+scale-compare.png
