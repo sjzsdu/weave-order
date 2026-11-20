@@ -208,7 +208,7 @@ export function InboundReplyDrawer({
                     href={`/approvals?id=${encodeURIComponent(result.quoteDraftId)}&kind=quote`}
                     className="text-indigo-600 underline underline-offset-2"
                   >
-                    查看报价草稿（待审批）
+                    查看报价草稿（待确认）
                   </Link>
                 )}
               </div>
@@ -221,9 +221,7 @@ export function InboundReplyDrawer({
           )}
 
           <div className="flex items-center justify-between border-t border-line pt-3">
-            <span className="text-xs text-ink-400">
-              同一条消息重复提交，不会重复生成草稿。
-            </span>
+            <span className="text-xs text-ink-400">同一条消息重复提交，不会重复生成草稿。</span>
             <Button variant="primary" disabled={busy || !canSubmit} onClick={() => submit.mutate()}>
               {busy ? "正在识别…" : "录入并识别"}
             </Button>

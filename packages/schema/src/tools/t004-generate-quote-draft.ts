@@ -23,6 +23,8 @@ export const T004GenerateQuoteDraftInput = z
     customerId: EntityId,
     items: z.array(QuoteLineItemInput).min(1).max(200),
     currency: Currency,
+    /** 从业务事项发起时绑定事项；客户必须与事项一致（内核校验）。 */
+    itemId: EntityId.optional(),
     /** 报价有效期（天） */
     validityDays: z.number().int().positive().max(365).default(30),
     remarks: z.string().max(2000).optional(),

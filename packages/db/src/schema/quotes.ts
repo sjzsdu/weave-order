@@ -21,6 +21,7 @@ import {
   unitEnum,
 } from "./enums";
 import { customers } from "./customers";
+import { items } from "./items";
 import { samples } from "./samples";
 
 /**
@@ -81,6 +82,11 @@ export const quotes = pgTable(
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
+    /**
+     * 所属业务事项（P0a-5）。历史报价没有关联，为 NULL；
+     * 事项「完成」优先按它校验，避免同客户同样品的另一条事项被误判。
+     */
+    itemId: uuid("item_id").references(() => items.id, { onDelete: "set null" }),
     status: quoteStatusEnum("status").notNull().default("DRAFT"),
     currency: currencyEnum("currency").notNull(),
     subtotalAmount: bigint("subtotal_amount", { mode: "number" }).notNull(),
@@ -106,11 +112,14 @@ export const quotes = pgTable(
     remarks: text("remarks"),
     confirmedBy: varchar("confirmed_by", { length: 128 }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    /** 确认幂等键：同一次点击的重试据此返回原结果，不重复写审计。 */
+    confirmIdempotencyKey: varchar("confirm_idempotency_key", { length: 128 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("quotes_tenant_customer_idx").on(table.tenantId, table.customerId),
+    index("quotes_tenant_item_idx").on(table.tenantId, table.itemId),
     index("quotes_tenant_status_created_idx").on(table.tenantId, table.status, table.createdAt),
   ],
 );

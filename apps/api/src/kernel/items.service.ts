@@ -12,7 +12,7 @@ import {
   isTerminalItemStatus,
 } from "@weave-order/schema";
 import type { ItemStatus, ResourceStatus } from "@weave-order/schema";
-import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
@@ -294,7 +294,10 @@ export class ItemService {
   /**
    * 完成事项：必须有可观察业务结果。
    *
-   * P0 的可观察结果 = 同客户 + 同样品存在一张已确认（CONFIRMED）报价。
+   * P0 的可观察结果 = 本事项下存在一张已确认报价（SENT/ACCEPTED）。
+   * 优先按 `quotes.itemId` 精确匹配；只有 WAN-197 之前的老报价（itemId 为空）
+   * 才退回「同客户 + 同样品」匹配。已关联到别的事项的报价绝不参与本事项判断，
+   * 否则同客户同样品有两条事项时会互相误判完成。
    * 打印结果属于 P0b，届时并列进这一处判断，不回写状态机。
    */
   async complete(itemId: string, ctx: KernelContext): Promise<ItemDetail> {
@@ -310,6 +313,17 @@ export class ItemService {
         reason: "ITEM_TRANSITION_INVALID",
       });
     }
+    const resultCondition =
+      row.customerId && row.sampleId
+        ? or(
+            eq(quotes.itemId, itemId),
+            and(
+              isNull(quotes.itemId),
+              eq(quotes.customerId, row.customerId),
+              eq(quoteItems.sampleId, row.sampleId),
+            ),
+          )!
+        : eq(quotes.itemId, itemId);
     const evidence = await this.db
       .select({ quoteId: quotes.id })
       .from(quoteItems)
@@ -317,10 +331,9 @@ export class ItemService {
       .where(
         and(
           eq(quotes.tenantId, this.tenantId),
-          eq(quotes.customerId, row.customerId!),
-          eq(quoteItems.sampleId, row.sampleId!),
           // 现有报价状态机里「确认」落 SENT（D1 定稿动作为 confirm，不引入新状态值）。
           inArray(quotes.status, ["SENT", "ACCEPTED"]),
+          resultCondition,
         ),
       )
       .limit(1);

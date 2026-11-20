@@ -7,7 +7,7 @@
 export interface TodayHeadlineInput {
   /** `stats.todayAgentDoneCount`：今天、智能体、业务动作。 */
   agentDone: number;
-  /** 待审批单据数。 */
+  /** 待确认单据数（D1 后不再有审批队列）。 */
   pendingCount: number;
   /** 客户与样品都为 0，即还没有任何业务数据。 */
   isNewWorkspace: boolean;

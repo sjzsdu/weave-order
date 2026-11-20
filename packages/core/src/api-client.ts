@@ -22,9 +22,13 @@ import {
   CustomerMergeResult,
   CustomerMergeUndoResult,
   CreateItemInput,
+  CreateItemQuoteInput,
+  ConfirmItemQuoteInput,
   CreateSampleDraftInput,
   ItemCreateResult,
   ItemDetail,
+  ItemQuoteListResponse,
+  ItemQuoteRevisionResult,
   ItemListQuery,
   ItemListResponse,
   MergeCustomerInput,
@@ -94,12 +98,16 @@ import {
   PublishPrintTemplateVersionInput,
   PickScanInput,
   QuoteDetail,
+  QuoteBasis,
+  QuoteConfirmation,
+  QuoteCopyText,
   QuoteListResponse,
   QuoteShareStats,
   ResolveFieldValueResponse,
   QuoteShareStatsList,
   ReviseQuoteDraftInput,
   ReviseQuoteDraftResult,
+  ReviseItemQuoteInput,
   RegisterPrintAgentInput,
   Receivable,
   ReceivableListResponse,
@@ -1270,6 +1278,45 @@ export function createApiClient(options: ApiClientOptions) {
 
     completeItem: async (itemId: string) =>
       ItemDetail.parse(await post(`/api/items/${encodeURIComponent(itemId)}/complete`, {})),
+
+    /** 事项下的报价版本。 */
+    listItemQuotes: async (itemId: string) =>
+      ItemQuoteListResponse.parse(await request(`/api/items/${encodeURIComponent(itemId)}/quotes`)),
+
+    /** 在事项里发起报价：缺省价格由内核按成本底线 + 默认毛利给出。 */
+    createItemQuote: async (itemId: string, input: z.input<typeof CreateItemQuoteInput> = {}) =>
+      QuoteDetail.parse(
+        await post(
+          `/api/items/${encodeURIComponent(itemId)}/quotes`,
+          CreateItemQuoteInput.parse(input),
+        ),
+      ),
+
+    /** 报价依据（实时查，不缓存）。 */
+    quoteBasis: async (quoteId: string) =>
+      QuoteBasis.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}/basis`)),
+
+    /** 事项内改价：原价 → 新价 → 差额。 */
+    reviseItemQuote: async (quoteId: string, input: z.input<typeof ReviseItemQuoteInput>) =>
+      ItemQuoteRevisionResult.parse(
+        await post(
+          `/api/quotes/${encodeURIComponent(quoteId)}/revise`,
+          ReviseItemQuoteInput.parse(input),
+        ),
+      ),
+
+    /** 确认价格（幂等键去重，重复调用返回同一结果）。 */
+    confirmQuote: async (quoteId: string, input: z.input<typeof ConfirmItemQuoteInput> = {}) =>
+      QuoteConfirmation.parse(
+        await post(
+          `/api/quotes/${encodeURIComponent(quoteId)}/confirm`,
+          ConfirmItemQuoteInput.parse(input),
+        ),
+      ),
+
+    /** 复制报价文本。 */
+    quoteCopyText: async (quoteId: string) =>
+      QuoteCopyText.parse(await request(`/api/quotes/${encodeURIComponent(quoteId)}/copy-text`)),
   };
 }
 

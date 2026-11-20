@@ -9,6 +9,7 @@ import {
   Timestamp,
 } from "./domain";
 import { LlmTask } from "./llm";
+import { RevisionDiff } from "./revisions";
 import { ImagePayload } from "./tools/t001-search-fabric-by-image";
 import { QuotePricingBasis } from "./tools/t006-suggest-line-price";
 import { QuoteDraft } from "./tools/t004-generate-quote-draft";
@@ -179,6 +180,17 @@ export const QuoteDetail = z
     draft: QuoteDraft,
     version: z.number().int().positive(),
     status: QuoteStatus,
+    /** 所属业务事项；历史报价（WAN-197 之前）没有关联，为 null。 */
+    itemId: EntityId.nullable().default(null),
+    /** 展示用编号（`BJ-YYYYMMDD-XXXX`），由内核按创建时间与 id 派生。 */
+    quoteNumber: z.string().min(1).max(64).optional(),
+    /** 确认人审计：谁在什么时候把价格定稿。 */
+    confirmedBy: z.string().min(1).max(128).nullable().default(null),
+    confirmedAt: Timestamp.nullable().default(null),
+    /** 智能体原稿总额：改价后仍保留，依据抽屉用它展示「原价」。 */
+    baselineTotal: Money.nullable().default(null),
+    /** 当前版本相对原稿的逐行 diff。 */
+    pendingDiff: z.array(RevisionDiff).default([]),
   })
   .strict();
 export type QuoteDetail = z.infer<typeof QuoteDetail>;

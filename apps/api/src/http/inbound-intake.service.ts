@@ -158,8 +158,8 @@ export class InboundIntakeService {
         } else {
           quoteDraftId = draft.data.draft.id;
           hint = isSimulated(classification.provider)
-            ? "模拟识别（本地规则）已生成报价草稿，待审批。"
-            : "已识别为询价并生成报价草稿，待审批。";
+            ? "模拟识别（本地规则）已生成报价草稿，待确认。"
+            : "已识别为询价并生成报价草稿，待确认。";
         }
       }
     } catch (error) {
