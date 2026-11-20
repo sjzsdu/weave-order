@@ -81,7 +81,9 @@ export default function CustomersPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           title={keyword ? "没有匹配的客户" : "还没有客户"}
-          desc={keyword ? "换个关键词，或去 PC 端导入。" : "先在 PC 端导入客户，手机只做现场动作。"}
+          desc={
+            keyword ? "换个关键词，或去 PC 端导入。" : "先在 PC 端导入客户，手机上就能直接报价。"
+          }
         />
       ) : (
         filtered.map((customer) => {

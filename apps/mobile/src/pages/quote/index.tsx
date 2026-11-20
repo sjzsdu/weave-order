@@ -693,17 +693,28 @@ export default function QuotePage() {
               ))}
             </View>
 
-            <View className="list-row" onClick={() => setCustomerSheet(true)}>
-              <View>
-                <View className="list-title">{customer?.name ?? "客户：未选"}</View>
-                <View className="list-sub">
-                  {customer
-                    ? `${customer.code} · ${customer.tier}`
-                    : "不会自动用第一个客户，请选择"}
+            {/* 最近客户直接铺成 chip：打开选择器再点一次等于两次点击，报价全链路预算只有 5 次。
+                仍然不默认选中第一个，未选时「客户：未选」。 */}
+            <View className="label">客户（不选则不会自动用第一个）</View>
+            <View className="chip-row">
+              {recentCustomers.map((entry) => (
+                <View
+                  key={entry.id}
+                  className={entry.id === state.customerId ? "chip chip-active" : "chip"}
+                  onClick={() => dispatch({ type: "customerSelected", customerId: entry.id })}
+                >
+                  {entry.name}
                 </View>
+              ))}
+              <View className="chip chip-count" onClick={() => setCustomerSheet(true)}>
+                {recentCustomers.length > 0 ? "全部客户…" : "选择客户"}
               </View>
-              <Text className="link">选择</Text>
             </View>
+            {customer && (
+              <View className="list-sub">
+                {customer.code} · {customer.tier}
+              </View>
+            )}
 
             <View className="actions">
               {state.mode === "camera" && (
