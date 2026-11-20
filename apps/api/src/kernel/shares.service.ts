@@ -18,15 +18,19 @@ import {
   CustomerQuoteView,
   CustomerSalesContact,
   CreateQuoteShareInput,
+  hasCapability,
+  QuoteSharingSettings,
   QuoteShareStats,
   QuoteShareStatsList,
   QuoteShare,
+  UpdateQuoteSharingSettingsInput,
   pickDefaultContact,
 } from "@weave-order/schema";
 import type {
   CustomerQuotePage as CustomerPage,
   JsonValue,
   QuoteLinkErrorCode,
+  QuoteSharingSettings as QuoteSharingSettingsValue,
   QuoteShare as QuoteShareRecord,
 } from "@weave-order/schema";
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
@@ -55,6 +59,13 @@ const ACTIVE_QUOTE_STATUS = "SENT";
  */
 const VIEW_DEDUP_WINDOW_SECONDS = 10 * 60;
 const MAX_QUESTIONS_PER_SHARE = 20;
+/**
+ * 租户级公开面开关，写在 `tenants.settings` 里。
+ *
+ * 存量租户没有这个键，因此「缺省 = 开启」：只有显式 `false` 才关闭。
+ * 关闭后必须让**已生成**的链接立即失效，所以读取路径每次都要查，不能只看新建。
+ */
+const QUOTE_SHARING_SETTING = "quoteSharingEnabled";
 
 /** 客户侧可读的链接错误。控制器据此映射 400/410，不暴露内部原因。 */
 export class QuoteLinkError extends Error {
@@ -177,6 +188,91 @@ export class ShareService {
     return row;
   }
 
+  /**
+   * 租户设置里只读公开面开关。
+   *
+   * 不复用 `buildCustomerPage` 的 tenant 查询：那个查询在 `requireActiveShare` 之后，
+   * 而关闭开关时必须先拒绝，避免关闭期间仍读出客户视图。多一次按主键的读，换来的是
+   * 「关闭后已生成链接立即失效」这个硬约束。
+   */
+  private async tenantSettings(): Promise<Record<string, JsonValue>> {
+    const rows = await this.db
+      .select({ settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, this.tenantId))
+      .limit(1);
+    return jsonObject(rows[0]?.settings ?? null) ?? {};
+  }
+
+  private static sharingEnabled(settings: Record<string, JsonValue>): boolean {
+    return settings[QUOTE_SHARING_SETTING] !== false;
+  }
+
+  private requireSettingsEdit(ctx: KernelContext): void {
+    if (!ctx.actor.role || !hasCapability(ctx.actor.role, "settings.edit")) {
+      throw new KernelError("PERMISSION_DENIED", "当前角色不能修改公司设置");
+    }
+  }
+
+  /** 设置页读取开关；缺省（未写入）= 开启。 */
+  async getSharingSettings(ctx: KernelContext): Promise<QuoteSharingSettingsValue> {
+    this.requireSettingsEdit(ctx);
+    return QuoteSharingSettings.parse({
+      enabled: ShareService.sharingEnabled(await this.tenantSettings()),
+    });
+  }
+
+  /**
+   * 开关写入。合并而不是覆盖 `tenants.settings`，避免把销售名片 / 条款一起抹掉。
+   * 行锁 + 事务内审计：两个人同时改设置时不会后写覆盖前写而丢审计。
+   */
+  async updateSharingSettings(
+    input: unknown,
+    ctx: KernelContext,
+  ): Promise<QuoteSharingSettingsValue> {
+    const parsed = UpdateQuoteSharingSettingsInput.parse(input);
+    this.requireSettingsEdit(ctx);
+    const enabled = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, this.tenantId))
+        .for("update")
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        throw new KernelError("RESOURCE_NOT_FOUND", "租户不存在", {
+          resourceType: "tenant",
+          resourceId: this.tenantId,
+        });
+      }
+      const current = jsonObject(row.settings) ?? {};
+      const before = ShareService.sharingEnabled(current);
+      if (before === parsed.enabled) return parsed.enabled;
+      await tx
+        .update(tenants)
+        .set({
+          settings: { ...current, [QUOTE_SHARING_SETTING]: parsed.enabled },
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, this.tenantId));
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "QUOTE_SHARING_UPDATED",
+          entityType: "tenant",
+          entityId: this.tenantId,
+          before: { enabled: before },
+          after: { enabled: parsed.enabled },
+        },
+        this.tenantId,
+      );
+      return parsed.enabled;
+    });
+    return QuoteSharingSettings.parse({ enabled });
+  }
+
   /** 只有已批准（SENT）的报价能生成链接；草稿绝不外发。 */
   async createForQuote(
     quoteId: string,
@@ -186,6 +282,11 @@ export class ShareService {
     const body = typeof input === "object" && input !== null ? input : {};
     // 路径参数是权威 quoteId；body 里试图夹带别的 quoteId 会被这里覆盖。
     const parsed = CreateQuoteShareInput.parse({ ...body, quoteId });
+    if (!ShareService.sharingEnabled(await this.tenantSettings())) {
+      throw new KernelError("KERNEL_REJECTED", "公司已关闭客户报价链接，无法生成新链接", {
+        reason: "SHARING_DISABLED",
+      });
+    }
     const quote = await this.getQuoteRow(quoteId);
     if (quote.status !== ACTIVE_QUOTE_STATUS) {
       throw new KernelError(
@@ -517,6 +618,10 @@ export class ShareService {
       .limit(1);
     const share = rows[0];
     if (!share || !tokenHashMatches(hashToken(token), share.tokenHash)) {
+      throw new QuoteLinkError("INVALID_LINK", "链接无效，请联系您的业务员重新获取");
+    }
+    // 租户关闭后按「链接无效」处理：不向客户暴露公司内部开关状态，也不分配新错误码。
+    if (!ShareService.sharingEnabled(await this.tenantSettings())) {
       throw new QuoteLinkError("INVALID_LINK", "链接无效，请联系您的业务员重新获取");
     }
     if (share.revokedAt) {

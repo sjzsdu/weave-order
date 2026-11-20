@@ -46,45 +46,52 @@ sequenceDiagram
 
 ## 3. 安全约束对照
 
-| 约束                | 落点                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| 不存明文 token      | 只存 `sha256(token)`；明文只出现在 `CreatedQuoteShare.token/url`                        |
-| 有效期 = 报价有效期 | `expiresAt = quote.expiresAt`；`expiresInDays` 仅旧客户端兼容保留，不参与计算；过期 410 |
-| 可撤回              | `revoked_at` + `REVOKED` 事件 + 审计 `QUOTE_SHARE_REVOKED`；撤回后 410                  |
-| 只有已批准可分享    | `quote.status === "SENT"`，否则 `KERNEL_REJECTED / QUOTE_NOT_APPROVED`                  |
-| 手机尾号验证        | 可选；比对 `customers.contact_phone` 后 4 位；不匹配 400                                |
-| 客户名水印          | 页面 + 打印版铺满「客户名 · 报价编号」                                                  |
-| 不泄露内部字段      | 客户视图只 SELECT `CustomerQuoteView` 需要的列；测试断言无 cost/margin/remarks          |
-| 接受 ≠ 合同         | 只写 `ACCEPTED` 事件；不更新 `quotes`；测试断言状态仍为 `SENT`                          |
-| IP 只存哈希         | `hashAnonymous(ip, QUOTE_SHARE_SECRET)`，不存明文                                       |
-| 生产密钥 fail-fast  | 生产/OIDC 下 `QUOTE_SHARE_SECRET` 仍是开发默认值即拒绝启动（同 `APP_DATABASE_URL`）     |
-| 不写追踪 Cookie     | Next 路由无鉴权 Cookie；返回 `Cache-Control: no-store` + `noindex`                      |
-| 跨租户隔离          | token 自带 tenantId；公开路由仍走 `withTenantSession`，不存在 owner 跨租户查询          |
-| 不回显 token        | `CustomerQuoteView` 不含原始 token；客户端从 URL 取，避免日志/监控误记明文              |
-| 销售名片            | 读 `tenants.settings.salesContact`；只输出脱敏电话与可选微信二维码                      |
+| 约束                | 落点                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 不存明文 token      | 只存 `sha256(token)`；明文只出现在 `CreatedQuoteShare.token/url`                                                    |
+| 有效期 = 报价有效期 | `expiresAt = quote.expiresAt`；`expiresInDays` 仅旧客户端兼容保留，不参与计算；过期 410                             |
+| 可撤回              | `revoked_at` + `REVOKED` 事件 + 审计 `QUOTE_SHARE_REVOKED`；撤回后 410                                              |
+| 只有已批准可分享    | `quote.status === "SENT"`，否则 `KERNEL_REJECTED / QUOTE_NOT_APPROVED`                                              |
+| 手机尾号验证        | 可选；比对 `customers.contact_phone` 后 4 位；不匹配 400                                                            |
+| 客户名水印          | 页面 + 打印版铺满「客户名 · 报价编号」                                                                              |
+| 不泄露内部字段      | 客户视图只 SELECT `CustomerQuoteView` 需要的列；测试断言无 cost/margin/remarks                                      |
+| 接受 ≠ 合同         | 只写 `ACCEPTED` 事件；不更新 `quotes`；测试断言状态仍为 `SENT`                                                      |
+| IP 只存哈希         | `hashAnonymous(ip, QUOTE_SHARE_SECRET)`，不存明文                                                                   |
+| 生产密钥 fail-fast  | 生产/OIDC 下 `QUOTE_SHARE_SECRET` 仍是开发默认值即拒绝启动（同 `APP_DATABASE_URL`）                                 |
+| 不写追踪 Cookie     | Next 路由无鉴权 Cookie；返回 `Cache-Control: no-store` + `noindex`                                                  |
+| 跨租户隔离          | token 自带 tenantId；公开路由仍走 `withTenantSession`，不存在 owner 跨租户查询                                      |
+| 不回显 token        | `CustomerQuoteView` 不含原始 token；客户端从 URL 取，避免日志/监控误记明文                                          |
+| 销售名片            | 读 `tenants.settings.salesContact`；只输出脱敏电话与可选微信二维码                                                  |
+| 租户级关闭开关      | `tenants.settings.quoteSharingEnabled`（缺省 = 开启）；关闭后每次公开请求都按 `INVALID_LINK` 拒绝，且不允许新建链接 |
 
 ## 4. 接口
 
-| 方法 | 路径                                  | 身份                 | 返回                                       |
-| ---- | ------------------------------------- | -------------------- | ------------------------------------------ |
-| POST | `/api/quotes/:id/shares`              | HUMAN，且报价 `SENT` | `CreatedQuoteShare`（token/url 只此一次）  |
-| GET  | `/api/quotes/:id/shares`              | 只读                 | `QuoteShareStatsList`                      |
-| POST | `/api/shares/:id/revoke`              | HUMAN                | `QuoteShareStats`                          |
-| GET  | `/api/public/quotes/:token`           | 公开                 | `CustomerQuotePage`；`?track=0` 只读不计数 |
-| POST | `/api/public/quotes/:token/accept`    | 公开                 | `CustomerAcceptQuoteResult`                |
-| POST | `/api/public/quotes/:token/questions` | 公开                 | `CustomerAskQuestionResult`                |
-| POST | `/api/public/quotes/:token/pdf`       | 公开，`allow_pdf`    | 204                                        |
+| 方法  | 路径                                  | 身份                   | 返回                                          |
+| ----- | ------------------------------------- | ---------------------- | --------------------------------------------- |
+| POST  | `/api/quotes/:id/shares`              | HUMAN，且报价 `SENT`   | `CreatedQuoteShare`（token/url 只此一次）     |
+| GET   | `/api/quotes/:id/shares`              | 只读                   | `QuoteShareStatsList`                         |
+| POST  | `/api/shares/:id/revoke`              | HUMAN                  | `QuoteShareStats`                             |
+| GET   | `/api/public/quotes/:token`           | 公开                   | `CustomerQuotePage`；`?track=0` 只读不计数    |
+| POST  | `/api/public/quotes/:token/accept`    | 公开                   | `CustomerAcceptQuoteResult`                   |
+| POST  | `/api/public/quotes/:token/questions` | 公开                   | `CustomerAskQuestionResult`                   |
+| POST  | `/api/public/quotes/:token/pdf`       | 公开，`allow_pdf`      | 204                                           |
+| GET   | `/api/settings/quote-sharing`         | HUMAN，`settings.edit` | `{ enabled }`（缺省开启）                     |
+| PATCH | `/api/settings/quote-sharing`         | HUMAN，`settings.edit` | `{ enabled }`；写审计 `QUOTE_SHARING_UPDATED` |
 
 错误统一为 `{ ok:false, error:{ code, message } }`：`INVALID_LINK` 404、
 `EXPIRED`/`REVOKED` 410、`PHONE_TAIL_REQUIRED`/`PHONE_TAIL_MISMATCH`/`INVALID_INPUT` 400、
 `PDF_DISABLED` 403。
+
+开关关闭后存量链接一律按 `INVALID_LINK` 返回，不新增错误码、也不暴露租户内部状态；
+业务员侧的 `GET /quotes/:id/shares` 与 `POST /shares/:id/revoke` 继续可用，方便清理。
 
 ## 5. 测试
 
 - `apps/api/test/share-token.test.ts`：签名/篡改/换密钥/随机性/匿名哈希。
 - `apps/api/test/share.integration.test.ts`：草稿不可分享、只存哈希、无登录查看、
   手机尾号错误/缺失/正确、重复接受幂等、提问、PDF、独立访客、撤回、过期、篡改 token、
-  接受后账本仍 `SENT`。
+  接受后账本仍 `SENT`、订单表无新增、ACCEPTED 事件只有一条；租户开关关闭后存量链接立即失效、
+  不能新建、重新开启立即恢复、SALES 无权改开关、开关写入不覆盖其它租户设置。
 - `apps/api/test/share.http.e2e.test.ts`：真起 Nest 的 HTTP 状态语义与闭环。
 - `apps/quote/src/lib.test.ts`：金额/数量/日期/中英文案/有效期比例。
 

@@ -282,4 +282,19 @@ describe("报价链接 HTTP（e2e）", () => {
     expect(list.shares[0]?.viewCount).toBe(1);
     expect(list.shares[0]?.lastViewedAt).toBeTruthy();
   }, 40_000);
+
+  it("租户开关接口可读，非法入参返回 400", async (ctx) => {
+    if (!available) ctx.skip();
+    const read = await fetch(`${baseUrl}/api/settings/quote-sharing`);
+    expect(read.status).toBe(200);
+    const body = (await json(read)) as { data?: { enabled?: boolean } };
+    expect(body.data?.enabled).toBe(true);
+
+    const invalid = await fetch(`${baseUrl}/api/settings/quote-sharing`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: "yes" }),
+    });
+    expect(invalid.status).toBe(400);
+  }, 20_000);
 });
