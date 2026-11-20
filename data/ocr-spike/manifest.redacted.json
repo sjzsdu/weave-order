@@ -1,0 +1,797 @@
+{
+  "dataset": "public-web-calibration-2026-11",
+  "note": "40 张公开网络实拍图（非合成），仅用于一次性 spike；图片不入库。字段真值由人工逐图标注，作者对本数据集负责。",
+  "samples": [
+    {
+      "id": "card-01",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-01.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "english",
+        "handheld",
+        "angled",
+        "watermark"
+      ],
+      "groundTruth": {
+        "company": "",
+        "contact": "D**",
+        "title": "3D Character Animator",
+        "phone": "415****88",
+        "tel": "",
+        "address": "",
+        "business": "",
+        "email": "hy***@gmail.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-02",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-02.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "logo_only"
+      ],
+      "groundTruth": {
+        "company": "光明集团",
+        "contact": "",
+        "title": "",
+        "phone": "",
+        "tel": "",
+        "address": "",
+        "business": "",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-03",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-03.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "handheld",
+        "glare",
+        "placeholder_copy",
+        "english"
+      ],
+      "groundTruth": {
+        "company": "YEECCO Company Name",
+        "contact": "S**",
+        "title": "CEO",
+        "phone": "138****88",
+        "tel": "075****67",
+        "address": "",
+        "business": "",
+        "email": "xi***@yeecco.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-04",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-04.png",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "low_resolution",
+        "embossed_glare",
+        "handwriting"
+      ],
+      "gtUncertain": true,
+      "groundTruth": {
+        "company": "日升（北京）投资管理有限公司",
+        "contact": "丁**",
+        "title": "创始人",
+        "phone": "",
+        "tel": "188****88",
+        "address": "北京市西直门外大街112号阳光大厦305A室",
+        "business": "投资管理",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-05",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-05.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "angled",
+        "multi_card"
+      ],
+      "groundTruth": {
+        "company": "广州红网科技有限公司",
+        "contact": "陈**",
+        "title": "",
+        "phone": "150****06",
+        "tel": "020****80",
+        "address": "广州市石牌西路8号展望数码广场1605室",
+        "business": "光纤及综合布线工程产品",
+        "email": "11***@qq.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-06",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-06.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "angled"
+      ],
+      "groundTruth": {
+        "company": "山东星合能源科技有限公司",
+        "contact": "赵**",
+        "title": "总经理",
+        "phone": "135****64",
+        "tel": "",
+        "address": "",
+        "business": "",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-07",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-07.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "low_resolution",
+        "angled"
+      ],
+      "groundTruth": {
+        "company": "大斌名片",
+        "contact": "",
+        "title": "",
+        "phone": "186****70",
+        "tel": "073****09",
+        "address": "湖南省长沙市天心区南湖路258号",
+        "business": "名片制作",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-08",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-08.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "text_truncated",
+        "multi_address"
+      ],
+      "groundTruth": {
+        "company": "福建省仙游县常城红木有限公司",
+        "contact": "曹**",
+        "title": "",
+        "phone": "136****03",
+        "tel": "",
+        "address": "福建省仙游县榜头镇",
+        "business": "高端红木",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-09",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-09.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "angled"
+      ],
+      "groundTruth": {
+        "company": "上海尚嘉供应链管理有限公司",
+        "contact": "马**",
+        "title": "总经理",
+        "phone": "136****46",
+        "tel": "",
+        "address": "上海宝山区共和新路4965号万达广场3号写字楼",
+        "business": "",
+        "email": "17***@qq.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-10",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-10.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "mock": true,
+      "flags": [
+        "english",
+        "placeholder_copy"
+      ],
+      "groundTruth": {
+        "company": "brandname",
+        "contact": "S**",
+        "title": "position job",
+        "phone": "123****89",
+        "tel": "",
+        "address": "25th Street Name, City, NY",
+        "business": "",
+        "email": "yo***@mail.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-11",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-11.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "dense_text"
+      ],
+      "groundTruth": {
+        "company": "华测检测认证集团股份有限公司",
+        "contact": "宋**",
+        "title": "销售工程师",
+        "phone": "151****27",
+        "tel": "867****90",
+        "address": "东莞市常平镇常东路8号嘉骏商务中心2单元1712",
+        "business": "",
+        "email": "so***@cti-cert.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-12",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-12.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "redacted_phone",
+        "watermark"
+      ],
+      "groundTruth": {
+        "company": "福建省宁化县禾口粮食加工厂",
+        "contact": "张**",
+        "title": "业务主办",
+        "phone": "",
+        "tel": "",
+        "address": "宁化县石壁镇石化加油站旁",
+        "business": "早谷、晚谷、糯谷",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-13",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-13.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "multi_card"
+      ],
+      "groundTruth": {
+        "company": "深圳市神州动力数码有限公司",
+        "contact": "陈**",
+        "title": "",
+        "phone": "",
+        "tel": "075****69",
+        "address": "深圳市南山区侨香路香年广场B座7楼",
+        "business": "IT基础架构服务商",
+        "email": "ch***@szpdc.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-14",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-14.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "mock": true,
+      "flags": [
+        "placeholder_copy"
+      ],
+      "groundTruth": {
+        "company": "",
+        "contact": "赵**",
+        "title": "销售总监",
+        "phone": "861****67",
+        "tel": "",
+        "address": "",
+        "business": "",
+        "email": "71***@qq.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-15",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-15.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "print_spec_annotations",
+        "angled"
+      ],
+      "groundTruth": {
+        "company": "杜尚花园",
+        "contact": "",
+        "title": "",
+        "phone": "292****93",
+        "tel": "",
+        "address": "鲈乡南路和体育路交叉口",
+        "business": "Multi-brand boutique & Flora",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-16",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-16.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "dense_text"
+      ],
+      "groundTruth": {
+        "company": "廊坊洁蓝特清洁用品有限公司",
+        "contact": "郑**",
+        "title": "经理",
+        "phone": "150****73",
+        "tel": "",
+        "address": "河北省廊坊市大城县",
+        "business": "清洁用品",
+        "email": "85***@qq.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-17",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-17.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "dense_text"
+      ],
+      "groundTruth": {
+        "company": "广东冠亚电子科技有限公司",
+        "contact": "时**",
+        "title": "总经理",
+        "phone": "186****57",
+        "tel": "",
+        "address": "广东省江门市江海区东南工业二区B5厂房",
+        "business": "",
+        "email": "gy***@126.com"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-18",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-18.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "repeated_text"
+      ],
+      "groundTruth": {
+        "company": "南阳市牛强广告有限公司",
+        "contact": "牛**",
+        "title": "",
+        "phone": "",
+        "tel": "",
+        "address": "",
+        "business": "",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-19",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-19.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "low_resolution",
+        "blur",
+        "multi_address"
+      ],
+      "groundTruth": {
+        "company": "凯利·亚美",
+        "contact": "陈**",
+        "title": "",
+        "phone": "188****81",
+        "tel": "",
+        "address": "广州市天河区翰景路1号大厦6楼",
+        "business": "",
+        "email": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "card-20",
+      "kind": "card",
+      "path": "data/ocr-spike/samples/card-20.jpg",
+      "source": "360 图片搜索：名片实拍",
+      "flags": [
+        "dense_text"
+      ],
+      "groundTruth": {
+        "company": "北京中安未来科技有限公司",
+        "contact": "刘**",
+        "title": "销售经理",
+        "phone": "158****59",
+        "tel": "021****98",
+        "address": "北京市海淀区北四环西路9号银谷大厦1611",
+        "business": "证件识读产品",
+        "email": "li***@sinosecu.com.cn"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-01",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-01.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "100% COTTON",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "JEANSWEST 真维斯"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-02",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-02.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "low_resolution"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "95% 竹纤维 5% 氨纶",
+        "gsm": "",
+        "width": "",
+        "lot": "GFT-UP",
+        "supplier": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-03",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-03.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "multiple_labels"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "65% MODAL 30% NYLON 5% SPANDEX",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "盛强烫画"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-04",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-04.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "chinese"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "100%棉",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-05",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-05.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "dense_text",
+        "english"
+      ],
+      "groundTruth": {
+        "product": "Animal Parks",
+        "composition": "",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "LittleLife"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-06",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-06.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "multiple_labels"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "92% polyester 8% spandex",
+        "gsm": "",
+        "width": "",
+        "lot": "SN18980",
+        "supplier": "晋江市灵源麦琪热转印烫画辅料商行"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-07",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-07.png",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "100% Polyester",
+        "gsm": "",
+        "width": "",
+        "lot": "N17000001",
+        "supplier": "TecTake GmbH"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-08",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-08.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english",
+        "chinese"
+      ],
+      "groundTruth": {
+        "product": "Djingo Heavy Knit",
+        "composition": "51% Acrylic 29% Polyamide 1% Cotton",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "上海摩利纺织贸易有限公司"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-09",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-09.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "portuguese",
+        "english"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "65% ALGODON 35% POLIESTER",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "FOSTER COMERCIO E DISTRIBUICAO SA"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-10",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-10.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "no_text",
+        "blur"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-11",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-11.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "chinese"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "Efolin叶纷琳"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-12",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-12.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "chinese",
+        "checkbox_form"
+      ],
+      "groundTruth": {
+        "product": "九阳金公*羽绒被",
+        "composition": "面料、里料：100%棉",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "FUHAN"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-13",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-13.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english",
+        "dense_text"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "100% POLYESTER",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "NIKE EUROPEAN OPERATIONS"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-14",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-14.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english",
+        "multiple_labels"
+      ],
+      "groundTruth": {
+        "product": "Jumbo Number Pebbles",
+        "composition": "100% Cotton",
+        "gsm": "",
+        "width": "",
+        "lot": "YDI036",
+        "supplier": "Yellow Door"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-15",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-15.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "multilingual",
+        "blur",
+        "multiple_labels"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "94% Nylon 6% Elastane",
+        "gsm": "",
+        "width": "",
+        "lot": "12551",
+        "supplier": "Maidenform, Inc."
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-16",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-16.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "chinese",
+        "blank_form"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "U.S. POLO ASSN."
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-17",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-17.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "SHANGHAI ZEDONG FASHION CO., LTD."
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-18",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-18.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "chinese",
+        "multiple_labels"
+      ],
+      "groundTruth": {
+        "product": "女士上衣",
+        "composition": "100%涤纶",
+        "gsm": "",
+        "width": "",
+        "lot": "",
+        "supplier": "prince 中国网球"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-19",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-19.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "english",
+        "composition_typo"
+      ],
+      "groundTruth": {
+        "product": "",
+        "composition": "85%COTTON 35%POLYESTER",
+        "gsm": "",
+        "width": "",
+        "lot": "LT129C",
+        "supplier": ""
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    },
+    {
+      "id": "label-20",
+      "kind": "label",
+      "path": "data/ocr-spike/samples/label-20.jpg",
+      "source": "360 图片搜索：洗水标 实拍",
+      "flags": [
+        "chinese"
+      ],
+      "groundTruth": {
+        "product": "T恤衫",
+        "composition": "棉60% 涤纶40%",
+        "gsm": "",
+        "width": "",
+        "lot": "1103030",
+        "supplier": "威豹牌WBP"
+      },
+      "note": "脱敏副本，仅用于追溯样本与字段分布；评分请用本地完整 manifest.json"
+    }
+  ]
+}
