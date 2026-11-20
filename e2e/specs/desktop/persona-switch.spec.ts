@@ -68,15 +68,15 @@ test.describe("dev persona 切换", () => {
   });
 
   test("⌘⇧I 切到财务：能力驱动界面变化，路由保持不动", async ({ page }, testInfo) => {
-    await page.goto("/panorama");
+    await page.goto("/resources");
     await expect(page.getByRole("link", { name: /按交期看订单漏斗/ })).toBeVisible();
 
     await openPersonaBar(page);
     await screenshotViewport(page, testInfo, "persona-bar-owner");
     await switchPersona(page, "财务");
 
-    // 不整页 reload：仍是同一个 /panorama，只是能力变了。
-    await expect(page).toHaveURL(/\/panorama$/);
+    // 不整页 reload：仍是同一个 /resources，只是能力变了。
+    await expect(page).toHaveURL(/\/resources$/);
     // finance 没有 panorama.orders.view，订单漏斗入口消失。
     await expect(page.getByRole("link", { name: /按交期看订单漏斗/ })).toHaveCount(0);
     // 应收入口仍在：变化来自能力表，而不是页面挂了。
@@ -89,7 +89,7 @@ test.describe("dev persona 切换", () => {
     expect(seed.persona.managerTeamId).toBe(seed.persona.salesTeamId);
     expect(seed.persona.managerTeamId).not.toBeNull();
 
-    await page.goto("/panorama");
+    await page.goto("/resources");
     await openPersonaBar(page);
     await switchPersona(page, "销售");
 

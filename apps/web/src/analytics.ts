@@ -27,6 +27,10 @@ export const EVENT_PROPS = {
   activate_completed: [],
   invite_created: ["role"],
   invite_accepted: ["role"],
+  // 工作台信息架构（WAN-196）：只上报过滤/状态/入口，不带客户名与样品名。
+  items_viewed: ["filter"],
+  item_opened: ["status", "filter"],
+  workspace_nav_clicked: ["target", "surface"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type AnalyticsEvent = keyof typeof EVENT_PROPS;
