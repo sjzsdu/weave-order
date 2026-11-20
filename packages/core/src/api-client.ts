@@ -42,6 +42,8 @@ import {
   CreateSampleShipmentInput,
   CreateBoxesInput,
   CreatePrintJobInput,
+  SampleCardPrintInput,
+  SampleCardReprintInput,
   CreateShipmentInput,
   Customer,
   Customer360,
@@ -91,7 +93,10 @@ import {
   PrintDevices,
   PrintJob,
   PrintJobBatchResult,
+  PrintJobHistory,
   PrintJobList,
+  PrintPreviewInput,
+  PrintPreviewArtifact,
   PrintLogList,
   PrintTemplateList,
   PublishPrintTemplateInput,
@@ -100,6 +105,7 @@ import {
   QuoteDetail,
   QuoteBasis,
   QuoteConfirmation,
+  TenantSalesContact as TenantSalesContactSchema,
   QuoteCopyText,
   QuoteListResponse,
   QuoteShareStats,
@@ -1133,6 +1139,51 @@ export function createApiClient(options: ApiClientOptions) {
 
     retryPrintJob: async (jobId: string) =>
       z.object({ job: PrintJob }).parse(await post(`/api/print/jobs/${jobId}/retry`, {})).job,
+
+    printJob: async (jobId: string) =>
+      z.object({ job: PrintJob }).parse(await request(`/api/print/jobs/${jobId}`)).job,
+
+    /** 样卡预览：返回的就是打印会用的 HTML/PDF 或标签文本。 */
+    previewSampleCard: async (input: z.input<typeof PrintPreviewInput>) =>
+      z
+        .object({ preview: PrintPreviewArtifact })
+        .parse(await post("/api/print/preview", PrintPreviewInput.parse(input))).preview,
+
+    /** 一份报价一键打全部样卡：报价每行一张，按幂等键去重。 */
+    printSampleCards: async (quoteId: string, input: z.input<typeof SampleCardPrintInput> = {}) =>
+      PrintJobBatchResult.parse(
+        await post(
+          `/api/print/sample-cards/${encodeURIComponent(quoteId)}`,
+          SampleCardPrintInput.parse(input),
+        ),
+      ),
+
+    sampleCardJobs: async (quoteId: string) =>
+      PrintJobHistory.parse(await request(`/api/print/sample-cards/${encodeURIComponent(quoteId)}`))
+        .jobs,
+
+    /** 样卡与客户报价页共用的业务员联系方式。 */
+    salesContact: async () =>
+      z
+        .object({ ok: z.literal(true), data: TenantSalesContactSchema })
+        .parse(await request("/api/settings/sales-contact")).data,
+
+    updateSalesContact: async (input: z.input<typeof TenantSalesContactSchema>) =>
+      z
+        .object({ ok: z.literal(true), data: TenantSalesContactSchema })
+        .parse(await patch("/api/settings/sales-contact", TenantSalesContactSchema.parse(input)))
+        .data,
+
+    /** 补打样卡：必须选原因；不会新建样品。 */
+    reprintSampleCard: async (quoteId: string, input: z.input<typeof SampleCardReprintInput>) =>
+      z
+        .object({ job: PrintJob, deduplicated: z.boolean() })
+        .parse(
+          await post(
+            `/api/print/sample-cards/${encodeURIComponent(quoteId)}/reprint`,
+            SampleCardReprintInput.parse(input),
+          ),
+        ),
 
     printLogs: async () => PrintLogList.parse(await request("/api/print/logs")).logs,
 
