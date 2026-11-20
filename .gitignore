@@ -40,3 +40,13 @@ __pycache__/
 e2e/.artifacts/
 .trae
 .trae-html-share-packages
+
+# OCR spike 原始图片与完整真值（含个人信息，只留本地；脱敏副本见 manifest.redacted.json）
+data/ocr-spike/samples/
+data/ocr-spike/so/
+data/ocr-spike/raw/
+data/ocr-spike/runs/
+data/ocr-spike/manifest.json
+data/ocr-spike/*.jpg
+data/ocr-spike/*.png
+data/ocr-spike/ocr-text.json
