@@ -42,6 +42,7 @@ const EXPECTED: Record<MemberRole, string[]> = {
     "/panorama/receivables",
     "/settings?section=fields",
     "/settings?section=import",
+    "/settings?section=audit",
   ],
   MERCHANDISER: [
     "/today",
@@ -53,6 +54,7 @@ const EXPECTED: Record<MemberRole, string[]> = {
     "/panorama/orders",
     "/settings?section=fields",
     "/settings?section=import",
+    "/settings?section=audit",
   ],
   SAMPLE_ADMIN: [
     "/today",
@@ -64,6 +66,7 @@ const EXPECTED: Record<MemberRole, string[]> = {
     "/panorama/orders",
     "/settings?section=fields",
     "/settings?section=import",
+    "/settings?section=audit",
   ],
   FINANCE: [
     "/today",
@@ -74,6 +77,7 @@ const EXPECTED: Record<MemberRole, string[]> = {
     "/panorama/samples",
     "/panorama/receivables",
     "/settings?section=fields",
+    "/settings?section=audit",
   ],
   VIEWER: [
     "/today",
@@ -86,6 +90,7 @@ const EXPECTED: Record<MemberRole, string[]> = {
     "/panorama/orders",
     "/panorama/receivables",
     "/settings?section=fields",
+    "/settings?section=audit",
   ],
 };
 

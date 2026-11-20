@@ -59,8 +59,10 @@ export const SETTINGS_SECTIONS: readonly NavItem[] = [
     label: "客户与字段",
     requiredCapability: "field_options.manage",
   },
+  { href: "/settings?section=input", label: "输入与识别", requiredCapability: "settings.edit" },
   { href: "/settings?section=print", label: "打印与外设", requiredCapability: "settings.edit" },
   { href: "/settings?section=import", label: "数据导入", requiredCapability: "data.import" },
+  { href: "/settings?section=audit", label: "审计日志", requiredCapability: "audit.read.own" },
   { href: "/settings?section=billing", label: "用量与订阅", requiredCapability: "billing.view" },
 ];
 

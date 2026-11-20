@@ -33,6 +33,10 @@
     activate_completed: [],
     invite_created: ["role"],
     invite_accepted: ["role"],
+    /* 工作台（apps/web）事件；官网不发送，但两处字典必须一致。 */
+    items_viewed: ["filter"],
+    item_opened: ["status", "filter"],
+    workspace_nav_clicked: ["target", "surface"],
   };
 
   /* 枚举型属性：不在表里的值收敛成 other，后台分组不会碎成一堆长尾。 */

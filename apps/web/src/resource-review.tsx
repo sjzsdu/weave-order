@@ -108,6 +108,11 @@ export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps
         .length ?? 0,
     [data],
   );
+  const draftStatus = data?.resourceStatus === "DRAFT";
+  const statusText = (() => {
+    const base = draftStatus ? "草稿" : "可用";
+    return pendingCount > 0 ? `${base} · ${pendingCount} 项待确认` : base;
+  })();
 
   if (fieldsQuery.isLoading) return <Spinner label="正在读取字段与出处…" />;
   if (fieldsQuery.isError || !data) {
@@ -136,10 +141,11 @@ export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge tone={data.resourceStatus === "DRAFT" ? "warning" : "success"}>
-              {data.resourceStatus === "DRAFT" ? "草稿" : "可用"}
+            {/* 状态只用一个徽标表达：「可用」和「还有 N 项待确认」并列会让人以为已经完成。
+                草稿允许缺非关键字段，所以待确认是状态的一部分，不是另一个并列状态。 */}
+            <Badge tone={pendingCount > 0 || draftStatus ? "warning" : "success"}>
+              {statusText}
             </Badge>
-            <span className="text-xs text-ink-400">还有 {pendingCount} 项待确认</span>
           </div>
         </div>
       </Card>

@@ -7,12 +7,21 @@ import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApprovals, useIntentChannel, useTenantContext } from "@weave-order/core";
 import type { TenantChoice } from "@weave-order/schema";
-import { BUSINESS_NAV, PRIMARY_NAV, visibleNav } from "@weave-order/schema";
+import {
+  BUSINESS_NAV,
+  PRIMARY_NAV,
+  RESOURCE_NAV,
+  WORKSPACE_NAV,
+  isNavItemActive,
+  visibleNav,
+} from "@weave-order/schema";
 import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
 import { PersonaBar } from "@/persona-bar";
 import { appVersionLabel, footerBrandLabel } from "@/format";
+import { useWorkspaceIA } from "@/workspace-ia";
+import { track } from "@/analytics";
 import { SUPPORT_EMAIL, SupportMailto } from "@/support";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
 
@@ -23,17 +32,6 @@ import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-swit
  */
 const APP_VERSION = appVersionLabel(process.env.NEXT_PUBLIC_APP_VERSION);
 const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT;
-
-/**
- * 导航项的「当前页」判定。
- *
- * 业务概览 `/panorama` 必须精确匹配：否则所有二级页都会把「概览」也点亮。
- * 其余入口用前缀匹配，详情页（`/panorama/customers/xxx`）仍归属父入口。
- */
-function navItemActive(href: string, pathname: string): boolean {
-  if (href === "/panorama" || href === "/settings") return pathname === href;
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -77,6 +75,9 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const tenantContext = useTenantContext(api);
+  // 导航是租户设置 workspaceIA 的投影：新 IA 事项/资源/设置，旧 IA 保持
+  // 工作台/审批/业务/日志。灰度关闭时整页回旧界面，旧路由照常工作。
+  const ia = useWorkspaceIA();
   const [printOpen, setPrintOpen] = useState(false);
   const [switcherSignal, setSwitcherSignal] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -138,8 +139,19 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
     () => (tenantContext.status === "READY" ? tenantContext.capabilities : []),
     [tenantContext],
   );
-  const primaryNav = useMemo(() => visibleNav(PRIMARY_NAV, capabilities), [capabilities]);
-  const businessNav = useMemo(() => visibleNav(BUSINESS_NAV, capabilities), [capabilities]);
+  const primaryNav = useMemo(
+    () => visibleNav(ia === "new" ? WORKSPACE_NAV : PRIMARY_NAV, capabilities),
+    [capabilities, ia],
+  );
+  const businessNav = useMemo(
+    () => visibleNav(ia === "new" ? RESOURCE_NAV : BUSINESS_NAV, capabilities),
+    [capabilities, ia],
+  );
+  const inResources =
+    pathname === "/resources" ||
+    pathname.startsWith("/resources/") ||
+    pathname.startsWith("/panorama");
+  const showBusinessNav = inResources;
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -231,20 +243,33 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-paper">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-3 md:gap-6 md:px-5">
-          <Link href="/today" className="flex shrink-0 items-baseline gap-2 whitespace-nowrap">
+          <Link
+            href={ia === "new" ? "/items" : "/today"}
+            className="flex shrink-0 items-baseline gap-2 whitespace-nowrap"
+          >
             <span className="text-lg font-semibold tracking-wide text-ink-900">织序</span>
             <span className="hidden text-xs text-ink-400 sm:inline">WeaveOrder</span>
           </Link>
 
-          <nav aria-label="桌面窗口" className="flex shrink-0 items-center gap-0.5 md:gap-1">
+          <nav
+            aria-label="桌面窗口"
+            className={cn(
+              "shrink-0 items-center gap-0.5 md:gap-1",
+              // 新 IA 的窄屏入口统一放到底部三项导航，顶栏不再重复一遍。
+              ia === "new" ? "hidden md:flex" : "flex",
+            )}
+          >
             {primaryNav.map((item) => {
-              const active = navItemActive(item.href, pathname);
+              const active = isNavItemActive(item.href, pathname, ia);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   title={item.hint}
+                  onClick={() =>
+                    track("workspace_nav_clicked", { target: item.href, surface: "top" })
+                  }
                   className={cn(
                     "relative inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-md px-2 text-sm md:gap-2 md:px-3",
                     active
@@ -253,7 +278,9 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                   )}
                 >
                   {item.label}
-                  {item.key === "2" && pending > 0 && <Badge tone="danger">{pendingLabel}</Badge>}
+                  {ia === "legacy" && item.key === "2" && pending > 0 && (
+                    <Badge tone="danger">{pendingLabel}</Badge>
+                  )}
                 </Link>
               );
             })}
@@ -432,18 +459,21 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             </div>
           </div>
         </div>
-        {pathname.startsWith("/panorama") && businessNav.length > 0 && (
+        {showBusinessNav && businessNav.length > 0 && (
           <nav
             aria-label="业务导航"
             className="mx-auto flex max-w-[1440px] items-center gap-1 overflow-x-auto px-3 py-1.5 md:px-5"
           >
             {businessNav.map((item) => {
-              const active = navItemActive(item.href, pathname);
+              const active = isNavItemActive(item.href, pathname, ia);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
+                  onClick={() =>
+                    track("workspace_nav_clicked", { target: item.href, surface: "resources" })
+                  }
                   className={cn(
                     "inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-xs",
                     active
@@ -464,10 +494,50 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-[1440px] px-5 py-6">
-        <p className="mb-3 text-xs text-ink-400">{tenant.name} · 桌面端</p>
+      <main
+        className={cn(
+          "mx-auto w-full max-w-[1440px] px-5 py-6",
+          // 底部导航固定覆盖内容：给页面留出安全区，避免最后一行按钮点不到。
+          ia === "new" && "pb-[calc(env(safe-area-inset-bottom)+5.5rem)] md:pb-6",
+        )}
+      >
+        <p className="mb-3 text-xs text-ink-400">
+          {tenant.name} · {ia === "new" ? "事项 / 资源 / 设置" : "桌面端"}
+        </p>
         {children}
       </main>
+
+      {ia === "new" ? (
+        <nav
+          aria-label="移动端主导航"
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 backdrop-blur md:hidden"
+        >
+          <div
+            className="mx-auto grid max-w-[480px] grid-cols-3"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            {visibleNav(WORKSPACE_NAV, capabilities).map((item) => {
+              const active = isNavItemActive(item.href, pathname, ia);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() =>
+                    track("workspace_nav_clicked", { target: item.href, surface: "bottom" })
+                  }
+                  className={cn(
+                    "flex min-h-12 items-center justify-center text-sm",
+                    active ? "font-medium text-indigo-600" : "text-ink-700",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
 
       <footer className="mx-auto mt-8 max-w-[1440px] border-t border-line px-5 py-4 text-xs text-ink-400">
         <span>{footerBrandLabel(APP_VERSION, GIT_COMMIT)}</span>

@@ -12,6 +12,8 @@ import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
 import { FieldOptionsSummary } from "@/field-options-manager";
+import { AuditLogView } from "@/audit-log";
+import { useWorkspaceIA } from "@/workspace-ia";
 import { MembersSection } from "./members-section";
 
 const SCOPE_LABEL: Record<string, string> = {
@@ -135,7 +137,8 @@ function SettingsContent() {
         <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">组织与设置</p>
         <h1 className="mt-1 text-2xl font-semibold text-ink-900">{tenant.name}</h1>
         <p className="mt-1 text-sm text-ink-400">
-          共 {sections.length} 个分栏可见。资料由平台管理员维护；成员角色、数据范围与审批额度可在这里调整。
+          共 {sections.length}{" "}
+          个分栏可见。资料由平台管理员维护；成员角色、数据范围与审批额度可在这里调整。
         </p>
       </header>
 
@@ -226,18 +229,17 @@ function SectionContent({
       return <FieldsSection />;
     case "print":
       return <PrintSection />;
+    case "input":
+      return <InputSection />;
+    case "audit":
+      return <AuditSection />;
     case "import":
       return <ImportSection />;
     case "billing":
       return <BillingSection />;
     default:
       return (
-        <OrgSection
-          tenant={tenant}
-          membership={membership}
-          selfName={selfName}
-          email={email}
-        />
+        <OrgSection tenant={tenant} membership={membership} selfName={selfName} email={email} />
       );
   }
 }
@@ -265,6 +267,7 @@ function OrgSection({
   email: string | null;
 }) {
   const limit = membership.approvalLimitAmount;
+  const ia = useWorkspaceIA();
   return (
     <div className="grid gap-6">
       <div className="grid gap-6 xl:grid-cols-2">
@@ -344,7 +347,14 @@ function OrgSection({
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
           <h2 className="text-sm font-medium text-ink-900">日常使用</h2>
           <dl>
-            <Field label="窗口" value="工作台 ⌘1 · 审批 ⌘2 · 业务 ⌘3 · 日志 ⌘4" />
+            <Field
+              label="窗口"
+              value={
+                ia === "new"
+                  ? "事项 ⌘1 · 资源 ⌘2 · 设置 ⌘3"
+                  : "工作台 ⌘1 · 审批 ⌘2 · 业务 ⌘3 · 日志 ⌘4"
+              }
+            />
             <Field label="设置" value="组织与设置 ⌘," />
             <Field label="打印" value="任意页面调用打印面板，桌面版直连打印机" />
             <Field label="外设" value="扫码枪、电子秤、标签机即插即用" />
@@ -354,7 +364,10 @@ function OrgSection({
 
       <p className="text-xs text-ink-400">
         公司资料由平台管理员维护；成员邀请与权限在「成员与权限」分栏调整。需要改公司名、抬头或增加账号数，
-        <SupportMailto className="text-indigo-600 underline underline-offset-2" label="写信给我们" />{" "}
+        <SupportMailto
+          className="text-indigo-600 underline underline-offset-2"
+          label="写信给我们"
+        />{" "}
         或联系你的对接人。
       </p>
     </div>
@@ -388,7 +401,9 @@ function FieldsSection() {
             className="rounded-lg border border-line bg-paper px-4 py-3 hover:border-indigo-600"
           >
             <div className="text-sm font-medium text-ink-900">管理品类与成分</div>
-            <p className="mt-1 text-xs text-ink-400">只影响后续建议，不改历史单据；要改历史走「合并」。</p>
+            <p className="mt-1 text-xs text-ink-400">
+              只影响后续建议，不改历史单据；要改历史走「合并」。
+            </p>
           </Link>
         </div>
         <p className="mt-3 text-xs text-ink-400">
@@ -421,13 +436,78 @@ function PrintSection() {
   );
 }
 
+/**
+ * 输入与识别：说明「预填 + 逐字段确认」的边界。
+ *
+ * OCR 结论（WAN-192）是可预填字段逐字段改正、不可预填字段留空；
+ * 这里不提供第二套配置，不让用户以为模型能替他们猜克重/门幅。
+ */
+function InputSection() {
+  return (
+    <div className="grid gap-6">
+      <section className="rounded-lg border border-line bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium text-ink-900">输入与识别</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          一段话或一张照片进来，系统先给理解卡；识别只是预填，关键字段必须由人确认后才算数。
+        </p>
+        <dl className="mt-2">
+          <Field label="可预填" value="联系人、职务、手机/固话、邮箱、地址、成分" />
+          <Field
+            label="必须人工录入"
+            value="克重、门幅、批号、主营、品名"
+            hint="标签上经常没有这些信息，模型容易编；系统宁可留空也不猜。"
+          />
+          <Field label="出处" value="每个字段都记录来自名片、标签、历史还是人工" />
+          <Field label="识别失败" value="保留原件可回看，未识别字段高亮为待补，不假装成功" />
+        </dl>
+      </section>
+      <section className="rounded-lg border border-line bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium text-ink-900">从一句话开始</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          新建客户、样品或报价都可以从同一个输入框开始；事项里卡住时会提示下一步要补什么。
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href="/items"
+            className="inline-flex min-h-11 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
+          >
+            去事项
+          </Link>
+          <Link
+            href="/resources"
+            className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+          >
+            去资源
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** 审计日志：从旧一级入口「日志」搬进设置，操作日志本身仍是只读。 */
+function AuditSection() {
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-surface px-5 py-3">
+        <h2 className="text-sm font-medium text-ink-900">审计日志</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          只读：没有编辑、删除或撤销入口。范围由服务端按角色决定（全公司 / 我的操作）。
+        </p>
+      </section>
+      <AuditLogView />
+    </div>
+  );
+}
+
 /** 数据导入：统一入口，格式说明与模板下载在对应业务页。 */
 function ImportSection() {
   return (
     <section className="rounded-lg border border-line bg-surface px-5 py-4">
       <h2 className="text-sm font-medium text-ink-900">数据导入</h2>
       <p className="mt-1 text-xs text-ink-400">
-        先下载模板再填，预览确认后才写入；未知的等级 / 品类会标出来让你选择「存为选项 / 仅本次 / 映射到已有」。
+        先下载模板再填，预览确认后才写入；未知的等级 / 品类会标出来让你选择「存为选项 / 仅本次 /
+        映射到已有」。
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <Link
@@ -497,10 +577,7 @@ function BillingSection() {
             <p className="mt-2 text-2xl font-semibold text-ink-900">
               {data.creditsUsed.toLocaleString()}
               <span className="ml-1 text-sm font-normal text-ink-400">
-                /{" "}
-                {data.creditsIncluded === null
-                  ? "不限"
-                  : data.creditsIncluded.toLocaleString()}{" "}
+                / {data.creditsIncluded === null ? "不限" : data.creditsIncluded.toLocaleString()}{" "}
                 credits
               </span>
             </p>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalDetail, useApprovalQueue, useDecideApproval } from "@weave-order/core";
 import type { ApprovalItem, ApprovalKind, CreatedQuoteShare } from "@weave-order/schema";
@@ -7,6 +8,7 @@ import { ApprovalSheet, Badge, EmptyState, MoneyText, Spinner, cn } from "@weave
 import { useApi } from "@/providers";
 import { SharePanel } from "@/share-panel";
 import { useMounted } from "@/use-mounted";
+import { useWorkspaceIA } from "@/workspace-ia";
 import { KIND_LABEL, relativeTime, STATUS_LABEL } from "@/format";
 
 interface Selection {
@@ -29,7 +31,39 @@ export default function ApprovalsPage() {
   if (!mounted) {
     return <div className="p-6 text-sm text-ink-400">正在连接织序…</div>;
   }
-  return <ApprovalsPageContent />;
+  return <ApprovalsGate />;
+}
+
+/**
+ * D1 取消审批后，`/approvals` 只保留路由不让旧书签 404。
+ * 新 IA 下直接访问不再展示审批队列（队列代码保留，灰度回旧界面即可恢复）；
+ * 旧 IA 下行为完全不变。
+ */
+function ApprovalsGate() {
+  const ia = useWorkspaceIA();
+  if (ia === "legacy") return <ApprovalsPageContent />;
+  return (
+    <EmptyState
+      title="审批已取消，事项里跟进"
+      description="现在没有待批队列：报价确认即定稿，谁确认、什么时候确认都记在审计里。要跟进的事看「事项」。"
+      actions={
+        <>
+          <Link
+            href="/items"
+            className="inline-flex min-h-11 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
+          >
+            去事项
+          </Link>
+          <Link
+            href="/resources"
+            className="inline-flex min-h-11 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
+          >
+            去资源
+          </Link>
+        </>
+      }
+    />
+  );
 }
 
 function ApprovalsPageContent() {
@@ -135,7 +169,9 @@ function ApprovalsPageContent() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">审批</p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">小织把草稿备好了，你只管点头或打回</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">
+            小织把草稿备好了，你只管点头或打回
+          </h1>
           <p className="mt-1 text-sm text-ink-400">
             快捷键：J/K 切换 · A 批准 · R 驳回 · Esc 关闭详情
           </p>

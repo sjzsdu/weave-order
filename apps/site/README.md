@@ -190,6 +190,9 @@ deploy 仓库的 compose 已经按这套变量传参，`.env` 里改域名 + `do
 | `activate_completed`   | 工作台 `/activate` 领取成功                                | —                           | 成为公司老板账号                                                            |
 | `invite_created`       | 工作台设置页「邀请同事」成功                               | `role`                      | 只记角色，不记同事邮箱与手机号                                              |
 | `invite_accepted`      | 工作台 `/join` 接受邀请成功                                | `role`                      | 只记角色                                                                    |
+| `items_viewed`         | 工作台事项页进入 / 切换过滤                                | `filter`                    | `recent` / `mine`，供 P0d 复盘首页有效性                                    |
+| `item_opened`          | 从事项列表点开一条事项                                     | `status` `filter`           | 只记状态与来源过滤，不带客户名、样品名                                      |
+| `workspace_nav_clicked`| 工作台导航（顶栏 / 资源二级 / 移动端底部）点击              | `target` `surface`          | `target` 是路由，`surface` = `top` / `resources` / `bottom`                 |
 
 `cta_click.location` 固定取值（表外的值收敛成 `other`，避免分组碎成长尾）：`nav`、`hero`、`pricing-card`、`pricing-cta`、`footer`、`docs`、`download`。
 

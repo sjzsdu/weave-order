@@ -79,9 +79,12 @@ describe("属性白名单", () => {
         "cta_click",
         "invite_accepted",
         "invite_created",
+        "item_opened",
+        "items_viewed",
         "login_click",
         "pageview",
         "signup_form_submit",
+        "workspace_nav_clicked",
       ].sort(),
     );
   });
