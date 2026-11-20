@@ -6,14 +6,6 @@ name: ci
 on:
   push:
     branches: [main]
-  pull_request:
-    # 草稿 PR 不跑：agent 分支定稿前每次 push 都会起一整套流水线，
-    # 这是分钟数消耗最快的地方。标为 Ready for review 时才触发（draft 的 push 全部跳过）。
-    types: [opened, synchronize, reopened, ready_for_review]
-    # 纯文档改动不占机器：没有代码面风险，也没有发布门依赖这些提交
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
 
 concurrency:
   group: ci-${{ github.ref }}

@@ -19,8 +19,8 @@
 #   S3_ACCESS_KEY_ID=weave-media S3_SECRET_ACCESS_KEY=weave-media-secret S3_BUCKET=weave-media
 #   STORAGE_HOME=<repo>/.dev-storage       # 二进制、数据、日志、pid 都在这
 #   MINIO_VERSION / MC_VERSION             # 固定版本，避免“最新版”漂移
-#   MINIO_DOWNLOAD_MIRRORS="https://dl.minio.org.cn"   # 官方 dl.min.io 已 410 下架
-#   MINIO_CURL_UA="..."                    # 默认浏览器 UA，规避 Cloudflare 对 datacenter IP 的 403
+#   MINIO_DOWNLOAD_MIRRORS="https://dl.minio.org.cn"   # 官方 GitHub Releases 的后备镜像
+#   MINIO_CURL_UA="..."                    # 默认浏览器 UA，规避镜像站 Cloudflare 的 403
 #   ALLOW_UNVERIFIED_DOWNLOAD=1            # 仅在镜像站缺 .sha256sum 时显式放开
 #
 # 退出码：0 就绪；1 失败（原因打印在 stderr，日志在 $STORAGE_HOME/minio.log）。
@@ -57,10 +57,9 @@ S3_BUCKET="${S3_BUCKET:-weave-media}"
 
 MINIO_VERSION="${MINIO_VERSION:-RELEASE.2025-07-23T15-54-02Z}"
 MC_VERSION="${MC_VERSION:-RELEASE.2025-07-21T05-28-08Z}"
-# 官方 dl.min.io 归档已整体 410 下架（2026-11 实测全部版本均 410），只保留国内镜像。
+# 优先使用官方 GitHub Releases（含 SHA-256），国内镜像作为后备；dl.min.io 已整体下架。
 MINIO_DOWNLOAD_MIRRORS="${MINIO_DOWNLOAD_MIRRORS:-https://dl.minio.org.cn}"
-# dl.minio.org.cn 走 Cloudflare，对 datacenter IP + curl 默认 UA 会返回 403；
-# 用浏览器 UA 规避 bot 拦截，CI（GitHub Actions 海外 runner）上必须带。
+# 国内镜像走 Cloudflare，对 datacenter IP + curl 默认 UA 可能返回 403。
 MINIO_CURL_UA="${MINIO_CURL_UA:-Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36}"
 ALLOW_UNVERIFIED_DOWNLOAD="${ALLOW_UNVERIFIED_DOWNLOAD:-0}"
 
@@ -72,22 +71,25 @@ ENDPOINT="http://127.0.0.1:$MINIO_PORT"
 log() { printf '[storage] %s\n' "$*"; }
 err() { printf '[storage] ERROR: %s\n' "$*" >&2; }
 
-# 下载并校验：先取 .sha256sum，再取二进制；任何一步失败就换镜像。
+# 下载并校验：优先官方 GitHub Releases，失败后依次尝试镜像；任何一步校验失败都拒绝安装。
 download_verified() {
-  local remote_path="$1" dest="$2" label="$3"
+  local remote_path="$1" dest="$2" label="$3" github_url="$4"
   local mirror url sha_url expected tmp
+  local urls=("$github_url")
   for mirror in $MINIO_DOWNLOAD_MIRRORS; do
-    url="$mirror$remote_path"
+    urls+=("$mirror$remote_path")
+  done
+  for url in "${urls[@]}"; do
     sha_url="$url.sha256sum"
     tmp="$dest.download.$$"
     log "下载 $label <- $url"
     if ! curl -fL -A "$MINIO_CURL_UA" --retry 3 --retry-delay 2 --connect-timeout 10 -o "$tmp" "$url"; then
-      rm -f "$tmp"; log "  $mirror 不可用，换下一个"; continue
+      rm -f "$tmp"; log "  $url 不可用，换下一个"; continue
     fi
     if expected="$(curl -fsSL -A "$MINIO_CURL_UA" --connect-timeout 10 "$sha_url" | awk '{print $1}' | head -n1)" && [ -n "$expected" ]; then
       if ! printf '%s  %s\n' "$expected" "$tmp" | sha256sum -c --status -; then
         rm -f "$tmp"
-        err "${label} 校验和不匹配（${mirror}），拒绝安装"
+        err "${label} 校验和不匹配（${url}），拒绝安装"
         return 1
       fi
       log "  校验和 OK（${expected:0:12}…）"
@@ -108,11 +110,13 @@ download_verified() {
 ensure_binaries() {
   mkdir -p "$BIN_DIR" "$DATA_DIR" "$RUN_DIR" "$MC_CONFIG_DIR"
   if [ ! -x "$MINIO_BIN" ]; then
-    download_verified "/server/minio/release/$MINIO_PLATFORM/archive/minio.$MINIO_VERSION" "$MINIO_BIN" "minio $MINIO_VERSION ($MINIO_PLATFORM)" || {
+    download_verified "/server/minio/release/$MINIO_PLATFORM/archive/minio.$MINIO_VERSION" "$MINIO_BIN" "minio $MINIO_VERSION ($MINIO_PLATFORM)" \
+      "https://github.com/minio/minio/releases/download/$MINIO_VERSION/minio.$MINIO_PLATFORM.$MINIO_VERSION" || {
       err "minio 二进制下载失败"; exit 1; }
   fi
   if [ ! -x "$MC_BIN" ]; then
-    download_verified "/client/mc/release/$MINIO_PLATFORM/archive/mc.$MC_VERSION" "$MC_BIN" "mc $MC_VERSION ($MINIO_PLATFORM)" || {
+    download_verified "/client/mc/release/$MINIO_PLATFORM/archive/mc.$MC_VERSION" "$MC_BIN" "mc $MC_VERSION ($MINIO_PLATFORM)" \
+      "https://github.com/minio/mc/releases/download/$MC_VERSION/mc.$MINIO_PLATFORM.$MC_VERSION" || {
       err "mc 二进制下载失败"; exit 1; }
   fi
 }
