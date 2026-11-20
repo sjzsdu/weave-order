@@ -48,7 +48,7 @@ fn default_format() -> String {
     "ZPL".to_string()
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfig {
     pub server_url: String,
@@ -56,6 +56,22 @@ pub struct AgentConfig {
     pub agent_name: String,
     #[serde(default)]
     pub printers: Vec<PrinterProfileConfig>,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            // 编译时注入默认云端地址，打包后自带，用户只需填 token。
+            // 构建时通过环境变量 WEAVE_PRINT_SERVER_URL 指定，例如：
+            //   WEAVE_PRINT_SERVER_URL=https://weave-api.wnbgj.com cargo build
+            server_url: option_env!("WEAVE_PRINT_SERVER_URL")
+                .unwrap_or("")
+                .to_string(),
+            token: String::new(),
+            agent_name: "打印代理".to_string(),
+            printers: Vec::new(),
+        }
+    }
 }
 
 impl AgentConfig {
@@ -177,8 +193,12 @@ mod tests {
     fn missing_config_falls_back_to_defaults() {
         let dir = tempfile::tempdir().expect("tempdir");
         let loaded = AgentConfig::load(&config_path(dir.path()));
-        assert!(loaded.server_url.is_empty());
+        // 默认 server_url 来自编译时环境变量 WEAVE_PRINT_SERVER_URL（可能为空）。
+        // 测试不断言具体值，只验证它能正常加载且 printers 为空。
         assert!(loaded.printers.is_empty());
+        // token 默认为空，agent_name 有默认值
+        assert!(loaded.token.is_empty());
+        assert_eq!(loaded.agent_name, "打印代理");
     }
 
     #[test]

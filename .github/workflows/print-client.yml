@@ -389,6 +389,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ needs.prepare.outputs.updater == 'signed' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.prepare.outputs.updater == 'signed' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          # 编译时注入默认云端地址，用户打开客户端时已预填，只需填 token。
+          # 与 deploy/weave-order/.env 中的 WEAVE_API_DOMAIN 保持一致。
+          WEAVE_PRINT_SERVER_URL: "https://weave-api.wnbgj.com"
         with:
           projectPath: apps/print-agent
           tauriScript: pnpm exec tauri

@@ -389,10 +389,9 @@ async function loadConfig() {
     $("serverUrl").value = config.serverUrl ?? "";
     $("token").value = config.token ?? "";
     $("agentName").value = config.agentName || "打印代理";
-    const configured = Boolean(config.serverUrl && config.token);
-    applyStatus(configured ? "offline" : "local", configured ? "正在连接云端…" : MODE_TEXT.local);
+    // 注意：不在此处设置状态。状态由 agent 的 agent-status 事件驱动，
+    // 避免覆盖 agent 在启动早期就已发出的「已连接」状态。
   } catch (error) {
-    applyStatus("local", MODE_TEXT.local);
     log(`读取配置失败：${error}`);
   }
 }
@@ -568,6 +567,14 @@ async function main() {
   await loadConfig();
   await loadPrinters();
   await refreshSpool();
+
+  // 初始状态同步：如果配置完整但尚未收到 agent 的状态事件（例如 agent 在页面
+  // 加载前就已完成连接），先显示「正在连接」，后续由 agent 事件覆盖为真实状态。
+  const currentStatus = $("status").textContent;
+  if ($("serverUrl").value.trim() && $("token").value.trim() && currentStatus !== STATUS_TEXT.online) {
+    applyStatus("offline", "正在连接云端…");
+  }
+
   setInterval(() => void refreshSpool(), 5000);
 }
 
