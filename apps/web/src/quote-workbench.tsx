@@ -8,6 +8,7 @@ import { Badge, Button, Card, Spinner, formatMoney } from "@weave-order/ui";
 import { centsToYuanInput } from "@weave-order/core";
 import { useApi } from "@/providers";
 import { ITEM_UNIT_LABEL } from "@/item-format";
+import { SampleCardPrint } from "@/sample-card-print";
 
 /**
  * 报价工作面（P0a-5，旅程 A）。
@@ -483,6 +484,8 @@ export function QuoteWorkbench({ itemId, quoteId }: { itemId: string; quoteId: s
           </p>
         ) : null}
       </div>
+
+      {confirmed ? <SampleCardPrint quoteId={quoteId} /> : null}
 
       {confirmed && copyQuery.data ? (
         <Card className="p-4">
