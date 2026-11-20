@@ -1923,7 +1923,7 @@ function mapDraftRevision(row: DraftRevisionRow): DraftRevision {
  * 报价表没有独立编号列（P0 不新增序列），用创建日期 + id 前缀派生：
  * 同一天内 4 位十六进制足够区分；它只用于人读与复制文本，不是可寻址标识。
  */
-function quoteNumberOf(row: { id: string; createdAt: Date }): string {
+export function quoteNumberOf(row: { id: string; createdAt: Date }): string {
   const day = row.createdAt.toISOString().slice(0, 10).replace(/-/g, "");
   return `BJ-${day}-${row.id.slice(0, 4).toUpperCase()}`;
 }

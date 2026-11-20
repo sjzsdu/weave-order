@@ -28,6 +28,7 @@
     "maintain:media": "tsx scripts/maintain-media.ts",
     "maintain:inbound": "tsx scripts/maintain-inbound.ts",
     "verify:thumbnails": "tsx scripts/verify-thumbnails.ts",
+    "verify:sample-card": "tsx scripts/verify-sample-card.ts",
     "maintain:audit": "tsx scripts/maintain-audit.ts"
   },
   "dependencies": {
@@ -50,15 +51,17 @@
     "jose": "^5.10.0",
     "pdf-lib": "^1.17.1",
     "pg": "^8.16.3",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "0.35.5",
     "ws": "^8.22.2",
-    "zod": "^3.25.76",
-    "sharp": "0.35.5"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/pg": "^8.15.5",
+    "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.2",
     "eslint": "^9.39.5",
     "tsx": "^4.20.6",

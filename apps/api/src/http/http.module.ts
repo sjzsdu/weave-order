@@ -35,6 +35,8 @@ import {
 import { AgentActorService } from "./agent-actor.service";
 import { HumanActorService } from "./human-actor.service";
 import { PublicQuoteController, QuoteSharesController } from "./shares.controllers";
+import { PublicSampleCardController } from "./public-sample.controllers";
+import { PublicSampleCardService } from "../shares/public-sample-card.service";
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
 import { FieldOptionsController } from "./field-options.controllers";
@@ -56,6 +58,7 @@ import {
   KERNEL,
   MEDIA_SERVICE,
   PUBLIC_RATE_LIMIT,
+  PUBLIC_SAMPLE,
   PUBLIC_SHARE,
   QUOTE_AGENT,
 } from "./tokens";
@@ -102,6 +105,12 @@ const providers: Provider[] = [
       new PublicShareService(database.pool),
     inject: [AppDatabaseProvider],
   },
+  {
+    provide: PUBLIC_SAMPLE,
+    useFactory: (database: AppDatabaseProvider): PublicSampleCardService =>
+      new PublicSampleCardService(database.pool),
+    inject: [AppDatabaseProvider],
+  },
   OnboardingService,
   {
     // 对象存储句柄只在组合根创建；控制器与内核都拿不到它。
@@ -128,6 +137,7 @@ const providers: Provider[] = [
     RevisionController,
     QuoteAgentController,
     PublicQuoteController,
+    PublicSampleCardController,
     QuoteSharesController,
     PrintController,
     PrintAgentController,

@@ -62,6 +62,12 @@ export const PUBLIC_QUOTE_RATE_LIMITS: Record<PublicQuoteAction, PublicRateLimit
   },
 };
 
+/** 样卡扫码页：与报价链接同一套双维度限流，只是命名空间不同。 */
+export const PUBLIC_SAMPLE_RATE_LIMITS: PublicRateLimitRuleSet = {
+  ip: { limit: 60, windowMs: 60_000 },
+  token: { limit: 300, windowMs: 60_000 },
+};
+
 export type RateLimitDimension = "ip" | "token" | "sub";
 
 export interface RateLimitDenial {
@@ -172,6 +178,17 @@ export class PublicRateLimitService implements OnApplicationShutdown {
     return this.checkDimensions(`public-quote:${action}`, [
       { dimension: "ip", value: ip ?? "unknown", rule: rules.ip },
       { dimension: "token", value: token, rule: rules.token },
+    ]);
+  }
+
+  /** 样卡扫码：公开只读页，阈值与报价页 `view` 对齐。 */
+  async checkPublicSample(
+    ip: string | undefined,
+    token: string,
+  ): Promise<RateLimitDenial | null> {
+    return this.checkDimensions("public-sample", [
+      { dimension: "ip", value: ip ?? "unknown", rule: PUBLIC_SAMPLE_RATE_LIMITS.ip },
+      { dimension: "token", value: token, rule: PUBLIC_SAMPLE_RATE_LIMITS.token },
     ]);
   }
 

@@ -258,6 +258,26 @@ export class QuoteSharesController {
     }));
   }
 
+  /** 样卡与客户报价页共用的业务员联系方式。 */
+  @Get("settings/sales-contact")
+  async getSalesContact(@Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      ok: true,
+      data: await kernel.shares.getSalesContact(ctx),
+    }));
+  }
+
+  @Patch("settings/sales-contact")
+  async updateSalesContact(
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => ({
+      ok: true,
+      data: await kernel.shares.updateSalesContact(body ?? {}, ctx),
+    }));
+  }
+
   @Patch("settings/quote-sharing")
   async updateSharingSettings(
     @Body() body: unknown,

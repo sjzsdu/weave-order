@@ -166,6 +166,102 @@ TEXT 20,400,"TSS16.BF2",0,1,1,"{{meta.printedAt}} {{meta.operator}}"
 PRINT 1,1
 `;
 
+const SAMPLE_CARD_A4_HTML = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>样卡</title><style>
+  @page { size: A4; margin: 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; color: #14161a; margin: 0; }
+  .card { width: 100%; border: 1.2px solid #c9ced6; border-radius: 4px; padding: 10mm 10mm 8mm; display: flex; flex-direction: column; gap: 4mm; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .brand { font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+  .kind { font-size: 9px; color: #6b7280; letter-spacing: 2px; }
+  .code { font-size: 34px; font-weight: 700; line-height: 1.1; margin-top: 2mm; }
+  .name { font-size: 15px; margin-top: 1mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  td { padding: 2.2mm 0; border-bottom: 1px dotted #d7dbe1; vertical-align: top; }
+  td.k { width: 22mm; color: #6b7280; }
+  .bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; margin-top: 3mm; }
+  .contact .label { font-size: 9px; color: #6b7280; letter-spacing: 1px; }
+  .contact .who { font-size: 16px; font-weight: 600; margin-top: 1.5mm; }
+  .contact .tel { font-size: 12px; color: #4b5563; margin-top: 1mm; font-variant-numeric: tabular-nums; }
+  .contact .hint { font-size: 8px; color: #9ca3af; margin-top: 2mm; }
+  .qr { text-align: center; }
+  .qr img { width: 32mm; height: 32mm; display: block; }
+  .qr span { font-size: 8px; color: #9ca3af; }
+  .foot { display: flex; justify-content: space-between; font-size: 8px; color: #9ca3af; border-top: 1px solid #eef0f3; padding-top: 2mm; }
+</style></head>
+<body>
+  <div class="card">
+    <div class="top">
+      <div>
+        <div class="brand">{{tenant.brand}}</div>
+        <div class="kind">样卡 / SAMPLE CARD</div>
+      </div>
+      <div class="kind">报价 {{quote.no}}</div>
+    </div>
+    <div>
+      <div class="code">{{sample.code}}</div>
+      <div class="name">{{sample.name}}</div>
+    </div>
+    <table>
+      <tr><td class="k">成分</td><td>{{sample.composition}}</td></tr>
+      <tr><td class="k">克重</td><td>{{sample.weight}}</td></tr>
+      <tr><td class="k">品类</td><td>{{sample.category}}</td></tr>
+    </table>
+    <div class="bottom">
+      <div class="contact">
+        <div class="label">联系业务员</div>
+        <div class="who">{{salesperson.name}}</div>
+        <div class="tel">{{salesperson.phone}}</div>
+        <div class="hint">扫码只看样品编号与联系方式</div>
+      </div>
+      <div class="qr">
+        <img src="{{card.qrImage}}" alt="样卡二维码">
+        <span>扫码联系业务员</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>打印时间 {{meta.printedAt}} ｜ 操作人 {{meta.operator}}</span>
+      <span>补打原因 {{meta.reprintReason}}</span>
+    </div>
+  </div>
+</body></html>`;
+
+/**
+ * 80×50mm 热敏标签（203dpi = 640×400 点）。
+ * 一行一段、不依赖打印机中文字库以外的资源；二维码由打印机指令生成。
+ */
+const SAMPLE_CARD_LABEL_ZPL = `^XA
+^PW640
+^LL400
+^CI28
+^FO24,18^A0N,26,26^FD{{tenant.brand}}^FS
+^FO24,52^GB592,2,2^FS
+^FO24,62^A0N,36,36^FD{{sample.code}}^FS
+^FO24,106^A0N,22,22^FD{{sample.name}}^FS
+^FO24,136^A0N,18,18^FD{{sample.composition}}^FS
+^FO24,160^A0N,18,18^FD{{sample.weight}}^FS
+^FO24,190^BQN,2,5^FDMA,{{card.qr}}^FS
+^FO24,342^A0N,20,20^FD{{salesperson.name}} {{salesperson.phone}}^FS
+^FO24,372^A0N,16,16^FD{{meta.printedAt}}^FS
+^XZ`;
+
+const SAMPLE_CARD_LABEL_TSPL = `SIZE 80 mm,50 mm
+GAP 2 mm,0 mm
+DIRECTION 1
+CLS
+TEXT 20,8,"TSS16.BF2",0,1,1,"{{tenant.brand}}"
+BAR 20,38,580,2
+TEXT 20,46,"TSS24.BF2",0,1,1,"{{sample.code}}"
+TEXT 20,82,"TSS16.BF2",0,1,1,"{{sample.name}}"
+TEXT 20,108,"TSS16.BF2",0,1,1,"{{sample.composition}}"
+TEXT 20,132,"TSS16.BF2",0,1,1,"{{sample.weight}}"
+QRCODE 20,158,L,4,A,0,"{{card.qr}}"
+TEXT 20,340,"TSS16.BF2",0,1,1,"{{salesperson.name}} {{salesperson.phone}}"
+TEXT 20,364,"TSS16.BF2",0,1,1,"{{meta.printedAt}}"
+PRINT 1,1
+`;
+
 const BOX_LABEL_LABEL = PrintDocumentKindLabel.BOX_LABEL;
 
 export const SYSTEM_TEMPLATES: BuiltinTemplate[] = [
@@ -213,6 +309,33 @@ export const SYSTEM_TEMPLATES: BuiltinTemplate[] = [
     variant: null,
     pageSize: "100x100",
     body: BOX_LABEL_TSPL,
+  },
+  {
+    key: "system/sample-card/classic-a4",
+    kind: "SAMPLE_LABEL",
+    format: "HTML",
+    name: "系统 · 样卡（A4）",
+    variant: null,
+    pageSize: "A4",
+    body: SAMPLE_CARD_A4_HTML,
+  },
+  {
+    key: "system/sample-card/zpl-80x50",
+    kind: "SAMPLE_LABEL",
+    format: "ZPL",
+    name: "系统 · 样卡标签（ZPL 80×50）",
+    variant: null,
+    pageSize: "80x50",
+    body: SAMPLE_CARD_LABEL_ZPL,
+  },
+  {
+    key: "system/sample-card/tspl-80x50",
+    kind: "SAMPLE_LABEL",
+    format: "TSPL",
+    name: "系统 · 样卡标签（TSPL 80×50）",
+    variant: null,
+    pageSize: "80x50",
+    body: SAMPLE_CARD_LABEL_TSPL,
   },
   {
     key: "system/test-label/zpl",

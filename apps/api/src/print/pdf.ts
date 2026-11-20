@@ -24,7 +24,7 @@ const FONT_CANDIDATES = [
 
 let cachedFont: Buffer | null = null;
 
-function cjkFontBytes(): Buffer {
+export function loadCjkFont(): Buffer {
   if (cachedFont) return cachedFont;
   for (const candidate of FONT_CANDIDATES) {
     if (existsSync(candidate)) {
@@ -69,7 +69,7 @@ function money(cents: number | null, currency: string): string {
 export async function renderBuiltinA4Pdf(view: DocumentView): Promise<Buffer> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const font = await doc.embedFont(cjkFontBytes(), { subset: true });
+  const font = await doc.embedFont(loadCjkFont(), { subset: true });
   const pageSize: [number, number] = [A4_WIDTH, A4_HEIGHT];
 
   let page: PDFPage = doc.addPage(pageSize);
