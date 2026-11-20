@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>织序 · AI 原生业务工作台需求评审稿</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #657087;
+      --soft: #8a93a6;
+      --line: #e3e7ef;
+      --paper: #ffffff;
+      --canvas: #f4f6fa;
+      --navy: #172b4d;
+      --blue: #315efb;
+      --blue-soft: #edf1ff;
+      --teal: #087f75;
+      --teal-soft: #eaf8f5;
+      --amber: #9a5a05;
+      --amber-soft: #fff6e5;
+      --red: #b43838;
+      --red-soft: #fff0ef;
+      --radius: 16px;
+      --shadow: 0 14px 40px rgba(23, 43, 77, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    button { font: inherit; }
+    .shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); max-width: 1500px; margin: 0 auto; }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 34px 24px;
+      border-right: 1px solid var(--line);
+      background: rgba(244, 246, 250, .96);
+      overflow-y: auto;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 30px; font-weight: 750; letter-spacing: .02em; }
+    .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; color: #fff; background: var(--navy); border-radius: 10px; }
+    .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: .06em; }
+    .nav-label { margin: 24px 0 8px; color: var(--soft); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+    .toc a { display: block; padding: 7px 10px; color: var(--muted); border-radius: 8px; text-decoration: none; font-size: 13px; }
+    .toc a:hover, .toc a:focus { color: var(--blue); background: var(--blue-soft); outline: none; }
+    .toc .sub { padding-left: 23px; font-size: 12px; }
+    .side-note { margin-top: 30px; padding: 14px; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 12px; font-size: 12px; }
+    main { min-width: 0; padding: 42px 52px 80px; }
+    .document { max-width: 1060px; margin: 0 auto; }
+    .hero { position: relative; padding: 52px; color: #fff; background: linear-gradient(135deg, #172b4d 0%, #213b69 58%, #315efb 150%); border-radius: 24px; box-shadow: var(--shadow); overflow: hidden; }
+    .hero::after { content: ""; position: absolute; width: 360px; height: 360px; right: -140px; top: -180px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; box-shadow: 0 0 0 60px rgba(255,255,255,.035), 0 0 0 120px rgba(255,255,255,.025); }
+    .eyebrow { margin-bottom: 14px; color: #aebee2; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { max-width: 720px; margin: 0 0 14px; font-size: clamp(32px, 5vw, 52px); line-height: 1.18; letter-spacing: -.035em; }
+    .hero-sub { max-width: 760px; margin: 0; color: #dbe4f7; font-size: 18px; line-height: 1.7; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 28px; color: #b9c8e4; font-size: 12px; }
+    .hero-thesis { position: relative; z-index: 1; margin-top: 34px; padding: 22px 24px; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.15); border-radius: 14px; font-size: 17px; }
+    .section { margin-top: 30px; padding: 36px 40px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+    .section-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 24px; }
+    .section-no { flex: 0 0 auto; display: grid; place-items: center; width: 30px; height: 30px; margin-top: 2px; color: var(--blue); background: var(--blue-soft); border-radius: 9px; font-size: 12px; font-weight: 800; }
+    h2 { margin: 0; color: var(--navy); font-size: 25px; line-height: 1.35; letter-spacing: -.02em; }
+    h3 { margin: 32px 0 12px; color: var(--navy); font-size: 18px; line-height: 1.45; }
+    h4 { margin: 22px 0 8px; font-size: 15px; }
+    p { margin: 9px 0; }
+    ul, ol { margin: 10px 0; padding-left: 22px; }
+    li + li { margin-top: 6px; }
+    .lead { color: #34415a; font-size: 16px; }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+    .strong { font-weight: 700; color: var(--navy); }
+    .quote { margin: 20px 0; padding: 18px 22px; color: var(--navy); background: var(--blue-soft); border-left: 3px solid var(--blue); border-radius: 0 12px 12px 0; font-size: 16px; font-weight: 650; }
+    .decision-grid, .card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+    .decision, .mini-card { padding: 18px; background: #fafbfe; border: 1px solid var(--line); border-radius: 12px; }
+    .decision b, .mini-card b { display: block; margin-bottom: 6px; color: var(--navy); }
+    .decision p, .mini-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 750; white-space: nowrap; }
+    .p0 { color: var(--blue); background: var(--blue-soft); }
+    .p1 { color: var(--teal); background: var(--teal-soft); }
+    .assumption { color: var(--amber); background: var(--amber-soft); }
+    .risk { color: var(--red); background: var(--red-soft); }
+    .table-wrap { margin: 16px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 650px; }
+    th, td { padding: 13px 15px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: #526078; background: #f8f9fc; font-size: 12px; font-weight: 750; }
+    td { font-size: 13px; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { color: var(--navy); font-weight: 650; }
+    .flow { display: flex; align-items: stretch; gap: 8px; margin: 18px 0; overflow-x: auto; padding-bottom: 4px; }
+    .flow-item { flex: 1 0 125px; position: relative; padding: 14px; text-align: center; color: #36435b; background: #f8f9fc; border: 1px solid var(--line); border-radius: 10px; font-size: 12px; }
+    .flow-arrow { align-self: center; color: #a2abbc; }
+    .wireframe { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .8fr); min-height: 310px; margin: 20px 0; overflow: hidden; border: 1px solid #d9dfeb; border-radius: 14px; background: #f8f9fc; }
+    .canvas-pane { padding: 24px; border-right: 1px solid #d9dfeb; }
+    .agent-pane { padding: 22px; background: #fff; }
+    .pane-label { margin-bottom: 14px; color: var(--soft); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+    .business-doc { padding: 20px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 5px 18px rgba(23,43,77,.05); }
+    .skeleton { height: 8px; margin: 10px 0; background: #e9edf4; border-radius: 5px; }
+    .skeleton.short { width: 52%; }
+    .agent-block { padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+    .agent-block:last-child { border-bottom: 0; }
+    .agent-block b { display: block; color: var(--navy); }
+    .demo { margin: 22px 0 8px; overflow: hidden; border: 1px solid #d9dfeb; border-radius: 14px; }
+    .demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--navy); color: #fff; }
+    .demo-bar span { font-size: 12px; font-weight: 700; }
+    .demo-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .demo-tab { padding: 5px 9px; color: #c9d5ec; background: transparent; border: 1px solid #465875; border-radius: 7px; cursor: pointer; font-size: 11px; }
+    .demo-tab[aria-selected="true"] { color: var(--navy); background: #fff; border-color: #fff; }
+    .demo-panel { display: grid; grid-template-columns: 1.25fr .9fr; min-height: 340px; }
+    .demo-panel[hidden] { display: none; }
+    .demo-main { padding: 24px; background: #f4f6fa; border-right: 1px solid var(--line); }
+    .demo-side { padding: 24px; background: #fff; }
+    .demo-card { padding: 18px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+    .demo-card h4 { margin-top: 0; }
+    .demo-field { display: flex; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px dashed #e5e9f0; font-size: 12px; }
+    .demo-field:last-child { border: 0; }
+    .demo-field span:first-child { color: var(--muted); }
+    .demo-status { margin-bottom: 12px; color: var(--navy); font-size: 13px; font-weight: 750; }
+    .demo-step { position: relative; padding: 8px 0 8px 20px; color: var(--muted); font-size: 12px; }
+    .demo-step::before { content: ""; position: absolute; left: 2px; top: 15px; width: 7px; height: 7px; background: #aeb8ca; border-radius: 50%; }
+    .demo-step.done::before { background: var(--teal); }
+    .demo-step.wait::before { background: var(--amber); }
+    .demo-action { margin: 14px 8px 0 0; padding: 8px 12px; color: #fff; background: var(--blue); border: 0; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 650; }
+    .demo-action.secondary { color: #44516a; background: #fff; border: 1px solid var(--line); }
+    .demo-feedback { min-height: 22px; margin-top: 12px; color: var(--teal); font-size: 12px; }
+    .journey { margin: 20px 0; padding-left: 8px; }
+    .journey-step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 22px; }
+    .journey-step:not(:last-child)::before { content: ""; position: absolute; left: 15px; top: 31px; bottom: 0; width: 1px; background: #dce2ed; }
+    .step-no { z-index: 1; display: grid; place-items: center; width: 31px; height: 31px; color: var(--blue); background: var(--blue-soft); border: 1px solid #d8dfff; border-radius: 50%; font-size: 11px; font-weight: 800; }
+    .journey-content { padding: 2px 0 0; }
+    .journey-content b { color: var(--navy); }
+    .journey-content p { margin: 4px 0; color: var(--muted); font-size: 13px; }
+    .completion { margin-top: 14px; padding: 14px 16px; color: var(--teal); background: var(--teal-soft); border-radius: 10px; font-size: 13px; }
+    .requirement { margin-top: 24px; padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .req-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .req-head h3 { margin: 0; }
+    .req-id { display: block; margin-bottom: 5px; color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+    .req-purpose { margin: 10px 0 16px; color: var(--muted); }
+    .behavior { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 8px 16px; margin-top: 12px; font-size: 13px; }
+    .behavior dt { color: var(--soft); font-weight: 700; }
+    .behavior dd { margin: 0; }
+    .behavior dd ul { margin: 0; }
+    .notice { margin: 14px 0; padding: 13px 16px; color: #77501a; background: var(--amber-soft); border-radius: 10px; font-size: 13px; }
+    .open-item { padding: 16px 0; border-bottom: 1px solid var(--line); }
+    .open-item:last-child { border-bottom: 0; }
+    .open-item b { color: var(--navy); }
+    .open-item p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    footer { padding: 28px 8px 0; color: var(--soft); text-align: center; font-size: 12px; }
+    @media (max-width: 1050px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      main { padding: 28px; }
+      .decision-grid, .card-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+      main { padding: 14px; }
+      .hero { padding: 30px 24px; border-radius: 18px; }
+      .section { padding: 26px 20px; }
+      .wireframe, .demo-panel { grid-template-columns: 1fr; }
+      .canvas-pane, .demo-main { border-right: 0; border-bottom: 1px solid var(--line); }
+      .demo-bar { align-items: flex-start; flex-direction: column; }
+      .behavior { grid-template-columns: 1fr; }
+      .behavior dt { margin-top: 8px; }
+      .req-head { flex-direction: column; }
+    }
+    @media print {
+      body { background: #fff; font-size: 11px; }
+      .shell { display: block; }
+      .sidebar { display: none; }
+      main { padding: 0; }
+      .document { max-width: none; }
+      .hero { color: #fff; box-shadow: none; print-color-adjust: exact; }
+      .section { break-inside: avoid; margin-top: 14px; padding: 22px; }
+      .demo { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">织</div>
+        <div>织序<small>PRODUCT REQUIREMENTS</small></div>
+      </div>
+      <div class="nav-label">需求评审</div>
+      <nav class="toc" aria-label="文档目录">
+        <a href="#background">01 · 背景与目标</a>
+        <a href="#contract">02 · 产品契约与范围</a>
+        <a href="#form">03 · 目标软件形态</a>
+        <a class="sub" href="#objects">核心对象与状态</a>
+        <a class="sub" href="#workspace">双工作面与输入口</a>
+        <a href="#journeys">04 · 典型用户旅程</a>
+        <a href="#requirements">05 · 功能需求</a>
+        <a class="sub" href="#fr01">FR-01 统一输入与意图理解</a>
+        <a class="sub" href="#fr02">FR-02 资源草稿与客户建档</a>
+        <a class="sub" href="#fr03">FR-03 面料建样与业务标签</a>
+        <a class="sub" href="#fr04">FR-04 业务事项与连续任务</a>
+        <a class="sub" href="#fr05">FR-05 报价与决定闭环</a>
+        <a class="sub" href="#fr06">FR-06 实体样卡与打印</a>
+        <a class="sub" href="#fr07">FR-07 个性化打印模板</a>
+        <a class="sub" href="#fr08">FR-08 跟进与主动推进</a>
+        <a href="#rules">06 · 共享规则与异常</a>
+        <a href="#open">07 · 已确认产品决策</a>
+      </nav>
+      <div class="side-note">本稿整理自本轮产品讨论，描述目标产品行为，不代表相关能力均已在当前版本中实现。</div>
+    </aside>
+
+    <main>
+      <article class="document">
+        <header class="hero">
+          <div class="eyebrow">织序 / 产品需求评审稿</div>
+          <h1>AI 原生业务工作台</h1>
+          <p class="hero-sub">从“ERP 里的 AI 输入框”，转向“一事贯穿、资源自生长、人在关键处做决定”的工作系统。</p>
+          <div class="meta">
+            <span>版本 v0.2</span><span>2026-11-20</span><span>状态：已合并本轮产品决策</span><span>范围：P0 / P1</span>
+          </div>
+          <div class="hero-thesis">用户面对的不是一堆任务和单据，而是一单持续推进的生意；AI 面对任务，系统底层保存可靠单据。客户、样品、模板与规则，不再是用软件的前置配置，而是在工作过程中自然沉淀的资产。</div>
+        </header>
+
+        <section class="section" id="background">
+          <div class="section-head"><span class="section-no">01</span><div><h2>背景与目标</h2><p class="muted">为什么现有形态还没有形成“后 AI 时代软件”的体验。</p></div></div>
+          <p class="lead">当前“说点什么”具备意图持久化、报价执行和结果状态展示的基础，但用户输入后的主要感受仍是“提交一条任务、等待系统状态、跳回传统模块处理”。它尚未形成从现实材料到业务结果的连续交付。</p>
+          <div class="card-grid">
+            <div class="mini-card"><b>入口承诺与能力不一致</b><p>入口允许“说点什么”，示例覆盖报价、寄样、跟单，但实际执行路径主要集中于报价。</p></div>
+            <div class="mini-card"><b>系统状态多于工作进展</b><p>意图编号、运行状态和单据 ID 很显眼，用户却不容易看清 AI 已经做了什么、依据是什么。</p></div>
+            <div class="mini-card"><b>任务无法连续接续</b><p>缺信息时不能在同一任务内自然补充；重试更接近重新提交原文，而不是延续已有上下文。</p></div>
+          </div>
+          <div class="card-grid">
+            <div class="mini-card"><b>冷启动依赖主数据</b><p>没有客户、样品时，用户需要先理解并维护系统资源，才能顺畅进入业务流程。</p></div>
+            <div class="mini-card"><b>识别没有形成完整交付</b><p>名片或面料图片不能只返回 OCR 文本，还应形成资源草稿、当前业务结果和后续可复用上下文。</p></div>
+            <div class="mini-card"><b>实体工作连接不足</b><p>样品建库之后还需要业务标签、实体样卡、二维码、打印模板和后续扫码工作入口。</p></div>
+          </div>
+          <h3>产品目标</h3>
+          <ul>
+            <li>新用户无需预先建立完整客户和样品库，就能从名片、微信原文、面料照片或旧单据开始。</li>
+            <li>系统对任意受支持的输入给出可纠正的理解，并把识别结果转化为可使用的资源与业务交付。</li>
+            <li>一项工作从发起到补充、执行、草稿、确认与交付保持连续，不因跨页面或缺信息而重新开始。</li>
+            <li>AI 尽量完成过程工作，只在缺信息、发生冲突、存在风险或需要授权时请求人工介入。</li>
+            <li>所有关键数字、字段、修改与动作都有出处；重要动作可确认、可审计、可撤销或恢复。</li>
+          </ul>
+          <div class="quote">后 AI 的气质不是“更像聊天机器人”，而是用户明显感到：我少操作了，系统多做了；它做得怎么样，我看得懂、改得动、拦得住。</div>
+        </section>
+
+        <section class="section" id="contract">
+          <div class="section-head"><span class="section-no">02</span><div><h2>产品契约与范围</h2><p class="muted">先定义谁为了什么结果使用，以及最小完整旅程在哪里结束。</p></div></div>
+          <div class="table-wrap">
+            <table>
+              <tr><th>契约项</th><th>定义</th></tr>
+              <tr><td>主要用户</td><td>面料业务员／销售负责人。仓库与财务参与后续完整业务链路。</td></tr>
+              <tr><td>核心工作</td><td>把客户原话和现实资料交给系统，获得可检查、可修改、可决定的业务结果，而不是自己搬运数据和串联单据。</td></tr>
+              <tr><td>触发方式</td><td>当前以复制文本、上传截图／照片／文件为主；所有外部消息遵循统一输入接口约定，后续可以替换或增加不同渠道实现。</td></tr>
+              <tr><td>用户侧共享对象</td><td>“业务事项”：例如“青禾服饰 · 220g 棉 · 500 米”，承接从问价到完成所需的工作与记录。</td></tr>
+              <tr><td>信任边界</td><td>AI 可以生成草稿、查找依据和提出方案；资源覆盖、实体打印和未来对外动作必须遵守确认与权限规则。报价不设置审批与特批，最终价格由用户确认并负责。</td></tr>
+            </table>
+          </div>
+
+          <h3><span class="badge p0">P0</span> 最小完整旅程：零初始化到可确认报价</h3>
+          <div class="flow" aria-label="P0 主流程">
+            <div class="flow-item">名片图片<br>建立客户与联系人</div><span class="flow-arrow">→</span>
+            <div class="flow-item">面料与标签照片<br>建立样品草稿</div><span class="flow-arrow">→</span>
+            <div class="flow-item">确认规格与标签<br>打印实体样卡</div><span class="flow-arrow">→</span>
+            <div class="flow-item">自然语言发起报价<br>同一事项内补充</div><span class="flow-arrow">→</span>
+            <div class="flow-item">报价草稿与依据<br>修改／确认／复制</div>
+          </div>
+          <p><span class="strong">完成证据：</span>用户从空资源状态开始，能够得到可用的客户、联系人和样品资源，使用自定义或默认模板打印可扫码样卡，并在不重复录入的前提下生成报价草稿。用户查看依据、修改并确认最终价格后，可以复制报价文本；需要跟进时，也可以复制系统生成的跟进文本。</p>
+          <p><span class="strong">主要恢复路径：</span>识别不清可以逐字段修正；发现重复客户可以预览合并并撤销；缺报价信息可以在原任务内补齐；打印失败保留样卡与任务状态，修复后可重试。</p>
+
+          <h3><span class="badge p1">P1</span> 相关扩展</h3>
+          <ul>
+            <li>上传旧报价单、样卡或发货单，由系统智能识别版式与字段，辅助生成个性化打印模板。</li>
+            <li>报价接受后继续连接订单、交付异常、发货、应收与回款，保持同一业务事项。</li>
+            <li>通过统一输入／动作接口约定增加外部消息直连、业务事件监控、后台多任务和“今天”聚合。</li>
+            <li>将人工修改、放弃原因和客户偏好转化为可解释的下一次建议。</li>
+          </ul>
+          <div class="notice"><span class="badge p0">已确认</span> P0 支持复制文本、上传截图／照片／文件。手动输入与后续外部渠道都遵守同一输入约定，渠道实现可以替换，业务事项与任务规则不随之改变。</div>
+          <div class="notice"><span class="badge p0">已确认</span> P0 不设置报价审批与价格特批。AI 提供建议价与风险提示，用户修改或确认最终价格并承担责任；确认是定稿动作，不是层级审批。</div>
+          <div class="notice"><span class="badge p0">已确认</span> P0 的打印字段、纸张、方向、边距、显示规则、份数与二维码等由模板约定，用户可以自定义并保存。旧单据的智能识别与自动字段映射放在 P1。</div>
+        </section>
+
+        <section class="section" id="form">
+          <div class="section-head"><span class="section-no">03</span><div><h2>目标软件形态</h2><p class="muted">右侧面板是工作载体，不是产品中心；业务事项才是用户理解的中心。</p></div></div>
+          <div class="decision-grid">
+            <div class="decision"><b>前台是一单生意</b><p>用户看“青禾这 500 米现在怎样”，而不是管理一组互相独立的任务卡。</p></div>
+            <div class="decision"><b>后台是一组任务</b><p>找样、核价、建草稿、打印和跟进是推进业务事项的执行单元。</p></div>
+            <div class="decision"><b>底层是可靠单据</b><p>报价、订单、发货与应收继续承担确定性记录、权限、确认记录和审计。</p></div>
+          </div>
+
+          <h3 id="objects">核心对象与职责</h3>
+          <div class="table-wrap">
+            <table>
+              <tr><th>对象</th><th>面向谁</th><th>职责</th><th>关键要求</th></tr>
+              <tr><td>业务事项</td><td>用户</td><td>承接一个客户目标或一项完整生意，连接资源、任务、单据与沟通。</td><td>跨页面持续存在；可等待、恢复、关闭；能够回答“目前进展与下一步”。</td></tr>
+              <tr><td>任务</td><td>AI 与需要查看执行细节的用户</td><td>完成找样、核价、建样、打印准备等具体工作。</td><td>可补充、纠偏、取消和重试；重试不得丢失已确认上下文。</td></tr>
+              <tr><td>资源</td><td>全公司授权用户</td><td>客户、联系人、样品、供应商、模板与业务规则。</td><td>从草稿逐步变为可用；保留来源、关系、去重与变更记录。</td></tr>
+              <tr><td>单据</td><td>业务与财务人员</td><td>正式记录报价、订单、发货、应收等业务事实。</td><td>字段确定、权限明确、确认与变更可追踪；不能仅存在于聊天记录中。</td></tr>
+              <tr><td>原件与出处</td><td>所有核对者</td><td>保存图片、原文、文件以及字段或判断的来源。</td><td>从资源字段和报价依据可以回到对应原件或业务记录。</td></tr>
+            </table>
+          </div>
+
+          <h3 id="workspace">桌面端：中间业务画布，右侧小织工作面</h3>
+          <div class="wireframe" aria-label="双工作面布局示意">
+            <div class="canvas-pane">
+              <div class="pane-label">业务画布 · 真实对象与结果</div>
+              <div class="business-doc">
+                <b>青禾服饰 · 报价草稿</b>
+                <div class="skeleton"></div><div class="skeleton short"></div><div class="skeleton"></div><div class="skeleton short"></div>
+                <p class="small muted">展示客户、样品、报价、模板预览、修改差异与出处。完整报价页是深度检查模式，不再是必须跳转的孤立终点。</p>
+              </div>
+            </div>
+            <div class="agent-pane">
+              <div class="pane-label">小织工作面 · 当前事项与动作</div>
+              <div class="agent-block"><b>事项与上下文</b>青禾服饰 · 220g 棉 · 500 米</div>
+              <div class="agent-block"><b>执行进展</b>已找样、读取历史价、核对当前成本</div>
+              <div class="agent-block"><b>需要人工</b>样品歧义、缺信息、价格冲突或交付异常</div>
+              <div class="agent-block"><b>决定</b>修改、确认、复制结果；支持回到完整业务草稿</div>
+            </div>
+          </div>
+          <ul>
+            <li>右侧不是无限消息流，而是当前事项的上下文、执行、人工介入和决定区域。</li>
+            <li>“说点什么”是统一输入口：没有当前事项时提交新输入，满足最小必填集并完成先查再建后才创建事项；在当前事项内输入时默认补充或纠偏；用户可明确切换“新事项”。</li>
+            <li>当前页面的客户、样品或订单上下文以可见、可移除的方式带入，避免隐式串单。</li>
+            <li>移动端采用业务画布与全屏任务页切换，保持同一事项，不强行复制左右布局。</li>
+          </ul>
+
+          <h3>交互示意：同一工作面承接不同输入</h3>
+          <div class="demo" id="interaction-demo">
+            <div class="demo-bar">
+              <span>P0 / P1 双工作面行为示意</span>
+              <div class="demo-tabs" role="tablist" aria-label="选择交互场景">
+                <button class="demo-tab" role="tab" aria-selected="true" aria-controls="demo-card" id="tab-card" data-target="demo-card">名片建档</button>
+                <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo-fabric" id="tab-fabric" data-target="demo-fabric">面料建样</button>
+                <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo-quote" id="tab-quote" data-target="demo-quote">连续报价</button>
+                <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo-template" id="tab-template" data-target="demo-template">模板应用</button>
+              </div>
+            </div>
+
+            <div class="demo-panel" id="demo-card" role="tabpanel" aria-labelledby="tab-card">
+              <div class="demo-main"><div class="pane-label">业务画布 · 客户资源草稿</div><div class="demo-card"><h4>杭州青禾服饰有限公司</h4><div class="demo-field"><span>联系人</span><b>周敏 · 采购经理</b></div><div class="demo-field"><span>手机</span><b>138 **** 5621</b></div><div class="demo-field"><span>来源</span><b>名片原件 · 可回看</b></div><div class="demo-field"><span>资源状态</span><b>草稿</b></div></div></div>
+              <div class="demo-side"><div class="demo-status">识别到一张采购联系人名片</div><div class="demo-step done">已提取公司与联系人</div><div class="demo-step done">未发现确定重复客户</div><div class="demo-step wait">等待确认后转为可用资源</div><button class="demo-action" data-feedback="客户与联系人已确认建档；下一步可报价或寄样。" data-message-target="feedback-card">确认建档</button><button class="demo-action secondary" data-feedback="已切换为“选择已有客户并预览合并”，不会直接覆盖。" data-message-target="feedback-card">并入已有客户</button><div class="demo-feedback" id="feedback-card" aria-live="polite"></div></div>
+            </div>
+
+            <div class="demo-panel" id="demo-fabric" role="tabpanel" aria-labelledby="tab-fabric" hidden>
+              <div class="demo-main"><div class="pane-label">业务画布 · 样品与实体样卡</div><div class="demo-card"><h4>新样品草稿 · S-000128</h4><div class="demo-field"><span>成分</span><b>32S 精梳棉 · 来自标签</b></div><div class="demo-field"><span>克重 / 门幅</span><b>220g / 180cm</b></div><div class="demo-field"><span>批号</span><b>1 位数字待确认</b></div><div class="demo-field"><span>实物照片</span><b>已归档，不用于猜测成分</b></div></div></div>
+              <div class="demo-side"><div class="demo-status">两张照片暂按同一款面料处理</div><div class="demo-step done">实物图与规格来源已分开保存</div><div class="demo-step wait">批号存在一处不确定</div><div class="demo-step">确认后生成样卡打印预览</div><button class="demo-action" data-feedback="批号已标记为人工确认，样卡预览可以生成。" data-message-target="feedback-fabric">确认并预览样卡</button><button class="demo-action secondary" data-feedback="两张图片已拆开，分别进入独立草稿。" data-message-target="feedback-fabric">两张图分开处理</button><div class="demo-feedback" id="feedback-fabric" aria-live="polite"></div></div>
+            </div>
+
+            <div class="demo-panel" id="demo-quote" role="tabpanel" aria-labelledby="tab-quote" hidden>
+              <div class="demo-main"><div class="pane-label">业务画布 · 报价结果</div><div class="demo-card"><h4>青禾服饰 · 500 米</h4><div class="demo-field"><span>样品</span><b>S-000128</b></div><div class="demo-field"><span>建议单价</span><b>¥15.20 / 米</b></div><div class="demo-field"><span>合计</span><b>¥7,600</b></div><div class="demo-field"><span>依据</span><b>上次成交价 + 当前成本</b></div></div></div>
+              <div class="demo-side"><div class="demo-status">同一事项内补充后，报价草稿已更新</div><div class="demo-step done">客户与样品从当前事项带入</div><div class="demo-step done">数量已补充为 500 米，无需重新提交</div><div class="demo-step wait">老价格存在毛利风险，由用户选择最终价格</div><button class="demo-action" data-feedback="已选择建议价；确认后生成可复制报价文本。" data-message-target="feedback-quote">选择 ¥15.20</button><button class="demo-action secondary" data-feedback="已按用户选择保留老价格；风险提示已记录，不进入特批流程。" data-message-target="feedback-quote">使用老价格</button><div class="demo-feedback" id="feedback-quote" aria-live="polite"></div></div>
+            </div>
+
+            <div class="demo-panel" id="demo-template" role="tabpanel" aria-labelledby="tab-template" hidden>
+              <div class="demo-main"><div class="pane-label">业务画布 · 真实数据模板预览</div><div class="demo-card"><h4>青禾服饰专用样卡</h4><div class="demo-field"><span>模板类型</span><b>样品标签 · 80 × 50mm</b></div><div class="demo-field"><span>固定内容</span><b>Logo / 公司名</b></div><div class="demo-field"><span>业务字段</span><b>样品编号 / 规格 / 二维码</b></div><div class="demo-field"><span>应用范围</span><b>青禾服饰专用</b></div></div></div>
+              <div class="demo-side"><div class="demo-status">模板已按用户定义拆成版式、字段与打印规则</div><div class="demo-step done">字段绑定可点击纠正</div><div class="demo-step done">已使用真实样品数据预览</div><div class="demo-step wait">保存前确认应用范围</div><button class="demo-action" data-feedback="已生成试打任务；只有用户确认后才打印。" data-message-target="feedback-template">试打一张</button><button class="demo-action secondary" data-feedback="已保存为新模板版本，历史单据仍引用原版本。" data-message-target="feedback-template">保存为新版本</button><div class="demo-feedback" id="feedback-template" aria-live="polite"></div></div>
+            </div>
+          </div>
+          <noscript><p class="small muted">启用 JavaScript 后可切换以上交互示意；需求正文不依赖脚本。</p></noscript>
+        </section>
+
+        <section class="section" id="journeys">
+          <div class="section-head"><span class="section-no">04</span><div><h2>典型用户旅程</h2><p class="muted">以用户要完成的现实工作组织需求，而不是以系统模块组织。</p></div></div>
+
+          <h3><span class="badge p0">P0</span> 旅程 A：没有客户和样品，也能开始并交付报价</h3>
+          <div class="journey">
+            <div class="journey-step"><span class="step-no">1</span><div class="journey-content"><b>拍一张客户名片</b><p>系统识别客户与联系人，保留原件，生成资源草稿；只在公司归属或重复客户存在歧义时询问。</p></div></div>
+            <div class="journey-step"><span class="step-no">2</span><div class="journey-content"><b>拍面料实物，再拍供应商标签</b><p>系统提出“两张图属于同一样品”的可纠正假设，将外观照片与规格来源分开保存。</p></div></div>
+            <div class="journey-step"><span class="step-no">3</span><div class="journey-content"><b>确认不清楚的批号，生成实体样卡</b><p>系统分配内部样品编号，建议受控业务标签，使用用户自定义或系统默认模板打印含二维码的样卡。</p></div></div>
+            <div class="journey-step"><span class="step-no">4</span><div class="journey-content"><b>直接说“给周敏这款报 500 米”</b><p>当前客户和样品自动进入同一业务事项；缺少必要信息时，在当前任务内补充并继续。</p></div></div>
+            <div class="journey-step"><span class="step-no">5</span><div class="journey-content"><b>查看报价依据与风险，确认最终价格</b><p>系统展示历史价、当前成本、毛利风险和可选方案；用户修改或确认最终价格并负责，然后复制报价文本。</p></div></div>
+          </div>
+          <div class="completion">完成标志：用户没有先填写完整客户和样品表单，也没有在模块间搬运数据；现实材料变成可复用资源，当前工作形成由用户确认、可直接复制使用的报价与跟进文本。</div>
+
+          <h3><span class="badge p1">P1</span> 旅程 B：报价以后，同一单生意继续到回款</h3>
+          <div class="flow" aria-label="订单到回款流程">
+            <div class="flow-item">用户确认报价<br>复制文本并跟进</div><span class="flow-arrow">→</span>
+            <div class="flow-item">客户接受<br>准备订单与交付</div><span class="flow-arrow">→</span>
+            <div class="flow-item">异常出现<br>给出影响与方案</div><span class="flow-arrow">→</span>
+            <div class="flow-item">仓库发货<br>单据与应收连接</div><span class="flow-arrow">→</span>
+            <div class="flow-item">回款与对账<br>事项完成</div>
+          </div>
+          <p>异常通知不能只显示“订单可能延期”，还应包含影响范围、已核实事实、可选处理方案和待授权动作。仓库与财务可以拥有各自工作视图，但业务员仍看到同一事项的连续进展。</p>
+
+          <h3><span class="badge p1">P1</span> 旅程 C：把公司正在使用的旧单据变成模板</h3>
+          <div class="journey">
+            <div class="journey-step"><span class="step-no">1</span><div class="journey-content"><b>上传旧报价单、样卡或发货单</b><p>系统判断文档类型，并把固定内容、业务字段、展示规则和打印规格分开。</p></div></div>
+            <div class="journey-step"><span class="step-no">2</span><div class="journey-content"><b>在真实预览上纠正字段</b><p>用户指出“这里是供应商货号，不是内部样品编号”，不需要理解坐标或字段代码。</p></div></div>
+            <div class="journey-step"><span class="step-no">3</span><div class="journey-content"><b>试打并确认应用范围</b><p>真实数据通过缺字段、溢出、二维码与纸张检查后，再保存为单对象、客户专用或公司默认版本。</p></div></div>
+          </div>
+
+          <h3><span class="badge p1">P1</span> 旅程 D：用户不输入，系统也在推进工作</h3>
+          <p>业务员打开“今天”，首先看到哪些事项已完成、哪些正在推进、哪些等待自己决定、哪些出现异常。只有等待补充、等待决定和异常需要主动提醒；正常执行不要求用户持续盯屏。此时“说点什么”是发起或补充工作的入口，而不是首页唯一有意义的内容。</p>
+        </section>
+
+        <section class="section" id="requirements">
+          <div class="section-head"><span class="section-no">05</span><div><h2>功能需求</h2><p class="muted">每项需求描述触发、处理、结果与恢复，不规定技术实现。</p></div></div>
+
+          <article class="requirement" id="fr01">
+            <div class="req-head"><div><span class="req-id">FR-01</span><h3>统一输入与意图理解</h3></div><span class="badge p0">P0</span></div>
+            <p class="req-purpose">让文字、图片和文件成为同一个工作入口，同时支持“做事、建资源、维护规则、混合意图”，避免用户先判断应该使用哪个模块。</p>
+            <dl class="behavior">
+              <dt>触发</dt><dd>当前由用户在全局输入口、当前业务事项或资源页粘贴文字、上传一张或多张图片、提交受支持文件。所有输入先形成统一的来源、原件、内容与上下文描述，后续外部渠道也必须遵守同一约定。</dd>
+              <dt>渠道扩展</dt><dd>复制粘贴与截图上传只是当前输入实现。后续可以接入手动转发、微信／企微或其他渠道，但进入意图理解、资源去重和事项接续后，业务行为不得因渠道不同而产生分叉。</dd>
+              <dt>处理规则</dt><dd><ul><li>识别输入对象、最可能目标和可用上下文，形成一句可纠正的理解，而不是只返回 OCR 或开放式反问。</li><li>无文字图片可以提供“确认建档／并入已有／仅保存”等低代价选项，但不得擅自执行打印、发送或覆盖。</li><li>多图输入需要提出分组假设，并允许拆分；多意图输入需要拆成有顺序的工作步骤。</li><li>输入可以创建新业务事项，也可以补充当前事项；系统必须清楚显示当前采用哪一种。</li><li>无法可靠识别时，保留原件并说明已识别与未识别部分，给出可行的下一步。</li></ul></dd>
+              <dt>结果与状态</dt><dd>形成输入记录、原件、意图理解与相关资源／事项草稿。只有符合确认规则的变更才转为正式资源或业务动作。</dd>
+              <dt>异常与恢复</dt><dd>模糊图片、未知文件类型、意图冲突和上下文误带入都必须可纠正；纠正不能要求用户重新上传全部材料。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr02">
+            <div class="req-head"><div><span class="req-id">FR-02</span><h3>资源草稿、客户建档与内部维护</h3></div><span class="badge p0">P0</span></div>
+            <p class="req-purpose">把名片和后续资料逐步转化为可信客户资源，避免“先填完整表单”和 AI 自动制造重复数据。</p>
+            <dl class="behavior">
+              <dt>名片触发</dt><dd>用户上传名片后，系统区分公司、联系人、职务、电话、邮箱、地址等对象与字段，而不是把公司名和联系人混成一个客户文本。</dd>
+              <dt>最小建档</dt><dd>建立潜在客户与联系人时，只要求足以区分和后续联系的信息。税号、发票与收货信息等到开发票或发货时再补，不阻塞初始使用。</dd>
+              <dt>重复处理</dt><dd>发现同名、同电话或高度相似资源时，提供新建、并入与查看差异；合并前展示影响范围，合并后支持撤销和追溯。</dd>
+              <dt>字段出处</dt><dd>每个关键字段能够标识来自原件、其他业务记录还是人工修改；识别不确定的字段明确标记，不能静默猜全。</dd>
+              <dt>后续维护</dt><dd>支持以自然语言发起合并、归类和批量修改，但必须先展示结构化变更预览。资源使用情况变化时，不重复骚扰用户完善无关字段。</dd>
+              <dt>结果出口</dt><dd>客户建档完成后，可以直接发起沟通记录、报价或寄样；这些动作自动携带当前客户与联系人。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr03">
+            <div class="req-head"><div><span class="req-id">FR-03</span><h3>面料建样与业务标签体系</h3></div><span class="badge p0">P0</span></div>
+            <p class="req-purpose">将面料实物与标签照片转成可检索、可打印、可报价的样品资源，同时保持规格事实可信。</p>
+            <dl class="behavior">
+              <dt>图像关系</dt><dd>系统可以建议实物图与标签图属于同一样品，但允许用户拆分或重新配对；原件始终保留。</dd>
+              <dt>规格提取</dt><dd>成分、克重、门幅、颜色、批号、供应商货号等以标签或可靠业务记录为来源。面料外观照片只用于外观与实物归档，不凭视觉猜测不可见规格。</dd>
+              <dt>样品身份</dt><dd>确认建样后生成稳定内部样品编号；未确认的批号等字段保持待确认，不被 AI 自动补全。</dd>
+              <dt>业务标签</dt><dd>AI 可建议“针织、T 恤、春夏”等检索标签，但必须映射到公司受控标签体系。已经由结构化规格表达的信息不重复制造自由标签。</dd>
+              <dt>标签维护</dt><dd>支持别名、合并、批量归类和变更预览；合并前展示影响样品与使用位置，避免近义词无限增长。</dd>
+              <dt>结果出口</dt><dd>样品可继续用于打印样卡、查库存、修改库位、寄样和报价；非当前动作所需的信息可以以后补全。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr04">
+            <div class="req-head"><div><span class="req-id">FR-04</span><h3>业务事项与连续任务</h3></div><span class="badge p0">P0</span></div>
+            <p class="req-purpose">让输入、补充、执行、结果和决定成为同一事项的不同阶段，而不是多个互不相干的页面和提交记录。</p>
+            <dl class="behavior">
+              <dt>建立事项</dt><dd>只有当前意图所需的最小必填集完整时才自动建立业务事项。P0 报价以客户、样品、数量为最小必填集；缺任一项时停留在资源草稿或待补充状态，不建立只有标题的空事项。仅建资源而无明确业务目标时，也不强制创建事项。</dd>
+              <dt>先查再建</dt><dd>建立前必须根据来源标识、当前上下文、客户、业务类型及样品／订单等关键对象查询已有记录。唯一匹配则接续；重复输入复用原记录；疑似匹配但无法可靠判定时，让用户选择接续或新建，禁止静默制造重复客户、样品、事项和单据。</dd>
+              <dt>上下文</dt><dd>事项保存已确认客户、联系人、样品、数量、沟通、任务、单据与决定。用户补充信息后，从等待点继续，不重新提交原始整段话。</dd>
+              <dt>跨页与后台</dt><dd>切换页面不丢失事项；可后台执行的任务不要求用户保持当前页面。再次进入时能恢复当前阶段与下一步。</dd>
+              <dt>人工介入</dt><dd>明确区分“待补充”和“待决定”。补充只询问推进所必需的信息；决定展示影响与依据。报价风险由用户判断，不额外生成审批或特批任务。</dd>
+              <dt>失败与重试</dt><dd>失败保留已完成工作、用户补充和原件。重试不得重复产生客户、样品或单据；取消后说明哪些动作已发生、哪些可以撤销。</dd>
+              <dt>完成</dt><dd>事项完成必须对应用户可观察的业务结果，而不是只对应模型成功返回或任务状态变为成功。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr05">
+            <div class="req-head"><div><span class="req-id">FR-05</span><h3>报价与决定闭环</h3></div><span class="badge p0">P0</span></div>
+            <p class="req-purpose">把报价推进到“只差用户确认最终价格”，确保价格依据和修改可核对，同时不引入额外审批层级。</p>
+            <dl class="behavior">
+              <dt>上下文解析</dt><dd>报价可以来自全局输入、客户页、样品页或当前事项。即使用户只在自然语言中提到客户名，也需要解析并确认对应客户，不能依赖事先隐藏的 customerId。</dd>
+              <dt>执行过程</dt><dd>在权限范围内查找样品、最近成交、成本、库存和交付信息；用业务语言呈现已做事项与关键出处。</dd>
+              <dt>风险提示</dt><dd>当老价格、毛利、库存或交期存在风险时，给出可选方案及其影响。风险只用于帮助用户判断，不自动生成特批流程，也不额外拦截用户确认。</dd>
+              <dt>结果呈现</dt><dd>中间画布展示完整报价草稿、字段与修改差异；右侧提供修改、放弃草稿、确认最终价格和复制报价文本等动作。</dd>
+              <dt>人工修改</dt><dd>用户修改价格或字段后，重新计算受影响内容并显示修改前后差异；原始建议、人工修改和最终确认均保留。</dd>
+              <dt>价格责任</dt><dd>P0 不设置报价审批、价格特批或金额／毛利层级。AI 建议价仅供参考，最终价格由用户修改或确认并负责；这里的“确认”是定稿，不是审批。</dd>
+              <dt>结果交付</dt><dd>确认后生成报价记录和可复制文本，P0 不直接对外发送。需要跟进时，系统生成可复制跟进文本，由用户自行复制使用。</dd>
+              <dt>恢复</dt><dd>报价工具失败或超时后，沿用已确认客户、样品和数量重试；重复执行不得产生难以识别的重复报价草稿。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr06">
+            <div class="req-head"><div><span class="req-id">FR-06</span><h3>实体样卡、二维码与打印</h3></div><span class="badge p0">P0</span></div>
+            <p class="req-purpose">把数字样品连接回样品间与实物工作，而不是让建样停留在数据库记录。</p>
+            <dl class="behavior">
+              <dt>模板驱动</dt><dd>样卡字段、纸张尺寸、方向、边距、显示规则、打印份数与二维码样式等由所选模板约定。用户可以自定义并保存模板，不把某一批纸张或打印方式写成固定产品边界。</dd>
+              <dt>样卡内容</dt><dd>系统默认模板提供内部样品编号、关键规格、必要批次／库位、公司信息与二维码；用户可以按实际打印用途增删和调整。</dd>
+              <dt>二维码</dt><dd>二维码代表稳定样品身份。扫码打开当前样品资料及授权后的库存、寄样、报价和补打入口，不把易变资料只固化在码中。</dd>
+              <dt>打印预览</dt><dd>使用真实样品数据和所选模板预览，检查缺字段、文字溢出、纸张方向、边距和二维码可用性；打印前可试打一张。</dd>
+              <dt>打印动作</dt><dd>只有用户明确操作后才打印。打印失败保留已生成样卡和样品资源，修复打印条件后可以从原任务重试。</dd>
+              <dt>补打与版本</dt><dd>记录打印时间、使用模板和操作者。资料变化后可生成新版本；补打时明确使用原样卡还是最新版本。</dd>
+              <dt>术语边界</dt><dd>“业务标签”用于检索和归类，“实体样卡／标签”用于打印与实物识别，两者在界面和数据规则上不得混用。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr07">
+            <div class="req-head"><div><span class="req-id">FR-07</span><h3>个性化打印模板设计、绑定与应用</h3></div><span class="badge p0">P0 基础自定义 · P1 智能识别</span></div>
+            <p class="req-purpose">打印内容和规格由用户模板定义。P0 提供可编辑、可预览、可保存的模板能力；P1 再从旧单据智能识别版式与字段，减少配置工作。</p>
+            <dl class="behavior">
+              <dt>模板输入</dt><dd><span class="badge p1">P1</span> 支持从受支持的图片、PDF 或表格文件识别文档类型、版式与候选字段；无法识别的区域保留为固定内容或标记待处理。P0 不依赖旧单据识别也能完成模板自定义。</dd>
+              <dt>模板结构</dt><dd><span class="badge p0">P0</span> 区分固定内容、业务字段、展示规则与打印规格。模板不是一张不可变图片，关键字段必须能绑定真实业务数据。</dd>
+              <dt>可视化编辑</dt><dd><span class="badge p0">P0</span> 用户可以调整字段、固定文本、日期格式、语言、价格显示、纸张、方向、边距、份数和分页等规则；P1 可由旧单据给出初始建议，再由用户纠正。</dd>
+              <dt>真实预览</dt><dd><span class="badge p0">P0</span> 选择真实客户、样品或单据检查长文本、缺字段、数字截断、二维码与纸张适配；支持试打。</dd>
+              <dt>应用范围</dt><dd><span class="badge p0">P0</span> 保存时明确应用于单对象、客户专用、公司默认或系统默认。优先级固定为：单对象指定 ＞ 客户专用 ＞ 公司默认 ＞ 系统默认。</dd>
+              <dt>局部修改</dt><dd>临时修改只影响当前对象，除非用户明确选择保存为模板或扩大范围，不得意外覆盖公司默认。</dd>
+              <dt>版本与历史</dt><dd>模板修改生成新版本；已发出或已打印记录保留原版本。补打可以选择原版本或当前版本，并留下记录。</dd>
+            </dl>
+          </article>
+
+          <article class="requirement" id="fr08">
+            <div class="req-head"><div><span class="req-id">FR-08</span><h3>跟进交付、主动推进、完整业务链与学习</h3></div><span class="badge p0">P0 手动跟进 · P1 主动扩展</span></div>
+            <p class="req-purpose">当前把跟进内容交付给用户复制使用；后续再通过统一动作接口约定连接不同外部实现，逐步升级为系统持续推进。</p>
+            <dl class="behavior">
+              <dt>当前跟进</dt><dd><span class="badge p0">P0</span> 系统根据报价与当前事项生成跟进文本，用户复制后自行发送。系统不自动联系客户，也不假设文本已经发出。</dd>
+              <dt>动作扩展</dt><dd><span class="badge p1">P1</span> 复制文本与后续渠道发送都是同一类业务动作的不同实现。后续接入外部渠道时沿用当前事项、内容和记录规则，不重写业务流程。</dd>
+              <dt>主动工作</dt><dd><span class="badge p1">P1</span> 通过统一输入接口约定接入的客户回复、交期变化和回款等事件，可以推进当前事项或产生待决定内容，不强制用户重新描述背景。</dd>
+              <dt>异常</dt><dd>异常需要包含已核实事实、影响范围、可选方案、建议动作和升级入口，不能只提供风险标签。</dd>
+              <dt>今天</dt><dd>按“完成、正在推进、待补充、待决定、异常”组织用户一天的工作，减少无意义的执行状态通知。</dd>
+              <dt>完整链路</dt><dd>订单、发货、应收和回款连接同一业务事项；不同角色可以有不同工作视图，但不能割裂事项历史。</dd>
+              <dt>学习</dt><dd>人工改价、放弃草稿、模板偏好和异常处理可以影响后续建议；建议必须能解释使用了哪条历史，不自动把一次修改升级为全局规则。</dd>
+            </dl>
+          </article>
+        </section>
+
+        <section class="section" id="rules">
+          <div class="section-head"><span class="section-no">06</span><div><h2>共享规则与异常</h2><p class="muted">跨模块只定义一次，确保 AI 的自主性始终与责任边界一致。</p></div></div>
+
+          <h3>确认、责任与恢复</h3>
+          <div class="table-wrap">
+            <table>
+              <tr><th>动作</th><th>默认处理</th><th>必须保留</th><th>恢复方式</th></tr>
+              <tr><td>生成识别或资源草稿</td><td>可以自动进行，清楚标记草稿与不确定字段。</td><td>原件、识别来源、编辑记录。</td><td>逐字段修改，不必重新上传。</td></tr>
+              <tr><td>仅有图片、没有明确指令</td><td>提供建议动作，不擅自打印、发送、合并或覆盖。</td><td>用户选择和理解假设。</td><td>返回草稿并重新选择。</td></tr>
+              <tr><td>客户合并、批量修改、模板覆盖</td><td>先展示影响范围和结构化差异，再确认。</td><td>修改前后值、操作者与时间。</td><td>支持撤销或明确恢复路径。</td></tr>
+              <tr><td>实体打印</td><td>用户明确点击后执行；可先试打。</td><td>模板版本、样品版本、打印记录。</td><td>打印失败可重试，不重复建样。</td></tr>
+              <tr><td>报价确认与复制</td><td>不设置审批与特批；用户修改或确认最终价格并负责，确认后复制报价文本。</td><td>报价版本、依据、修改差异与确认人。</td><td>生成失败可沿用原上下文重试；用户后续修改形成新版本。</td></tr>
+              <tr><td>跟进文本与后续发送</td><td>P0 只生成文本供用户复制，不自动发送；后续渠道发送通过统一动作接口约定另行接入。</td><td>跟进文本、所属事项与生成依据；复制不等于已发送。</td><td>文本可修改后复制；未来外部发送失败按渠道结果恢复。</td></tr>
+            </table>
+          </div>
+
+          <h3>外部输入与动作接口约定</h3>
+          <ul>
+            <li><span class="strong">输入接口约定：</span>无论来自复制文本、截图上传还是未来外部渠道，都形成统一的来源、原件、内容、附件、当前上下文和提交记录，再进入意图理解与资源处理。</li>
+            <li><span class="strong">动作接口约定：</span>复制文本、下载结果、实体打印和未来外部发送都描述为当前事项中的业务动作，保留输入、结果与状态；具体渠道实现可以替换。</li>
+            <li><span class="strong">当前边界：</span>P0 只承诺人工复制和上传、结果文本复制以及模板打印，不声称已经接入外部消息或自动发送。</li>
+            <li><span class="strong">业务一致性：</span>渠道变化不得改变最小必填集、先查再建、连续补充、资源去重、报价用户负责和模板版本等核心规则。</li>
+          </ul>
+
+          <h3>对象状态</h3>
+          <div class="table-wrap">
+            <table>
+              <tr><th>对象</th><th>状态</th><th>转换规则</th></tr>
+              <tr><td>资源</td><td>草稿 → 可用 → 已归档</td><td>草稿可以缺非关键字段；合并或覆盖必须留痕；已归档资源默认不参与新业务建议。</td></tr>
+              <tr><td>任务</td><td>执行中 ↔ 待补充；执行中 → 待决定／已完成／失败／已取消</td><td>补充或决定后从原等待点继续；失败重试保留上下文；已取消任务可查看已发生动作。</td></tr>
+              <tr><td>业务事项</td><td>进行中 ↔ 等待人工；进行中 → 异常／已完成／已关闭</td><td>等待人工必须标明补充或决定；异常解决后恢复推进；只有用户目标完成才算已完成。</td></tr>
+              <tr><td>模板</td><td>草稿 → 试用 → 启用 ↔ 停用</td><td>真实数据预览和试打用于试用；已使用版本不可被静默改写，只能新增版本。</td></tr>
+            </table>
+          </div>
+
+          <h3>统一异常处理</h3>
+          <ul>
+            <li><span class="strong">看不清：</span>指出具体字段与原件区域，允许局部修正，不用“识别失败”概括全部。</li>
+            <li><span class="strong">不确定意图：</span>给出少量高概率下一步和“仅保存原件”，不自动执行有副作用的动作。</li>
+            <li><span class="strong">缺少资源：</span>优先从当前材料建立资源草稿并继续，不直接把用户送去空白表单。</li>
+            <li><span class="strong">工具失败或超时：</span>保存已完成工作和用户补充；恢复后幂等重试，避免重复客户、样品和单据。</li>
+            <li><span class="strong">用户离开：</span>后台可继续的工作继续；需要权限、补充或决定时保留等待状态，不虚构完成。</li>
+            <li><span class="strong">AI 无可靠依据：</span>明确说不知道或无法确认，不用视觉、语言概率或历史相似性伪装业务事实。</li>
+          </ul>
+        </section>
+
+        <section class="section" id="open">
+          <div class="section-head"><span class="section-no">07</span><div><h2>已确认产品决策</h2><p class="muted">本轮讨论已经明确的五项决策，不再作为开放问题保留。</p></div></div>
+          <div class="open-item"><b>1. 外部消息：统一约定，当前手动输入 <span class="badge p0">已确认</span></b><p>当前只要求复制文本、上传截图／照片／文件。所有输入先遵守统一约定，后续可以接入微信、企微或其他实现，但不改变意图理解、资源去重和事项接续规则。</p></div>
+          <div class="open-item"><b>2. 业务事项：满足最小必填集，先查再建 <span class="badge p0">已确认</span></b><p>当前意图的必填字段齐全后才自动建立事项；P0 报价以客户、样品、数量为最小必填集。建立前查询已有资源与事项，唯一匹配就接续，重复输入复用原记录，疑似重复无法判定时由用户选择，避免重复建设。</p></div>
+          <div class="open-item"><b>3. 报价：取消审批与特批，用户确认负责 <span class="badge p0">已确认</span></b><p>不再为报价增加复杂批准链。AI 给出建议价、依据与风险提示，用户可以修改并确认最终价格，且对价格负责；确认只表示定稿，不代表层级审批。</p></div>
+          <div class="open-item"><b>4. 打印：模板约定，P0 支持用户自定义 <span class="badge p0">已确认</span></b><p>字段、纸张、方向、边距、显示规则、份数和二维码等由模板定义，用户可以自定义、预览、试打并保存。旧单据智能识别是减少配置工作的 P1 增强，不是使用打印功能的前提。</p></div>
+          <div class="open-item"><b>5. 跟进：当前只交付可复制文本 <span class="badge p0">已确认</span></b><p>系统生成跟进文本，由用户复制并自行发送，不自动联系客户，也不把复制视为发送成功。后续更多渠道与动作通过统一接口约定扩展，当前不展开自动跟进。</p></div>
+        </section>
+
+        <footer>织序 · AI 原生业务工作台需求评审稿 · 本稿用于产品、设计与工程对齐目标行为，不代表当前实现清单。</footer>
+      </article>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var tabs = Array.prototype.slice.call(document.querySelectorAll('.demo-tab'));
+      tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          tabs.forEach(function (item) { item.setAttribute('aria-selected', 'false'); });
+          tab.setAttribute('aria-selected', 'true');
+          document.querySelectorAll('.demo-panel').forEach(function (panel) {
+            panel.hidden = panel.id !== tab.getAttribute('data-target');
+          });
+        });
+      });
+      document.querySelectorAll('[data-feedback]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var target = document.getElementById(button.getAttribute('data-message-target'));
+          if (target) target.textContent = button.getAttribute('data-feedback');
+        });
+      });
+    }());
+  </script>
+</body>
+</html>
