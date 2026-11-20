@@ -244,6 +244,32 @@ export async function submitQueuedOperation(op: QueuedOperation, deps: QueueDeps
         await deps.api.recordProof(proof);
         return;
       }
+      case "inbound.submit": {
+        const mediaKey = typeof payload.mediaKey === "string" ? payload.mediaKey : "";
+        const stored = await deps.media.get(mediaKey);
+        if (!stored) throw new Error("离线照片已丢失，请重拍");
+        const { uploadStoredInboundMedia } = await import("./media");
+        const uploaded = await uploadStoredInboundMedia(stored, deps.api);
+        // 用 opId 作为 clientRequestId：补传重试不会产生第二条 inbound。
+        await deps.api.submitInbound({
+          ...(typeof payload.text === "string" && payload.text.trim()
+            ? { text: payload.text }
+            : {}),
+          source: "mobile-camera",
+          clientRequestId: op.opId,
+          attachments: [
+            {
+              objectKey: uploaded.objectKey,
+              mimeType: "image/jpeg",
+              kind:
+                payload.kind === "bizcard" || payload.kind === "label" || payload.kind === "fabric"
+                  ? payload.kind
+                  : "auto",
+            },
+          ],
+        });
+        return;
+      }
       default:
         throw new Error(`未知的离线操作：${op.kind}`);
     }

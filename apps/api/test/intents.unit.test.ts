@@ -3,6 +3,7 @@ import { SubmitIntentInput } from "@weave-order/schema";
 import {
   assertIntentTransition,
   canTransitionIntent,
+  canRestartIntent,
   intentCancelDeadline,
   intentNotice,
   isIntentCancellable,
@@ -51,6 +52,15 @@ describe("状态机", () => {
 
   it("非法跳级抛内核错误且带可判别原因", () => {
     expect(() => assertIntentTransition("QUEUED", "SUCCEEDED")).toThrow(/不能从 QUEUED/);
+  });
+
+  it("统一输入可以从等待点继续（不改旧路径的终态语义）", () => {
+    for (const status of ["SUCCEEDED", "NEEDS_INPUT", "FAILED", "TIMEOUT"] as const) {
+      expect(canRestartIntent(status)).toBe(true);
+      // 旧报价路径仍然认为这些状态是终态，只有 /inbound 的 resume 会重新开启。
+      expect(isTerminalIntentStatus(status)).toBe(true);
+    }
+    expect(canRestartIntent("CANCELLED")).toBe(false);
   });
 });
 

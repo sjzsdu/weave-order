@@ -53,7 +53,12 @@ import {
   FieldOption,
   FieldOptionListResponse,
   FieldOptionMergePreview,
+  InboundDetail,
   InboundIntakeInput,
+  ReviseInboundInput,
+  StartInboundInput,
+  SubmitInboundInput,
+  SubmitInboundResult,
   InboundReplyList,
   InboundReplyResult,
   ImportBatch,
@@ -169,7 +174,7 @@ export interface AuditLogListParams {
 }
 
 export interface PresignImageInput {
-  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  mimeType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
   byteSize: number;
   /** 绑定到已有样品；不传时 key 落在 `uploads/`，需随样品创建一起提交。 */
   sampleId?: string;
@@ -793,6 +798,29 @@ export function createApiClient(options: ApiClientOptions) {
      */
     submitIntent: async (input: z.input<typeof SubmitIntentInput>) =>
       SubmitIntentResult.parse(await post("/api/intents", SubmitIntentInput.parse(input))),
+
+    /** 统一输入：一段话 + 多附件，服务端先出理解卡，再由用户确认执行。 */
+    submitInbound: async (input: z.input<typeof SubmitInboundInput>) =>
+      SubmitInboundResult.parse(await post("/api/inbound", SubmitInboundInput.parse(input))),
+
+    /** 轮询理解卡与任务进度。 */
+    inbound: async (id: string) =>
+      InboundDetail.parse(await request(`/api/inbound/${encodeURIComponent(id)}`)),
+
+    /** 用户确认理解卡：触发建档 / 建样 / 报价任务。 */
+    startInbound: async (id: string, input: z.input<typeof StartInboundInput> = {}) =>
+      InboundDetail.parse(
+        await post(`/api/inbound/${encodeURIComponent(id)}/start`, StartInboundInput.parse(input)),
+      ),
+
+    /** 纠正理解：只改卡，不执行。 */
+    reviseInbound: async (id: string, input: z.input<typeof ReviseInboundInput>) =>
+      InboundDetail.parse(
+        await post(
+          `/api/inbound/${encodeURIComponent(id)}/revise`,
+          ReviseInboundInput.parse(input),
+        ),
+      ),
 
     /** 近期意图（最新在前）：刷新页面后依然能看到刚才说了什么、进展到哪。 */
     intents: async (limit = 20) =>

@@ -20,6 +20,7 @@ export * from "./agent";
 export * from "./quoting";
 export * from "./llm";
 export * from "./inbound";
+export * from "./inbound-input";
 export * from "./kernel";
 export * from "./labels";
 export * from "./audit-log";

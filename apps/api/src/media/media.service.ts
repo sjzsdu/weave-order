@@ -26,17 +26,25 @@ import { objectUrl } from "../platform/thumbnail";
 
 export const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type AllowedImageMime = (typeof ALLOWED_IMAGE_MIME_TYPES)[number];
+export const INBOUND_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+] as const;
+type InboundMime = (typeof INBOUND_MIME_TYPES)[number];
 
-const EXTENSION_BY_MIME: Record<AllowedImageMime, string> = {
+const EXTENSION_BY_MIME: Record<InboundMime, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+  "application/pdf": "pdf",
 };
 
 const PresignInputSchema = z
   .object({
-    /** 客户端声明的 mime；只接受白名单三种。 */
-    mimeType: z.enum(ALLOWED_IMAGE_MIME_TYPES),
+    /** 客户端声明的 mime；图片三种 + 统一输入的 PDF。 */
+    mimeType: z.enum(INBOUND_MIME_TYPES),
     byteSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     sampleId: z.string().uuid().optional(),
     /** 回款凭证：为某笔应收签一个只读用途的上传地址。 */
@@ -101,11 +109,21 @@ export class MediaService {
   async presign(kernel: Kernel, input: unknown, ctx?: KernelContext): Promise<PresignResult> {
     const parsed = PresignInputSchema.safeParse(input);
     if (!parsed.success) {
-      throw new KernelError("KERNEL_REJECTED", "上传参数不合法：仅支持 jpeg/png/webp 图片", {
+      throw new KernelError(
+        "KERNEL_REJECTED",
+        "上传参数不合法：仅支持 jpeg/png/webp 图片或 PDF 原件",
+        {
+          reason: "MEDIA_INPUT_INVALID",
+        },
+      );
+    }
+    const { mimeType, byteSize, sampleId, receivableId, purpose } = parsed.data;
+    // 非统一输入的用途仍然只收图片：PDF 只用于 inbound 原件。
+    if (mimeType === "application/pdf" && purpose !== "inbound") {
+      throw new KernelError("KERNEL_REJECTED", "PDF 只支持统一输入", {
         reason: "MEDIA_INPUT_INVALID",
       });
     }
-    const { mimeType, byteSize, sampleId, receivableId, purpose } = parsed.data;
     const purposeCount = [
       sampleId,
       receivableId,
@@ -141,7 +159,7 @@ export class MediaService {
       ? `tenant/${kernel.tenantId}/receipts/${receivableId}/${randomUUID()}.${EXTENSION_BY_MIME[mimeType]}`
       : purpose === "inbound"
         ? `tenant/${kernel.tenantId}/inbound/${randomUUID()}.${EXTENSION_BY_MIME[mimeType]}`
-        : this.buildObjectKey(kernel.tenantId, sampleId, mimeType);
+        : this.buildObjectKey(kernel.tenantId, sampleId, mimeType as AllowedImageMime);
     const expiresInSeconds = this.env.MEDIA_PRESIGN_TTL_SECONDS;
     const uploadUrl = await this.storage.presignPut({
       objectKey,

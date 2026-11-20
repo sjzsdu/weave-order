@@ -21,13 +21,16 @@ import type { CustomerListItem, CustomerListOptions } from "@weave-order/schema"
  */
 
 export interface PresignInput {
-  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  mimeType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
   byteSize: number;
+  /** 统一输入的附件：key 落在 inbound/，不走 sample_images。 */
+  purpose?: "inbound";
 }
 
 export interface PresignResult {
   uploadUrl: string;
   publicUrl: string;
+  objectKey: string;
   method: "PUT" | "POST";
   headers: Record<string, string>;
   formData?: Record<string, string>;
@@ -92,6 +95,7 @@ const PresignResultSchema = z
   .object({
     uploadUrl: z.string(),
     publicUrl: z.string(),
+    objectKey: z.string(),
     method: z.union([z.literal("PUT"), z.literal("POST")]),
     headers: z.record(z.string()).default({}),
     formData: z.record(z.string()).optional(),

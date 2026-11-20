@@ -9,6 +9,8 @@ import type { EmbeddingProvider, ImageEmbeddingProvider } from "../platform/embe
 import { createCaptionerFromEnv } from "../platform/caption";
 import { loadEnv } from "../platform/env";
 import { createPrintCenter } from "../print";
+import { createOcrGatewayFromEnv } from "../platform/ocr";
+import type { OcrGateway } from "../platform/ocr";
 import { createObjectStorageFromEnv } from "../platform/storage";
 import type { ObjectStorage } from "../platform/storage";
 import { objectUrl } from "../platform/thumbnail";
@@ -25,6 +27,7 @@ import { CustomerService } from "./customers.service";
 import { FieldOptionsService } from "./field-options.service";
 import { ImportService } from "./import.service";
 import { InboundRepliesService } from "./inbound-replies.service";
+import { InboundService } from "./inbound.service";
 import { IntentService } from "./intents.service";
 import { ItemService } from "./items.service";
 import { OrderService } from "./orders.service";
@@ -63,6 +66,8 @@ export interface KernelOptions {
   mergeSecret?: string;
   /** 图像 embedding provider；缺省按环境变量创建（默认 local-stub，无 key 可跑）。 */
   imageEmbedder?: ImageEmbeddingProvider;
+  /** OCR 网关；缺省按环境变量创建（未配 key 时显式不可用，不返回假字段）。 */
+  ocrGateway?: OcrGateway;
   /** 送模型前的缩图长边（0 = 关闭）。单测用假图片时需要关掉。 */
   imageEmbeddingMaxEdge?: number;
 }
@@ -89,7 +94,10 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const fieldOptions = new FieldOptionsService(db, tenantId);
   const resourceFields = new ResourceFieldService(db, tenantId);
   const mergeSecret =
-    options.mergeSecret ?? process.env.MERGE_UNDO_SECRET ?? env.QUOTE_SHARE_SECRET ?? "weave-order-local-merge-secret";
+    options.mergeSecret ??
+    process.env.MERGE_UNDO_SECRET ??
+    env.QUOTE_SHARE_SECRET ??
+    "weave-order-local-merge-secret";
   const customers = new CustomerService(db, tenantId, fieldOptions, resourceFields, mergeSecret);
   const contacts = new ContactService(db, tenantId, customers);
   const storage = options.storage ?? createObjectStorageFromEnv(env);
@@ -155,6 +163,14 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const usage = new UsageService(db, tenantId);
   const intents = new IntentService(db, tenantId);
   const items = new ItemService(db, tenantId);
+  const inbound = new InboundService(db, tenantId, {
+    ocr: options.ocrGateway ?? createOcrGatewayFromEnv(env),
+    storage,
+    intents,
+    customers,
+    samples,
+    items,
+  });
   const onboardingState = new OnboardingStateService(db, tenantId);
   const inboundReplies = new InboundRepliesService(db, tenantId, {
     retentionDays: env.INBOUND_RAW_RETENTION_DAYS,
@@ -204,6 +220,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     usage,
     intent: intents,
     items,
+    inbound,
     onboardingState,
     inboundReplies,
     shares,

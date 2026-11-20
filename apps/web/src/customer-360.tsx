@@ -354,13 +354,13 @@ export function Customer360Panel({
       </section>
 
       <section className="flex flex-wrap items-center gap-2">
-        <Link href={`/today?intent=${quickIntent}&source=customer-360`}>
+        <Link href={`/inbound?text=${quickIntent}&customerId=${encodeURIComponent(customer.id)}`}>
           <Button variant="primary" className="min-h-9 px-3 text-xs">
             新建报价
           </Button>
         </Link>
         <Link
-          href={`/today?intent=${encodeURIComponent(`给${customer.name}寄样：`)}&source=customer-360`}
+          href={`/inbound?text=${encodeURIComponent(`给${customer.name}寄样：`)}&customerId=${encodeURIComponent(customer.id)}`}
         >
           <Button className="min-h-9 px-3 text-xs">建寄样单</Button>
         </Link>

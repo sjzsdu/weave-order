@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useApprovals,
   useDecideApproval,
@@ -63,6 +63,7 @@ function TodayPageContent() {
    * 这里用 searchParams 不会触发静态预渲染的 Suspense 限制。
    */
   const searchParams = useSearchParams();
+  const router = useRouter();
   // 演示剧本深链：`/today?scene=approval-pending`。
   const sceneKey = searchParams.get("scene");
   const scene = useDemoScene(api, productionLike ? null : sceneKey);
@@ -70,10 +71,6 @@ function TodayPageContent() {
   const initialIntent = searchParams.get("intent") ?? undefined;
   // 开张清单第③步：这次输入带着刚建的客户 + 样品，提交时随意图一起落库。
   const onboardingQuote = searchParams.get("onboard") === "quote";
-  // 客户 360 的快捷动作带上 source=customer-360，意图卡片据此标明来源。
-  const intentSource: "today" | "customer-360" =
-    searchParams.get("source") === "customer-360" ? "customer-360" : "today";
-
   const pending = approvals.data?.items ?? [];
   const stats = panorama.data?.stats;
   const loading = panorama.isLoading || approvals.isLoading;
@@ -511,9 +508,15 @@ function TodayPageContent() {
           initialText={initialIntent}
           busy={intentChannel.submitting}
           error={intentChannel.submitError}
-          onSubmit={async (text) =>
-            (await intentChannel.submit(text, intentSource, intentContext)) !== null
-          }
+          onSubmit={(text) => {
+            // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
+            const params = new URLSearchParams({ text });
+            for (const [key, value] of Object.entries(intentContext ?? {})) {
+              params.set(key, String(value));
+            }
+            router.push(`/inbound?${params.toString()}`);
+            return Promise.resolve(true);
+          }}
         />
         {(intentChannel.items.length > 0 || intentChannel.submitError) && (
           <div className="mt-3 grid gap-2">

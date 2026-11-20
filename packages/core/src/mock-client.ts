@@ -1183,6 +1183,14 @@ export function createMockApiClient(): ApiClient {
 
     submitIntent: submitMockIntent,
 
+    submitInbound: () => Promise.reject(new Error("演示模式不支持统一输入，请用真实账号")),
+
+    inbound: () => Promise.reject(new Error("演示模式不支持统一输入，请用真实账号")),
+
+    startInbound: () => Promise.reject(new Error("演示模式不支持统一输入，请用真实账号")),
+
+    reviseInbound: () => Promise.reject(new Error("演示模式不支持统一输入，请用真实账号")),
+
     intents: () => Promise.resolve([...mockIntents]),
 
     intent: (id: string) => {
