@@ -340,9 +340,9 @@ export function createApprovalService(kernel: Kernel) {
     async panorama(ctx?: KernelContext): Promise<Panorama> {
       // 顺序执行，避免单连接租户会话上同一 client 并发 query。
       const customers = await kernel.customers.list(100, ctx);
-      // 归档样品不再计入「样品」：统计要和样品库默认筛选（仅 ACTIVE）一致。
+      // 草稿与归档样品不再计入「样品」：统计要和样品库默认筛选（可用）一致。
       const samples = (await kernel.search.listSamples(100, ctx)).filter(
-        (sample) => sample.status === "ACTIVE",
+        (sample) => sample.status === "ACTIVE" || sample.status === "AVAILABLE",
       );
       const quotes = await kernel.quotes.list(100, ctx);
       const shipments = await kernel.shipments.list(100, ctx);

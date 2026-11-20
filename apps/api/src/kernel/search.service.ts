@@ -3,7 +3,7 @@ import type { Db } from "@weave-order/db";
 import { T002SearchFabricBySpecInput } from "@weave-order/schema";
 import type { FabricSample, SpecMatch, T002SearchFabricBySpecData } from "@weave-order/schema";
 import type { EmbeddingProvider } from "../platform/embedding";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import type { AnyColumn, SQL } from "drizzle-orm";
 import type { KernelContext } from "./audit";
 import { mapSample, presentSample } from "./samples.service";
@@ -189,7 +189,11 @@ export class SearchService {
         ),
       );
     const indexed = new Set(indexedRows.map((row) => row.sampleId));
-    const all = await this.db.select().from(samples).where(eq(samples.tenantId, this.tenantId));
+    // 草稿不建向量索引：未确认的信息不该出现在找样结果里。
+    const all = await this.db
+      .select()
+      .from(samples)
+      .where(and(eq(samples.tenantId, this.tenantId), ne(samples.status, "DRAFT")));
     const missing = all.filter((sample) => !indexed.has(sample.id));
 
     for (const sample of missing) {
@@ -339,7 +343,7 @@ export class SearchService {
       return this.db
         .select()
         .from(samples)
-        .where(and(...filters))
+        .where(and(ne(samples.status, "DRAFT"), ...filters))
         .orderBy(desc(samples.createdAt))
         .limit(parsed.limit);
     };
@@ -415,7 +419,7 @@ export class SearchService {
     const rows = await this.db
       .select()
       .from(samples)
-      .where(eq(samples.tenantId, this.tenantId))
+      .where(and(eq(samples.tenantId, this.tenantId), ne(samples.status, "DRAFT")))
       .orderBy(desc(samples.createdAt))
       .limit(limit);
     const mapped = rows.map((row: SampleRow) => presentSample(row, ctx?.actor.role));

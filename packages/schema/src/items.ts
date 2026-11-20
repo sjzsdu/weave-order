@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EntityId, Timestamp, Unit } from "./domain";
+import { EntityId, Quantity, Timestamp, Unit } from "./domain";
 
 /**
  * 业务事项（Item）契约 —— P0a 的聚合根。
@@ -86,3 +86,86 @@ export const ITEM_STATUS_TRANSITIONS: Readonly<Record<ItemStatus, readonly ItemS
 export function canTransitionItemStatus(from: ItemStatus, to: ItemStatus): boolean {
   return ITEM_STATUS_TRANSITIONS[from].includes(to);
 }
+
+/** 事项最小必填集：缺任一字段就只返回「待补充」，不创建半成品事项。 */
+export const ITEM_REQUIRED_FIELDS = ["customerId", "sampleId", "quantity"] as const;
+export type ItemRequiredField = (typeof ITEM_REQUIRED_FIELDS)[number];
+
+/**
+ * 创建事项的输入。
+ *
+ * 三个必填项都允许缺省：内核先判断齐备性，缺字段返回 `NEEDS_INPUT`。
+ * 把校验放在内核而不是 HTTP 层，是为了智能体/工具路径与人类路径同一套规则。
+ */
+export const CreateItemInput = z
+  .object({
+    customerId: EntityId.nullable().optional(),
+    sampleId: EntityId.nullable().optional(),
+    quantity: Quantity.nullable().optional(),
+    currentStage: z.string().max(64).nullable().optional(),
+    nextAction: z.string().max(255).nullable().optional(),
+    sourceIntentId: EntityId.nullable().optional(),
+  })
+  .strict();
+export type CreateItemInput = z.infer<typeof CreateItemInput>;
+
+/**
+ * 创建结果。
+ * - `CREATED`：新建；
+ * - `CONTINUED`：命中同客户+样品+数量且非终态的事项，返回已有 id（软提示，不是唯一约束）；
+ * - `NEEDS_INPUT`：缺必填项，库里不会新增 items 行。
+ */
+export const ItemCreateOutcome = z.enum(["CREATED", "CONTINUED", "NEEDS_INPUT"]);
+export type ItemCreateOutcome = z.infer<typeof ItemCreateOutcome>;
+
+export const ItemCreateResult = z
+  .object({
+    outcome: ItemCreateOutcome,
+    item: Item.nullable(),
+    missingFields: z.array(z.enum(ITEM_REQUIRED_FIELDS)),
+    /** 给用户看的一句话（「接续已有事项」/「还缺数量」），前端不自己拼。 */
+    message: z.string().min(1).max(255),
+  })
+  .strict();
+export type ItemCreateResult = z.infer<typeof ItemCreateResult>;
+
+/** 事项详情里被引用的资源投影（只给展示需要的字段，不复制整份资源）。 */
+export const ItemResourceRef = z
+  .object({
+    id: EntityId,
+    code: z.string().min(1).max(64),
+    name: z.string().min(1).max(255),
+    status: z.enum(["DRAFT", "AVAILABLE", "ARCHIVED"]),
+  })
+  .strict();
+export type ItemResourceRef = z.infer<typeof ItemResourceRef>;
+
+export const ItemDetail = z
+  .object({
+    item: Item,
+    customer: ItemResourceRef.nullable(),
+    sample: ItemResourceRef.nullable(),
+    /** 当前状态允许迁移到的状态（空数组 = 终态）。 */
+    allowedTransitions: z.array(ItemStatus),
+  })
+  .strict();
+export type ItemDetail = z.infer<typeof ItemDetail>;
+
+export const ItemListResponse = z
+  .object({
+    items: z.array(ItemDetail),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  })
+  .strict();
+export type ItemListResponse = z.infer<typeof ItemListResponse>;
+
+/** 显式迁移事项状态（完成走 `/items/:id/complete`，那里还要校验业务结果）。 */
+export const TransitionItemInput = z
+  .object({
+    status: ItemStatus,
+    /** 迁移原因（「客户还没给目标价」），写入审计，前端可空。 */
+    note: z.string().max(500).nullable().optional(),
+  })
+  .strict();
+export type TransitionItemInput = z.infer<typeof TransitionItemInput>;

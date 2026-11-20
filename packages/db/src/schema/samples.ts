@@ -32,12 +32,22 @@ export const samples = pgTable(
     unit: unitEnum("unit").notNull().default("meter"),
     costFloorAmount: bigint("cost_floor_amount", { mode: "number" }),
     costFloorCurrency: currencyEnum("cost_floor_currency"),
+    /**
+     * `ACTIVE` 是 `AVAILABLE` 的历史别名。列默认值保持 `ACTIVE`：
+     * PostgreSQL 不允许在「新增枚举值」的同一事务里把它设为默认值，
+     * 内核写入时显式落 `AVAILABLE`（`CreateSampleInput` 默认值），读路径两者等价。
+     */
     status: sampleStatusEnum("status").notNull().default("ACTIVE"),
+    /** 草稿幂等键：同一张面料标签重复提交只建一个草稿。 */
+    draftSourceId: uuid("draft_source_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("samples_tenant_code_idx").on(table.tenantId, table.code),
+    uniqueIndex("samples_tenant_draft_source_idx")
+      .on(table.tenantId, table.draftSourceId)
+      .where(sql`${table.draftSourceId} is not null`),
     index("samples_name_idx").on(table.name),
   ],
 );

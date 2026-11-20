@@ -2,11 +2,14 @@ import { samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import {
   CreateSampleInput,
+  CreateSampleDraftInput,
   SAMPLE_FILTER_TIER_LIMIT,
+  SampleDraftResponse,
   UpdateSampleInput,
   hasCapability,
+  isSampleStatusAvailable,
 } from "@weave-order/schema";
-import type { FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
+import type { DraftFieldInput, FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
 import { and, asc, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
@@ -19,6 +22,7 @@ import { SampleIndexService } from "./sample-index.service";
 import type { ImageIndexService } from "./image-index.service";
 import type { SampleThumbService } from "./sample-thumbs.service";
 import { escapeLikePattern } from "./like";
+import type { ResourceFieldService } from "./resource-fields.service";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -84,6 +88,15 @@ export function presentSample(row: SampleRow, role?: MemberRole): FabricSample {
   return { ...sample, costFloor: null };
 }
 
+/** 样品编号前缀：`S` + 北京时间 `YYMMDD` + `-`，与客户编号同一条时区纪律。 */
+export function sampleCodePrefix(now: Date = new Date()): string {
+  const beijing = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const yy = String(beijing.getUTCFullYear() % 100).padStart(2, "0");
+  const mm = String(beijing.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(beijing.getUTCDate()).padStart(2, "0");
+  return `S${yy}${mm}${dd}-`;
+}
+
 export interface SampleListFilters {
   query?: string | null;
   category?: string | null;
@@ -144,6 +157,8 @@ export class SampleService {
     private readonly imageIndex?: ImageIndexService,
     /** 持久化缩略图；未注入时（老单测）跳过派生，图墙按 `thumb_status` 标注。 */
     private readonly thumbs?: SampleThumbService,
+    /** 字段出处矩阵；草稿 / 逐字段确认共用。 */
+    private readonly resourceFields?: ResourceFieldService,
   ) {}
 
   /**
@@ -301,6 +316,158 @@ export class SampleService {
   }
 
   /** 部分字段更新；`imageKeys` 提供即为整组替换，主图与图片行同事务落库。 */
+  /**
+   * 从面料标签/文本建样品草稿（`sourceId` 幂等）。
+   *
+   * 草稿不写向量索引、不进图墙默认列表：没确认可用之前不该参与找样与历史价取数。
+   */
+  async createDraft(input: unknown, ctx: KernelContext): Promise<SampleDraftResponse> {
+    assertCanWriteSamples(ctx);
+    const parsed = CreateSampleDraftInput.parse(input);
+    const existing = await this.findByDraftSource(parsed.sourceId);
+    if (existing) return this.draftResponse(existing, false);
+
+    const prefix = sampleCodePrefix();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const code = `${prefix}${String(await this.nextSampleSequence(prefix)).padStart(4, "0")}`;
+      try {
+        const row = await this.db.transaction(async (tx) => {
+          const rows = await tx
+            .insert(samples)
+            .values({
+              tenantId: this.tenantId,
+              code,
+              name: parsed.name ?? "待确认样品",
+              composition: parsed.composition ?? null,
+              category: parsed.category ?? null,
+              weight: parsed.weight ?? null,
+              unit: parsed.unit,
+              costFloorAmount: parsed.costFloor?.amount ?? null,
+              costFloorCurrency: parsed.costFloor?.currency ?? null,
+              status: "DRAFT",
+              draftSourceId: parsed.sourceId,
+            })
+            .returning();
+          const inserted = rows[0];
+          if (!inserted) {
+            throw new KernelError("KERNEL_REJECTED", "样品草稿写入未返回记录", {
+              reason: "INSERT_RETURNED_NO_ROW",
+            });
+          }
+          const fields = this.draftFieldInputs(parsed);
+          await this.resourceFields?.writeDraftFields(tx, "sample", inserted.id, fields);
+          if (!fields.some((field) => field.fieldName === "name")) {
+            await this.resourceFields?.markPending(tx, "sample", inserted.id, "name");
+          }
+          await appendAudit(
+            tx,
+            ctx,
+            {
+              action: "SAMPLE_DRAFT_CREATED",
+              entityType: "sample",
+              entityId: inserted.id,
+              before: null,
+              after: { sourceId: parsed.sourceId, fieldCount: fields.length },
+              entityLabel: inserted.name,
+            },
+            this.tenantId,
+          );
+          return inserted;
+        });
+        return this.draftResponse(row, true);
+      } catch (error) {
+        const duplicate = await this.findByDraftSource(parsed.sourceId);
+        if (duplicate) return this.draftResponse(duplicate, false);
+        if (!isUniqueViolation(error)) throw error;
+      }
+    }
+    throw new KernelError("KERNEL_REJECTED", "样品编号连续冲突，请稍后重试", {
+      reason: "SAMPLE_CODE_EXISTS",
+    });
+  }
+
+  private draftFieldInputs(
+    parsed: ReturnType<typeof CreateSampleDraftInput.parse>,
+  ): DraftFieldInput[] {
+    const fields: DraftFieldInput[] = [];
+    const topLevel: Array<[string, string | null | undefined]> = [
+      ["name", parsed.name],
+      ["composition", parsed.composition],
+      ["category", parsed.category],
+      ["weight", parsed.weight],
+    ];
+    for (const [fieldName, value] of topLevel) {
+      if (value === undefined || value === null || value === "") continue;
+      fields.push({ fieldName, value, sourceKind: "label", sourceId: parsed.sourceId });
+    }
+    for (const field of parsed.fields ?? []) fields.push(field);
+    return fields;
+  }
+
+  private async findByDraftSource(sourceId: string): Promise<SampleRow | null> {
+    const rows = await this.db
+      .select()
+      .from(samples)
+      .where(and(eq(samples.tenantId, this.tenantId), eq(samples.draftSourceId, sourceId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  private async draftResponse(row: SampleRow, created: boolean): Promise<SampleDraftResponse> {
+    const fields = this.resourceFields
+      ? await this.resourceFields.list(
+          "sample",
+          row.id,
+          row.status === "DRAFT" || row.status === "ARCHIVED" ? row.status : "AVAILABLE",
+        )
+      : [];
+    return SampleDraftResponse.parse({ sample: mapSample(row), created, fields });
+  }
+
+  /** 草稿 → 可用；必填字段（名称）未确认时拒绝。 */
+  async confirmDraft(sampleId: string, ctx: KernelContext): Promise<FabricSample> {
+    assertCanWriteSamples(ctx);
+    const before = await this.findRow(sampleId);
+    if (isSampleStatusAvailable(before.status)) return presentSample(before, ctx.actor.role);
+    if (before.status !== "DRAFT") {
+      throw new KernelError("KERNEL_REJECTED", "只有草稿样品可以确认可用", {
+        reason: "SAMPLE_NOT_DRAFT",
+      });
+    }
+    await this.resourceFields?.assertRequiredConfirmed("sample", sampleId, ["name"]);
+    const row = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(samples)
+        .set({ status: "AVAILABLE", updatedAt: new Date() })
+        .where(and(eq(samples.id, sampleId), eq(samples.tenantId, this.tenantId)))
+        .returning();
+      const updated = rows[0];
+      if (!updated) {
+        throw new KernelError("RESOURCE_NOT_FOUND", `样品不存在：${sampleId}`, {
+          resourceType: "sample",
+          resourceId: sampleId,
+        });
+      }
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "SAMPLE_CONFIRMED",
+          entityType: "sample",
+          entityId: sampleId,
+          before: { status: "DRAFT" },
+          after: { status: "AVAILABLE" },
+          entityLabel: updated.name,
+        },
+        this.tenantId,
+      );
+      return updated;
+    });
+    // 确认后补建索引：草稿阶段刻意跳过，避免把未确认信息带进找样结果。
+    await this.indexImages(sampleId);
+    return presentSample(row, ctx.actor.role);
+  }
+
   async update(sampleId: string, input: unknown, ctx: KernelContext): Promise<FabricSample> {
     assertCanWriteSamples(ctx);
     const parsed = UpdateSampleInput.parse(input);
@@ -466,11 +633,39 @@ export class SampleService {
   }
 
   /** 游标分页的样品图墙查询；不做 `limit 100` 硬截断。 */
+  /**
+   * 状态筛选收敛：
+   * - `ACTIVE` 是历史别名，与 `AVAILABLE` 一起当「可用」；
+   * - `ALL` 不过滤；
+   * - `DRAFT` 只有明确点名时才出现（草稿不参与默认找样）。
+   */
+  private statusCondition(status: SampleStatus | "ALL") {
+    if (status === "ALL") return null;
+    if (status === "ACTIVE" || status === "AVAILABLE") {
+      return inArray(samples.status, ["ACTIVE", "AVAILABLE"]);
+    }
+    return eq(samples.status, status);
+  }
+
+  private async nextSampleSequence(prefix: string): Promise<number> {
+    const start = prefix.length + 1;
+    const result = await this.db.execute<{ max_seq: number | string | null }>(sql`
+      SELECT MAX(substring(code from (${start})::int)::int) AS max_seq
+      FROM samples
+      WHERE tenant_id = ${this.tenantId}
+        AND code LIKE ${`${prefix}%`}
+        AND substring(code from (${start})::int) ~ '^[0-9]+$'
+    `);
+    const max = result.rows[0]?.max_seq;
+    return (max === null || max === undefined ? 0 : Number(max)) + 1;
+  }
+
   async listPage(filters: SampleListFilters = {}, ctx?: KernelContext): Promise<SamplePage> {
     const limit = clampLimit(filters.limit, 24, 100);
     const conditions = [eq(samples.tenantId, this.tenantId)];
-    const status = filters.status ?? "ACTIVE";
-    if (status !== "ALL") conditions.push(eq(samples.status, status));
+    const status = filters.status ?? "AVAILABLE";
+    const statusWhere = this.statusCondition(status);
+    if (statusWhere) conditions.push(statusWhere);
     if (filters.category) conditions.push(eq(samples.category, filters.category));
     if (filters.composition) {
       const pattern = `%${escapeLikePattern(filters.composition.trim())}%`;
@@ -521,7 +716,8 @@ export class SampleService {
     // 品类选项跟随状态筛选：否则只存在于归档样品里的品类会出现在「在售」筛选器，
     // 选中后列表为空，看起来像 bug。
     const categoryConditions = [eq(samples.tenantId, this.tenantId)];
-    if (status !== "ALL") categoryConditions.push(eq(samples.status, status));
+    const categoryStatusWhere = this.statusCondition(status);
+    if (categoryStatusWhere) categoryConditions.push(categoryStatusWhere);
     const categoryRows = await this.db
       .selectDistinct({ category: samples.category })
       .from(samples)
@@ -563,7 +759,8 @@ export class SampleService {
       sql`${column} IS NOT NULL`,
       sql`btrim(${column}) <> ''`,
     ];
-    if (status !== "ALL") conditions.push(eq(samples.status, status));
+    const statusWhere = this.statusCondition(status);
+    if (statusWhere) conditions.push(statusWhere);
     const rows = await this.db
       .select({ value: column, occurrences: count() })
       .from(samples)

@@ -218,6 +218,13 @@
       "when": 1795180921732,
       "tag": "0030_brave_sue_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795184030680,
+      "tag": "0031_spooky_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

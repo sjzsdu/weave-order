@@ -200,6 +200,9 @@ export async function loadCustomerList(
   const scope = ownerScopeFilter(db, ctx, tenantId, customers.ownerId);
   if (scope) conditions.push(scope);
 
+  // 草稿不参与去重建议与列表：未确认的客户不该被当成已有客户命中。
+  if (!options.includeDrafts) conditions.push(sql`customers.status <> 'DRAFT'`);
+
   // 「我的」只是收窄。没有成员身份（本地演示 / 系统任务）时不额外限制，
   // 真正的越权由上面的 data-scope 拦，不靠这个筛选兜底。
   // TEAM 范围下「我的」= 本组：再按 owner_id=self 收窄会让经理看到空列表，
