@@ -14,6 +14,21 @@ const CUSTOMER = {
   contactEmail: null,
 };
 
+const SAMPLE = {
+  id: "123e4567-e89b-12d3-a456-426614174002",
+  tenantId: "00000000-0000-0000-0000-000000000001",
+  code: "S001",
+  name: "全棉府绸",
+  composition: "100% 棉",
+  category: "针织",
+  weight: "220g/m²",
+  unit: "meter",
+  costFloor: null,
+  status: "ACTIVE",
+  primaryImageUrl: null,
+  createdAt: "2026-11-20T00:00:00.000Z",
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -85,6 +100,40 @@ describe("API client（契约解析 + 令牌）", () => {
     expect(params.get("composition")).toBe("棉");
     expect(params.get("weights")).toBe("220g/m²,320g/m²");
     expect(params.get("status")).toBe("ACTIVE");
+  });
+
+  it("样品列表容忍分页元数据（WAN-201：真实端点总带 nextCursor/total）", async () => {
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl: () =>
+        Promise.resolve(
+          jsonResponse({
+            samples: [SAMPLE],
+            nextCursor: "cursor-2",
+            hasMore: true,
+            total: 6,
+            remaining: 5,
+            categories: ["针织"],
+            compositions: ["100% 棉"],
+            weights: ["220g/m²"],
+          }),
+        ),
+    });
+
+    const samples = await client.listSamples(50);
+    expect(samples).toHaveLength(1);
+    expect(samples[0]?.code).toBe("S001");
+  });
+
+  it("样品列表仍兼容只回 samples 的旧实现/移动端 mock", async () => {
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl: () => Promise.resolve(jsonResponse({ samples: [SAMPLE] })),
+    });
+
+    await expect(client.listSamples()).resolves.toHaveLength(1);
   });
 
   it("错误响应映射成 ApiError(code/message)", async () => {

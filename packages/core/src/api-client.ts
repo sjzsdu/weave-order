@@ -233,7 +233,12 @@ export class ApiError extends Error {
 const CustomersResponse = z.object({ customers: z.array(Customer) }).strict();
 const CustomerResponse = z.object({ customer: Customer }).strict();
 const CustomerListResponse = z.object({ customers: z.array(CustomerListItem) }).strict();
-const SamplesResponse = z.object({ samples: z.array(FabricSample) }).strict();
+/**
+ * `GET /api/samples` 与 `listSamplesPage` 是同一个端点：真实服务端始终回分页元数据
+ * （nextCursor / total / categories …），这里只校验列表本身。`.passthrough()` 让新增的
+ * 分页 / 筛选项不再把整份响应打成 ZodError —— 那会让样品下拉静默变空（WAN-201）。
+ */
+const SamplesResponse = z.object({ samples: z.array(FabricSample) }).passthrough();
 const SamplePageResponse = z
   .object({
     samples: z.array(FabricSample),
