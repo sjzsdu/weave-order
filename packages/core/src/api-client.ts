@@ -362,6 +362,18 @@ export function createApiClient(options: ApiClientOptions) {
           parsed.data.error,
         );
       }
+      // Nest 内置异常（BadRequestException 等）返回 { statusCode, message }，
+      // 没有 error.code 信封。读顶层 message，否则用户只看到「请求失败（HTTP 400）」。
+      const plain = z
+        .object({ message: z.union([z.string(), z.array(z.string())]) })
+        .passthrough()
+        .safeParse(json);
+      if (plain.success) {
+        const message = Array.isArray(plain.data.message)
+          ? plain.data.message.join("；")
+          : plain.data.message;
+        throw new ApiError(response.status, "REQUEST_REJECTED", message, json);
+      }
       throw new ApiError(response.status, "INTERNAL", `请求失败（HTTP ${response.status}）`);
     }
     return json;

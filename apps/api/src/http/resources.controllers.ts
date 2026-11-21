@@ -147,8 +147,10 @@ export class ResourceController {
         authorization,
         this.kernel,
         async (kernel, ctx) => {
-          const fields = await kernel.resourceFields.updateFields("customer", id, body, ctx);
-          return { fields };
+          await kernel.resourceFields.updateFields("customer", id, body, ctx);
+          // 与 GET /fields 同一读模型：客户端确认后直接替换缓存，
+          // 不需要再猜「confirmed 了没有」或自行拼 resourceStatus。
+          return this.fieldsOf(kernel, "customer", id, ctx);
         },
         { scope: "write" },
       );
@@ -211,8 +213,8 @@ export class ResourceController {
         authorization,
         this.kernel,
         async (kernel, ctx) => {
-          const fields = await kernel.resourceFields.updateFields("sample", id, body, ctx);
-          return { fields };
+          await kernel.resourceFields.updateFields("sample", id, body, ctx);
+          return this.fieldsOf(kernel, "sample", id, ctx);
         },
         { scope: "write" },
       );
