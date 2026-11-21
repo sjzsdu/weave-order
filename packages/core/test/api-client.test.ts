@@ -78,6 +78,8 @@ describe("API client（契约解析 + 令牌）", () => {
           categories: ["针织"],
           compositions: ["100% 棉"],
           weights: ["220g/m²", "320g/m²"],
+          colors: ["藏青"],
+          weightGsmRange: { min: 220, max: 320 },
         }),
       ),
     );
@@ -90,15 +92,23 @@ describe("API client（契约解析 + 令牌）", () => {
     const page = await client.listSamplesPage({
       composition: "棉",
       weights: ["220g/m²", "320g/m²"],
+      colors: ["藏青"],
+      weightGsmMin: 200,
+      weightGsmMax: 300,
       status: "ACTIVE",
     });
     expect(page.compositions).toEqual(["100% 棉"]);
     expect(page.weights).toEqual(["220g/m²", "320g/m²"]);
+    expect(page.colors).toEqual(["藏青"]);
+    expect(page.weightGsmRange).toEqual({ min: 220, max: 320 });
 
     const [url] = fetchImpl.mock.calls[0] ?? [];
     const params = new URL(url as string).searchParams;
     expect(params.get("composition")).toBe("棉");
     expect(params.get("weights")).toBe("220g/m²,320g/m²");
+    expect(params.get("colors")).toBe("藏青");
+    expect(params.get("weightGsmMin")).toBe("200");
+    expect(params.get("weightGsmMax")).toBe("300");
     expect(params.get("status")).toBe("ACTIVE");
   });
 

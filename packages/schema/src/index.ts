@@ -3,6 +3,7 @@ export * from "./domain";
 export * from "./tenancy";
 export * from "./capabilities";
 export * from "./field-options";
+export * from "./weight";
 export * from "./navigation";
 export * from "./workspace-ia";
 export * from "./personas";

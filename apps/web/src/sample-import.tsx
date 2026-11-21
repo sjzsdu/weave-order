@@ -26,6 +26,7 @@ export const SAMPLE_CSV_COLUMNS = [
   "name",
   "composition",
   "category",
+  "color",
   "weight",
   "unit",
   "costFloorYuan",
@@ -47,8 +48,19 @@ const COLUMN_ALIASES: Record<string, SampleColumn> = {
   成分: "composition",
   category: "category",
   品类: "category",
+  color: "color",
+  colour: "color",
+  颜色: "color",
   weight: "weight",
   克重: "weight",
+  "克重(gsm)": "weight",
+  "克重(g/m2)": "weight",
+  "克重(g/m²)": "weight",
+  "克重(g/㎡)": "weight",
+  "克重（gsm）": "weight",
+  "克重（g/m2）": "weight",
+  "克重（g/m²）": "weight",
+  "克重（g/㎡）": "weight",
   unit: "unit",
   单位: "unit",
   costflooryuan: "costFloorYuan",
@@ -82,7 +94,7 @@ const STATUS_VALUES: Record<string, string> = {
 
 export const SAMPLE_CSV_TEMPLATE = [
   SAMPLE_CSV_COLUMNS.join(","),
-  "SP-0001,32S 精梳棉汗布,100% 棉,针织,220g/m²,米,18.5,在售",
+  "SP-0001,32S 精梳棉汗布,100% 棉,针织,本白,220g/m²,米,18.5,在售",
   "",
 ].join("\n");
 
@@ -96,6 +108,19 @@ export interface ParsedSampleCsv {
   rows: ParsedSampleRow[];
   error: string | null;
   skippedBlankRows: number;
+}
+
+/**
+ * 表头写了单位，单元格就可以是纯数字：`克重(g/m²)` 下的 `220` 补成 `220g/m2`。
+ * 只有「克重」没写单位时不补 —— 那正是「无单位纯数字」必须留空的边界。
+ */
+function weightCellWithHeaderUnit(header: string, value: string): string {
+  const normalized = header.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  if (!normalized.includes("克重") && normalized !== "weight") return value;
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return value;
+  if (normalized.includes("/m2")) return `${value}g/m2`;
+  if (normalized.includes("gsm")) return `${value}gsm`;
+  return value;
 }
 
 /** 元 → 分（契约里金额是整数分）；非法值原样交给服务端判 INVALID_INPUT。 */
@@ -155,6 +180,8 @@ export function parseSampleCsv(text: string): ParsedSampleCsv {
       if (key === "unit") values.unit = UNIT_VALUES[value] ?? value;
       else if (key === "status") values.status = STATUS_VALUES[value] ?? value.toUpperCase();
       else if (key === "costFloorYuan") values.costFloor = costFloorCell(value);
+      else if (key === "weight")
+        values.weight = weightCellWithHeaderUnit(header[cellIndex] ?? "", value);
       else values[key] = value;
     });
     rows.push({ line: index + 1, values });
@@ -178,6 +205,7 @@ const FIELD_LABEL: Record<string, string> = {
   name: "品名",
   composition: "成分",
   category: "品类",
+  color: "颜色",
   weight: "克重",
   unit: "单位",
   status: "状态",
@@ -250,9 +278,13 @@ export function SampleImport({
   >({});
 
   /** 品类/成分只是建议：未知值不阻断导入，但要让用户选「存为选项 / 仅本次 / 映射」。 */
-  const optionFields: Array<{ fieldKey: FieldKey; rowKey: "category" | "composition" }> = [
+  const optionFields: Array<{
+    fieldKey: FieldKey;
+    rowKey: "category" | "composition" | "color";
+  }> = [
     { fieldKey: "sample.category", rowKey: "category" },
     { fieldKey: "sample.composition", rowKey: "composition" },
+    { fieldKey: "sample.color", rowKey: "color" },
   ];
 
   useEffect(() => {
@@ -283,7 +315,12 @@ export function SampleImport({
     if (!parsed || parsed.error) return [];
     const found = new Map<
       string,
-      { fieldKey: FieldKey; rowKey: "category" | "composition"; value: string; count: number }
+      {
+        fieldKey: FieldKey;
+        rowKey: "category" | "composition" | "color";
+        value: string;
+        count: number;
+      }
     >();
     for (const field of optionFields) {
       const options = fieldOptions[field.fieldKey] ?? [];
@@ -516,8 +553,13 @@ export function SampleImport({
                             <span className="text-sm text-ink-900">
                               {item.value}
                               <span className="ml-1 text-xs text-ink-400">
-                                · {item.fieldKey === "sample.category" ? "品类" : "成分"} ·{" "}
-                                {item.count} 行
+                                ·{" "}
+                                {item.fieldKey === "sample.category"
+                                  ? "品类"
+                                  : item.fieldKey === "sample.color"
+                                    ? "颜色"
+                                    : "成分"}{" "}
+                                · {item.count} 行
                               </span>
                             </span>
                             <select
@@ -574,6 +616,7 @@ export function SampleImport({
                           <th className="px-3 py-2 text-left font-normal">编号</th>
                           <th className="px-3 py-2 text-left font-normal">品名</th>
                           <th className="px-3 py-2 text-left font-normal">成分</th>
+                          <th className="px-3 py-2 text-left font-normal">颜色</th>
                           <th className="px-3 py-2 text-left font-normal">克重</th>
                           <th className="px-3 py-2 text-left font-normal">单位</th>
                           <th className="px-3 py-2 text-left font-normal">成本底线</th>
@@ -596,6 +639,7 @@ export function SampleImport({
                                     `sample.composition:${String(row.values.composition)}`,
                                 ) && <span className="ml-1 text-amber-700">新选项</span>}
                             </td>
+                            <td className="px-3 py-2 text-xs">{cellText(row.values.color)}</td>
                             <td className="px-3 py-2 text-xs">{cellText(row.values.weight)}</td>
                             <td className="px-3 py-2 text-xs">
                               {UNIT_LABEL[cellText(row.values.unit, "")] ??

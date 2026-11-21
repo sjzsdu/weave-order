@@ -24,7 +24,81 @@ const CUSTOMER_COLUMNS = [
   "contactEmail",
 ] as const;
 /** 样品文件的列名。costFloorAmount/costFloorCurrency 合成 costFloor 金额对象。 */
-const SAMPLE_TEXT_COLUMNS = ["code", "name", "composition", "weight", "unit", "status"] as const;
+const SAMPLE_TEXT_COLUMNS = [
+  "code",
+  "name",
+  "composition",
+  "category",
+  "color",
+  "weight",
+  "unit",
+  "status",
+] as const;
+
+/** 表头别名 → 契约字段。中文表头与「克重(单位)」写法导入同一列。 */
+const SAMPLE_HEADER_ALIASES: Record<string, string> = {
+  code: "code",
+  样品编号: "code",
+  编号: "code",
+  name: "name",
+  品名: "name",
+  样品名称: "name",
+  名称: "name",
+  composition: "composition",
+  成分: "composition",
+  category: "category",
+  品类: "category",
+  color: "color",
+  colour: "color",
+  颜色: "color",
+  weight: "weight",
+  克重: "weight",
+  "克重(gsm)": "weight",
+  "克重(g/m2)": "weight",
+  "克重(g/m²)": "weight",
+  "克重(g/㎡)": "weight",
+  "克重（gsm）": "weight",
+  "克重（g/m2）": "weight",
+  "克重（g/m²）": "weight",
+  "克重（g/㎡）": "weight",
+  unit: "unit",
+  单位: "unit",
+  status: "status",
+  状态: "status",
+  costflooramount: "costFloorAmount",
+  成本底线: "costFloorAmount",
+  成本价: "costFloorAmount",
+  costfloorcurrency: "costFloorCurrency",
+  币种: "costFloorCurrency",
+};
+
+/**
+ * 表头里写了单位，单元格就可以是纯数字：`克重(g/m²)` 下的 `220` 补成 `220g/m2`。
+ * 只有「克重」没写单位时不补 —— 那正是「无单位纯数字」必须留空的边界。
+ */
+function weightUnitFromHeader(header: string): string | null {
+  const normalized = header.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  if (!normalized.includes("克重") && normalized !== "weight") return null;
+  if (normalized.includes("/m2")) return "g/m2";
+  if (normalized.includes("gsm")) return "gsm";
+  return null;
+}
+
+/** 把一行原始表头记录折成契约字段；未识别的列原样保留，交给下游忽略或报错。 */
+function canonicalSampleRecord(record: FlatRecord): FlatRecord {
+  const canonical: FlatRecord = {};
+  for (const [header, value] of Object.entries(record)) {
+    const key = SAMPLE_HEADER_ALIASES[header] ?? SAMPLE_HEADER_ALIASES[header.toLowerCase()];
+    if (!key) {
+      canonical[header] = value;
+      continue;
+    }
+    const unit = key === "weight" ? weightUnitFromHeader(header) : null;
+    canonical[key] =
+      unit && /^\d+(?:\.\d+)?$/.test(value.trim()) ? `${value.trim()}${unit}` : value;
+  }
+  return canonical;
+}
 
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -127,16 +201,17 @@ export function toCustomerRow(record: FlatRecord): unknown {
 
 /** 扁平样品记录 → 内核可校验的样品行（金额整数分由 Number 转换，坏值交 Zod 拒）。 */
 export function toSampleRow(record: FlatRecord): unknown {
+  const canonical = canonicalSampleRecord(record);
   const row: Record<string, unknown> = {};
   for (const column of SAMPLE_TEXT_COLUMNS) {
-    const value = record[column];
+    const value = canonical[column];
     if (value !== undefined && value !== "") row[column] = value;
   }
-  const amount = record["costFloorAmount"];
+  const amount = canonical["costFloorAmount"];
   if (amount !== undefined && amount !== "") {
     row["costFloor"] = {
       amount: Number(amount),
-      currency: record["costFloorCurrency"] ?? undefined,
+      currency: canonical["costFloorCurrency"] ?? undefined,
     };
   }
   return row;

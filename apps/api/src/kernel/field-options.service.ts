@@ -40,6 +40,14 @@ function mapOption(row: FieldOptionRow): FieldOption {
   };
 }
 
+/** 存原文的样品字段 → 物理列；等级/联系人角色不走这里。 */
+function sampleTextColumn(fieldKey: string) {
+  if (fieldKey === "sample.category") return samples.category;
+  if (fieldKey === "sample.composition") return samples.composition;
+  if (fieldKey === "sample.color") return samples.color;
+  return null;
+}
+
 /** 新租户的预置选项：与迁移 0025 存量补种共用同一份 `DEFAULT_FIELD_OPTIONS`。 */
 export async function seedFieldOptions(tx: Tx | Db, tenantId: string): Promise<void> {
   const values = Object.entries(DEFAULT_FIELD_OPTIONS).flatMap(([fieldKey, presets]) =>
@@ -497,19 +505,15 @@ export class FieldOptionsService {
 
   /** 纯文本字段按原文分组计数；归一化在应用层做，与表单/导入/智能体共用同一函数。 */
   private async textValueCounts(
-    fieldKey: FieldKey,
+    fieldKey: string,
   ): Promise<Array<{ value: string; total: number }>> {
-    if (fieldKey === "sample.category") {
-      return this.groupSamples(samples.category);
-    }
-    if (fieldKey === "sample.composition") {
-      return this.groupSamples(samples.composition);
-    }
-    return [];
+    const column = sampleTextColumn(fieldKey);
+    if (!column) return [];
+    return this.groupSamples(column);
   }
 
   private async groupSamples(
-    column: typeof samples.category | typeof samples.composition,
+    column: typeof samples.category | typeof samples.composition | typeof samples.color,
   ): Promise<Array<{ value: string; total: number }>> {
     const rows = await this.db
       .select({ value: column, total: count() })
@@ -541,7 +545,8 @@ export class FieldOptionsService {
         samples: rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}` })),
       };
     }
-    if (source.fieldKey === "sample.category" || source.fieldKey === "sample.composition") {
+    const column = sampleTextColumn(source.fieldKey);
+    if (column) {
       const counts = await this.textValueCounts(source.fieldKey);
       const matched = counts
         .filter((entry) => normalizeFieldValue(entry.value) === source.normalized)
@@ -553,15 +558,7 @@ export class FieldOptionsService {
       const rows = await this.db
         .select({ id: samples.id, code: samples.code, name: samples.name })
         .from(samples)
-        .where(
-          and(
-            eq(samples.tenantId, this.tenantId),
-            inArray(
-              source.fieldKey === "sample.category" ? samples.category : samples.composition,
-              matched,
-            ),
-          ),
-        )
+        .where(and(eq(samples.tenantId, this.tenantId), inArray(column, matched)))
         .limit(5);
       return {
         affected,
@@ -577,19 +574,13 @@ export class FieldOptionsService {
     source: FieldOptionRow,
     targetLabel: string,
   ): Promise<number> {
+    const column = sampleTextColumn(source.fieldKey);
+    if (!column) return 0;
     const rows = await tx
-      .select({
-        value: source.fieldKey === "sample.category" ? samples.category : samples.composition,
-        total: count(),
-      })
+      .select({ value: column, total: count() })
       .from(samples)
-      .where(
-        and(
-          eq(samples.tenantId, this.tenantId),
-          sql`${source.fieldKey === "sample.category" ? samples.category : samples.composition} is not null`,
-        ),
-      )
-      .groupBy(source.fieldKey === "sample.category" ? samples.category : samples.composition);
+      .where(and(eq(samples.tenantId, this.tenantId), sql`${column} is not null`))
+      .groupBy(column);
     const matched = rows
       .map((row) => row.value)
       .filter(
@@ -606,11 +597,17 @@ export class FieldOptionsService {
               .set({ category: targetLabel })
               .where(and(eq(samples.tenantId, this.tenantId), eq(samples.category, value)))
               .returning({ id: samples.id })
-          : await tx
-              .update(samples)
-              .set({ composition: targetLabel })
-              .where(and(eq(samples.tenantId, this.tenantId), eq(samples.composition, value)))
-              .returning({ id: samples.id });
+          : source.fieldKey === "sample.composition"
+            ? await tx
+                .update(samples)
+                .set({ composition: targetLabel })
+                .where(and(eq(samples.tenantId, this.tenantId), eq(samples.composition, value)))
+                .returning({ id: samples.id })
+            : await tx
+                .update(samples)
+                .set({ color: targetLabel })
+                .where(and(eq(samples.tenantId, this.tenantId), eq(samples.color, value)))
+                .returning({ id: samples.id });
       affected += updated.length;
     }
     return affected;

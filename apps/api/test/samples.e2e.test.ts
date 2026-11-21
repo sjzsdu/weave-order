@@ -50,7 +50,14 @@ const uniqueCode = () =>
 const uniqueToken = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 interface SampleListBody {
-  samples: { id: string; composition: string | null; weight: string | null; code: string }[];
+  samples: {
+    id: string;
+    composition: string | null;
+    color?: string | null;
+    weight: string | null;
+    weightGsm?: number | null;
+    code: string;
+  }[];
   total: number;
   remaining: number;
   hasMore: boolean;
@@ -58,6 +65,8 @@ interface SampleListBody {
   categories: string[];
   compositions: string[];
   weights: string[];
+  colors: string[];
+  weightGsmRange: { min: number; max: number } | null;
 }
 
 /** 每个用例创建的样品在结束后删掉：档位选项按真实数据聚合，残留会污染后续运行。 */
@@ -204,7 +213,12 @@ describe("样品 HTTP（e2e）", () => {
     const otherCategory = `梭织-${token}`;
     const otherComposition = `涤纶-${token}`;
 
-    const hit = await createSample({ composition, category, weight: weightA, name: "组合筛选命中" });
+    const hit = await createSample({
+      composition,
+      category,
+      weight: weightA,
+      name: "组合筛选命中",
+    });
     const wrongWeight = await createSample({
       composition,
       category,
@@ -232,6 +246,28 @@ describe("样品 HTTP（e2e）", () => {
     expect(ids).not.toContain(wrongComposition.id);
     expect(body.samples.every((sample) => sample.composition === composition)).toBe(true);
     expect(body.samples.every((sample) => sample.weight === weightA)).toBe(true);
+  });
+
+  it("颜色 + 克重区间：颜色来自治理选项与原文，weight_gsm 只解析带单位的单一数值", async (ctx) => {
+    if (!available) ctx.skip();
+    const token = uniqueToken();
+    const color = `藏青-${token}`;
+    const hit = await createSample({ color, weight: "220g/m2", name: `范围命中-${token}` });
+    const yarn = await createSample({ color, weight: "32S/2", name: `纱支-${token}` });
+
+    const byColor = await listSamples({ colors: color });
+    expect(byColor.samples.map((sample) => sample.id).sort()).toEqual([hit.id, yarn.id].sort());
+    expect(byColor.colors).toContain(color);
+    // 纱支不写克重：区间里只剩 220。
+    expect(byColor.weightGsmRange).toEqual({ min: 220, max: 220 });
+
+    const byRange = await listSamples({
+      colors: color,
+      weightGsmMin: "200",
+      weightGsmMax: "240",
+    });
+    expect(byRange.samples.map((sample) => sample.id)).toEqual([hit.id]);
+    expect(byRange.samples[0]?.weightGsm).toBe(220);
   });
 
   it("组合筛选命中 0 条返回空数组与 hasMore=false，而不是 400", async (ctx) => {
@@ -263,8 +299,7 @@ describe("样品 HTTP（e2e）", () => {
       const response = await fetch(`${baseUrl}/api/samples?${query}`);
       expect(response.status, query).toBe(400);
       const body = (await response.json()) as { message?: string | { message?: string } };
-      const message =
-        typeof body.message === "string" ? body.message : body.message?.message;
+      const message = typeof body.message === "string" ? body.message : body.message?.message;
       expect(message).toBeTruthy();
       expect(message).toMatch(/[成分克重]/);
     }

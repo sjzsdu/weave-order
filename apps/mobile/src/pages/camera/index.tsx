@@ -53,6 +53,7 @@ export default function CameraPage() {
   // 「建样品」：拍完只填最少字段，其余可之后在图墙补。
   const [sampleName, setSampleName] = useState("");
   const [sampleComposition, setSampleComposition] = useState("");
+  const [sampleColor, setSampleColor] = useState("");
   const [sampleWeight, setSampleWeight] = useState("");
   const [savingSample, setSavingSample] = useState(false);
 
@@ -250,6 +251,7 @@ export default function CameraPage() {
         code,
         name: sampleName.trim(),
         composition: sampleComposition.trim() || null,
+        color: sampleColor.trim() || null,
         weight: sampleWeight.trim() || null,
         unit: "meter",
       });
@@ -290,6 +292,7 @@ export default function CameraPage() {
       setResultText(`已建样品「${created.name}」（${code}），图墙里可以补规格。`);
       setSampleName("");
       setSampleComposition("");
+      setSampleColor("");
       setSampleWeight("");
       setImage(null);
       void Taro.showToast({ title: "样品已保存", icon: "success" });
@@ -421,6 +424,13 @@ export default function CameraPage() {
                 value={sampleComposition}
                 placeholder="如 100% 棉"
                 onInput={(event) => setSampleComposition(event.detail.value)}
+              />
+              <View className="label">颜色</View>
+              <Input
+                className="input"
+                value={sampleColor}
+                placeholder="如 藏青"
+                onInput={(event) => setSampleColor(event.detail.value)}
               />
               <View className="label">克重</View>
               <Input

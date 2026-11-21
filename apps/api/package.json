@@ -19,6 +19,7 @@
     "seed": "tsx scripts/import-data.ts",
     "seed:persona": "tsx scripts/seed-persona-fixture.ts",
     "backfill:owner": "tsx scripts/backfill-owner.ts",
+    "backfill:weight-gsm": "tsx scripts/backfill-weight-gsm.ts",
     "control:sync": "tsx scripts/control-sync.ts",
     "control:reconcile": "tsx scripts/control-reconcile.ts",
     "reindex:samples": "tsx scripts/reindex-samples.ts",

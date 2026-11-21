@@ -56,6 +56,8 @@ export const CreateSampleInput = z
     name: z.string().min(1).max(255),
     composition: z.string().max(255).nullable().optional(),
     category: z.string().max(64).nullable().optional(),
+    /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理，未知值直接存原文。 */
+    color: z.string().max(64).nullable().optional(),
     weight: z.string().max(64).nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
@@ -83,6 +85,8 @@ export const CreateSampleDraftInput = z
     name: z.string().min(1).max(255).optional(),
     composition: z.string().max(255).nullable().optional(),
     category: z.string().max(64).nullable().optional(),
+    /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理，未知值直接存原文。 */
+    color: z.string().max(64).nullable().optional(),
     weight: z.string().max(64).nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
@@ -112,6 +116,8 @@ export const UpdateSampleInput = z
     name: z.string().min(1).max(255).optional(),
     composition: z.string().max(255).nullable().optional(),
     category: z.string().max(64).nullable().optional(),
+    /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理，未知值直接存原文。 */
+    color: z.string().max(64).nullable().optional(),
     weight: z.string().max(64).nullable().optional(),
     unit: Unit.optional(),
     costFloor: Money.nullable().optional(),

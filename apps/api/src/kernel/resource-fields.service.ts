@@ -1,7 +1,11 @@
 import { customers, resourceFields, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import { and, eq, inArray } from "drizzle-orm";
-import { ResourceFieldConflictValue, UpdateResourceFieldsInput } from "@weave-order/schema";
+import {
+  ResourceFieldConflictValue,
+  UpdateResourceFieldsInput,
+  parseWeightGsm,
+} from "@weave-order/schema";
 import type {
   DraftFieldInput,
   JsonValue,
@@ -35,6 +39,7 @@ const SAMPLE_FIELDS = [
   "name",
   "composition",
   "category",
+  "color",
   "weight",
   "unit",
   // 标签上的规格：存矩阵，不写主表（报价只读 weight/unit，其余供溯源）。
@@ -56,7 +61,14 @@ const WRITABLE_CUSTOMER_FIELDS = new Set([
   "contactPhone",
   "contactEmail",
 ]);
-const WRITABLE_SAMPLE_FIELDS = new Set(["name", "composition", "category", "weight", "unit"]);
+const WRITABLE_SAMPLE_FIELDS = new Set([
+  "name",
+  "composition",
+  "category",
+  "color",
+  "weight",
+  "unit",
+]);
 
 function jsonKey(value: JsonValue): string {
   return JSON.stringify(value ?? null);
@@ -309,6 +321,7 @@ export class ResourceFieldService {
       name: sample.name,
       composition: sample.composition,
       category: sample.category,
+      color: sample.color,
       weight: sample.weight,
       unit: sample.unit,
     };
@@ -484,7 +497,12 @@ export class ResourceFieldService {
       }
       if (field.fieldName === "composition") values.composition = text;
       if (field.fieldName === "category") values.category = text;
-      if (field.fieldName === "weight") values.weight = text;
+      if (field.fieldName === "color") values.color = text;
+      if (field.fieldName === "weight") {
+        values.weight = text;
+        // 逐字段确认也是写入侧：克重仍由同一解析器派生。
+        values.weightGsm = parseWeightGsm(text);
+      }
       if (
         field.fieldName === "unit" &&
         (text === "meter" || text === "kilogram" || text === "yard" || text === "piece")

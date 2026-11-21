@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAX_IMPORT_ROWS } from "@weave-order/schema";
 import { parseCsvRecords } from "./csv";
-import {
-  SAMPLE_CSV_TEMPLATE,
-  parseSampleCsv,
-  sampleImportRowErrorText,
-} from "./sample-import";
+import { SAMPLE_CSV_TEMPLATE, parseSampleCsv, sampleImportRowErrorText } from "./sample-import";
 
 describe("parseSampleCsv", () => {
   it("模板能被自己的解析器读回来，单位与成本底线按契约定型", () => {
@@ -17,6 +13,7 @@ describe("parseSampleCsv", () => {
       name: "32S 精梳棉汗布",
       composition: "100% 棉",
       category: "针织",
+      color: "本白",
       weight: "220g/m²",
       unit: "meter",
       status: "ACTIVE",
@@ -38,6 +35,17 @@ describe("parseSampleCsv", () => {
     });
   });
 
+  it("颜色列与「克重(g/m²)」中文表头都认", () => {
+    const parsed = parseSampleCsv("样品编号,品名,颜色,克重(g/m²)\nS10,亚麻平纹,本白,220\n");
+    expect(parsed.error).toBeNull();
+    expect(parsed.rows[0]?.values).toMatchObject({
+      code: "S10",
+      name: "亚麻平纹",
+      color: "本白",
+      weight: "220g/m2",
+    });
+  });
+
   it("成本底线不是数字时原样交给服务端判 INVALID_INPUT，不在本地猜", () => {
     const parsed = parseSampleCsv("code,name,costFloorYuan\nS1,汗布,abc\n");
     expect(parsed.rows[0]?.values.costFloor).toBe("abc");
@@ -45,7 +53,7 @@ describe("parseSampleCsv", () => {
 
   it("表头缺必填列 / 有陌生列时直接拒绝", () => {
     expect(parseSampleCsv("code,unit\nS1,meter\n").error).toContain("name");
-    expect(parseSampleCsv("code,name,colour\nS1,汗布,红\n").error).toContain("colour");
+    expect(parseSampleCsv("code,name,colourx\nS1,汗布,红\n").error).toContain("colourx");
   });
 
   it("空行被跳过并计数；超上限给出拆分提示", () => {

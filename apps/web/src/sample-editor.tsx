@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { FabricSample, FieldKey, Unit } from "@weave-order/schema";
+import { parseWeightGsm } from "@weave-order/schema";
 import { Badge, Button, ComboBox, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { FieldOptionsManager, useFieldOptions } from "@/field-options-manager";
@@ -60,6 +61,7 @@ export function SampleEditor({
   const [name, setName] = useState("");
   const [composition, setComposition] = useState("");
   const [category, setCategory] = useState("");
+  const [color, setColor] = useState("");
   const [weight, setWeight] = useState("");
   const [unit, setUnit] = useState<Unit>("meter");
   const [costFloorYuan, setCostFloorYuan] = useState("");
@@ -70,6 +72,7 @@ export function SampleEditor({
   const [manageField, setManageField] = useState<FieldKey | null>(null);
   const compositionOptions = useFieldOptions("sample.composition");
   const categoryOptions = useFieldOptions("sample.category");
+  const colorOptions = useFieldOptions("sample.color");
 
   useEffect(() => {
     if (!open) return;
@@ -79,6 +82,7 @@ export function SampleEditor({
     setName(sample?.name ?? "");
     setComposition(sample?.composition ?? "");
     setCategory(sample?.category ?? "");
+    setColor(sample?.color ?? "");
     setWeight(sample?.weight ?? "");
     setUnit(sample?.unit ?? "meter");
     setCostFloorYuan(sample?.costFloor ? (sample.costFloor.amount / 100).toFixed(2) : "");
@@ -178,6 +182,7 @@ export function SampleEditor({
               name: name.trim(),
               composition: composition.trim() || null,
               category: category.trim() || null,
+              color: color.trim() || null,
               weight: weight.trim() || null,
               unit,
               costFloor,
@@ -217,6 +222,7 @@ export function SampleEditor({
           name: name.trim(),
           composition: composition.trim() || null,
           category: category.trim() || null,
+          color: color.trim() || null,
           weight: weight.trim() || null,
           unit,
           costFloor,
@@ -335,6 +341,36 @@ export function SampleEditor({
                 placeholder="如 针织 / 梭织"
               />
             </Field>
+            <Field label="颜色">
+              <ComboBox
+                value={color}
+                onChange={setColor}
+                options={colorOptions.options
+                  .filter((option) => option.active)
+                  .map((option) => ({ value: option.code, label: option.label }))}
+                loading={colorOptions.loading}
+                loadError={colorOptions.error}
+                onSaveAsOption={async (label) => {
+                  try {
+                    await api.createFieldOption("sample.color", label);
+                    await colorOptions.reload();
+                  } catch (caught) {
+                    setError(caught instanceof Error ? caught.message : "保存颜色选项失败");
+                  }
+                }}
+                footer={
+                  <button
+                    type="button"
+                    className="text-xs text-indigo-700 hover:underline"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setManageField("sample.color")}
+                  >
+                    管理颜色
+                  </button>
+                }
+                placeholder="如 藏青"
+              />
+            </Field>
             <Field label="克重">
               <input
                 className="input"
@@ -342,6 +378,13 @@ export function SampleEditor({
                 onChange={(event) => setWeight(event.target.value)}
                 placeholder="如 220g/m²"
               />
+              <span className="mt-1 block text-xs text-ink-400">
+                {weight.trim() === ""
+                  ? "克重未填（填带单位的单一数值，如 220g/m² / 220gsm）"
+                  : parseWeightGsm(weight) === null
+                    ? "这段原文无法解析成克重；区间、纱支、无单位数字不会写入筛选克重"
+                    : `筛选克重：${parseWeightGsm(weight)} g/m²`}
+              </span>
             </Field>
             <Field label="单位与成本底线（元）">
               <div className="flex gap-2">
@@ -470,6 +513,7 @@ export function SampleEditor({
           onChanged={() => {
             void compositionOptions.reload();
             void categoryOptions.reload();
+            void colorOptions.reload();
           }}
         />
       )}
