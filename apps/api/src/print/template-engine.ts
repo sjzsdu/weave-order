@@ -16,7 +16,9 @@ export type PrintErrorCode =
   | "PRINT_JOB_STATE_INVALID"
   | "PRINT_TEMPLATE_UNSAFE"
   | "PRINT_TEMPLATE_FORBIDDEN"
-  | "PRINT_LAYOUT_OVERFLOW";
+  | "PRINT_LAYOUT_OVERFLOW"
+  | "PRINT_PAGE_SIZE_MISMATCH"
+  | "PRINT_QR_PAYLOAD_INVALID";
 
 export class PrintError extends Error {
   constructor(
@@ -180,6 +182,26 @@ function labelText(text: string, format: "ZPL" | "TSPL"): string {
   return format === "ZPL" ? flat.replace(/\^|~/g, " ") : flat.replace(/["\\]/g, "'");
 }
 
+/** 二维码载荷字段：走「不清洗、校验字符集」旁路。 */
+const QR_PAYLOAD_FIELDS = new Set(["card.qr", "box.qr"]);
+
+/**
+ * 二维码载荷是 URL / base64url token / 版本号，清洗会把它静默改坏（扫码打开 404），
+ * 因此这里不替换字符，只校验 RFC 3986 允许字符的并集；不合法直接报错。
+ * `~` 在 URI 里合法，但在 ZPL 里是命令前缀（会切断 ^FD），所以 ZPL 单独再拦一次。
+ */
+const QR_PAYLOAD_CHARSET = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
+
+function assertQrPayload(path: string, value: string, format: "ZPL" | "TSPL"): void {
+  const legal = QR_PAYLOAD_CHARSET.test(value) && !(format === "ZPL" && /[~^]/.test(value));
+  if (legal) return;
+  throw new PrintError(
+    "PRINT_QR_PAYLOAD_INVALID",
+    `二维码载荷含非法字符：${path}（只允许 URL/URI 字符；${format} 下额外禁止指令字符）`,
+    { path, value, format },
+  );
+}
+
 function displayValue(value: Scalar): string {
   if (value === null) return "";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -224,6 +246,9 @@ export function renderTemplate(
         const text = displayValue(raw);
         if (html) {
           out += escapeHtml(text);
+        } else if (QR_PAYLOAD_FIELDS.has(node.path)) {
+          assertQrPayload(node.path, text, options.format === "ZPL" ? "ZPL" : "TSPL");
+          out += text;
         } else if (options.format === "ZPL") {
           out += labelText(text, "ZPL");
         } else {

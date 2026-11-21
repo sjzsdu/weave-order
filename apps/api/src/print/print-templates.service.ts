@@ -36,6 +36,8 @@ export interface ResolvedTemplate {
   body: string;
   format: PrintTemplateFormat;
   pageSize: string | null;
+  /** 可视化版式；文本模板为 null。打印前用它做实际数据宽度校验。 */
+  layout?: PrintTemplateLayout | null;
   isSystem: boolean;
 }
 
@@ -120,6 +122,7 @@ export class PrintTemplateService {
         body: version.body,
         format: template.format,
         pageSize: version.pageSize,
+        layout: layoutFromRow(version),
         isSystem: false,
       };
     }
@@ -157,6 +160,7 @@ export class PrintTemplateService {
         body: version.body,
         format: template.format,
         pageSize: version.pageSize,
+        layout: layoutFromRow(version),
         isSystem: false,
       };
     }
@@ -176,6 +180,7 @@ export class PrintTemplateService {
       body: system.body,
       format: system.format,
       pageSize: system.pageSize,
+      layout: null,
       isSystem: true,
     };
   }
@@ -474,6 +479,9 @@ export class PrintTemplateService {
     const parsed = CopyPrintTemplateInput.parse(input);
     const source = await this.resolveCopySource(parsed);
     // 草稿正文同样会进 headless Chromium 渲染，所以 HTML 的 OWNER 限制在复制时就要生效。
+    // 先鉴权、再判「是否可以可视化编辑」是刻意的：对无权限的角色，PERMISSION_DENIED 是
+    // 唯一为真的答案，先说「不支持编辑」等于把「哪些模板能编辑」泄露给了不该知道的人。
+    // 因此 SALES 复制 HTML + 暂不支持版式的模板时，看到的是 403 而不是 400。
     assertTemplatePublishAllowed(source.format, ctx);
     if (!isLayoutEditable(source.kind)) {
       throw new KernelError(
@@ -750,6 +758,7 @@ export class PrintTemplateService {
         body: draft.body,
         format: template.format,
         pageSize: draft.pageSize,
+        layout: layoutFromRow(draft),
         isSystem: false,
       };
     }
@@ -762,6 +771,7 @@ export class PrintTemplateService {
       body: version.body,
       format: template.format,
       pageSize: version.pageSize,
+      layout: layoutFromRow(version),
       isSystem: false,
     };
   }
