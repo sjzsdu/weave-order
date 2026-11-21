@@ -47,14 +47,14 @@ test.describe("移动端 H5 关键路径", () => {
     await page.goto("/");
     // Taro 的 H5 导航栏标题是隐藏的 DOM，不能拿它当「页面已加载」的信号。
     await expect(page.locator(".weui-tabbar__label").first()).toBeVisible();
-    await expect(page.getByText("织序 · 现场决定")).toBeVisible();
+    await expect(page.getByText("小织在跟，你只做决定")).toBeVisible();
 
     // 每轮生成一张像素唯一的图：历史跑批留下的「同一张图」样本不会和本轮并列 1.0，
     // 否则 local-stub 下 top-5 取哪 5 个是任意的，断言会随跑批次数漂移。
     const mobileImage = await uniqueQueryImage(page);
-    await openTab(page, "相机");
-    await page.getByText("建样品", { exact: true }).click();
-    await pickFile(page, "打开相机", mobileImage);
+    await openTab(page, "样品");
+    await page.getByRole("button", { name: "拍照建样品" }).click();
+    await pickFile(page, "拍照建样", mobileImage);
     await expect(page.getByText(/320×320/)).toBeVisible();
     // Taro Input 是 <taro-input-core> 包一个真 <input>，按 placeholder 会命中两个元素。
     await page.locator('input.weui-input[placeholder="如 32S 精梳棉汗布"]').fill(name);
@@ -66,10 +66,9 @@ test.describe("移动端 H5 关键路径", () => {
     if (!createdCode) throw new Error("成功文案里没有编码");
     await screenshot(page, testInfo, "mobile-created-sample");
 
-    // 2) 图墙 → 详情
-    await openTab(page, "更多");
-    await page.getByText("样品库", { exact: true }).click();
-    await expect(page.getByText("样品库", { exact: true }).first()).toBeVisible();
+    // 2) 返回样品 tab：图墙 → 详情
+    await page.locator(".navbar-back").click();
+    await expect(page.locator('input.weui-input[placeholder="搜品名 / 编号"]')).toBeVisible();
     const card = page.getByText(name, { exact: true }).first();
     await card.waitFor({ state: "visible", timeout: 30_000 });
     await card.click();
@@ -99,12 +98,7 @@ test.describe("移动端 H5 关键路径", () => {
     expect(metrics!.scrollWidth).toBeLessThanOrEqual(metrics!.clientWidth);
 
     // 4) 拍照找样：同一张图 → 服务端返回候选 + 命中缩略图
-    // 样品库是 navigateTo 进来的，tabBar 已隐藏：用页面内的返回按钮回「更多」再切 tab。
-    // （PWA 安装后没有浏览器返回按钮，这个入口是唯一出口。）
-    await expect(page.locator(".navbar-back")).toBeVisible();
-    await page.locator(".navbar-back").click();
-    await expect(page.getByText("离线队列、身份、安装与隐私")).toBeVisible();
-    await openTab(page, "相机");
+    await openTab(page, "我的");
     await page.getByText("找样", { exact: true }).click();
     const searchResponse = page.waitForResponse(
       (response) =>
@@ -197,7 +191,7 @@ test.describe("移动端 H5 关键路径", () => {
   test("tabbar 页面的底部弹层不被 tabbar 遮挡，可保存大额审批阈值", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".weui-tabbar__label").first()).toBeVisible();
-    await openTab(page, "更多");
+    await openTab(page, "我的");
 
     await page.getByText("大额审批阈值", { exact: true }).click();
     const sheet = page.locator(".sheet");

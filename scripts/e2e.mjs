@@ -99,8 +99,10 @@ async function main() {
     console.log("  已跳过（E2E_SKIP_BUILD=1）");
   } else {
     run("pnpm", ["build"]);
+    // 测试服务沿用 NODE_ENV=test，但浏览器产物必须按生产模式构建；
+    // 否则会保留 React Refresh 调用，却没有注入对应运行时，导致首页白屏。
     run("pnpm", ["--filter", "@weave-order/mobile", "build"], {
-      env: { TARO_APP_API_BASE: API_URL },
+      env: { NODE_ENV: "production", TARO_APP_API_BASE: API_URL },
     });
   }
 

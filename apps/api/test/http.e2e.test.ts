@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module";
 import { createKernel } from "../src/kernel";
+import { ensureDemoIdentity } from "../src/dev/demo-identity";
 import type { KernelContext } from "../src/kernel";
 
 /**
@@ -184,6 +185,7 @@ describe("HTTP 面（e2e）", () => {
     };
     const quoteId = draftBody.data?.draft.id;
     expect(quoteId).toBeDefined();
+    await ensureDemoIdentity(database);
 
     const confirmAs = (authorization: string | null, body: unknown) =>
       fetch(`${baseUrl}/api/quotes/${quoteId}/confirm`, {
