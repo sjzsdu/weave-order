@@ -93,6 +93,43 @@ describe("导入文件解析（CSV / XLSX，离线）", () => {
     expect(Number.isNaN(bad.costFloor?.amount)).toBe(true);
   });
 
+  it("中文表头别名：颜色 / 克重(g/m²) 能映射到契约字段", () => {
+    const row = toSampleRow({
+      样品编号: "S-CN-1",
+      品名: "精梳棉汗布",
+      成分: "100% 棉",
+      品类: "针织",
+      颜色: "藏青",
+      "克重(g/m²)": "220",
+      单位: "米",
+      状态: "在售",
+    }) as Record<string, unknown>;
+    expect(row["code"]).toBe("S-CN-1");
+    expect(row["name"]).toBe("精梳棉汗布");
+    expect(row["color"]).toBe("藏青");
+    // 表头写明了单位，纯数字单元格补成完整克重原文。
+    expect(row["weight"]).toBe("220g/m2");
+    expect(row["unit"]).toBe("米");
+  });
+
+  it("克重列没写单位时不补单位：纯数字原样交给解析器判为不可解析", () => {
+    const row = toSampleRow({ 编号: "S-CN-2", 品名: "棉", 克重: "220" }) as Record<string, unknown>;
+    expect(row["weight"]).toBe("220");
+  });
+
+  it("区间与纱支原文原样进契约，不被改写成克重", () => {
+    const range = toSampleRow({ code: "S-R", name: "棉", "克重(g/m²)": "220-240" }) as Record<
+      string,
+      unknown
+    >;
+    expect(range["weight"]).toBe("220-240");
+    const yarn = toSampleRow({ code: "S-Y", name: "棉", weight: "32S/2" }) as Record<
+      string,
+      unknown
+    >;
+    expect(yarn["weight"]).toBe("32S/2");
+  });
+
   it("buildBatch 组装出 ImportBatch 信封（行仍是 unknown，由内核校验）", () => {
     const batch = buildBatch(
       [{ code: "C-1", name: "甲" }],

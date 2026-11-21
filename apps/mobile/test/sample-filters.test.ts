@@ -20,6 +20,9 @@ describe("样品筛选参数", () => {
     expect(query.category).toBeNull();
     expect(query.composition).toBeNull();
     expect(query.weights).toBeNull();
+    expect(query.colors).toBeNull();
+    expect(query.weightGsmMin).toBeNull();
+    expect(query.weightGsmMax).toBeNull();
     expect(query.status).toBe("ACTIVE");
     expect(query.limit).toBe(20);
   });
@@ -27,7 +30,12 @@ describe("样品筛选参数", () => {
   it("关键词 trim 后传给服务端，克重档位按数组传", () => {
     const query = buildSampleListQuery(
       "  汗布 ",
-      { category: "针织", composition: "100% 棉", weight: "220g/m2" },
+      {
+        ...EMPTY_SAMPLE_FILTERS,
+        category: "针织",
+        composition: "100% 棉",
+        weight: "220g/m2",
+      },
       "cursor-1",
       40,
     );
@@ -49,16 +57,44 @@ describe("样品筛选参数", () => {
   it("只有空白关键词不算筛选", () => {
     expect(hasActiveFilters("   ", EMPTY_SAMPLE_FILTERS)).toBe(false);
     expect(hasActiveFilters("", { ...EMPTY_SAMPLE_FILTERS, weight: "220g/m2" })).toBe(true);
+    expect(hasActiveFilters("", { ...EMPTY_SAMPLE_FILTERS, color: "藏青" })).toBe(true);
+    expect(hasActiveFilters("", { ...EMPTY_SAMPLE_FILTERS, weightGsmMin: 200 })).toBe(true);
     expect(hasActiveFilters("棉", EMPTY_SAMPLE_FILTERS)).toBe(true);
   });
 
-  it("已选条件条用业务词，且按品类/成分/克重顺序", () => {
-    expect(activeFilterChips({ category: "针织", composition: "棉", weight: "220g/m2" })).toEqual([
+  it("已选条件条用业务词，且按品类/成分/克重/颜色/区间顺序", () => {
+    expect(
+      activeFilterChips({
+        ...EMPTY_SAMPLE_FILTERS,
+        category: "针织",
+        composition: "棉",
+        weight: "220g/m2",
+        color: "藏青",
+        weightGsmMin: 200,
+        weightGsmMax: 300,
+      }),
+    ).toEqual([
       { key: "category", label: "品类：针织" },
       { key: "composition", label: "成分：棉" },
       { key: "weight", label: "克重：220g/m2" },
+      { key: "color", label: "颜色：藏青" },
+      { key: "weightGsm", label: "克重：200–300 g/m²" },
     ]);
     expect(activeFilterChips(EMPTY_SAMPLE_FILTERS)).toEqual([]);
+  });
+
+  it("颜色与克重区间进入服务端参数；只填一端时说 ≥ / ≤", () => {
+    const query = buildSampleListQuery(
+      "",
+      { ...EMPTY_SAMPLE_FILTERS, color: "藏青", weightGsmMin: 200 },
+      null,
+    );
+    expect(query.colors).toEqual(["藏青"]);
+    expect(query.weightGsmMin).toBe(200);
+    expect(query.weightGsmMax).toBeNull();
+    expect(activeFilterChips({ ...EMPTY_SAMPLE_FILTERS, weightGsmMax: 300 })).toEqual([
+      { key: "weightGsm", label: "克重：≤300 g/m²" },
+    ]);
   });
 
   it("卡片底部一行：有克重显示编号 · 克重，没有则「规格未填」", () => {

@@ -65,6 +65,7 @@ afterAll(async () => {
             inArray(fieldOptions.fieldKey, [
               "sample.category",
               "sample.composition",
+              "sample.color",
               "customer.tier",
               "contact.role",
             ]),
@@ -166,6 +167,40 @@ describe("field options kernel", () => {
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, DEFAULT_TENANT_ID), eq(auditLog.entityId, source.id)));
     expect(audits.map((row) => row.action)).toContain("FIELD_OPTION_MERGED");
+  });
+
+  it("颜色与品类/成分同构：用量按原文统计，合并会回写颜色列", async () => {
+    if (!available || !service || !db) return;
+    const token = suffix();
+    const source = await service.create(
+      { fieldKey: "sample.color", label: `源色-${token}` },
+      HUMAN,
+    );
+    const target = await service.create(
+      { fieldKey: "sample.color", label: `目标色-${token}` },
+      HUMAN,
+    );
+    const code = `M-${token}`;
+    createdSampleCodes.push(code);
+    await db.execute(
+      `insert into samples (tenant_id, code, name, color) values ('${DEFAULT_TENANT_ID}', '${code}', '颜色测试样品', '${source.label}')`,
+    );
+
+    const usage = await service.listWithUsage("sample.color");
+    expect(usage.find((option) => option.id === source.id)?.usage).toBeGreaterThanOrEqual(1);
+
+    const preview = await service.previewMerge(source.id, target.id);
+    expect(preview.affected).toBeGreaterThanOrEqual(1);
+    const result = await service.merge(
+      { sourceId: source.id, targetId: target.id, rewriteText: true },
+      HUMAN,
+    );
+    expect(result.affected).toBeGreaterThanOrEqual(1);
+    const rows = await db
+      .select({ color: samples.color })
+      .from(samples)
+      .where(and(eq(samples.tenantId, DEFAULT_TENANT_ID), eq(samples.code, code)));
+    expect(rows[0]?.color).toBe(target.label);
   });
 
   it("删除是软删除且可恢复；停用项仍可解析历史值", async () => {

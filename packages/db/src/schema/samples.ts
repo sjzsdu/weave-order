@@ -27,8 +27,15 @@ export const samples = pgTable(
     composition: varchar("composition", { length: 255 }),
     /** 品类（定价继承的 CATEGORY 作用域）。 */
     category: varchar("category", { length: 64 }),
+    /** 颜色原文；选项在 `field_options` 的 `sample.color` 治理，不另建颜色表。 */
+    color: varchar("color", { length: 64 }),
     /** 克重描述，如 "220g/m2" */
     weight: varchar("weight", { length: 64 }),
+    /**
+     * 从 `weight` 解析出的克重（g/m²）。写入时由同一解析器计算，
+     * 解析不出留 NULL；**禁止**在查询里用 SQL 从 `weight` 抽数字。
+     */
+    weightGsm: integer("weight_gsm"),
     unit: unitEnum("unit").notNull().default("meter"),
     costFloorAmount: bigint("cost_floor_amount", { mode: "number" }),
     costFloorCurrency: currencyEnum("cost_floor_currency"),
@@ -49,6 +56,8 @@ export const samples = pgTable(
       .on(table.tenantId, table.draftSourceId)
       .where(sql`${table.draftSourceId} is not null`),
     index("samples_name_idx").on(table.name),
+    index("samples_tenant_color_idx").on(table.tenantId, table.color),
+    index("samples_tenant_weight_gsm_idx").on(table.tenantId, table.weightGsm),
   ],
 );
 

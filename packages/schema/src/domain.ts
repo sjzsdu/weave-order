@@ -239,7 +239,11 @@ export const FabricSample = z.object({
   name: z.string().min(1).max(255),
   composition: z.string().max(255).nullable(),
   category: z.string().max(64).nullable().optional(),
+  /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理。 */
+  color: z.string().max(64).nullable().optional(),
   weight: z.string().max(64).nullable(),
+  /** 从 `weight` 解析出的克重（g/m²）；解析不出为 null，不拿原文猜。 */
+  weightGsm: z.number().int().positive().nullable().optional(),
   unit: Unit,
   /** 内核报价的价格底线（整数分）；低于此线一律 KERNEL_REJECTED。 */
   costFloor: Money.nullable(),
@@ -256,6 +260,8 @@ export type FabricSample = z.infer<typeof FabricSample>;
 export const SAMPLE_FILTER_MAX_COMPOSITION_LENGTH = 64;
 export const SAMPLE_FILTER_MAX_WEIGHT_TIERS = 10;
 export const SAMPLE_FILTER_MAX_TIER_LENGTH = 64;
+/** 颜色筛选可传来的值上限；与克重档位共用同一份限制。 */
+export const SAMPLE_FILTER_MAX_COLORS = 10;
 /** 图墙筛选器的选项条数上限；按出现次数倒序截断。 */
 export const SAMPLE_FILTER_TIER_LIMIT = 24;
 
@@ -267,6 +273,10 @@ export const SAMPLE_FILTER_TIER_LIMIT = 24;
 export const SampleListQuery = z.object({
   composition: z.string().max(SAMPLE_FILTER_MAX_COMPOSITION_LENGTH).optional(),
   weights: z.string().optional(),
+  /** 逗号分隔的颜色原文；与 `weights` 一样在 HTTP 层拆分与校验。 */
+  colors: z.string().optional(),
+  weightGsmMin: z.string().optional(),
+  weightGsmMax: z.string().optional(),
 });
 export type SampleListQuery = z.infer<typeof SampleListQuery>;
 
@@ -278,6 +288,10 @@ export type SampleListQuery = z.infer<typeof SampleListQuery>;
 export const SampleFilterTiers = z.object({
   compositions: z.array(z.string()),
   weights: z.array(z.string()),
+  /** 颜色可选项：`field_options` 在用选项 + 存量原文里未入选项的值。 */
+  colors: z.array(z.string()),
+  /** 克重区间边界：来自当前租户可用样品的 `min/max(weight_gsm)`；无数据时为 null。 */
+  weightGsmRange: z.object({ min: z.number().int(), max: z.number().int() }).strict().nullable(),
 });
 export type SampleFilterTiers = z.infer<typeof SampleFilterTiers>;
 

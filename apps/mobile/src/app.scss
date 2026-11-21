@@ -1230,6 +1230,15 @@ taro-textarea-core.textarea textarea {
   min-width: 0;
 }
 
+/* 克重区间两个输入：固定宽度、不参与 chip 的横向滚动压缩。 */
+.facet-scroll > .facet-input {
+  flex: 0 0 120px;
+  width: 120px;
+  height: 64PX;
+  padding: 0 16px;
+  font-size: 24px;
+}
+
 /* 同一行里 chip 不能被压扁成「全部…」，横向滚动才是它的溢出方式。 */
 .chip-row > .chip,
 .facet-scroll > .chip {

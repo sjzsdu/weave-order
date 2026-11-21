@@ -12,13 +12,14 @@ import { z } from "zod";
  * 走 `field_options` 的字段。新增字段只加这里一行，不在调用点判断字符串。
  *
  * - `customer.tier`：客户等级，`customers.tier` 存 `code`（code 引用）。
- * - `sample.category` / `sample.composition`：样品品类/成分，业务表仍存原文，选项只是建议。
+ * - `sample.category` / `sample.composition` / `sample.color`：样品品类/成分/颜色，业务表仍存原文，选项只是建议。
  * - `contact.role`：联系人角色，同「只做建议」。
  */
 export const FIELD_KEYS = [
   "customer.tier",
   "sample.category",
   "sample.composition",
+  "sample.color",
   "contact.role",
 ] as const;
 export const FieldKey = z.enum(FIELD_KEYS);
@@ -176,6 +177,16 @@ export const DEFAULT_FIELD_OPTIONS: Readonly<
     { code: "COMP-COTTON-POLY", label: "棉涤混纺", sortOrder: 30 },
     { code: "COMP-LINEN", label: "100% 亚麻", sortOrder: 40 },
     { code: "COMP-SILK", label: "100% 真丝", sortOrder: 50 },
+  ],
+  "sample.color": [
+    { code: "COLOR-BLACK", label: "黑色", sortOrder: 10 },
+    { code: "COLOR-WHITE", label: "白色", sortOrder: 20 },
+    { code: "COLOR-NAVY", label: "藏青", sortOrder: 30 },
+    { code: "COLOR-GREY", label: "灰色", sortOrder: 40 },
+    { code: "COLOR-BEIGE", label: "米白", sortOrder: 50 },
+    { code: "COLOR-KHAKI", label: "卡其", sortOrder: 60 },
+    { code: "COLOR-BLUE", label: "蓝色", sortOrder: 70 },
+    { code: "COLOR-RED", label: "红色", sortOrder: 80 },
   ],
   "contact.role": [
     { code: "ROLE-PURCHASING", label: "采购", sortOrder: 10 },

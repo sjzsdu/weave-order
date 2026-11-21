@@ -36,6 +36,9 @@ export default function SamplesPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<FabricSample | null>(null);
+  const [gsmMinText, setGsmMinText] = useState("");
+  const [gsmMaxText, setGsmMaxText] = useState("");
+  const [rangeError, setRangeError] = useState<string | null>(null);
   // 只认最后一次请求：连续切 chip 时旧响应不能覆盖新结果。
   const requestSeq = useRef(0);
   const hasData = useRef(false);
@@ -95,12 +98,41 @@ export default function SamplesPage() {
   const activeChips = activeFilterChips(filters);
   const cameraEntry = () => enterCamera({ mode: "sample" });
 
-  const clearFacet = (key: "category" | "composition" | "weight") =>
+  const clearFacet = (key: "category" | "composition" | "weight" | "color" | "weightGsm") => {
+    if (key === "weightGsm") {
+      setGsmMinText("");
+      setGsmMaxText("");
+      setFilters((current) => ({ ...current, weightGsmMin: null, weightGsmMax: null }));
+      return;
+    }
     setFilters((current) => ({ ...current, [key]: null }));
+  };
+
+  /** 区间只在点「应用」时下发：边输入边请求会把 20 打成 2 再打 20。 */
+  const applyGsmRange = () => {
+    const min = gsmMinText.trim() === "" ? null : Number(gsmMinText);
+    const max = gsmMaxText.trim() === "" ? null : Number(gsmMaxText);
+    if (
+      (min !== null && (!Number.isInteger(min) || min < 0)) ||
+      (max !== null && (!Number.isInteger(max) || max < 0))
+    ) {
+      setRangeError("克重填整数（g/m²）");
+      return;
+    }
+    if (min !== null && max !== null && min > max) {
+      setRangeError("下限不能大于上限");
+      return;
+    }
+    setRangeError(null);
+    setFilters((current) => ({ ...current, weightGsmMin: min, weightGsmMax: max }));
+  };
 
   const clearAll = () => {
     setQuery("");
     setDebouncedQuery("");
+    setGsmMinText("");
+    setGsmMaxText("");
+    setRangeError(null);
     setFilters(EMPTY_SAMPLE_FILTERS);
   };
 
@@ -218,6 +250,17 @@ export default function SamplesPage() {
         }
       />
       <FacetRow
+        label="颜色"
+        options={data?.colors ?? []}
+        value={filters.color}
+        onChange={(value) =>
+          setFilters((current) => ({
+            ...current,
+            color: value === null ? null : toggleFacet(current.color, value),
+          }))
+        }
+      />
+      <FacetRow
         label="克重"
         options={data?.weights ?? []}
         value={filters.weight}
@@ -228,6 +271,31 @@ export default function SamplesPage() {
           }))
         }
       />
+      <View className="facet-row">
+        <Text className="facet-label">克重区间</Text>
+        <View className="facet-scroll" style={{ alignItems: "center" }}>
+          <Input
+            className="input facet-input"
+            type="number"
+            value={gsmMinText}
+            placeholder={data?.weightGsmRange ? String(data.weightGsmRange.min) : "下限"}
+            onInput={(event) => setGsmMinText(event.detail.value)}
+          />
+          <Text className="muted">–</Text>
+          <Input
+            className="input facet-input"
+            type="number"
+            value={gsmMaxText}
+            placeholder={data?.weightGsmRange ? String(data.weightGsmRange.max) : "上限"}
+            onInput={(event) => setGsmMaxText(event.detail.value)}
+          />
+          <Text className="muted">g/m²</Text>
+          <View className="chip" onClick={applyGsmRange}>
+            应用
+          </View>
+        </View>
+      </View>
+      {rangeError && <Text className="warn-text">{rangeError}</Text>}
 
       {error && (
         <Card className="card-flat">
@@ -290,9 +358,14 @@ export default function SamplesPage() {
             )}
             <View className="label">编码</View>
             <Text>{selected.code}</Text>
+            <View className="label">颜色</View>
+            <Text>{selected.color ?? "颜色未填"}</Text>
             <View className="label">成分 / 克重</View>
             <Text>
-              {[selected.composition ?? "成分未填", selected.weight ?? "克重未填"].join(" · ")}
+              {[
+                selected.composition ?? "成分未填",
+                selected.weightGsm ? `${selected.weightGsm} g/m²` : (selected.weight ?? "克重未填"),
+              ].join(" · ")}
             </Text>
             <View className="label">状态</View>
             <Badge tone={isSampleStatusAvailable(selected.status) ? "accent" : "warn"}>

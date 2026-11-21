@@ -30,6 +30,7 @@ import {
   T006SuggestLinePriceResult,
   IntentView,
   isSampleStatusAvailable,
+  parseWeightGsm,
   roleCapabilities,
 } from "@weave-order/schema";
 import type {
@@ -309,7 +310,9 @@ const sample = {
   name: "32S 精梳棉汗布 220g",
   composition: "100% 棉",
   category: "针织",
+  color: "藏青",
   weight: "220g/m²",
+  weightGsm: 220,
   unit: "meter" as const,
   costFloor: { amount: 1420, currency: "CNY" as const },
   status: "ACTIVE" as const,
@@ -387,7 +390,16 @@ const mockSamples = [
 /** 档位按出现次数倒序、同次数按字面升序，只统计当前状态且非空的值。
  * `ACTIVE` 与 `AVAILABLE` 是同一个「可用」语义（后者为 P0a 新值）。
  */
-function mockTiers(status: SampleStatus | "ALL", key: "composition" | "weight") {
+function mockWeightGsmRange(status: "ACTIVE" | "AVAILABLE" | "DRAFT" | "ARCHIVED" | "ALL") {
+  const values = mockSamples
+    .filter((item) => status === "ALL" || item.status === status)
+    .map((item) => item.weightGsm)
+    .filter((value): value is number => typeof value === "number");
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+function mockTiers(status: SampleStatus | "ALL", key: "composition" | "weight" | "color") {
   const counts = new Map<string, number>();
   for (const item of mockSamples) {
     if (
@@ -1063,7 +1075,14 @@ export function createMockApiClient(): ApiClient {
             item.name.toLowerCase().includes(query) ||
             (item.composition ?? "").toLowerCase().includes(query)) &&
           (!composition || (item.composition ?? "").toLowerCase().includes(composition)) &&
-          (!params.weights || params.weights.length === 0 || params.weights.includes(item.weight)),
+          (!params.weights ||
+            params.weights.length === 0 ||
+            params.weights.includes(item.weight)) &&
+          (!params.colors ||
+            params.colors.length === 0 ||
+            params.colors.includes(item.color ?? null)) &&
+          (params.weightGsmMin == null || (item.weightGsm ?? 0) >= params.weightGsmMin) &&
+          (params.weightGsmMax == null || (item.weightGsm ?? 0) <= params.weightGsmMax),
       );
       const limit = params.limit ?? 24;
       const total = samples.length;
@@ -1084,6 +1103,8 @@ export function createMockApiClient(): ApiClient {
         ].sort(),
         compositions: mockTiers(status, "composition"),
         weights: mockTiers(status, "weight"),
+        colors: mockTiers(status, "color"),
+        weightGsmRange: mockWeightGsmRange(status),
       });
     },
 
@@ -1096,7 +1117,9 @@ export function createMockApiClient(): ApiClient {
         code: input.code,
         name: input.name,
         composition: input.composition ?? null,
+        color: input.color ?? null,
         weight: input.weight ?? null,
+        weightGsm: parseWeightGsm(input.weight),
       }),
 
     createSampleDraft: (input) =>

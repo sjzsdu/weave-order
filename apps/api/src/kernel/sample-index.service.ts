@@ -14,6 +14,7 @@ export type SampleTextSource = {
   name: string;
   composition: string | null;
   category?: string | null;
+  color?: string | null;
   weight: string | null;
 };
 

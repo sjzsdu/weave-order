@@ -172,6 +172,11 @@ export interface SampleListParams {
   composition?: string | null;
   /** 克重档位原文（来自响应的 `weights`），服务端精确匹配。 */
   weights?: string[] | null;
+  /** 颜色原文（来自响应的 `colors`），服务端精确匹配。 */
+  colors?: string[] | null;
+  /** 克重区间（g/m²，闭区间），只命中解析出 `weight_gsm` 的样品。 */
+  weightGsmMin?: number | null;
+  weightGsmMax?: number | null;
   status?: SampleStatus | "ALL" | null;
   cursor?: string | null;
   limit?: number;
@@ -742,6 +747,11 @@ export function createApiClient(options: ApiClientOptions) {
       if (params.weights && params.weights.length > 0) {
         search.set("weights", params.weights.join(","));
       }
+      if (params.colors && params.colors.length > 0) {
+        search.set("colors", params.colors.join(","));
+      }
+      if (params.weightGsmMin != null) search.set("weightGsmMin", String(params.weightGsmMin));
+      if (params.weightGsmMax != null) search.set("weightGsmMax", String(params.weightGsmMax));
       if (params.status) search.set("status", params.status);
       if (params.cursor) search.set("cursor", params.cursor);
       if (params.limit !== undefined) search.set("limit", String(params.limit));

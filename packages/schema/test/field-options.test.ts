@@ -104,11 +104,12 @@ describe("预置项与自定义 code", () => {
     expect(generateOptionCode()).toMatch(/^O-[A-Z0-9]+$/);
   });
 
-  it("四个字段都有预置项，且每个字段都覆盖等级/品类/成分/角色", () => {
+  it("五个字段都有预置项，且每个字段都覆盖等级/品类/成分/颜色/角色", () => {
     expect(Object.keys(DEFAULT_FIELD_OPTIONS).sort()).toEqual([
       "contact.role",
       "customer.tier",
       "sample.category",
+      "sample.color",
       "sample.composition",
     ]);
     for (const presets of Object.values(DEFAULT_FIELD_OPTIONS)) {

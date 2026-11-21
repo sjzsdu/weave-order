@@ -39,6 +39,15 @@ function SamplesWall() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const [color, setColor] = useState("");
+  const [gsmMin, setGsmMin] = useState("");
+  const [gsmMax, setGsmMax] = useState("");
+  // 区间只在点「应用」后进入查询：边输入边请求会出现 min>max 的瞬态 400。
+  const [appliedGsm, setAppliedGsm] = useState<{ min: number | null; max: number | null }>({
+    min: null,
+    max: null,
+  });
+  const [gsmError, setGsmError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>("ACTIVE");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSample, setEditorSample] = useState<FabricSample | null>(null);
@@ -58,11 +67,14 @@ function SamplesWall() {
   }, [search]);
 
   const list = useInfiniteQuery({
-    queryKey: ["samples", "wall", { query, category, status }],
+    queryKey: ["samples", "wall", { query, category, color, appliedGsm, status }],
     queryFn: ({ pageParam }) =>
       api.listSamplesPage({
         query: query || null,
         category: category || null,
+        colors: color ? [color] : null,
+        weightGsmMin: appliedGsm.min,
+        weightGsmMax: appliedGsm.max,
         status,
         cursor: pageParam,
         limit: 24,
@@ -75,6 +87,8 @@ function SamplesWall() {
   const samples = useMemo(() => pages.flatMap((page) => page.samples), [pages]);
   const lastPage = pages[pages.length - 1];
   const categories = lastPage?.categories ?? [];
+  const colors = lastPage?.colors ?? [];
+  const weightGsmRange = lastPage?.weightGsmRange ?? null;
   const remaining = lastPage?.remaining ?? 0;
   const total = lastPage?.total ?? 0;
 
@@ -102,7 +116,25 @@ function SamplesWall() {
     void queryClient.invalidateQueries({ queryKey: ["panorama"] });
   };
 
-  const narrowed = query !== "" || category !== "" || status !== "ACTIVE";
+  /** 校验后再提交区间；非法值不发请求，页面也不会闪「图墙不可用」。 */
+  const applyGsmRange = () => {
+    const min = gsmMin.trim() === "" ? null : Number(gsmMin);
+    const max = gsmMax.trim() === "" ? null : Number(gsmMax);
+    if (min !== null && max !== null && min > max) {
+      setGsmError("克重下限不能大于上限");
+      return;
+    }
+    setGsmError(null);
+    setAppliedGsm({ min, max });
+  };
+
+  const narrowed =
+    query !== "" ||
+    category !== "" ||
+    color !== "" ||
+    appliedGsm.min !== null ||
+    appliedGsm.max !== null ||
+    status !== "ACTIVE";
 
   return (
     <div className="grid gap-4">
@@ -206,6 +238,46 @@ function SamplesWall() {
           ))}
         </select>
         <select
+          className="input md:w-32"
+          value={color}
+          onChange={(event) => setColor(event.target.value)}
+          aria-label="颜色筛选"
+        >
+          <option value="">全部颜色</option>
+          {colors.map((entry) => (
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1" aria-label="克重区间筛选">
+          <input
+            className="input w-20"
+            inputMode="numeric"
+            value={gsmMin}
+            onChange={(event) => setGsmMin(event.target.value.replace(/[^0-9]/g, ""))}
+            placeholder={weightGsmRange ? String(weightGsmRange.min) : "下限"}
+            aria-label="克重下限"
+          />
+          <span className="text-xs text-ink-400">–</span>
+          <input
+            className="input w-20"
+            inputMode="numeric"
+            value={gsmMax}
+            onChange={(event) => setGsmMax(event.target.value.replace(/[^0-9]/g, ""))}
+            placeholder={weightGsmRange ? String(weightGsmRange.max) : "上限"}
+            aria-label="克重上限"
+          />
+          <span className="text-xs text-ink-400">g/m²</span>
+          <button
+            type="button"
+            className="rounded border border-line px-2 py-1 text-xs text-ink-700 hover:border-ink-400"
+            onClick={applyGsmRange}
+          >
+            应用
+          </button>
+        </div>
+        <select
           className="input md:w-36"
           value={status}
           onChange={(event) => setStatus(event.target.value as StatusFilter)}
@@ -216,6 +288,7 @@ function SamplesWall() {
           <option value="ALL">全部状态</option>
         </select>
       </section>
+      {gsmError && <p className="text-xs text-red-600">{gsmError}</p>}
 
       <div className="flex items-center justify-between text-xs text-ink-400">
         <span>共 {total} 个样品</span>
@@ -241,6 +314,11 @@ function SamplesWall() {
                 onClick={() => {
                   setSearch("");
                   setCategory("");
+                  setColor("");
+                  setGsmMin("");
+                  setGsmMax("");
+                  setAppliedGsm({ min: null, max: null });
+                  setGsmError(null);
                   setStatus("ACTIVE");
                 }}
               >
@@ -389,7 +467,13 @@ function SampleCard({
             </Badge>
           </span>
           <span className="mt-0.5 block truncate text-xs text-ink-400">
-            {[sample.composition, sample.weight].filter(Boolean).join(" · ") || "规格未填"}
+            {[
+              sample.color,
+              sample.composition,
+              sample.weightGsm ? `${sample.weightGsm} g/m²` : sample.weight,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "规格未填"}
           </span>
         </span>
       </button>

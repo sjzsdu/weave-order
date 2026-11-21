@@ -9,6 +9,7 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   "customer.tier": "客户等级",
   "sample.category": "样品品类",
   "sample.composition": "样品成分",
+  "sample.color": "样品颜色",
   "contact.role": "联系人角色",
 };
 
@@ -240,7 +241,13 @@ export function FieldOptionsManager({
               className="input flex-1"
               value={newLabel}
               onChange={(event) => setNewLabel(event.target.value)}
-              placeholder={`新增${label}，例如 ${fieldKey === "sample.composition" ? "棉涤混纺" : "针织"}`}
+              placeholder={`新增${label}，例如 ${
+                fieldKey === "sample.composition"
+                  ? "棉涤混纺"
+                  : fieldKey === "sample.color"
+                    ? "藏青"
+                    : "针织"
+              }`}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void createOption();
               }}
@@ -472,6 +479,7 @@ const SUMMARY_FIELDS: FieldKey[] = [
   "customer.tier",
   "sample.category",
   "sample.composition",
+  "sample.color",
   "contact.role",
 ];
 

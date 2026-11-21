@@ -12,6 +12,7 @@ import {
   Query,
 } from "@nestjs/common";
 import {
+  SAMPLE_FILTER_MAX_COLORS,
   SAMPLE_FILTER_MAX_COMPOSITION_LENGTH,
   SAMPLE_FILTER_MAX_TIER_LENGTH,
   SAMPLE_FILTER_MAX_WEIGHT_TIERS,
@@ -47,9 +48,7 @@ function parseComposition(raw: string | undefined): string | null {
   const value = raw.trim();
   if (value === "") return null;
   if (value.length > SAMPLE_FILTER_MAX_COMPOSITION_LENGTH) {
-    throw new BadRequestException(
-      `成分筛选最多 ${SAMPLE_FILTER_MAX_COMPOSITION_LENGTH} 个字符`,
-    );
+    throw new BadRequestException(`成分筛选最多 ${SAMPLE_FILTER_MAX_COMPOSITION_LENGTH} 个字符`);
   }
   return value;
 }
@@ -70,11 +69,37 @@ function parseWeights(raw: string | undefined): string[] | null {
     throw new BadRequestException(`克重档位最多选 ${SAMPLE_FILTER_MAX_WEIGHT_TIERS} 个`);
   }
   if (items.some((item) => item.length > SAMPLE_FILTER_MAX_TIER_LENGTH)) {
-    throw new BadRequestException(
-      `单个克重档位最多 ${SAMPLE_FILTER_MAX_TIER_LENGTH} 个字符`,
-    );
+    throw new BadRequestException(`单个克重档位最多 ${SAMPLE_FILTER_MAX_TIER_LENGTH} 个字符`);
   }
   return [...new Set(items)];
+}
+
+/** 颜色是逗号分隔的原文；与 `weights` 同一套「不模糊化」纪律。 */
+function parseColors(raw: string | undefined): string[] | null {
+  if (raw === undefined) return null;
+  if (Array.isArray(raw)) throw new BadRequestException("颜色筛选参数只能出现一次");
+  if (raw.trim() === "") return null;
+  const items = raw.split(",").map((item) => item.trim());
+  if (items.some((item) => item === "")) {
+    throw new BadRequestException("颜色筛选不能为空");
+  }
+  if (items.length > SAMPLE_FILTER_MAX_COLORS) {
+    throw new BadRequestException(`颜色筛选最多选 ${SAMPLE_FILTER_MAX_COLORS} 个`);
+  }
+  if (items.some((item) => item.length > SAMPLE_FILTER_MAX_TIER_LENGTH)) {
+    throw new BadRequestException(`单个颜色最多 ${SAMPLE_FILTER_MAX_TIER_LENGTH} 个字符`);
+  }
+  return [...new Set(items)];
+}
+
+/** 克重区间端点：必须是整数 g/m²；非数字直接 400，不静默当成不筛选。 */
+function parseGsmBound(raw: string | undefined, label: string): number | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 20_000) {
+    throw new BadRequestException(`${label}必须是 0-20000 的整数（g/m²）`);
+  }
+  return value;
 }
 
 /**
@@ -97,6 +122,9 @@ export class SampleController {
     @Query("category") category?: string,
     @Query("composition") composition?: string,
     @Query("weights") weights?: string,
+    @Query("colors") colors?: string,
+    @Query("weightGsmMin") weightGsmMin?: string,
+    @Query("weightGsmMax") weightGsmMax?: string,
     @Query("status") status?: string,
     @Query("cursor") cursor?: string,
     @Query("limit") limit?: string,
@@ -113,6 +141,9 @@ export class SampleController {
               category: category?.trim() || null,
               composition: parseComposition(composition),
               weights: parseWeights(weights),
+              colors: parseColors(colors),
+              weightGsmMin: parseGsmBound(weightGsmMin, "克重下限"),
+              weightGsmMax: parseGsmBound(weightGsmMax, "克重上限"),
               status: parseStatus(status),
               cursor: cursor ?? null,
               limit: parseLimit(limit),

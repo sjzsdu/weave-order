@@ -230,7 +230,13 @@ export function SampleDrawer({
                   <Row label="品名" value={sample.name} />
                   <Row label="成分" value={sample.composition ?? "—"} />
                   <Row label="品类" value={sample.category ?? "—"} />
-                  <Row label="克重" value={sample.weight ?? "—"} />
+                  <Row label="颜色" value={sample.color ?? "—"} />
+                  <Row
+                    label="克重"
+                    value={
+                      sample.weightGsm ? `${sample.weightGsm} g/m²` : (sample.weight ?? "克重未填")
+                    }
+                  />
                   <Row label="单位" value={UNIT_LABEL[sample.unit]} />
                   <Row
                     label="状态"

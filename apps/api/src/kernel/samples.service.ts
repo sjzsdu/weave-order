@@ -1,4 +1,4 @@
-import { samples } from "@weave-order/db";
+import { fieldOptions, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import {
   CreateSampleInput,
@@ -8,9 +8,11 @@ import {
   UpdateSampleInput,
   hasCapability,
   isSampleStatusAvailable,
+  normalizeFieldValue,
+  parseWeightGsm,
 } from "@weave-order/schema";
 import type { DraftFieldInput, FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
-import { and, asc, count, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
@@ -63,7 +65,9 @@ export function mapSample(row: SampleRow): FabricSample {
     name: row.name,
     composition: row.composition,
     category: row.category,
+    color: row.color,
     weight: row.weight,
+    weightGsm: row.weightGsm,
     unit: row.unit,
     costFloor:
       row.costFloorAmount === null || row.costFloorCurrency === null
@@ -104,6 +108,11 @@ export interface SampleListFilters {
   composition?: string | null;
   /** 克重档位原文，精确匹配 `samples.weight`。 */
   weights?: string[] | null;
+  /** 颜色原文，精确匹配 `samples.color`。 */
+  colors?: string[] | null;
+  /** 克重区间（g/m²，闭区间），只命中解析出 `weight_gsm` 的样品。 */
+  weightGsmMin?: number | null;
+  weightGsmMax?: number | null;
   status?: SampleStatus | "ALL" | null;
   cursor?: string | null;
   limit?: number;
@@ -123,6 +132,10 @@ export interface SamplePage {
   compositions: string[];
   /** 克重档位选项：真实数据里的非空原文，按出现次数倒序。 */
   weights: string[];
+  /** 颜色选项：`field_options` 的 `sample.color` 选项 + 存量原文里未入选项的值。 */
+  colors: string[];
+  /** 克重区间边界：当前筛选状态下的 `min/max(weight_gsm)`；无数据时为 null。 */
+  weightGsmRange: { min: number; max: number } | null;
 }
 
 type SamplePageCursor = { createdAt: string; id: string };
@@ -200,6 +213,7 @@ export class SampleService {
       name: parsed.name,
       composition: parsed.composition ?? null,
       category: parsed.category ?? null,
+      color: parsed.color ?? null,
       weight: parsed.weight ?? null,
     });
     try {
@@ -212,7 +226,9 @@ export class SampleService {
             name: parsed.name,
             composition: parsed.composition ?? null,
             category: parsed.category ?? null,
+            color: parsed.color ?? null,
             weight: parsed.weight ?? null,
+            weightGsm: parseWeightGsm(parsed.weight),
             unit: parsed.unit,
             costFloorAmount: parsed.costFloor?.amount ?? null,
             costFloorCurrency: parsed.costFloor?.currency ?? null,
@@ -281,7 +297,9 @@ export class SampleService {
         name: parsed.name,
         composition: parsed.composition ?? null,
         category: parsed.category ?? null,
+        color: parsed.color ?? null,
         weight: parsed.weight ?? null,
+        weightGsm: parseWeightGsm(parsed.weight),
         unit: parsed.unit,
         costFloorAmount: parsed.costFloor?.amount ?? null,
         costFloorCurrency: parsed.costFloor?.currency ?? null,
@@ -340,7 +358,9 @@ export class SampleService {
               name: parsed.name ?? "待确认样品",
               composition: parsed.composition ?? null,
               category: parsed.category ?? null,
+              color: parsed.color ?? null,
               weight: parsed.weight ?? null,
+              weightGsm: parseWeightGsm(parsed.weight),
               unit: parsed.unit,
               costFloorAmount: parsed.costFloor?.amount ?? null,
               costFloorCurrency: parsed.costFloor?.currency ?? null,
@@ -394,6 +414,7 @@ export class SampleService {
       ["name", parsed.name],
       ["composition", parsed.composition],
       ["category", parsed.category],
+      ["color", parsed.color],
       ["weight", parsed.weight],
     ];
     for (const [fieldName, value] of topLevel) {
@@ -483,7 +504,12 @@ export class SampleService {
     if (parsed.name !== undefined) values.name = parsed.name;
     if (parsed.composition !== undefined) values.composition = parsed.composition;
     if (parsed.category !== undefined) values.category = parsed.category;
-    if (parsed.weight !== undefined) values.weight = parsed.weight;
+    if (parsed.color !== undefined) values.color = parsed.color;
+    if (parsed.weight !== undefined) {
+      values.weight = parsed.weight;
+      // 克重只从原文派生；客户端不能直接写 `weightGsm`，避免两套口径打架。
+      values.weightGsm = parseWeightGsm(parsed.weight);
+    }
     if (parsed.unit !== undefined) values.unit = parsed.unit;
     if (parsed.status !== undefined) values.status = parsed.status;
     if (parsed.costFloor !== undefined) {
@@ -496,6 +522,7 @@ export class SampleService {
       (parsed.name !== undefined && parsed.name !== before.name) ||
       (parsed.composition !== undefined && (parsed.composition ?? null) !== before.composition) ||
       (parsed.category !== undefined && (parsed.category ?? null) !== before.category) ||
+      (parsed.color !== undefined && (parsed.color ?? null) !== before.color) ||
       (parsed.weight !== undefined && parsed.weight !== before.weight);
     const preparedVector = textChanged
       ? await this.index.prepare({
@@ -503,6 +530,7 @@ export class SampleService {
           name: parsed.name ?? before.name,
           composition: parsed.composition ?? before.composition,
           category: parsed.category ?? before.category,
+          color: parsed.color ?? before.color,
           weight: parsed.weight ?? before.weight,
         })
       : null;
@@ -675,6 +703,18 @@ export class SampleService {
     if (filters.weights && filters.weights.length > 0) {
       conditions.push(inArray(samples.weight, filters.weights));
     }
+    if (filters.colors && filters.colors.length > 0) {
+      conditions.push(inArray(samples.color, filters.colors));
+    }
+    if (filters.weightGsmMin != null && filters.weightGsmMax != null) {
+      if (filters.weightGsmMin > filters.weightGsmMax) {
+        throw new KernelError("KERNEL_REJECTED", "克重下限不能大于上限", {
+          reason: "SAMPLE_WEIGHT_RANGE_INVALID",
+        });
+      }
+    }
+    if (filters.weightGsmMin != null) conditions.push(gte(samples.weightGsm, filters.weightGsmMin));
+    if (filters.weightGsmMax != null) conditions.push(lte(samples.weightGsm, filters.weightGsmMax));
     if (filters.query) {
       const pattern = `%${escapeLikePattern(filters.query.trim())}%`;
       const literal = sql`${pattern} ESCAPE '\\'`;
@@ -729,9 +769,11 @@ export class SampleService {
 
     // 档位选项不跟随 query / category / composition / weights：选中一个 chip 不能
     // 让它自己从选项里消失。只跟随租户 + 状态，与 categories 的已知行为一致。
-    const [compositions, weights] = await Promise.all([
+    const [compositions, weights, colors, weightGsmRange] = await Promise.all([
       this.listTierOptions(samples.composition, status),
       this.listTierOptions(samples.weight, status),
+      this.listColorOptions(status),
+      this.weightGsmRange(status),
     ]);
 
     return {
@@ -743,7 +785,74 @@ export class SampleService {
       categories,
       compositions,
       weights,
+      colors,
+      weightGsmRange,
     };
+  }
+
+  /**
+   * 颜色可选项：先取治理页里启用的 `sample.color` 选项（用户配过的顺序），
+   * 再补上存量原文里还没入选项的颜色 —— 导入的历史值不能因为没建选项就选不到。
+   * 归一化去重，与表单/导入共用同一套 `normalizeFieldValue` 口径。
+   */
+  private async listColorOptions(status: SampleStatus | "ALL"): Promise<string[]> {
+    const conditions = [
+      eq(samples.tenantId, this.tenantId),
+      sql`${samples.color} IS NOT NULL`,
+      sql`btrim(${samples.color}) <> ''`,
+    ];
+    const statusWhere = this.statusCondition(status);
+    if (statusWhere) conditions.push(statusWhere);
+    const [optionRows, valueRows] = await Promise.all([
+      this.db
+        .select({ label: fieldOptions.label })
+        .from(fieldOptions)
+        .where(
+          and(
+            eq(fieldOptions.tenantId, this.tenantId),
+            eq(fieldOptions.fieldKey, "sample.color"),
+            eq(fieldOptions.active, true),
+          ),
+        )
+        .orderBy(asc(fieldOptions.sortOrder), asc(fieldOptions.createdAt)),
+      this.db
+        .selectDistinct({ value: samples.color })
+        .from(samples)
+        .where(and(...conditions))
+        .orderBy(asc(samples.color)),
+    ]);
+    const seen = new Set<string>();
+    const colors: string[] = [];
+    for (const entry of [
+      ...optionRows.map((row) => row.label),
+      ...valueRows.map((row) => row.value),
+    ]) {
+      if (typeof entry !== "string" || entry.trim() === "") continue;
+      const key = normalizeFieldValue(entry);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      colors.push(entry);
+    }
+    return colors;
+  }
+
+  /** 克重区间边界：只统计解析出 `weight_gsm` 的可用样品。 */
+  private async weightGsmRange(
+    status: SampleStatus | "ALL",
+  ): Promise<{ min: number; max: number } | null> {
+    const conditions = [eq(samples.tenantId, this.tenantId), sql`${samples.weightGsm} IS NOT NULL`];
+    const statusWhere = this.statusCondition(status);
+    if (statusWhere) conditions.push(statusWhere);
+    const rows = await this.db
+      .select({
+        min: sql<number | null>`min(${samples.weightGsm})`,
+        max: sql<number | null>`max(${samples.weightGsm})`,
+      })
+      .from(samples)
+      .where(and(...conditions));
+    const row = rows[0];
+    if (!row || row.min === null || row.max === null) return null;
+    return { min: Number(row.min), max: Number(row.max) };
   }
 
   /**
@@ -832,6 +941,8 @@ function auditSnapshot(row: SampleRow): Record<string, string | number | null> {
     name: row.name,
     unit: row.unit,
     category: row.category,
+    color: row.color,
+    weightGsm: row.weightGsm,
     status: row.status,
     costFloorAmount: row.costFloorAmount,
   };
