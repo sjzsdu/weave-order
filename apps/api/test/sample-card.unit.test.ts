@@ -3,6 +3,7 @@ import { PRINT_DOCUMENT_VARIABLES, PRINT_VARIABLES } from "@weave-order/schema";
 import {
   SAMPLE_CARD_LIMITS,
   assertSampleCardPrintable,
+  assertSampleCodeFitsToken,
   renderBuiltinSampleCardPdf,
   renderSampleCardHtml,
   renderSampleCardText,
@@ -106,6 +107,52 @@ describe("样卡字段校验", () => {
         limit: SAMPLE_CARD_LIMITS["sample.name"],
       });
     }
+  });
+
+  it("中文样品编号超 32 字节时给出业务错误，而不是让 token 抛裸 Error", () => {
+    // 12 个字符合法（≤32 字符），但 36 字节超出二维码 token 容量。
+    const code = "真丝面料真丝面料真丝面料";
+    expect([...code].length).toBe(12);
+    try {
+      assertSampleCodeFitsToken(code);
+      throw new Error("应当抛错");
+    } catch (error) {
+      expect(error).toBeInstanceOf(PrintError);
+      expect((error as PrintError).code).toBe("PRINT_FIELD_OVERFLOW");
+      expect((error as PrintError).detail).toMatchObject({ path: "sample.code", limit: 32 });
+    }
+    // 整卡校验同样拦住它：preview/打印都会走这一步。
+    const values = sampleCardValues({ ...source, sample: { ...source.sample, code } });
+    let fullError: unknown;
+    try {
+      assertSampleCardPrintable(values);
+    } catch (error) {
+      fullError = error;
+    }
+    expect((fullError as PrintError).code).toBe("PRINT_FIELD_OVERFLOW");
+  });
+
+  it("33 个字符与 32 个字符的 ASCII 编号分别拒绝与放行", () => {
+    expect(() => assertSampleCodeFitsToken("A".repeat(32))).not.toThrow();
+    let codeError: unknown;
+    try {
+      assertSampleCodeFitsToken("A".repeat(33));
+    } catch (error) {
+      codeError = error;
+    }
+    expect((codeError as PrintError).code).toBe("PRINT_FIELD_OVERFLOW");
+
+    const longValues = sampleCardValues({
+      ...source,
+      sample: { ...source.sample, code: "A".repeat(33) },
+    });
+    let valuesError: unknown;
+    try {
+      assertSampleCardPrintable(longValues);
+    } catch (error) {
+      valuesError = error;
+    }
+    expect((valuesError as PrintError).code).toBe("PRINT_FIELD_OVERFLOW");
   });
 
   it("可选字段缺失降级为短横线，不阻塞打印", () => {

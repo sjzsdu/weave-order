@@ -8,6 +8,7 @@ import { quoteNumberOf } from "../kernel/quotes.service";
 import { buildSampleCardUrl, createSampleCardToken } from "../kernel/share-token";
 import {
   assertSampleCardPrintable,
+  assertSampleCodeFitsToken,
   renderSampleCardHtml,
   renderSampleCardPdf,
   renderSampleCardText,
@@ -174,6 +175,8 @@ export class SampleCardService {
       customerRows[0]?.ownerId ?? null,
     );
 
+    // token 之前先校验编号：超限要变成可读的业务错误，而不是 500。
+    assertSampleCodeFitsToken(sample.code);
     const token = createSampleCardToken(
       { tenantId: this.tenantId, sampleCode: sample.code },
       this.options.shareSecret,

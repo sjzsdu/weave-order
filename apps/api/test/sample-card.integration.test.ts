@@ -86,7 +86,7 @@ async function isolatedTenant(label: string) {
   return { tenant, kernel };
 }
 
-async function seedConfirmedQuote(kernel: Kernel) {
+async function seedConfirmedQuote(kernel: Kernel, sampleCode?: string) {
   const id = suffix();
   const customer = await kernel.customers.create(
     { code: `CARD-C-${id}`, name: "青禾服饰（不应出现在样卡）" },
@@ -94,7 +94,7 @@ async function seedConfirmedQuote(kernel: Kernel) {
   );
   const sample = await kernel.samples.create(
     {
-      code: `CARD-S-${id}`,
+      code: sampleCode ?? `CARD-S-${id}`,
       name: "32S 精梳棉汗布",
       composition: "100% 棉",
       weight: "220g/m2",
@@ -290,6 +290,23 @@ describe("P0b 样卡打印", () => {
     );
     expect(audits.rowCount).toBe(1);
     expect(audits.rows[0]?.actor_id).toBe(OWNER.actor.id);
+  });
+
+  it("样品编号含中文导致超字节上限时，是业务错误而不是 500", async (ctx) => {
+    if (!available) ctx.skip();
+    const { kernel } = await isolatedTenant("cjk-code");
+    const code = "真丝面料真丝面料真丝面料"; // 12 字符 / 36 字节
+    const { draft } = await seedConfirmedQuote(kernel, code);
+    await kernel.quotes.confirmDraft(draft.draft.id, OWNER, draft.version, `confirm-${suffix()}`);
+
+    await expect(
+      kernel.print.sampleCards.preview({ quoteId: draft.draft.id, format: "HTML" }, "owner"),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof PrintError &&
+        error.code === "PRINT_FIELD_OVERFLOW" &&
+        error.detail.path === "sample.code",
+    );
   });
 
   it("跨租户拿不到别家的样卡", async (ctx) => {

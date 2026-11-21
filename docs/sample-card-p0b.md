@@ -64,7 +64,11 @@
 字段长度按 80×50mm 版面折算上限（`SAMPLE_CARD_LIMITS`）。超过上限直接报
 `PRINT_FIELD_OVERFLOW`，缺必填字段报 `PRINT_MISSING_FIELD`——**不截断、不留空**。
 
-机器可复现的验收证据（对照图、40 张标签解码记录）在 `docs/acceptance/wan-198/`。
+样品编号还要满足 token 容量：**≤32 字符且 ≤32 UTF-8 字节**（中文按 3 字节计）。
+token 是紧凑二进制 `[版本][tenant 16B][codeLen][code][HMAC 12B]`；编号超字节上限时
+在生成 token 前就抛 `PRINT_FIELD_OVERFLOW`（HTTP 400），而不是 500。
+
+机器可复现的验收证据（对照图、40 张标签解码记录、可重跑的 `verify-sample-card-qr.py`）在 `docs/acceptance/wan-198/`。
 
 ## 自验
 

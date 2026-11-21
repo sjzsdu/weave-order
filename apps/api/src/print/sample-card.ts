@@ -48,6 +48,30 @@ export const SAMPLE_CARD_LIMITS = {
 
 export type SampleCardFieldPath = keyof typeof SAMPLE_CARD_LIMITS;
 
+/**
+ * 样品编号同时受两个上限约束：
+ * - 32 个字符（80×50 版面的单行宽度）；
+ * - 32 个 UTF-8 字节（二维码紧凑 token 的容量，中文一字 3 字节）。
+ * 超限一律抛业务错误，而不是让 token 层默默抛裸 `Error`（那会变成 HTTP 500）。
+ */
+export const SAMPLE_CODE_MAX_BYTES = 32;
+
+function utf8Length(value: string): number {
+  return Buffer.byteLength(value, "utf8");
+}
+
+/** 在生成二维码 token 之前调用：编号必须是「能装进 token」的，否则显式报错。 */
+export function assertSampleCodeFitsToken(code: string): void {
+  const bytes = utf8Length(code);
+  if (bytes > SAMPLE_CODE_MAX_BYTES) {
+    throw new PrintError(
+      "PRINT_FIELD_OVERFLOW",
+      `样品编号超出版面：${code}（${bytes} 字节 > 上限 ${SAMPLE_CODE_MAX_BYTES} 字节；中文按 3 字节计）`,
+      { path: "sample.code", length: bytes, limit: SAMPLE_CODE_MAX_BYTES, value: code },
+    );
+  }
+}
+
 /** 缺了就不能出卡的字段：宁可不打，也不打一张找不到人的卡。 */
 const REQUIRED_FIELDS: SampleCardFieldPath[] = [
   "tenant.name",
@@ -124,6 +148,8 @@ export function assertSampleCardPrintable(values: TemplateValues): void {
       { missing },
     );
   }
+
+  assertSampleCodeFitsToken(String(values.scalars["sample.code"] ?? ""));
 
   for (const [path, limit] of Object.entries(SAMPLE_CARD_LIMITS) as Array<
     [SampleCardFieldPath, number]
