@@ -9,7 +9,9 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Patch,
   Post,
+  Put,
   Query,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -277,6 +279,114 @@ export class PrintController {
       } catch (error) {
         rethrowPrint(error);
       }
+    });
+  }
+
+  /** P0c：复制系统模板为自己的草稿，正式打印在发布前不受影响。 */
+  @Post("print/templates/copy")
+  async copyTemplate(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).templates.copyFromSystem(body, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** P0c：模板详情（已发布版本 + 草稿），编辑器打开时调用。 */
+  @Get("print/templates/:id")
+  async templateDetail(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      try {
+        return await this.attach(kernel).templates.detail(id);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** P0c：保存草稿。只写草稿行，不改任何已发布版本。 */
+  @Put("print/templates/:id/draft")
+  async saveDraft(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).templates.saveDraft(id, body, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** P0c：回滚到历史版本。版本行不动，只切 activeVersionId。 */
+  @Post("print/templates/:id/versions/:versionId/activate")
+  async activateVersion(
+    @Param("id") id: string,
+    @Param("versionId") versionId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).templates.activateVersion(id, versionId, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** P0c：用真实报价数据预览编辑器里的模板（草稿优先），不入队。 */
+  @Post("print/templates/:id/preview")
+  @HttpCode(200)
+  async previewTemplate(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        const print = this.attach(kernel);
+        const resolved = await print.templates.resolveForEdit(id);
+        return {
+          preview: await print.sampleCards.preview(body, ctx.actor.id, resolved),
+        };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** P0c：试打一张。真的出纸，但不进正式打印记录。 */
+  @Post("print/templates/:id/test-print")
+  async testPrintTemplate(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).jobs.testPrintSampleCard(id, body, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /**
+   * 已发布版本是只读的：要改只能发新版本。
+   * 显式挡住 PUT/PATCH，避免客户端以为「改一下就行」而悄悄覆盖已出纸的版式。
+   */
+  @Put("print/templates/:id/versions/:versionId")
+  @Patch("print/templates/:id/versions/:versionId")
+  updateVersion(): never {
+    throw new BadRequestException({
+      error: {
+        code: "PRINT_TEMPLATE_VERSION_IMMUTABLE",
+        message: "已发布的模板版本不可修改：请发布新版本",
+      },
     });
   }
 

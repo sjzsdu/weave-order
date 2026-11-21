@@ -17,6 +17,7 @@ import {
   PickScanInput,
   SampleCardPrintInput,
   SampleCardReprintInput,
+  TestPrintSampleCardInput,
   PrintAgentJob,
   PrintJobResultInput,
   PrintShipmentBundleInput,
@@ -100,6 +101,7 @@ function mapJob(row: typeof printJobs.$inferSelect): PrintJob {
     copies: row.copies,
     priority: row.priority,
     status: row.status,
+    isTest: row.isTest,
     idempotencyKey: row.idempotencyKey,
     reprintReason: row.reprintReason as PrintJob["reprintReason"],
     requestedBy: row.requestedBy,
@@ -631,7 +633,7 @@ export class PrintJobService {
     );
   }
 
-  /** 一份报价的打印记录：打印抽屉据此展示状态与「补打」入口。 */
+  /** 一份报价的打印记录：打印抽屉据此展示状态与「补打」入口。试打不算正式记录。 */
   async listForQuote(quoteId: string): Promise<PrintJob[]> {
     const rows = await this.db
       .select()
@@ -641,10 +643,105 @@ export class PrintJobService {
           eq(printJobs.tenantId, this.tenantId),
           eq(printJobs.kind, "SAMPLE_LABEL"),
           eq(printJobs.documentId, quoteId),
+          eq(printJobs.isTest, false),
         ),
       )
       .orderBy(desc(printJobs.createdAt));
     return rows.map((row) => mapJob(row));
+  }
+
+  /**
+   * 试打：用真实报价数据把编辑器里的模板（草稿优先）打一张。
+   * 任务带 is_test，走同一条队列出纸，但不进正式打印记录、补打入口与队列看板。
+   */
+  async testPrintSampleCard(templateId: string, input: unknown, ctx: KernelContext) {
+    const parsed = TestPrintSampleCardInput.parse(input);
+    const resolved = await this.templates.resolveForEdit(templateId);
+    const format = resolved.format;
+    const printer = await this.printerFor(parsed.printerId ?? null);
+    const source = await this.sampleCards.buildSource({
+      quoteId: parsed.quoteId,
+      lineIndex: parsed.lineIndex,
+      operator: ctx.actor.id,
+      reprintReason: null,
+    });
+    const values = sampleCardValues(source);
+    assertSampleCardPrintable(values);
+    const rendered = await this.sampleCards.render({ source, values, resolved, format });
+    const payload = format === "HTML" ? rendered.pdfBase64 : rendered.text;
+    if (!payload) {
+      throw new PrintError("PRINT_MISSING_FIELD", "试打没有产出可打印的内容");
+    }
+
+    // 每次试打都算新的一次：同一份草稿要能反复打，但不会与正式打印撞幂等键。
+    const previous = await this.db
+      .select({ id: printJobs.id })
+      .from(printJobs)
+      .where(
+        and(
+          eq(printJobs.tenantId, this.tenantId),
+          eq(printJobs.isTest, true),
+          eq(printJobs.documentId, parsed.quoteId),
+          eq(printJobs.templateId, templateId),
+        ),
+      );
+    const key = `test:${templateId}:${parsed.quoteId}:${parsed.lineIndex}:${format}:${previous.length + 1}`;
+
+    const job = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(printJobs)
+        .values({
+          tenantId: this.tenantId,
+          kind: "SAMPLE_LABEL",
+          documentId: parsed.quoteId,
+          boxId: null,
+          labelSeq: parsed.lineIndex + 1,
+          templateId: resolved.templateId,
+          templateVersionId: resolved.versionId,
+          templateVersion: resolved.version,
+          printerId: printer?.id ?? null,
+          agentId: printer?.agentId ?? null,
+          format,
+          copies: parsed.copies,
+          priority: 0,
+          status: "QUEUED",
+          isTest: true,
+          idempotencyKey: key,
+          payload,
+          requestedBy: ctx.actor.id,
+        })
+        .returning();
+      const row = rows[0]!;
+      await tx.insert(printJobEvents).values({
+        tenantId: this.tenantId,
+        jobId: row.id,
+        status: "QUEUED",
+        message: `已入队：试打模板「${resolved.name}」× ${parsed.copies}（不计入正式记录）`,
+        printerId: printer?.id ?? null,
+      });
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "PRINT_TEST_PRINTED",
+          entityType: "print_template",
+          entityId: templateId,
+          before: null,
+          after: {
+            jobId: row.id,
+            quoteId: parsed.quoteId,
+            lineIndex: parsed.lineIndex,
+            format,
+            version: resolved.version,
+            draft: resolved.version === null,
+          },
+        },
+        this.tenantId,
+      );
+      return mapJob(row);
+    });
+    await this.dispatchJob(job, printer);
+    return { job };
   }
 
   async get(jobId: string): Promise<PrintJob> {
@@ -790,6 +887,7 @@ export class PrintJobService {
       .where(
         and(
           eq(printJobs.tenantId, this.tenantId),
+          eq(printJobs.isTest, false),
           ...(input.status ? [eq(printJobs.status, input.status as never)] : []),
         ),
       )
@@ -798,7 +896,7 @@ export class PrintJobService {
     const counts = await this.db
       .select({ status: printJobs.status, count: sql<number>`count(*)::int` })
       .from(printJobs)
-      .where(eq(printJobs.tenantId, this.tenantId))
+      .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.isTest, false)))
       .groupBy(printJobs.status);
     const countOf = (status: string) => counts.find((row) => row.status === status)?.count ?? 0;
     return {
@@ -816,7 +914,7 @@ export class PrintJobService {
       .select({ job: printJobs, boxNo: orderBoxes.boxNo })
       .from(printJobs)
       .leftJoin(orderBoxes, eq(orderBoxes.id, printJobs.boxId))
-      .where(eq(printJobs.tenantId, this.tenantId))
+      .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.isTest, false)))
       .orderBy(desc(printJobs.createdAt))
       .limit(Math.min(Math.max(limit, 1), 200));
     return rows.map(({ job, boxNo }) => ({

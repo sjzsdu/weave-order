@@ -15,7 +15,8 @@ export type PrintErrorCode =
   | "PRINT_AGENT_UNAUTHORIZED"
   | "PRINT_JOB_STATE_INVALID"
   | "PRINT_TEMPLATE_UNSAFE"
-  | "PRINT_TEMPLATE_FORBIDDEN";
+  | "PRINT_TEMPLATE_FORBIDDEN"
+  | "PRINT_LAYOUT_OVERFLOW";
 
 export class PrintError extends Error {
   constructor(

@@ -98,7 +98,11 @@ import {
   PrintPreviewInput,
   PrintPreviewArtifact,
   PrintLogList,
+  PrintTemplateDetail,
   PrintTemplateList,
+  CopyPrintTemplateInput,
+  SavePrintTemplateDraftInput,
+  TestPrintSampleCardInput,
   PublishPrintTemplateInput,
   PublishPrintTemplateVersionInput,
   PickScanInput,
@@ -1189,6 +1193,67 @@ export function createApiClient(options: ApiClientOptions) {
 
     printTemplates: async () => PrintTemplateList.parse(await request("/api/print/templates")),
 
+    /** P0c：模板详情：已发布版本 + 草稿。 */
+    printTemplate: async (templateId: string) =>
+      PrintTemplateDetail.parse(
+        await request(`/api/print/templates/${encodeURIComponent(templateId)}`),
+      ),
+
+    /** P0c：复制系统模板为自己的草稿。 */
+    copyPrintTemplate: async (input: z.input<typeof CopyPrintTemplateInput>) =>
+      PrintTemplateDetail.parse(
+        await post("/api/print/templates/copy", CopyPrintTemplateInput.parse(input)),
+      ),
+
+    /** P0c：保存草稿（只写草稿行，不改已发布版本）。 */
+    savePrintTemplateDraft: async (
+      templateId: string,
+      input: z.input<typeof SavePrintTemplateDraftInput>,
+    ) =>
+      PrintTemplateDetail.parse(
+        await put(
+          `/api/print/templates/${encodeURIComponent(templateId)}/draft`,
+          SavePrintTemplateDraftInput.parse(input),
+        ),
+      ),
+
+    /** P0c：回滚到历史版本。 */
+    activatePrintTemplateVersion: async (templateId: string, versionId: string) =>
+      PrintTemplateDetail.parse(
+        await post(
+          `/api/print/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/activate`,
+          {},
+        ),
+      ),
+
+    /** P0c：用真实报价数据预览编辑器里的模板（草稿优先）。 */
+    previewTemplateSampleCard: async (
+      templateId: string,
+      input: z.input<typeof PrintPreviewInput>,
+    ) =>
+      z
+        .object({ preview: PrintPreviewArtifact })
+        .parse(
+          await post(
+            `/api/print/templates/${encodeURIComponent(templateId)}/preview`,
+            PrintPreviewInput.parse(input),
+          ),
+        ).preview,
+
+    /** P0c：试打一张，不进正式打印记录。 */
+    testPrintTemplate: async (
+      templateId: string,
+      input: z.input<typeof TestPrintSampleCardInput>,
+    ) =>
+      z
+        .object({ job: PrintJob })
+        .parse(
+          await post(
+            `/api/print/templates/${encodeURIComponent(templateId)}/test-print`,
+            TestPrintSampleCardInput.parse(input),
+          ),
+        ).job,
+
     publishPrintTemplate: async (input: z.input<typeof PublishPrintTemplateInput>) =>
       TemplateResponse.parse(
         await post("/api/print/templates", PublishPrintTemplateInput.parse(input)),
@@ -1196,7 +1261,7 @@ export function createApiClient(options: ApiClientOptions) {
 
     publishPrintTemplateVersion: async (
       templateId: string,
-      input: z.input<typeof PublishPrintTemplateVersionInput>,
+      input: Omit<z.input<typeof PublishPrintTemplateVersionInput>, "templateId">,
     ) =>
       TemplateResponse.parse(
         await post(

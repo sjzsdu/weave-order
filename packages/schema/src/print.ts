@@ -351,15 +351,55 @@ export const PublishPrintTemplateInput = z
   .strict();
 export type PublishPrintTemplateInput = z.infer<typeof PublishPrintTemplateInput>;
 
+/**
+ * 可视化版式（P0c）：只描述「一行一个字段」，不含任意 HTML。
+ * 发布时由后端编译成模板正文（HTML / ZPL / TSPL），因此版式再自由也跳不出白名单。
+ */
+export const PrintLayoutBlock = z
+  .object({
+    /** 必须是该单据类型白名单里的标量字段；二维码字段只能出现在 qr 里。 */
+    field: z.string().min(1).max(64),
+    /** 行内左侧标签（如「成分」）；null 表示只有值。标签本身不取自业务数据。 */
+    label: z.string().max(32).nullable(),
+    visible: z.boolean(),
+    /** HTML 用 pt，标签格式按 1pt ≈ 2 点（203dpi）换算。 */
+    fontSize: z.number().int().min(8).max(48),
+    bold: z.boolean().default(false),
+  })
+  .strict();
+export type PrintLayoutBlock = z.infer<typeof PrintLayoutBlock>;
+
+export const PrintLayoutQr = z
+  .object({
+    visible: z.boolean(),
+    position: z.enum(["LEFT", "RIGHT", "TOP", "BOTTOM"]),
+    sizeMm: z.number().int().min(16).max(60),
+  })
+  .strict();
+export type PrintLayoutQr = z.infer<typeof PrintLayoutQr>;
+
+export const PrintTemplateLayout = z
+  .object({
+    version: z.literal(1),
+    blocks: z.array(PrintLayoutBlock).max(40),
+    qr: PrintLayoutQr,
+  })
+  .strict();
+export type PrintTemplateLayout = z.infer<typeof PrintTemplateLayout>;
+
 export const PublishPrintTemplateVersionInput = z
   .object({
     templateId: EntityId,
-    body: z.string().min(1).max(200_000),
+    body: z.string().min(1).max(200_000).optional(),
+    /** 传版式时由后端编译 body，忽略 body 字段。 */
+    layout: PrintTemplateLayout.nullable().optional(),
     pageSize: z.string().max(32).nullable().optional(),
     changelog: z.string().max(500).nullable().optional(),
   })
-  .strict();
-export type PublishPrintTemplateVersionInput = z.infer<typeof PublishPrintTemplateVersionInput>;
+  .strict()
+  .refine((value) => Boolean(value.body) !== Boolean(value.layout), {
+    message: "body 与 layout 必须且只能给一个",
+  });
 
 export const PrintTemplateVersion = z
   .object({
@@ -370,6 +410,8 @@ export const PrintTemplateVersion = z
     body: z.string(),
     variables: z.array(z.string()),
     pageSize: z.string().nullable(),
+    /** 可视化版式；用文本正文发布的模板是 null。 */
+    layout: PrintTemplateLayout.nullable().default(null),
     changelog: z.string().nullable(),
     publishedBy: z.string(),
     publishedAt: Timestamp,
@@ -386,7 +428,10 @@ export const PrintTemplate = z
     name: z.string(),
     format: PrintTemplateFormat,
     activeVersion: PrintTemplateVersion.nullable(),
+    /** 只数已发布版本；草稿不算一版。 */
     versionCount: z.number().int().nonnegative(),
+    /** 有未发布的草稿：编辑中的内容，正式打印不会用到它。 */
+    hasDraft: z.boolean().default(false),
     /** effective = 当前单据实际会用到它；system 来自内置模板。 */
     isSystem: z.boolean(),
     createdAt: Timestamp,
@@ -396,6 +441,72 @@ export type PrintTemplate = z.infer<typeof PrintTemplate>;
 
 export const PrintTemplateList = z.object({ templates: z.array(PrintTemplate) }).strict();
 export type PrintTemplateList = z.infer<typeof PrintTemplateList>;
+
+/** 草稿：可反复保存，发布后变成新版本，永不覆盖历史版本。 */
+export const PrintTemplateDraft = z
+  .object({
+    body: z.string(),
+    layout: PrintTemplateLayout.nullable(),
+    pageSize: z.string().nullable(),
+    updatedAt: Timestamp,
+  })
+  .strict();
+export type PrintTemplateDraft = z.infer<typeof PrintTemplateDraft>;
+
+export const PrintTemplateVersionSummary = PrintTemplateVersion.extend({
+  /** 这个版本已正式打印过多少次（不含试打）。 */
+  printCount: z.number().int().nonnegative(),
+}).strict();
+export type PrintTemplateVersionSummary = z.infer<typeof PrintTemplateVersionSummary>;
+
+export const PrintTemplateDetail = z
+  .object({
+    template: PrintTemplate,
+    /** 已发布版本，新 → 旧。 */
+    versions: z.array(PrintTemplateVersionSummary),
+    draft: PrintTemplateDraft.nullable(),
+  })
+  .strict();
+export type PrintTemplateDetail = z.infer<typeof PrintTemplateDetail>;
+
+/** 复制系统模板为自己的草稿（`POST /print/templates/copy`）。 */
+export const CopyPrintTemplateInput = z
+  .object({
+    /** 系统模板 key（`system/sample-card/classic-a4`）或租户模板 id；缺省按 kind+format 找系统模板。 */
+    sourceTemplateId: z.string().min(1).max(128).optional(),
+    kind: PrintDocumentKind.optional(),
+    format: PrintTemplateFormat.optional(),
+    name: z.string().min(1).max(128),
+    scope: PrintTemplateScope.exclude(["SYSTEM"]).default("COMPANY"),
+    variant: z.string().min(1).max(64).nullable().optional(),
+  })
+  .strict();
+export type CopyPrintTemplateInput = z.infer<typeof CopyPrintTemplateInput>;
+
+/** 保存草稿（`PUT /print/templates/:id/draft`）：只动草稿，从不改已发布版本。 */
+export const SavePrintTemplateDraftInput = z
+  .object({
+    layout: PrintTemplateLayout.nullable().optional(),
+    body: z.string().min(1).max(200_000).optional(),
+    pageSize: z.string().max(32).nullable().optional(),
+  })
+  .strict()
+  .refine((value) => value.layout !== undefined || value.body !== undefined, {
+    message: "至少要提交 layout 或 body",
+  });
+export type SavePrintTemplateDraftInput = z.infer<typeof SavePrintTemplateDraftInput>;
+
+/** 试打：用真实报价数据打印一次模板，不写入正式打印记录。 */
+export const TestPrintSampleCardInput = z
+  .object({
+    quoteId: EntityId,
+    lineIndex: z.number().int().nonnegative().default(0),
+    format: PrintTemplateFormat.default("HTML"),
+    copies: z.number().int().min(1).max(5).default(1),
+    printerId: EntityId.nullable().optional(),
+  })
+  .strict();
+export type TestPrintSampleCardInput = z.infer<typeof TestPrintSampleCardInput>;
 
 export const CreatePrintJobInput = z
   .object({
@@ -446,6 +557,8 @@ export const PrintJob = z
     copies: z.number().int().positive(),
     priority: z.number().int(),
     status: PrintJobStatus,
+    /** 试打任务：会真的出纸，但不算正式打印记录。 */
+    isTest: z.boolean().default(false),
     idempotencyKey: z.string(),
     reprintReason: ReprintReason.nullable(),
     requestedBy: z.string(),
