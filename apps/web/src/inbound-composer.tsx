@@ -473,15 +473,42 @@ export function InboundComposer({
                     <select
                       value={sampleId}
                       onChange={(event) => setSampleId(event.target.value)}
-                      className="mt-1 w-full rounded border border-line bg-paper/40 px-2 py-1 text-sm text-ink-900"
+                      disabled={samples.isPending}
+                      className="mt-1 w-full rounded border border-line bg-paper/40 px-2 py-1 text-sm text-ink-900 disabled:opacity-60"
                     >
-                      <option value="">未选择</option>
+                      <option value="">{samples.isPending ? "加载中…" : "未选择"}</option>
                       {(samples.data ?? []).map((sample) => (
                         <option key={sample.id} value={sample.id}>
                           {sample.code} · {sample.name}
                         </option>
                       ))}
                     </select>
+                    {samples.isError && (
+                      <span className="mt-1 block text-xs text-vermilion-600">
+                        样品列表加载失败
+                        {samples.error instanceof Error ? `：${samples.error.message}` : ""}。
+                        <button
+                          type="button"
+                          onClick={() => void samples.refetch()}
+                          className="ml-1 underline underline-offset-2"
+                        >
+                          重试
+                        </button>
+                      </span>
+                    )}
+                    {!samples.isPending &&
+                      !samples.isError &&
+                      (samples.data?.length ?? 0) === 0 && (
+                        <span className="mt-1 block text-xs text-ink-400">
+                          还没有样品，
+                          <Link
+                            href="/panorama/samples?new=1"
+                            className="underline underline-offset-2"
+                          >
+                            先建一个 →
+                          </Link>
+                        </span>
+                      )}
                   </label>
                   <label className="text-xs text-ink-400">
                     数量
