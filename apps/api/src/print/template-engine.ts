@@ -15,7 +15,8 @@ export type PrintErrorCode =
   | "PRINT_AGENT_UNAUTHORIZED"
   | "PRINT_JOB_STATE_INVALID"
   | "PRINT_TEMPLATE_UNSAFE"
-  | "PRINT_TEMPLATE_FORBIDDEN";
+  | "PRINT_TEMPLATE_FORBIDDEN"
+  | "PRINT_LAYOUT_OVERFLOW";
 
 export class PrintError extends Error {
   constructor(
@@ -169,6 +170,16 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * 标签数据值也要防「一个字符毁一张纸」：样品名里出现 `^`/`~`（ZPL 指令前缀）
+ * 或 `"`（TSPL 字符串结束）会把后面的内容变成指令或截断。
+ * 这里不做转义语法猜测，直接换成安全字符——纸上少一个符号，好过打出半张错卡。
+ */
+function labelText(text: string, format: "ZPL" | "TSPL"): string {
+  const flat = text.replace(/[\r\n]+/g, " ");
+  return format === "ZPL" ? flat.replace(/\^|~/g, " ") : flat.replace(/["\\]/g, "'");
+}
+
 function displayValue(value: Scalar): string {
   if (value === null) return "";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -211,7 +222,13 @@ export function renderTemplate(
           continue;
         }
         const text = displayValue(raw);
-        out += html ? escapeHtml(text) : text;
+        if (html) {
+          out += escapeHtml(text);
+        } else if (options.format === "ZPL") {
+          out += labelText(text, "ZPL");
+        } else {
+          out += labelText(text, "TSPL");
+        }
         continue;
       }
       const rows = values.loops[node.name] ?? [];

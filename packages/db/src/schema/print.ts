@@ -68,6 +68,11 @@ export const printTemplateVersions = pgTable(
     body: text("body").notNull(),
     /** 模板引用到的变量/循环路径，发布时由后端白名单校验后落库。 */
     variables: jsonb("variables").$type<JsonValue>().notNull().default([]),
+    /**
+     * 可视化版式（P0c）：有 layout 的版本由后端编译成 body，
+     * 保留它才能让编辑器再次打开时还原版式，而不是解析 HTML。
+     */
+    layout: jsonb("layout").$type<JsonValue>(),
     pageSize: varchar("page_size", { length: 32 }),
     changelog: varchar("changelog", { length: 500 }),
     publishedBy: varchar("published_by", { length: 128 }).notNull(),
@@ -174,6 +179,8 @@ export const printJobs = pgTable(
     copies: integer("copies").notNull().default(1),
     priority: integer("priority").notNull().default(0),
     status: printJobStatusEnum("status").notNull().default("QUEUED"),
+    /** 试打：真的出纸，但不进正式打印记录（列表与补打入口都不算它）。 */
+    isTest: boolean("is_test").notNull().default(false),
     idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
     /** 任务载荷：A4 为 PDF base64，标签为 ZPL/TSPL 文本。 */
     payload: text("payload").notNull(),

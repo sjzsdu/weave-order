@@ -225,8 +225,8 @@ export class SampleCardService {
     return { html: null, pdfBase64: null, text };
   }
 
-  /** 预览 = 产物。 */
-  async preview(input: unknown, operator: string) {
+  /** 预览 = 产物。传 override 时用编辑器里的模板（含未发布草稿）渲染。 */
+  async preview(input: unknown, operator: string, override?: ResolvedTemplate) {
     const parsed = PrintPreviewInput.parse(input);
     if (parsed.kind !== "SAMPLE_LABEL") {
       throw new PrintError("PRINT_UNSUPPORTED_KIND", `暂不支持预览：${parsed.kind}`);
@@ -239,17 +239,21 @@ export class SampleCardService {
     });
     const values = sampleCardValues(source);
     assertSampleCardPrintable(values);
-    const resolved = await this.templates.resolve({
-      kind: "SAMPLE_LABEL",
-      format: parsed.format,
-      ...(parsed.templateId ? { templateId: parsed.templateId } : {}),
-    });
-    const rendered = await this.render({ source, values, resolved, format: parsed.format });
+    const resolved =
+      override ??
+      (await this.templates.resolve({
+        kind: "SAMPLE_LABEL",
+        format: parsed.format,
+        ...(parsed.templateId ? { templateId: parsed.templateId } : {}),
+      }));
+    // 模板自己有格式（A4 / ZPL / TSPL），预览按模板实际格式渲染，不按请求猜。
+    const format = resolved.format;
+    const rendered = await this.render({ source, values, resolved, format });
     return PrintPreviewArtifact.parse({
       kind: "SAMPLE_LABEL",
       quoteId: parsed.quoteId,
       lineIndex: parsed.lineIndex,
-      format: parsed.format,
+      format,
       templateName: resolved.name,
       pageSize: resolved.pageSize,
       isSystem: resolved.isSystem,
