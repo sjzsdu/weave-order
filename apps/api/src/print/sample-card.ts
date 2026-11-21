@@ -183,7 +183,8 @@ export async function sampleCardQrDataUrl(payload: string): Promise<string> {
  * 因此按字符集切段：ASCII 用 PDF 内置 Helvetica（无需嵌入、任何阅读器都有），
  * 其余交给中文字体。这样离线环境也不会打出乱码卡。
  */
-const LATIN_RUN = /[\x20-\x7e]+/g;
+// ASCII 与 WinAnsi 可编码的 Latin-1 符号（±、°、×）都交给 Helvetica。
+const LATIN_RUN = /[\x20-\x7e\xa0-\xff]+/g;
 
 function runsOf(text: string): Array<{ latin: boolean; value: string }> {
   const runs: Array<{ latin: boolean; value: string }> = [];

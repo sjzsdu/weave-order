@@ -235,15 +235,16 @@ const SAMPLE_CARD_LABEL_ZPL = `^XA
 ^PW640
 ^LL400
 ^CI28
-^FO24,18^A0N,26,26^FD{{tenant.brand}}^FS
-^FO24,52^GB592,2,2^FS
-^FO24,62^A0N,36,36^FD{{sample.code}}^FS
-^FO24,106^A0N,22,22^FD{{sample.name}}^FS
-^FO24,136^A0N,18,18^FD{{sample.composition}}^FS
-^FO24,160^A0N,18,18^FD{{sample.weight}}^FS
-^FO24,190^BQN,2,5^FDMA,{{card.qr}}^FS
-^FO24,342^A0N,20,20^FD{{salesperson.name}} {{salesperson.phone}}^FS
-^FO24,372^A0N,16,16^FD{{meta.printedAt}}^FS
+^FO24,12^A0N,26,26^FD{{tenant.brand}}^FS
+^FO24,44^GB592,2,2^FS
+^FO24,52^A0N,30,30^FD{{sample.code}}^FS
+^FO24,88^A0N,20,20^FD{{sample.name}}^FS
+^FO24,112^A0N,16,16^FD{{sample.composition}}^FS
+^FO24,132^A0N,16,16^FD{{sample.weight}}^FS
+^FO24,150^BQN,2,5^FDMA,{{card.qr}}^FS
+^FO320,176^A0N,20,20^FD{{salesperson.name}}^FS
+^FO320,206^A0N,20,20^FD{{salesperson.phone}}^FS
+^FO320,240^A0N,16,16^FD{{meta.printedAt}}^FS
 ^XZ`;
 
 const SAMPLE_CARD_LABEL_TSPL = `SIZE 80 mm,50 mm
@@ -251,14 +252,15 @@ GAP 2 mm,0 mm
 DIRECTION 1
 CLS
 TEXT 20,8,"TSS16.BF2",0,1,1,"{{tenant.brand}}"
-BAR 20,38,580,2
-TEXT 20,46,"TSS24.BF2",0,1,1,"{{sample.code}}"
-TEXT 20,82,"TSS16.BF2",0,1,1,"{{sample.name}}"
-TEXT 20,108,"TSS16.BF2",0,1,1,"{{sample.composition}}"
-TEXT 20,132,"TSS16.BF2",0,1,1,"{{sample.weight}}"
-QRCODE 20,158,L,4,A,0,"{{card.qr}}"
-TEXT 20,340,"TSS16.BF2",0,1,1,"{{salesperson.name}} {{salesperson.phone}}"
-TEXT 20,364,"TSS16.BF2",0,1,1,"{{meta.printedAt}}"
+BAR 20,36,580,2
+TEXT 20,44,"TSS24.BF2",0,1,1,"{{sample.code}}"
+TEXT 20,78,"TSS16.BF2",0,1,1,"{{sample.name}}"
+TEXT 20,102,"TSS16.BF2",0,1,1,"{{sample.composition}}"
+TEXT 20,126,"TSS16.BF2",0,1,1,"{{sample.weight}}"
+QRCODE 20,150,L,5,A,0,"{{card.qr}}"
+TEXT 320,168,"TSS16.BF2",0,1,1,"{{salesperson.name}}"
+TEXT 320,196,"TSS16.BF2",0,1,1,"{{salesperson.phone}}"
+TEXT 320,230,"TSS16.BF2",0,1,1,"{{meta.printedAt}}"
 PRINT 1,1
 `;
 

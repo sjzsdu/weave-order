@@ -12,6 +12,9 @@ import path from "node:path";
 import { createDb } from "@weave-order/db";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
+import { buildSampleCardUrl, createSampleCardToken } from "../src/kernel/share-token";
+import { renderSampleCardText, sampleCardValues } from "../src/print/sample-card";
+import { SYSTEM_TEMPLATES } from "../src/print/templates";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://weave:weave@localhost:5433/weave_order";
@@ -84,6 +87,52 @@ async function main() {
   await writeFile(path.join(outDir, "preview.html"), a4.html ?? "", "utf8");
   await writeFile(path.join(outDir, "preview.pdf"), Buffer.from(a4.pdfBase64 ?? "", "base64"));
   await writeFile(path.join(outDir, "label.zpl"), label.text ?? "", "utf8");
+
+  /**
+   * 连续 40 张标签：给实物验收与「二维码逐张可解码」提供现成物料。
+   * 只生成 ZPL，不含渲染/解码——渲染与解码方法见 docs/acceptance/wan-198/README.md。
+   */
+  const publicAppUrl = process.env.PUBLIC_APP_URL ?? "http://localhost:5174";
+  const secret = process.env.QUOTE_SHARE_SECRET ?? "dev-only-quote-share-secret-change-me-0001";
+  const zplTemplate = SYSTEM_TEMPLATES.find(
+    (template) => template.kind === "SAMPLE_LABEL" && template.format === "ZPL",
+  )!;
+  const names = ["32S 精梳棉汗布", "40S 双面羊毛呢", "16S 竹节棉卫衣布", "全消光尼龙塔丝隆"];
+  const labelsDir = path.join(outDir, "labels");
+  await mkdir(labelsDir, { recursive: true });
+  const batch: Array<{ code: string; qrPayload: string; file: string }> = [];
+  for (let index = 1; index <= 40; index += 1) {
+    const code = `FM-${String(index).padStart(3, "0")}-${String.fromCharCode(65 + (index % 26))}`;
+    const qrPayload = buildSampleCardUrl(
+      publicAppUrl,
+      createSampleCardToken({ tenantId: tenant.id, sampleCode: code }, secret),
+    );
+    const zpl = renderSampleCardText(
+      zplTemplate.body,
+      sampleCardValues({
+        quoteNo: draft.quoteNumber ?? "",
+        sample: {
+          code,
+          name: names[index % names.length]!,
+          composition: sample.composition ?? null,
+          weight: sample.weight ?? null,
+          category: sample.category ?? null,
+        },
+        tenant: { name: tenant.name ?? "", brand: null },
+        salesperson: { name: "孙巨中", phone: "13800000000" },
+        qrPayload,
+        qrImageDataUrl: "",
+        printedAt: "2026-11-21 08:30",
+        operator: "owner",
+        reprintReason: null,
+      }),
+      "ZPL",
+    );
+    const file = path.join(labelsDir, `label-${String(index).padStart(2, "0")}.zpl`);
+    await writeFile(file, zpl, "utf8");
+    batch.push({ code, qrPayload, file });
+  }
+  await writeFile(path.join(outDir, "labels.json"), JSON.stringify(batch, null, 2), "utf8");
   await writeFile(
     path.join(outDir, "meta.json"),
     JSON.stringify(
@@ -120,6 +169,12 @@ async function main() {
   await handle.pool.query("DELETE FROM tenants WHERE id = $1", [tenant.id]);
   await handle.pool.end();
 
+  if (publicAppUrl.includes("localhost") || publicAppUrl.includes("127.0.0.1")) {
+    console.warn(
+      `[警告] PUBLIC_APP_URL=${publicAppUrl} 是本地地址：产物二维码在手机上打不开。` +
+        "出实物验收件前请设为公网可达的报价站点地址。",
+    );
+  }
   console.log(`artifacts written to ${outDir}`);
   console.log(`quote=${draft.quoteNumber} sample=${sample.code} qr=${a4.qrPayload}`);
 }

@@ -38,6 +38,8 @@ __pycache__/
 
 # Playwright（截图 / trace / HTML 报告 / 种子清单）
 e2e/.artifacts/
+# verify:* 脚本生成的验收产物（PDF/标签/预览），不入库
+apps/api/.artifacts/
 .trae
 .trae-html-share-packages
 

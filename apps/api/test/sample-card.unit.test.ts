@@ -147,7 +147,7 @@ describe("内置样卡模板", () => {
 
     const tspl = renderSampleCardText(builtin("SAMPLE_LABEL", "TSPL").body, values, "TSPL");
     expect(tspl).toContain("SIZE 80 mm,50 mm");
-    expect(tspl).toContain(`QRCODE 20,158,L,4,A,0,"${qrPayload}"`);
+    expect(tspl).toContain(`QRCODE 20,150,L,5,A,0,"${qrPayload}"`);
   });
 
   it("样卡白名单里没有客户、价格类变量", () => {
