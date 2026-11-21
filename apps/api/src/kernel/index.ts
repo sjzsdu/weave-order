@@ -188,7 +188,10 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     secret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
   });
-  const print = createPrintCenter(db, tenantId);
+  const print = createPrintCenter(db, tenantId, {
+    shareSecret: options.shareSecret ?? env.QUOTE_SHARE_SECRET,
+    publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
+  });
   const auditLogRead = new AuditLogService(db, tenantId, storage);
 
   return {

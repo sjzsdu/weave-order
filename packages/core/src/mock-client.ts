@@ -1,4 +1,5 @@
 import {
+  TenantSalesContact,
   ApprovalDetail,
   ApprovalDecisionResult,
   ApprovalQueue,
@@ -1625,6 +1626,14 @@ export function createMockApiClient(): ApiClient {
     printShipmentBundle: () => Promise.reject(new Error("演示模式不实际打印")),
     cancelPrintJob: () => Promise.reject(new Error("演示模式没有打印任务")),
     retryPrintJob: () => Promise.reject(new Error("演示模式没有打印任务")),
+    printJob: () => Promise.reject(new Error("演示模式没有打印任务")),
+    previewSampleCard: () => Promise.reject(new Error("演示模式不预览样卡")),
+    salesContact: () =>
+      Promise.resolve(TenantSalesContact.parse({ name: "李娜", phone: "13800136621" })),
+    updateSalesContact: () => Promise.reject(new Error("演示模式不改业务员联系方式")),
+    printSampleCards: () => Promise.reject(new Error("演示模式不实际打印")),
+    sampleCardJobs: () => Promise.resolve([]),
+    reprintSampleCard: () => Promise.reject(new Error("演示模式不补打样卡")),
     printLogs: () => Promise.resolve(PrintLogList.parse({ logs: [] }).logs),
     printTemplates: () => Promise.resolve(PrintTemplateList.parse({ templates: [] })),
     publishPrintTemplate: () => Promise.reject(new Error("演示模式不发布模板")),

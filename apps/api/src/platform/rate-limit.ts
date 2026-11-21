@@ -62,6 +62,12 @@ export const PUBLIC_QUOTE_RATE_LIMITS: Record<PublicQuoteAction, PublicRateLimit
   },
 };
 
+/** 样卡扫码页：与报价链接同一套双维度限流，只是命名空间不同。 */
+export const PUBLIC_SAMPLE_RATE_LIMITS: PublicRateLimitRuleSet = {
+  ip: { limit: 60, windowMs: 60_000 },
+  token: { limit: 300, windowMs: 60_000 },
+};
+
 export type RateLimitDimension = "ip" | "token" | "sub";
 
 export interface RateLimitDenial {
@@ -128,6 +134,15 @@ export class PublicRateLimitService implements OnApplicationShutdown {
   private readonly redis: Redis | null;
   private redisUsable: boolean;
 
+  /**
+   * 测试进程用独立命名空间。
+   *
+   * 否则同一台机器上连续跑两次测试，第二次会撞上第一次留下的
+   * 「每小时 N 次」桶，出现与代码无关的 429（实测 tenant-start IP 桶
+   * 20 次/小时，重跑必炸）。生产不带前缀，行为不变。
+   */
+  private readonly namespacePrefix = process.env.NODE_ENV === "test" ? `test-${process.pid}` : "";
+
   constructor(
     secret: string = loadEnv().QUOTE_SHARE_SECRET,
     redisUrl: string | null = loadEnv().REDIS_URL,
@@ -175,6 +190,14 @@ export class PublicRateLimitService implements OnApplicationShutdown {
     ]);
   }
 
+  /** 样卡扫码：公开只读页，阈值与报价页 `view` 对齐。 */
+  async checkPublicSample(ip: string | undefined, token: string): Promise<RateLimitDenial | null> {
+    return this.checkDimensions("public-sample", [
+      { dimension: "ip", value: ip ?? "unknown", rule: PUBLIC_SAMPLE_RATE_LIMITS.ip },
+      { dimension: "token", value: token, rule: PUBLIC_SAMPLE_RATE_LIMITS.token },
+    ]);
+  }
+
   async checkTenantStart(ip: string | undefined, sub: string): Promise<RateLimitDenial | null> {
     return this.checkDimensions("tenant-start", [
       { dimension: "ip", value: ip ?? "unknown", rule: TENANT_START_RATE_LIMITS.ip },
@@ -202,7 +225,8 @@ export class PublicRateLimitService implements OnApplicationShutdown {
 
   private key(namespace: string, dimension: RateLimitDimension, value: string): string {
     const digest = createHmac("sha256", this.secret).update(value).digest("base64url");
-    return `ratelimit:${namespace}:${dimension}:${digest}`;
+    const prefix = this.namespacePrefix ? `${this.namespacePrefix}:` : "";
+    return `ratelimit:${prefix}${namespace}:${dimension}:${digest}`;
   }
 
   private async hitRedis(key: string, rule: RateLimitRule): Promise<WindowDecision | null> {

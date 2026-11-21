@@ -97,3 +97,87 @@ export function parseShareToken(token: string, secret: string): ShareTokenPayloa
   }
   return { t: candidate.t, s: candidate.s, n: candidate.n };
 }
+
+/**
+ * 样卡二维码 token。
+ *
+ * 与报价链接同一种签名，但用途不同：payload 里是 (tenantId, sampleCode)，
+ * 公开页只回「样品编号 + 业务员联系方式」。签名保证 URL 不能被改成别的租户 /
+ * 别的样品去探测；也不把租户 UUID 直接印在纸上。
+ */
+export interface SampleCardTokenPayload {
+  /** tenantId */
+  t: string;
+  /** sample code（样品编号，非 UUID） */
+  c: string;
+}
+
+/**
+ * 样卡 token：确定性 + 紧凑。
+ *
+ * 为什么紧凑：这段内容要进 80×50mm 热敏标签上的二维码。JSON + 完整 HMAC 的
+ * 版本约 120 字符，在 203dpi、5 点/模块下会把二维码撑到标签高度之外（实测被裁掉，
+ * 解码 0/40）。这里改成二进制：
+ *
+ *   [0x01][tenant uuid 16B][codeLen 1B][code utf8 ≤32B][HMAC-SHA256 前 12B]
+ *
+ * 典型 token 约 50 字符、二维码 ≤ 37 模块，5 点/模块时 185 点，标签放得下。
+ * 签名仍是 HMAC（截断到 96 bit，伪造不可行），内容确定，预览/打印/补打逐字节一致。
+ */
+const SAMPLE_TOKEN_VERSION = 0x01;
+const SAMPLE_SIG_BYTES = 12;
+const SAMPLE_CODE_MAX_BYTES = 32;
+
+export function createSampleCardToken(
+  payload: { tenantId: string; sampleCode: string },
+  secret: string,
+): string {
+  if (!UUID_RE.test(payload.tenantId)) {
+    throw new Error(`样卡 token 需要合法 tenantId：${payload.tenantId}`);
+  }
+  const code = Buffer.from(payload.sampleCode, "utf8");
+  if (code.length === 0 || code.length > SAMPLE_CODE_MAX_BYTES) {
+    throw new Error(`样卡编号长度必须在 1-${SAMPLE_CODE_MAX_BYTES} 字节之间`);
+  }
+  const body = Buffer.concat([
+    Buffer.from([SAMPLE_TOKEN_VERSION]),
+    Buffer.from(payload.tenantId.replace(/-/g, ""), "hex"),
+    Buffer.from([code.length]),
+    code,
+  ]);
+  const signature = createHmac("sha256", secret)
+    .update(body)
+    .digest()
+    .subarray(0, SAMPLE_SIG_BYTES);
+  return Buffer.concat([body, signature]).toString("base64url");
+}
+
+export function parseSampleCardToken(token: string, secret: string): SampleCardTokenPayload | null {
+  // token 直接放进 URL 路径，先做形状约束，避免超长串进入 HMAC。
+  if (!/^[A-Za-z0-9_-]{40,120}$/.test(token)) return null;
+  let raw: Buffer;
+  try {
+    raw = Buffer.from(token, "base64url");
+  } catch {
+    return null;
+  }
+  if (raw.length < 1 + 16 + 1 + 1 + SAMPLE_SIG_BYTES) return null;
+  const body = raw.subarray(0, raw.length - SAMPLE_SIG_BYTES);
+  const signature = raw.subarray(raw.length - SAMPLE_SIG_BYTES);
+  if (body[0] !== SAMPLE_TOKEN_VERSION) return null;
+
+  const expected = createHmac("sha256", secret).update(body).digest().subarray(0, SAMPLE_SIG_BYTES);
+  if (!timingSafeEqual(expected, signature)) return null;
+
+  const tenantHex = body.subarray(1, 17).toString("hex");
+  const tenantId = `${tenantHex.slice(0, 8)}-${tenantHex.slice(8, 12)}-${tenantHex.slice(12, 16)}-${tenantHex.slice(16, 20)}-${tenantHex.slice(20)}`;
+  const codeLength = body[17]!;
+  const code = body.subarray(18, 18 + codeLength).toString("utf8");
+  if (codeLength === 0 || code.length === 0 || 18 + codeLength !== body.length) return null;
+  return { t: tenantId, c: code };
+}
+
+/** 样卡公开页地址；与报价链接分开命名空间，避免两类 token 混用。 */
+export function buildSampleCardUrl(publicAppUrl: string, token: string): string {
+  return `${publicAppUrl.replace(/\/+$/, "")}/s/sample/${token}`;
+}

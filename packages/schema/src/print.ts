@@ -9,6 +9,18 @@ import { OrderStatus } from "./entities";
  * 任务幂等键 = 单据 + 模板版本 + 份数 + 操作人（箱唛再加标签序号）。
  */
 
+/**
+ * 样卡与客户报价页共用的业务员联系方式（`tenants.settings.salesContact`）。
+ * 允许空串表示「暂未配置」：设置页能保存半成品，打印时会显式报缺字段。
+ */
+export const TenantSalesContact = z
+  .object({
+    name: z.string().max(255),
+    phone: z.string().max(64),
+  })
+  .strict();
+export type TenantSalesContact = z.infer<typeof TenantSalesContact>;
+
 export const PrintDocumentKind = z.enum([
   "PICKING_LIST",
   "DELIVERY_NOTE",
@@ -97,6 +109,16 @@ export const PRINT_VARIABLES = {
   "meta.operator": "操作人",
   "meta.reprintReason": "补打原因",
   "meta.missing": "缺失字段（逗号分隔）",
+  "sample.code": "样品编号",
+  "sample.name": "样品名称",
+  "sample.composition": "成分",
+  "sample.weight": "克重",
+  "sample.category": "品类",
+  "quote.no": "报价编号",
+  "salesperson.name": "业务员",
+  "salesperson.phone": "业务员电话",
+  "card.qr": "样卡二维码内容",
+  "card.qrImage": "样卡二维码图片（data URL，仅供 HTML 版式）",
 } as const;
 export type PrintVariablePath = keyof typeof PRINT_VARIABLES;
 
@@ -193,7 +215,24 @@ export const PRINT_DOCUMENT_VARIABLES: Record<PrintDocumentKind, PrintVariablePa
     "meta.operator",
     "meta.reprintReason",
   ],
-  SAMPLE_LABEL: ["tenant.name", "box.qr", "meta.printedAt"],
+  SAMPLE_LABEL: [
+    "tenant.name",
+    "tenant.brand",
+    "box.qr",
+    "card.qr",
+    "card.qrImage",
+    "sample.code",
+    "sample.name",
+    "sample.composition",
+    "sample.weight",
+    "sample.category",
+    "quote.no",
+    "salesperson.name",
+    "salesperson.phone",
+    "meta.printedAt",
+    "meta.operator",
+    "meta.reprintReason",
+  ],
   SHELF_LABEL: ["tenant.name", "box.qr", "meta.printedAt"],
   TEST_LABEL: ["tenant.name", "box.no", "box.seq", "box.qr", "meta.printedAt", "meta.operator"],
 };
@@ -364,6 +403,12 @@ export const CreatePrintJobInput = z
     shipmentId: EntityId.optional(),
     boxId: EntityId.optional(),
     orderId: EntityId.optional(),
+    /** 样卡必须以已确认报价为单据（`SAMPLE_LABEL` 专用）。 */
+    quoteId: EntityId.optional(),
+    /** 一张报价可能有多行样品；样卡逐行出，`lineIndex` 指向报价行。 */
+    lineIndex: z.number().int().nonnegative().default(0),
+    /** 样卡物理面：HTML = A4，ZPL/TSPL = 80×50mm 标签；其它单据由打印机决定。 */
+    format: PrintTemplateFormat.optional(),
     copies: z.number().int().min(1).max(50).default(1),
     printerId: EntityId.nullable().optional(),
     templateId: EntityId.nullable().optional(),
@@ -441,6 +486,105 @@ export const PrintJobBatchResult = z
   })
   .strict();
 export type PrintJobBatchResult = z.infer<typeof PrintJobBatchResult>;
+
+/** 一份单据的打印记录（不含载荷）：样卡打印抽屉与补打入口用。 */
+export const PrintJobHistory = z.object({ jobs: z.array(PrintJob) }).strict();
+export type PrintJobHistory = z.infer<typeof PrintJobHistory>;
+
+/**
+ * 样卡预览（`POST /print/preview`）。
+ *
+ * 预览与打印走同一个渲染函数：A4 返回的就是交给打印的 HTML 与 PDF 字节，
+ * 标签返回的就是交给打印代理的 ZPL/TSPL 文本。因此「预览 = 产物」不是承诺，
+ * 而是同一条代码路径的必然结果。
+ */
+export const PrintPreviewInput = z
+  .object({
+    kind: PrintDocumentKind.default("SAMPLE_LABEL"),
+    quoteId: EntityId,
+    lineIndex: z.number().int().nonnegative().default(0),
+    format: PrintTemplateFormat.default("HTML"),
+    templateId: EntityId.nullable().optional(),
+  })
+  .strict();
+export type PrintPreviewInput = z.infer<typeof PrintPreviewInput>;
+
+export const PrintPreviewField = z
+  .object({
+    path: z.string().min(1),
+    label: z.string().min(1),
+    value: z.string(),
+  })
+  .strict();
+export type PrintPreviewField = z.infer<typeof PrintPreviewField>;
+
+export const PrintPreviewArtifact = z
+  .object({
+    kind: PrintDocumentKind,
+    quoteId: EntityId,
+    lineIndex: z.number().int().nonnegative(),
+    format: PrintTemplateFormat,
+    templateName: z.string().min(1),
+    pageSize: z.string().nullable(),
+    isSystem: z.boolean(),
+    sampleCode: z.string().min(1),
+    /** 二维码内容：公开链接，只指向样品编号 + 业务员联系方式。 */
+    qrPayload: z.string().min(1),
+    /** A4：送进打印的 HTML 与 PDF（base64）。 */
+    html: z.string().nullable(),
+    pdfBase64: z.string().nullable(),
+    /** 标签：送进打印代理的 ZPL/TSPL 文本。 */
+    text: z.string().nullable(),
+    /** 模板实际用到的字段：预览面板逐行展示，方便比对纸上内容。 */
+    fields: z.array(PrintPreviewField),
+  })
+  .strict();
+export type PrintPreviewArtifact = z.infer<typeof PrintPreviewArtifact>;
+
+/** 一键打全部样卡（`POST /print/sample-cards/:quoteId`）：报价每行一张。 */
+export const SampleCardPrintInput = z
+  .object({
+    format: PrintTemplateFormat.default("HTML"),
+    copies: z.number().int().min(1).max(20).default(1),
+    printerId: EntityId.nullable().optional(),
+    templateId: EntityId.nullable().optional(),
+  })
+  .strict();
+export type SampleCardPrintInput = z.infer<typeof SampleCardPrintInput>;
+
+/** 补打：必须选原因；不新建样品，只多一条打印任务。 */
+export const SampleCardReprintInput = z
+  .object({
+    reason: ReprintReason,
+    lineIndex: z.number().int().nonnegative().default(0),
+    format: PrintTemplateFormat.default("HTML"),
+    copies: z.number().int().min(1).max(20).default(1),
+    printerId: EntityId.nullable().optional(),
+  })
+  .strict();
+export type SampleCardReprintInput = z.infer<typeof SampleCardReprintInput>;
+
+/**
+ * 公开扫码结果（`GET /api/public/sample-cards/:token`）。
+ *
+ * 只有样品编号和业务员联系方式：没有价格、客户名、成本或报价单号。
+ */
+export const PublicSampleCard = z
+  .object({
+    sampleCode: z.string().min(1).max(64),
+    /**
+     * 业务员联系方式。允许为空串：未配置时页面显示「请联系业务员」，
+     * 但绝不会把客户名、价格或内部编号补进这个响应。
+     */
+    salesperson: z
+      .object({
+        name: z.string().max(255),
+        phone: z.string().max(64),
+      })
+      .strict(),
+  })
+  .strict();
+export type PublicSampleCard = z.infer<typeof PublicSampleCard>;
 
 export const PrintJobResultInput = z
   .object({

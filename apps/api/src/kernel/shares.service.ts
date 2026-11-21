@@ -23,6 +23,7 @@ import {
   QuoteShareStats,
   QuoteShareStatsList,
   QuoteShare,
+  TenantSalesContact,
   UpdateQuoteSharingSettingsInput,
   pickDefaultContact,
 } from "@weave-order/schema";
@@ -32,6 +33,7 @@ import type {
   QuoteLinkErrorCode,
   QuoteSharingSettings as QuoteSharingSettingsValue,
   QuoteShare as QuoteShareRecord,
+  TenantSalesContact as TenantSalesContactValue,
 } from "@weave-order/schema";
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
@@ -505,6 +507,76 @@ export class ShareService {
   // ---------------------------------------------------------------------------
   // 公开路由（无登录）：调用方已根据签名 token 打开租户会话。
   // ---------------------------------------------------------------------------
+
+  /**
+   * 业务员联系方式：样卡与客户报价页共用同一份配置。
+   *
+   * 允许保存空值（半成品），打印时再显式报缺字段；保存只合并
+   * `settings.salesContact`，不碰其它设置键。
+   */
+  async getSalesContact(ctx: KernelContext): Promise<TenantSalesContactValue> {
+    this.requireSettingsEdit(ctx);
+    const settings = await this.tenantSettings();
+    const raw = settings.salesContact;
+    const contact =
+      typeof raw === "object" && raw !== null && !Array.isArray(raw)
+        ? (raw as Record<string, JsonValue>)
+        : {};
+    return TenantSalesContact.parse({
+      name: typeof contact.name === "string" ? contact.name : "",
+      phone: typeof contact.phone === "string" ? contact.phone : "",
+    });
+  }
+
+  async updateSalesContact(input: unknown, ctx: KernelContext): Promise<TenantSalesContactValue> {
+    const parsed = TenantSalesContact.parse(input);
+    this.requireSettingsEdit(ctx);
+    const next = { name: parsed.name.trim(), phone: parsed.phone.trim() };
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, this.tenantId))
+        .for("update")
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        throw new KernelError("RESOURCE_NOT_FOUND", "租户不存在", {
+          resourceType: "tenant",
+          resourceId: this.tenantId,
+        });
+      }
+      const current = jsonObject(row.settings) ?? {};
+      const beforeRaw = current.salesContact;
+      const before =
+        typeof beforeRaw === "object" && beforeRaw !== null && !Array.isArray(beforeRaw)
+          ? (beforeRaw as Record<string, JsonValue>)
+          : {};
+      await tx
+        .update(tenants)
+        .set({
+          settings: { ...current, salesContact: next },
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, this.tenantId));
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "SALES_CONTACT_UPDATED",
+          entityType: "tenant",
+          entityId: this.tenantId,
+          before: {
+            name: typeof before.name === "string" ? before.name : "",
+            phone: typeof before.phone === "string" ? before.phone : "",
+          },
+          after: next,
+        },
+        this.tenantId,
+      );
+      return TenantSalesContact.parse(next);
+    });
+  }
 
   /** 读客户视图并记一次 VIEWED。不返回任何内部字段。 */
   async viewForCustomer(

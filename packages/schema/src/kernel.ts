@@ -241,6 +241,7 @@ export const AuditAction = z.enum([
   "QUOTE_SHARE_REVOKED",
   /** 租户级客户报价链接开关：影响公开面是否对外可用。 */
   "QUOTE_SHARING_UPDATED",
+  "SALES_CONTACT_UPDATED",
   "REVISION_REQUESTED",
   "REVISION_RESOLVED",
   "DECISION_DELTA_RECORDED",
@@ -261,6 +262,7 @@ export const AuditAction = z.enum([
   "PRINT_BOX_CREATED",
   "PRINT_BOX_VOIDED",
   "PRINT_LABEL_REISSUED",
+  "PRINT_SAMPLE_CARD_REPRINTED",
   "PRINT_DISCREPANCY_FLAGGED",
   "PRINT_SCAN_RECORDED",
   // 字段选项（客户等级 / 样品品类 / 样品成分 / 联系人角色）

@@ -1,0 +1,202 @@
+[
+  {
+    "code": "FM-001-B",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDAxLUKdmganpT3wmJHF3Xk",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-01.zpl"
+  },
+  {
+    "code": "FM-002-C",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDAyLUPCSjYuVtC__6if7Xs",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-02.zpl"
+  },
+  {
+    "code": "FM-003-D",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDAzLUSAgQrhbcokiH1NwSQ",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-03.zpl"
+  },
+  {
+    "code": "FM-004-E",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDA0LUXQTwMx-FAQ52mfljE",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-04.zpl"
+  },
+  {
+    "code": "FM-005-F",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDA1LUb9obIUU3-dZSKZbxY",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-05.zpl"
+  },
+  {
+    "code": "FM-006-G",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDA2LUfnlON1aq0G2XzXtlY",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-06.zpl"
+  },
+  {
+    "code": "FM-007-H",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDA3LUj3gqjAbmSg82WSOn8",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-07.zpl"
+  },
+  {
+    "code": "FM-008-I",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDA4LUk4jYUysfInBBDjegU",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-08.zpl"
+  },
+  {
+    "code": "FM-009-J",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDA5LUrU36BYVSzkA_S8T1w",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-09.zpl"
+  },
+  {
+    "code": "FM-010-K",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDEwLUsMMVSU2w07fArtwdM",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-10.zpl"
+  },
+  {
+    "code": "FM-011-L",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDExLUyxIbXtjSC7Uv_nKyU",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-11.zpl"
+  },
+  {
+    "code": "FM-012-M",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDEyLU0PuG0IhWC5PuURYnc",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-12.zpl"
+  },
+  {
+    "code": "FM-013-N",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDEzLU6LqNtt5t68MyKf5G0",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-13.zpl"
+  },
+  {
+    "code": "FM-014-O",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDE0LU99N-ryo04EmLMpnsY",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-14.zpl"
+  },
+  {
+    "code": "FM-015-P",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDE1LVAK21Ub4iJ_-hrJ2_M",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-15.zpl"
+  },
+  {
+    "code": "FM-016-Q",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDE2LVGJa4_V-K7ic4-0OTM",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-16.zpl"
+  },
+  {
+    "code": "FM-017-R",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDE3LVLqCp_StkDK0u0eca4",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-17.zpl"
+  },
+  {
+    "code": "FM-018-S",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDE4LVMPQw_jWSv-ly-U2UI",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-18.zpl"
+  },
+  {
+    "code": "FM-019-T",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDE5LVSrk0xAyUG-Q81PAzA",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-19.zpl"
+  },
+  {
+    "code": "FM-020-U",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDIwLVXCi-vTN5ZYAXyoqX4",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-20.zpl"
+  },
+  {
+    "code": "FM-021-V",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDIxLVYfKFyiTAj4rrVNKuY",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-21.zpl"
+  },
+  {
+    "code": "FM-022-W",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDIyLVehPtksgMFIAIR5Ixs",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-22.zpl"
+  },
+  {
+    "code": "FM-023-X",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDIzLVgKGfMn97iXeCoSzCs",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-23.zpl"
+  },
+  {
+    "code": "FM-024-Y",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDI0LVmNKRSYzA1toMso-yw",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-24.zpl"
+  },
+  {
+    "code": "FM-025-Z",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDI1LVoYpsaryY6OyhstxZA",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-25.zpl"
+  },
+  {
+    "code": "FM-026-A",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDI2LUEsAm11Vj_Pq3mFqVI",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-26.zpl"
+  },
+  {
+    "code": "FM-027-B",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDI3LULqdXHKxSOzeakCgmg",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-27.zpl"
+  },
+  {
+    "code": "FM-028-C",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDI4LUMJT6cUTSkNDvislOg",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-28.zpl"
+  },
+  {
+    "code": "FM-029-D",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDI5LUTZsOlNChOvauMqtbE",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-29.zpl"
+  },
+  {
+    "code": "FM-030-E",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDMwLUXu2gFprjibQ_KTjrs",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-30.zpl"
+  },
+  {
+    "code": "FM-031-F",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDMxLUbt-Bp3k_hooqWJs1E",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-31.zpl"
+  },
+  {
+    "code": "FM-032-G",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDMyLUdDbhKuXIxDFRCHrvQ",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-32.zpl"
+  },
+  {
+    "code": "FM-033-H",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDMzLUj1elytvuJSfMmAKgw",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-33.zpl"
+  },
+  {
+    "code": "FM-034-I",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDM0LUlifIp9jjPZyeXM_xw",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-34.zpl"
+  },
+  {
+    "code": "FM-035-J",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDM1LUpEHAyGkdZuUb6yqdE",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-35.zpl"
+  },
+  {
+    "code": "FM-036-K",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDM2LUtrjeAxoG-pK-ZEmog",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-36.zpl"
+  },
+  {
+    "code": "FM-037-L",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDM3LUwfuq_rqGK-h5u-x4M",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-37.zpl"
+  },
+  {
+    "code": "FM-038-M",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDM4LU2luO91CZB19xMn9so",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-38.zpl"
+  },
+  {
+    "code": "FM-039-N",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDM5LU4pNuliKJ1rnORSR-k",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-39.zpl"
+  },
+  {
+    "code": "FM-040-O",
+    "qrPayload": "https://quote.weave.example.com/s/sample/AfYWRsBBkkygjlP7k2HHrrEIRk0tMDQwLU_K7AOhllxP4jgbv10",
+    "file": "/home/sjz/multica_workspaces_desktop-multica.wnbgj.com/wan-f520bb830b71/wan-198-fbafca29124a/workdir/weave-order/apps/api/.artifacts/sample-card/labels/label-40.zpl"
+  }
+]

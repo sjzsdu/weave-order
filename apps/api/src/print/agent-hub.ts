@@ -8,12 +8,14 @@ import type { Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { RawData } from "ws";
 import { AppDatabaseProvider } from "../platform/database.provider";
+import { loadEnv } from "../platform/env";
 import { PrintAgentAuthService } from "./agent-auth.service";
 import type { AgentIdentity } from "./agent-auth.service";
 import { PrintDeviceService } from "./print-devices.service";
 import { PrintJobService } from "./print-jobs.service";
 import { PrintTemplateService } from "./print-templates.service";
 import { PrintViewService } from "./print-view.service";
+import { SampleCardService } from "./sample-card.service";
 
 interface Connection {
   socket: WebSocket;
@@ -165,13 +167,21 @@ export class PrintAgentHub implements OnApplicationBootstrap, OnApplicationShutd
       db: Awaited<ReturnType<typeof openTenantSession>>["db"],
     ) => Promise<T>,
   ): Promise<T> {
+    const env = loadEnv();
     const session = await openTenantSession(this.databases.pool, tenantId);
     try {
+      const templates = new PrintTemplateService(session.db, tenantId);
       const jobs = new PrintJobService(
         session.db,
         tenantId,
         new PrintViewService(session.db, tenantId),
-        new PrintTemplateService(session.db, tenantId),
+        templates,
+        new SampleCardService(
+          session.db,
+          tenantId,
+          { shareSecret: env.QUOTE_SHARE_SECRET, publicAppUrl: env.PUBLIC_APP_URL },
+          templates,
+        ),
       );
       return await fn(jobs, session.db);
     } finally {

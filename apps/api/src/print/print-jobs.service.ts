@@ -15,6 +15,8 @@ import {
   CreateBoxesInput,
   CreatePrintJobInput,
   PickScanInput,
+  SampleCardPrintInput,
+  SampleCardReprintInput,
   PrintAgentJob,
   PrintJobResultInput,
   PrintShipmentBundleInput,
@@ -43,6 +45,8 @@ import { KernelError } from "../kernel/errors";
 import { milliToQuantity, quantityToMilli } from "../kernel/money";
 import { toIso, toIsoOrNull } from "../kernel/mappers";
 import { renderBoxLabel, renderTestLabel } from "./labels";
+import type { SampleCardService } from "./sample-card.service";
+import { assertSampleCardPrintable, sampleCardValues } from "./sample-card";
 import { renderA4Pdf } from "./pdf";
 import { PrintViewService } from "./print-view.service";
 import { buildBoxQr, parseBoxQr } from "./qr";
@@ -65,6 +69,8 @@ function jobKey(input: {
   copies: number;
   operator: string;
   labelSeq?: number | null;
+  /** 补打序号：同一张卡补打必须生成新任务，不能被幂等键吞掉。 */
+  attempt?: number;
 }): string {
   return hash(
     [
@@ -75,6 +81,7 @@ function jobKey(input: {
       input.copies,
       input.operator,
       input.labelSeq ?? "",
+      input.attempt ?? 0,
     ].join("|"),
   );
 }
@@ -139,6 +146,7 @@ export class PrintJobService {
     private readonly tenantId: string,
     private readonly views: PrintViewService,
     private readonly templates: PrintTemplateService,
+    private readonly sampleCards: SampleCardService,
   ) {}
 
   setDispatcher(dispatch: PrintDispatch): void {
@@ -198,8 +206,29 @@ export class PrintJobService {
     ctx: KernelContext,
   ): Promise<{ job: PrintJob; deduplicated: boolean }> {
     const parsed = CreatePrintJobInput.parse(input);
+    if (parsed.kind === "SAMPLE_LABEL") {
+      if (!parsed.quoteId) {
+        throw new KernelError("KERNEL_REJECTED", "样卡必须以已确认报价为单据（缺少 quoteId）", {
+          reason: "INVALID_INPUT",
+        });
+      }
+      return this.createSampleCardJob(
+        {
+          quoteId: parsed.quoteId,
+          lineIndex: parsed.lineIndex,
+          format: parsed.format ?? "HTML",
+          copies: parsed.copies,
+          priority: parsed.priority,
+          printerId: parsed.printerId ?? null,
+          templateId: parsed.templateId ?? null,
+          reprintReason: parsed.reprintReason ?? null,
+          operator: ctx.actor.id,
+          attempt: 0,
+        },
+        ctx,
+      );
+    }
     if (
-      parsed.kind === "SAMPLE_LABEL" ||
       parsed.kind === "SHELF_LABEL" ||
       (parsed.kind !== "BOX_LABEL" && parsed.kind !== "TEST_LABEL" && !parsed.shipmentId)
     ) {
@@ -358,6 +387,275 @@ export class PrintJobService {
     const job = mapJob(jobRow);
     await this.dispatchJob(job, printer);
     return { job, deduplicated: false };
+  }
+
+  /**
+   * 样卡任务：单据是报价，一张价对应一行样品。
+   *
+   * 幂等键 = 单据 + 模板版本 + 份数 + 操作人（外加样卡序号与补打序号）：
+   * 同一个操作人重复点「打印」不会多出纸，换了操作人或换了模板才生成新任务。
+   * 打印不创建、也不修改样品——它只读报价与样品。
+   */
+  private async createSampleCardJob(
+    input: {
+      quoteId: string;
+      lineIndex: number;
+      format: PrintTemplateFormat;
+      copies: number;
+      priority: number;
+      printerId: string | null;
+      templateId: string | null;
+      reprintReason: ReprintReason | null;
+      operator: string;
+      attempt: number;
+    },
+    ctx: KernelContext,
+  ): Promise<{ job: PrintJob; deduplicated: boolean }> {
+    const printer = await this.printerFor(input.printerId);
+    let resolved: ResolvedTemplate;
+    try {
+      resolved = await this.templates.resolve({
+        kind: "SAMPLE_LABEL",
+        format: input.format,
+        ...(input.templateId ? { templateId: input.templateId } : {}),
+      });
+    } catch (error) {
+      printErrorAsKernel(error);
+    }
+
+    const source = await this.sampleCards.buildSource({
+      quoteId: input.quoteId,
+      lineIndex: input.lineIndex,
+      operator: input.operator,
+      reprintReason: input.reprintReason,
+    });
+    const values = sampleCardValues(source);
+    assertSampleCardPrintable(values);
+
+    const labelSeq = input.lineIndex + 1;
+    const key = jobKey({
+      kind: "SAMPLE_LABEL",
+      documentId: input.quoteId,
+      templateId: resolved.templateId,
+      versionId: resolved.versionId,
+      templateName: resolved.name,
+      copies: input.copies,
+      operator: input.operator,
+      labelSeq,
+      attempt: input.attempt,
+    });
+
+    const existing = await this.db
+      .select()
+      .from(printJobs)
+      .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.idempotencyKey, key)))
+      .limit(1);
+    if (existing[0]) return { job: mapJob(existing[0]), deduplicated: true };
+
+    const rendered = await this.sampleCards.render({
+      source,
+      values,
+      resolved,
+      format: input.format,
+    });
+    const payload = input.format === "HTML" ? rendered.pdfBase64 : rendered.text;
+    if (!payload) {
+      throw new PrintError("PRINT_MISSING_FIELD", "样卡渲染没有产出可打印的内容");
+    }
+
+    let jobRow: typeof printJobs.$inferSelect | undefined;
+    try {
+      const snapshotId = await this.createSnapshot({
+        kind: "SAMPLE_LABEL",
+        documentId: input.quoteId,
+        view: {
+          quoteNo: source.quoteNo,
+          lineIndex: input.lineIndex,
+          sample: source.sample,
+          tenant: source.tenant,
+          salesperson: source.salesperson,
+          qrPayload: source.qrPayload,
+          format: input.format,
+          pageSize: resolved.pageSize,
+          templateName: resolved.name,
+          printedAt: source.printedAt,
+          operator: source.operator,
+          reprintReason: source.reprintReason,
+        },
+        operator: input.operator,
+      });
+      jobRow = await this.db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(printJobs)
+          .values({
+            tenantId: this.tenantId,
+            kind: "SAMPLE_LABEL",
+            documentId: input.quoteId,
+            boxId: null,
+            labelSeq,
+            templateId: resolved.templateId,
+            templateVersionId: resolved.versionId,
+            templateVersion: resolved.version,
+            printerId: printer?.id ?? null,
+            agentId: printer?.agentId ?? null,
+            format: input.format,
+            copies: input.copies,
+            priority: input.priority,
+            status: "QUEUED",
+            idempotencyKey: key,
+            payload,
+            snapshotId,
+            reprintReason: input.reprintReason,
+            requestedBy: input.operator,
+          })
+          .returning();
+        const row = rows[0]!;
+        await tx.insert(printJobEvents).values({
+          tenantId: this.tenantId,
+          jobId: row.id,
+          status: "QUEUED",
+          message: input.reprintReason
+            ? `补打样卡 ${source.sample.code}（${input.reprintReason}）`
+            : `已入队：样卡 ${source.sample.code} × ${input.copies}`,
+          printerId: printer?.id ?? null,
+        });
+        await appendAudit(
+          tx,
+          ctx,
+          {
+            action: input.reprintReason ? "PRINT_SAMPLE_CARD_REPRINTED" : "PRINT_JOB_CREATED",
+            entityType: "print_job",
+            entityId: row.id,
+            before: null,
+            after: {
+              kind: row.kind,
+              quoteId: input.quoteId,
+              sampleCode: source.sample.code,
+              lineIndex: input.lineIndex,
+              copies: row.copies,
+              templateVersion: row.templateVersion,
+              reprintReason: input.reprintReason,
+            },
+          },
+          this.tenantId,
+        );
+        return row;
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const rows = await this.db
+          .select()
+          .from(printJobs)
+          .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.idempotencyKey, key)))
+          .limit(1);
+        if (rows[0]) return { job: mapJob(rows[0]), deduplicated: true };
+      }
+      throw error;
+    }
+
+    const job = mapJob(jobRow);
+    await this.dispatchJob(job, printer);
+    return { job, deduplicated: false };
+  }
+
+  /** 一份报价一键打全部样卡：每行样品一张，各自幂等。 */
+  async printSampleCards(quoteId: string, input: unknown, ctx: KernelContext) {
+    const parsed = SampleCardPrintInput.parse(input ?? {});
+    const lineCount = await this.sampleCards.lineCount(quoteId);
+    if (lineCount === 0) {
+      throw new KernelError("KERNEL_REJECTED", "这份报价没有样品行，无法生成样卡", {
+        reason: "INVALID_INPUT",
+      });
+    }
+    const jobs: PrintJob[] = [];
+    const deduplicated: string[] = [];
+    for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
+      const result = await this.createSampleCardJob(
+        {
+          quoteId,
+          lineIndex,
+          format: parsed.format,
+          copies: parsed.copies,
+          priority: 0,
+          printerId: parsed.printerId ?? null,
+          templateId: parsed.templateId ?? null,
+          reprintReason: null,
+          operator: ctx.actor.id,
+          attempt: 0,
+        },
+        ctx,
+      );
+      jobs.push(result.job);
+      if (result.deduplicated) deduplicated.push(result.job.id);
+    }
+    return { jobs, deduplicated };
+  }
+
+  /**
+   * 补打：必须选原因。不新建样品，只多一条打印任务；
+   * 每补一次 `attempt` +1，幂等键随之变化，因此不会被上一次的成功任务吞掉。
+   */
+  async reprintSampleCard(quoteId: string, input: unknown, ctx: KernelContext) {
+    const parsed = SampleCardReprintInput.parse(input);
+    const labelSeq = parsed.lineIndex + 1;
+    const previous = await this.db
+      .select({ id: printJobs.id })
+      .from(printJobs)
+      .where(
+        and(
+          eq(printJobs.tenantId, this.tenantId),
+          eq(printJobs.kind, "SAMPLE_LABEL"),
+          eq(printJobs.documentId, quoteId),
+          eq(printJobs.labelSeq, labelSeq),
+        ),
+      );
+    if (previous.length === 0) {
+      throw new KernelError("KERNEL_REJECTED", "这张样卡还没有打印过，请先打印", {
+        reason: "INVALID_INPUT",
+      });
+    }
+    return this.createSampleCardJob(
+      {
+        quoteId,
+        lineIndex: parsed.lineIndex,
+        format: parsed.format,
+        copies: parsed.copies,
+        priority: 0,
+        printerId: parsed.printerId ?? null,
+        templateId: null,
+        reprintReason: parsed.reason,
+        operator: ctx.actor.id,
+        attempt: previous.length,
+      },
+      ctx,
+    );
+  }
+
+  /** 一份报价的打印记录：打印抽屉据此展示状态与「补打」入口。 */
+  async listForQuote(quoteId: string): Promise<PrintJob[]> {
+    const rows = await this.db
+      .select()
+      .from(printJobs)
+      .where(
+        and(
+          eq(printJobs.tenantId, this.tenantId),
+          eq(printJobs.kind, "SAMPLE_LABEL"),
+          eq(printJobs.documentId, quoteId),
+        ),
+      )
+      .orderBy(desc(printJobs.createdAt));
+    return rows.map((row) => mapJob(row));
+  }
+
+  async get(jobId: string): Promise<PrintJob> {
+    const rows = await this.db
+      .select()
+      .from(printJobs)
+      .where(and(eq(printJobs.id, jobId), eq(printJobs.tenantId, this.tenantId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new KernelError("RESOURCE_NOT_FOUND", `打印任务不存在：${jobId}`);
+    return mapJob(row);
   }
 
   private assertPrintable(view: ShipmentView, kind: PrintDocumentKind): void {

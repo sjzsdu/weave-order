@@ -42,6 +42,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   QUOTE_SHARE_CREATED: "生成了客户报价链接",
   QUOTE_SHARE_REVOKED: "撤回了客户报价链接",
   QUOTE_SHARING_UPDATED: "更新了客户报价链接开关",
+  SALES_CONTACT_UPDATED: "更新了业务员联系方式",
   // 系统 / 身份 / 运维动作：只在审计页出现，说清楚做了什么
   TENANT_CREATED: "创建了公司",
   TENANT_SWITCHED: "切换了公司",
@@ -66,6 +67,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   PRINT_BOX_CREATED: "创建了箱",
   PRINT_BOX_VOIDED: "作废了箱",
   PRINT_LABEL_REISSUED: "补打了标签",
+  PRINT_SAMPLE_CARD_REPRINTED: "补打了样卡",
   PRINT_DISCREPANCY_FLAGGED: "标记了打印差异",
   PRINT_SCAN_RECORDED: "记录了扫码",
   // 字段选项 / 多联系人 / 客户档案 / 成员权限（WAN-176）

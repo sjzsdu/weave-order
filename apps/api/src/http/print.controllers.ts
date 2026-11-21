@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   Headers,
+  HttpCode,
   Inject,
   NotFoundException,
   Param,
@@ -31,6 +32,8 @@ import { PrintDeviceService } from "../print/print-devices.service";
 import { PrintJobService } from "../print/print-jobs.service";
 import { PrintTemplateService } from "../print/print-templates.service";
 import { PrintViewService } from "../print/print-view.service";
+import { SampleCardService } from "../print/sample-card.service";
+import { loadEnv } from "../platform/env";
 import { HUMAN_ACTOR, KERNEL } from "./tokens";
 import type { HumanActorService } from "./human-actor.service";
 
@@ -55,6 +58,25 @@ function rethrowPrint(error: unknown): never {
     });
   }
   throw error;
+}
+
+/** 打印代理侧只需要 claim / report，但服务构造需要完整的组合根。 */
+function printJobsFor(db: AgentDb, tenantId: string): PrintJobService {
+  const env = loadEnv();
+  const templates = new PrintTemplateService(db, tenantId);
+  const sampleCards = new SampleCardService(
+    db,
+    tenantId,
+    { shareSecret: env.QUOTE_SHARE_SECRET, publicAppUrl: env.PUBLIC_APP_URL },
+    templates,
+  );
+  return new PrintJobService(
+    db,
+    tenantId,
+    new PrintViewService(db, tenantId),
+    templates,
+    sampleCards,
+  );
 }
 
 /**
@@ -107,6 +129,78 @@ export class PrintController {
           deduplicated: result.deduplicated,
           message: result.deduplicated ? "已在队列：不会重复出纸" : "已入队：代理在线会自动打印",
         };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  @Post("print/preview")
+  @HttpCode(200)
+  async preview(@Body() body: unknown, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return {
+          preview: await this.attach(kernel).sampleCards.preview(body, ctx.actor.id),
+        };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  @Get("print/jobs/:id")
+  async job(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      try {
+        return { job: await this.attach(kernel).jobs.get(id) };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** 一份报价的打印记录：抽取「补打」入口的数据。 */
+  @Get("print/sample-cards/:quoteId")
+  async sampleCardJobs(
+    @Param("quoteId") quoteId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      try {
+        return { jobs: await this.attach(kernel).jobs.listForQuote(quoteId) };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** 一键打全部样卡：报价每行一张，各自幂等。 */
+  @Post("print/sample-cards/:quoteId")
+  async printSampleCards(
+    @Param("quoteId") quoteId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).jobs.printSampleCards(quoteId, body, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  /** 补打：必须选原因；不新建样品。 */
+  @Post("print/sample-cards/:quoteId/reprint")
+  async reprintSampleCard(
+    @Param("quoteId") quoteId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).jobs.reprintSampleCard(quoteId, body, ctx);
       } catch (error) {
         rethrowPrint(error);
       }
@@ -453,12 +547,7 @@ export class PrintAgentController {
         typeof (body as { limit?: unknown }).limit === "number"
           ? (body as { limit: number }).limit
           : 5;
-      const jobs = new PrintJobService(
-        db,
-        identity.tenantId,
-        new PrintViewService(db, identity.tenantId),
-        new PrintTemplateService(db, identity.tenantId),
-      );
+      const jobs = printJobsFor(db, identity.tenantId);
       return { jobs: await jobs.claim(identity.agentId, Math.min(Math.max(limit, 1), 20)) };
     });
   }
@@ -466,12 +555,7 @@ export class PrintAgentController {
   @Post("result")
   async result(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     return this.withAgent(authorization, async (db, identity) => {
-      const jobs = new PrintJobService(
-        db,
-        identity.tenantId,
-        new PrintViewService(db, identity.tenantId),
-        new PrintTemplateService(db, identity.tenantId),
-      );
+      const jobs = printJobsFor(db, identity.tenantId);
       return { job: await jobs.report(identity.agentId, body) };
     });
   }

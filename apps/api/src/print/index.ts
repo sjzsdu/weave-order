@@ -4,29 +4,44 @@ import { PrintDeviceService } from "./print-devices.service";
 import { PrintJobService } from "./print-jobs.service";
 import { PrintTemplateService } from "./print-templates.service";
 import { PrintViewService } from "./print-view.service";
+import { SampleCardService } from "./sample-card.service";
+
+export interface PrintCenterOptions {
+  /** 样卡二维码签名密钥；与客户报价链接共用 `QUOTE_SHARE_SECRET`。 */
+  shareSecret: string;
+  /** 公开页站点根地址；扫码后打开的样品页挂在它下面。 */
+  publicAppUrl: string;
+}
 
 export interface PrintCenter {
   views: PrintViewService;
   templates: PrintTemplateService;
   jobs: PrintJobService;
   devices: PrintDeviceService;
+  sampleCards: SampleCardService;
   snapshot(): Promise<PrintCenterSnapshot>;
 }
 
 /**
- * 打印中心组合根：视图 / 模板 / 队列 / 设备共享同一租户绑定。
+ * 打印中心组合根：视图 / 模板 / 队列 / 设备 / 样卡共享同一租户绑定。
  * 业务表只读；打印任务、箱与标签的写入都从这里走并同事务留审计。
  */
-export function createPrintCenter(db: Db, tenantId: string): PrintCenter {
+export function createPrintCenter(
+  db: Db,
+  tenantId: string,
+  options: PrintCenterOptions,
+): PrintCenter {
   const views = new PrintViewService(db, tenantId);
   const templates = new PrintTemplateService(db, tenantId);
-  const jobs = new PrintJobService(db, tenantId, views, templates);
+  const sampleCards = new SampleCardService(db, tenantId, options, templates);
+  const jobs = new PrintJobService(db, tenantId, views, templates, sampleCards);
   const devices = new PrintDeviceService(db, tenantId);
   return {
     views,
     templates,
     jobs,
     devices,
+    sampleCards,
     async snapshot() {
       // 顺序执行：打印中心跑在单连接租户会话上，同一 client 并发 query 已被 pg 弃用。
       const queue = await jobs.list({ limit: 40 });
@@ -57,3 +72,11 @@ export {
 } from "./html-safety";
 export { assertTemplatePublishAllowed } from "./print-templates.service";
 export { analyzeTemplate, renderTemplate } from "./template-engine";
+export { SampleCardService } from "./sample-card.service";
+export {
+  SAMPLE_CARD_LIMITS,
+  assertSampleCardPrintable,
+  sampleCardPreviewFields,
+  sampleCardQrPng,
+  sampleCardValues,
+} from "./sample-card";

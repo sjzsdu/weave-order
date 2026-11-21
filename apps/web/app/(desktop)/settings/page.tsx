@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthContext } from "@weave-order/core";
 import type { Capability, Currency, MemberRole } from "@weave-order/schema";
 import { SETTINGS_SECTIONS, memberRoleLabel, visibleNav } from "@weave-order/schema";
-import { Badge, EmptyState, Spinner, cn } from "@weave-order/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { formatMoney } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SupportMailto } from "@/support";
@@ -417,21 +418,113 @@ function FieldsSection() {
 /** 打印与外设：打印是全局抽屉，不占一级入口，这里只放使用说明与排障入口。 */
 function PrintSection() {
   return (
+    <div className="grid gap-6">
+      <section className="rounded-lg border border-line bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium text-ink-900">打印与外设</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          打印面板在任意页面都能打开（顶栏「打印」），不单独占一个窗口。寄样标签、报价单与对账单都在那里发起。
+        </p>
+        <dl className="mt-2">
+          <Field label="标签机" value="即插即用，打印面板选择设备即可" />
+          <Field label="扫码枪" value="按键盘输入处理，不需要额外驱动" />
+          <Field label="电子秤" value="串口/USB 接入后在寄样与出库流程可用" />
+          <Field
+            label="故障排查"
+            value={<SupportMailto className="text-indigo-600 underline" label="联系技术支持" />}
+            hint="带上设备型号与打印面板里的错误提示"
+          />
+        </dl>
+      </section>
+      <SalesContactSection />
+    </div>
+  );
+}
+
+/**
+ * 业务员联系方式：样卡与客户报价页共用一份。
+ *
+ * 这里允许留空保存（半成品也是有效状态），但打印样卡时会显式提示缺字段；
+ * 不做「猜一个电话填进去」——纸上印错电话比印不出来更糟。
+ */
+function SalesContactSection() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const contactQuery = useQuery({
+    queryKey: ["settings", "sales-contact"],
+    queryFn: () => api.salesContact(),
+  });
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!contactQuery.data) return;
+    setName(contactQuery.data.name);
+    setPhone(contactQuery.data.phone);
+  }, [contactQuery.data]);
+
+  const save = useMutation({
+    mutationFn: () => api.updateSalesContact({ name, phone }),
+    onSuccess: () => {
+      setFeedback("已保存：下次打印的样卡与二维码页会使用新联系方式");
+      void queryClient.invalidateQueries({ queryKey: ["settings", "sales-contact"] });
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : "保存失败，请稍后重试");
+    },
+  });
+
+  return (
     <section className="rounded-lg border border-line bg-surface px-5 py-4">
-      <h2 className="text-sm font-medium text-ink-900">打印与外设</h2>
+      <h2 className="text-sm font-medium text-ink-900">业务员联系方式</h2>
       <p className="mt-1 text-xs text-ink-400">
-        打印面板在任意页面都能打开（顶栏「打印」），不单独占一个窗口。寄样标签、报价单与对账单都在那里发起。
+        样卡背面、二维码扫码页与客户报价页共用这份名片。留空也能保存，但打印样卡前必须先填电话。
       </p>
-      <dl className="mt-2">
-        <Field label="标签机" value="即插即用，打印面板选择设备即可" />
-        <Field label="扫码枪" value="按键盘输入处理，不需要额外驱动" />
-        <Field label="电子秤" value="串口/USB 接入后在寄样与出库流程可用" />
-        <Field
-          label="故障排查"
-          value={<SupportMailto className="text-indigo-600 underline" label="联系技术支持" />}
-          hint="带上设备型号与打印面板里的错误提示"
-        />
-      </dl>
+      {contactQuery.isPending ? (
+        <Spinner />
+      ) : (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-xs text-ink-400">
+            姓名
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={40}
+              className="min-h-11 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+              placeholder="例如：孙巨中"
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-ink-400">
+            电话
+            <input
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              maxLength={32}
+              inputMode="tel"
+              className="min-h-11 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+              placeholder="例如：13800000000"
+            />
+          </label>
+          <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
+            <Button
+              variant="primary"
+              className="min-h-11"
+              disabled={save.isPending}
+              onClick={() => {
+                setFeedback(null);
+                save.mutate();
+              }}
+            >
+              {save.isPending ? "保存中…" : "保存联系方式"}
+            </Button>
+            {feedback ? (
+              <span className="text-xs text-ink-700" role="status">
+                {feedback}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
