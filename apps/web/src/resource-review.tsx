@@ -5,19 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ResourceFieldView } from "@weave-order/schema";
 import { Badge, Button, Card, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
-
-const FIELD_LABEL: Record<string, string> = {
-  code: "编号",
-  name: "名称",
-  tier: "等级",
-  contactName: "联系人",
-  contactPhone: "手机 / 电话",
-  contactEmail: "邮箱",
-  composition: "成分",
-  category: "品类",
-  weight: "克重",
-  unit: "单位",
-};
+import { FIELD_LABEL, confirmErrorMessage } from "./resource-review-copy";
 
 const SOURCE_LABEL: Record<string, string> = {
   bizcard: "名片识别",
@@ -99,7 +87,7 @@ export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps
       setFeedback("已确认可用，接下来可以建事项或报价");
       await queryClient.invalidateQueries({ queryKey: key });
     },
-    onError: (error) => setFeedback(error instanceof Error ? error.message : "确认失败"),
+    onError: (error) => setFeedback(confirmErrorMessage(error)),
   });
 
   const pendingCount = useMemo(

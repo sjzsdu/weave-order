@@ -256,3 +256,69 @@ describe("API client（租户选择）", () => {
     });
   });
 });
+
+describe("API client（资源字段确认）", () => {
+  const SAMPLE_ID = "123e4567-e89b-12d3-a456-426614174002";
+
+  it("逐字段确认返回与 GET /fields 相同的读模型", async () => {
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        jsonResponse({
+          resourceType: "sample",
+          resourceId: SAMPLE_ID,
+          resourceStatus: "DRAFT",
+          fields: [
+            {
+              fieldName: "name",
+              value: "32S 精梳棉汗布",
+              status: "CONFIRMED",
+              sourceKind: "manual",
+              sourceId: null,
+              updatedAt: "2026-11-21T00:00:00.000Z",
+              candidates: [],
+            },
+          ],
+          pendingCount: 0,
+        }),
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl,
+    });
+
+    const result = await client.updateSampleFields(SAMPLE_ID, {
+      fields: [{ fieldName: "name", value: "32S 精梳棉汗布" }],
+    });
+    expect(result.resourceStatus).toBe("DRAFT");
+    expect(result.pendingCount).toBe(0);
+    expect(result.fields[0]?.status).toBe("CONFIRMED");
+    const [, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(init?.method).toBe("PATCH");
+  });
+
+  it("Nest 内置 400 的 message 直接给用户，不退化成 HTTP 状态", async () => {
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl: () =>
+        Promise.resolve(
+          jsonResponse(
+            {
+              statusCode: 400,
+              message: "还有字段待确认：name",
+              error: "Bad Request",
+            },
+            400,
+          ),
+        ),
+    });
+
+    await expect(client.confirmSample(SAMPLE_ID)).rejects.toMatchObject({
+      status: 400,
+      code: "REQUEST_REJECTED",
+      message: "还有字段待确认：name",
+    });
+  });
+});
