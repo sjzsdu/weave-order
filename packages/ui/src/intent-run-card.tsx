@@ -33,6 +33,8 @@ export function IntentRunCard({
   const needsInput = intent.status === "NEEDS_INPUT";
   const needsAttention = failed || needsInput;
   const notConnected = intent.executorState === "NOT_CONNECTED";
+  const awaitingConfirm =
+    intent.status === "SUCCEEDED" && intent.understanding !== null && !intent.draft;
 
   const tone =
     intent.status === "SUCCEEDED"
@@ -104,6 +106,15 @@ export function IntentRunCard({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        {awaitingConfirm && (
+          <a
+            href={`/inbound?intent=${encodeURIComponent(intent.id)}`}
+            className="inline-flex min-h-9 items-center rounded-md border border-indigo-600/40 bg-indigo-600/10 px-3 text-sm font-medium text-indigo-600 hover:bg-indigo-600/15"
+          >
+            继续确认 →
+          </a>
+        )}
+
         {intent.status === "SUCCEEDED" && intent.draft && (
           <a
             href={`/approvals?id=${encodeURIComponent(intent.draft.id)}&kind=${intent.draft.kind}`}

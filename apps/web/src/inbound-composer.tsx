@@ -70,10 +70,12 @@ function valueText(value: JsonValue): string {
 export function InboundComposer({
   initialText = "",
   initialContext,
+  initialInboundId,
   autoFocus = false,
 }: {
   initialText?: string;
   initialContext?: Record<string, string>;
+  initialInboundId?: string | null;
   /** 空状态「新建事项」跳进来：输入框为空，但光标要已就位。 */
   autoFocus?: boolean;
 }) {
@@ -87,7 +89,7 @@ export function InboundComposer({
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inboundId, setInboundId] = useState<string | null>(null);
+  const [inboundId, setInboundId] = useState<string | null>(initialInboundId ?? null);
   const [kind, setKind] = useState<IntentKind>("unknown");
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState("");

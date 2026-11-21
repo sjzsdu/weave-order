@@ -9,6 +9,7 @@ import { InboundComposer } from "@/inbound-composer";
  * `?text=` 是旧入口（today / ⌘K / 客户 360）迁过来的唯一方式：
  * 它们不再各自提交 `/api/intents`，而是把原话带到这里，共用一条输入路径。
  * 客户 360 / 开张清单还会带上 customerId / sampleId，作为理解与执行的上下文。
+ * `?intent=` 从历史状态卡回来，直接恢复那条理解卡，不重复提交。
  */
 export default function InboundPage() {
   const params = useSearchParams();
@@ -22,6 +23,7 @@ export default function InboundPage() {
       <InboundComposer
         initialText={params.get("text") ?? ""}
         autoFocus={params.get("compose") === "1"}
+        initialInboundId={params.get("intent")}
         {...(Object.keys(context).length > 0 ? { initialContext: context } : {})}
       />
     </div>

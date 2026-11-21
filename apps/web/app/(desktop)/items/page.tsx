@@ -9,7 +9,7 @@ import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 import { track } from "@/analytics";
 import { ITEM_STATUS_LABEL, ITEM_STATUS_TONE, itemQuantityText } from "@/item-format";
-import { UNIFIED_INPUT_PROMPT, unifiedInputHref } from "@/unified-input";
+import { UNIFIED_INPUT_PROMPT } from "@/unified-input";
 import { relativeTime } from "@/format";
 
 const FILTERS = [
@@ -85,7 +85,7 @@ function ItemsPageContent() {
           </p>
         </div>
         <Link
-          href={unifiedInputHref()}
+          href="/inbound?compose=1"
           className="inline-flex min-h-11 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
         >
           新建事项
@@ -121,7 +121,7 @@ function ItemsPageContent() {
           actions={
             <>
               <Link
-                href={unifiedInputHref()}
+                href="/inbound?compose=1"
                 className="inline-flex min-h-11 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
               >
                 用一句话或一张照片开始

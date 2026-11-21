@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useApprovals, useIntentChannel, useTenantContext } from "@weave-order/core";
+import { useApprovals, useTenantContext } from "@weave-order/core";
 import type { TenantChoice } from "@weave-order/schema";
 import {
   BUSINESS_NAV,
@@ -15,7 +15,7 @@ import {
   isNavItemActive,
   visibleNav,
 } from "@weave-order/schema";
-import { Badge, CommandBar, IntentRunCard, OfflineBanner, cn } from "@weave-order/ui";
+import { Badge, CommandBar, OfflineBanner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { PrintDrawer } from "@/print-drawer";
 import { PersonaBar } from "@/persona-bar";
@@ -130,8 +130,6 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   };
 
   const approvals = useApprovals(api);
-  // 顶栏与页内 composer 共用同一个意图 hook：同一份幂等键策略、同一份轮询与缓存。
-  const intentChannel = useIntentChannel(api);
 
   // 菜单 = 服务端下发能力集合的投影：不在调用点写 role === "..."。
   // 未就绪（加载中 / 待选租户）时能力为空，导航只保留全员可见项。
@@ -313,26 +311,10 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                 },
               ]}
               feedback={
-                <div className="grid gap-2">
-                  <p className="text-xs text-ink-400">
-                    打「建客户 / 建样品 /
-                    导入客户」回车直达；其他文字带到统一输入页，先出理解卡再执行。
-                  </p>
-                  {intentChannel.submitError && (
-                    <p className="rounded-md border border-vermilion-600/30 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">
-                      {intentChannel.submitError}
-                    </p>
-                  )}
-                  {intentChannel.items.slice(0, 3).map((intent) => (
-                    <IntentRunCard
-                      key={intent.id}
-                      intent={intent}
-                      busy={intentChannel.submitting}
-                      onCancel={(id) => void intentChannel.cancel(id)}
-                      onRetry={(item) => void intentChannel.retry(item)}
-                    />
-                  ))}
-                </div>
+                <p className="text-xs text-ink-400">
+                  打「建客户 / 建样品 /
+                  导入客户」回车直达；其他文字带到统一输入页，先出理解卡再执行。
+                </p>
               }
             />
           </div>
