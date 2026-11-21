@@ -88,12 +88,16 @@ export function assertLayoutAllowed(layout: PrintTemplateLayout, kind: PrintDocu
 /**
  * 标签指令里的静态文字不能带指令/分隔字符，否则一个标签名就能改写指令结构。
  * ZPL 用 `^`/`~` 起新指令；TSPL 的 TEXT 参数以逗号分隔、以引号包裹字符串，
- * 因此 `"` 与 `,` 都能提前闭合字符串。两个机型分开清洗，规则写死在这里。
+ * 因此 `"` 与 `,` 都能提前闭合字符串。
+ *
+ * 同一份版式会同时编译出 HTML / ZPL / TSPL 三种正文，行标签只有一份字符串，
+ * 所以这里按最严格的机型（TSPL）统一清洗：ZPL 也一并去掉逗号。
+ * 想按机型分开清洗，就得把行标签变成 format 的函数，代价是三种正文的标签文字可能不一致。
  */
 function sanitizeStaticText(value: string): string {
-  // ZPL 与 TSPL 共用：换行/制表符会把一条指令拆成两条。
+  // 两机型共用：换行/制表符会把一条指令拆成两条；`^`/`~` 会起新 ZPL 指令。
   const base = value.replace(/[\r\n\t]+/g, " ").replace(/\^|~/g, " ");
-  // TSPL：引号与逗号是参数语法，直接去掉；反斜杠不做转义猜测。
+  // TSPL 最严格：引号与逗号是参数语法，直接去掉；反斜杠不做转义猜测。ZPL 也沿用。
   return base
     .replace(/["\\,]/g, " ")
     .replace(/ {2,}/g, " ")

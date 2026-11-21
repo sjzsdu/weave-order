@@ -474,6 +474,9 @@ export class PrintTemplateService {
     const parsed = CopyPrintTemplateInput.parse(input);
     const source = await this.resolveCopySource(parsed);
     // 草稿正文同样会进 headless Chromium 渲染，所以 HTML 的 OWNER 限制在复制时就要生效。
+    // 先鉴权、再判「是否可以可视化编辑」是刻意的：对无权限的角色，PERMISSION_DENIED 是
+    // 唯一为真的答案，先说「不支持编辑」等于把「哪些模板能编辑」泄露给了不该知道的人。
+    // 因此 SALES 复制 HTML + 暂不支持版式的模板时，看到的是 403 而不是 400。
     assertTemplatePublishAllowed(source.format, ctx);
     if (!isLayoutEditable(source.kind)) {
       throw new KernelError(

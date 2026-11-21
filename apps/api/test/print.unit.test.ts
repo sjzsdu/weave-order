@@ -196,6 +196,51 @@ describe("标签渲染", () => {
   });
 });
 
+describe("二维码载荷旁路", () => {
+  const values = (qr: string) => ({ scalars: { "card.qr": qr }, loops: {} });
+
+  it("合法 URL / token 原样进指令，逗号与百分号不被清洗", () => {
+    const payload = "https://app.weave.test/c/AbC-12_3?x=1,2%20y#frag";
+    for (const format of ["ZPL", "TSPL"] as const) {
+      expect(renderTemplate("{{card.qr}}", "SAMPLE_LABEL", values(payload), { format })).toBe(
+        payload,
+      );
+    }
+  });
+
+  it("出现 ZPL 指令字符时报错，而不是静默换成空格", () => {
+    expect(() =>
+      renderTemplate("{{card.qr}}", "SAMPLE_LABEL", values("https://x.test/c/a~b"), {
+        format: "ZPL",
+      }),
+    ).toThrowError(/二维码载荷含非法字符/);
+    expect(() =>
+      renderTemplate("{{card.qr}}", "SAMPLE_LABEL", values("https://x.test/c/a^b"), {
+        format: "ZPL",
+      }),
+    ).toThrowError(/二维码载荷含非法字符/);
+  });
+
+  it("空白、中文、引号都拒绝，错误码固定", () => {
+    for (const payload of ["a b", "样品/1", 'a"b', "a\\b", "a\r\nb"]) {
+      try {
+        renderTemplate(
+          "{{box.qr}}",
+          "TEST_LABEL",
+          { scalars: { "box.qr": payload }, loops: {} },
+          {
+            format: "TSPL",
+          },
+        );
+        throw new Error(`应当拒绝：${JSON.stringify(payload)}`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(PrintError);
+        expect((error as PrintError).code).toBe("PRINT_QR_PAYLOAD_INVALID");
+      }
+    }
+  });
+});
+
 describe("A4 PDF", () => {
   it("内置版式输出可解析的 PDF（含中文）", async () => {
     const pdf = await renderBuiltinA4Pdf({ ...view, kind: "DELIVERY_NOTE", title: "发货单" });

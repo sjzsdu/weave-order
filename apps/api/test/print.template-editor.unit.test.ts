@@ -103,6 +103,20 @@ describe("样卡版式编译", () => {
     expect(line.match(/"/g) ?? []).toHaveLength(4);
   });
 
+  it("行标签只有一份字符串：逗号在 ZPL 里也按 TSPL 的严格规则去掉", () => {
+    const layout = layoutWith([
+      { field: "sample.code", label: "成分,克重", visible: true, fontSize: 12, bold: false },
+    ]);
+    const expectedSuffix = { ZPL: "^FD成分 克重 ", TSPL: '"成分 克重 ' } as const;
+    for (const format of ["ZPL", "TSPL"] as const) {
+      const line = compileLayout(layout, "SAMPLE_LABEL", format)
+        .body.split("\n")
+        .find((item) => item.includes("{{sample.code}}"))!;
+      const labelPrefix = line.split("{{sample.code}}")[0]!;
+      expect(labelPrefix.endsWith(expectedSuffix[format])).toBe(true);
+    }
+  });
+
   it("标签数据值也不能带指令字符：ZPL 去 ^/~，TSPL 去引号", () => {
     const zpl = renderTemplate(
       "^FD{{sample.name}}^FS",
