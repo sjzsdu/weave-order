@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { PDFDocument } from "pdf-lib";
 import { PRINT_DOCUMENT_VARIABLES, PRINT_VARIABLES } from "@weave-order/schema";
 import {
   SAMPLE_CARD_LIMITS,
+  assertSampleCardPdfLayout,
   assertSampleCardPrintable,
   assertSampleCodeFitsToken,
   renderBuiltinSampleCardPdf,
@@ -217,5 +219,25 @@ describe("样卡二维码图片与 A4 兜底版式", () => {
     const pdf = await renderBuiltinSampleCardPdf(source);
     expect(pdf.subarray(0, 4).toString("utf8")).toBe("%PDF");
     expect(pdf.length).toBeGreaterThan(1500);
+  });
+
+  it("A4 样卡 PDF 是单页、页面尺寸就是 A4", async () => {
+    const pdf = await renderBuiltinSampleCardPdf(source);
+    await expect(assertSampleCardPdfLayout(pdf)).resolves.toBeUndefined();
+  });
+
+  it("渲染器给成 Letter 或两页时显式报错，而不是拿去打印", async () => {
+    const letter = await PDFDocument.create();
+    letter.addPage([612, 792]);
+    await expect(assertSampleCardPdfLayout(Buffer.from(await letter.save()))).rejects.toMatchObject(
+      { code: "PRINT_PAGE_SIZE_MISMATCH" },
+    );
+
+    const twoPages = await PDFDocument.create();
+    twoPages.addPage([595.28, 841.89]);
+    twoPages.addPage([595.28, 841.89]);
+    await expect(
+      assertSampleCardPdfLayout(Buffer.from(await twoPages.save())),
+    ).rejects.toMatchObject({ code: "PRINT_PAGE_SIZE_MISMATCH" });
   });
 });

@@ -371,13 +371,46 @@ export async function renderBuiltinSampleCardPdf(source: SampleCardSource): Prom
  * 与 `renderA4Pdf` 的区别在于兜底版式是样卡，而不是订单明细表。
  */
 export async function renderSampleCardPdf(source: SampleCardSource, html: string): Promise<Buffer> {
-  try {
-    const rendered = await renderHtmlWithChrome(html);
-    if (rendered && rendered.length > 1000) return rendered;
-  } catch {
-    // 浏览器不可用不影响出纸：内置版式是确定兜底。
+  // 浏览器不可用不影响出纸：内置版式是确定兜底。
+  const rendered = await renderHtmlWithChrome(html).catch(() => null);
+  if (rendered && rendered.length > 1000) {
+    // headless Chromium 的 --print-to-pdf 不保证按 CSS @page 出纸（默认可能还是 Letter）。
+    // 出纸尺寸错会让打印店的 A4 缩放把版面整体推偏，因此这里宁可显式失败。
+    await assertSampleCardPdfLayout(rendered);
+    return rendered;
   }
   return renderBuiltinSampleCardPdf(source);
+}
+
+const A4_POINTS = { width: 595.28, height: 841.89 };
+/** pdf-lib 读回来的尺寸有浮点误差，2pt 内视为 A4。 */
+const PAGE_SIZE_TOLERANCE = 2;
+
+/**
+ * 代码层面的「纸张对不对」：A4 样卡必须是单页、且页面尺寸是 A4。
+ * 真机验证的是纸和墨，这里验证的是 PDF 本身没被渲染器换成别的纸。
+ */
+export async function assertSampleCardPdfLayout(pdf: Buffer): Promise<void> {
+  const doc = await PDFDocument.load(pdf, { updateMetadata: false });
+  const pages = doc.getPages();
+  if (pages.length !== 1) {
+    throw new PrintError(
+      "PRINT_PAGE_SIZE_MISMATCH",
+      `A4 样卡应为 1 页，实际 ${pages.length} 页：版式内容溢出到第二页`,
+      { pages: pages.length },
+    );
+  }
+  const { width, height } = pages[0]!.getSize();
+  if (
+    Math.abs(width - A4_POINTS.width) > PAGE_SIZE_TOLERANCE ||
+    Math.abs(height - A4_POINTS.height) > PAGE_SIZE_TOLERANCE
+  ) {
+    throw new PrintError(
+      "PRINT_PAGE_SIZE_MISMATCH",
+      `A4 样卡页面尺寸不是 A4：${width.toFixed(1)}×${height.toFixed(1)}pt（应为 595.3×841.9pt）`,
+      { width, height },
+    );
+  }
 }
 
 /** 预览面板逐行展示的字段：与模板白名单同源，肉眼可对照纸上内容。 */

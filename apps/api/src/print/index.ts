@@ -75,6 +75,7 @@ export { analyzeTemplate, renderTemplate } from "./template-engine";
 export { SampleCardService } from "./sample-card.service";
 export {
   SAMPLE_CARD_LIMITS,
+  assertSampleCardPdfLayout,
   assertSampleCardPrintable,
   sampleCardPreviewFields,
   sampleCardQrPng,

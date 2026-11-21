@@ -20,6 +20,7 @@ import type { SampleCardSource } from "./sample-card";
 import type { PrintTemplateService, ResolvedTemplate } from "./print-templates.service";
 import { PrintError } from "./template-engine";
 import type { TemplateValues } from "./template-engine";
+import { assertSampleCardDataFits } from "./template-layout";
 
 /** 样卡上的时间用北京时间、精确到分钟：纸上不印毫秒与 UTC 后缀。 */
 function printedAtText(date: Date): string {
@@ -220,6 +221,11 @@ export class SampleCardService {
       const html = renderSampleCardHtml(input.resolved.body, input.values);
       const pdf = await renderSampleCardPdf(input.source, html);
       return { html, pdfBase64: pdf.toString("base64"), text: null };
+    }
+    // 版式模板：发布时只能按字段上限估算宽度，这里按真实数据再拦一次，
+    // 避免长样品名压到侧边二维码上（纸上扫码失败的典型原因）。
+    if (input.resolved.layout) {
+      assertSampleCardDataFits(input.resolved.layout, input.values);
     }
     const text = renderSampleCardText(input.resolved.body, input.values, input.format);
     return { html: null, pdfBase64: null, text };

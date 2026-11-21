@@ -36,6 +36,8 @@ export interface ResolvedTemplate {
   body: string;
   format: PrintTemplateFormat;
   pageSize: string | null;
+  /** 可视化版式；文本模板为 null。打印前用它做实际数据宽度校验。 */
+  layout?: PrintTemplateLayout | null;
   isSystem: boolean;
 }
 
@@ -120,6 +122,7 @@ export class PrintTemplateService {
         body: version.body,
         format: template.format,
         pageSize: version.pageSize,
+        layout: layoutFromRow(version),
         isSystem: false,
       };
     }
@@ -157,6 +160,7 @@ export class PrintTemplateService {
         body: version.body,
         format: template.format,
         pageSize: version.pageSize,
+        layout: layoutFromRow(version),
         isSystem: false,
       };
     }
@@ -176,6 +180,7 @@ export class PrintTemplateService {
       body: system.body,
       format: system.format,
       pageSize: system.pageSize,
+      layout: null,
       isSystem: true,
     };
   }
@@ -753,6 +758,7 @@ export class PrintTemplateService {
         body: draft.body,
         format: template.format,
         pageSize: draft.pageSize,
+        layout: layoutFromRow(draft),
         isSystem: false,
       };
     }
@@ -765,6 +771,7 @@ export class PrintTemplateService {
       body: version.body,
       format: template.format,
       pageSize: version.pageSize,
+      layout: layoutFromRow(version),
       isSystem: false,
     };
   }

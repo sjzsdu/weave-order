@@ -17,6 +17,7 @@ export type PrintErrorCode =
   | "PRINT_TEMPLATE_UNSAFE"
   | "PRINT_TEMPLATE_FORBIDDEN"
   | "PRINT_LAYOUT_OVERFLOW"
+  | "PRINT_PAGE_SIZE_MISMATCH"
   | "PRINT_QR_PAYLOAD_INVALID";
 
 export class PrintError extends Error {

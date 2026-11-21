@@ -3,6 +3,7 @@ import type { PrintTemplateLayout } from "@weave-order/schema";
 import { analyzeTemplate, PrintError, renderTemplate } from "../src/print/template-engine";
 import {
   assertLayoutAllowed,
+  assertSampleCardDataFits,
   compileLayout,
   DEFAULT_SAMPLE_CARD_LABEL_LAYOUT,
   DEFAULT_SAMPLE_CARD_LAYOUT,
@@ -159,6 +160,113 @@ describe("样卡版式编译", () => {
     expect(tspl.body).toContain("SIZE 80 mm,50 mm");
     expect(tspl.body).toContain("PRINT 1,1");
     expect(tspl.body).toContain("{{card.qr}}");
+  });
+
+  it("默认 80×50 版式的每一行与二维码都落在 640×400 画布内", () => {
+    const zpl = compileLayout(DEFAULT_SAMPLE_CARD_LABEL_LAYOUT, "SAMPLE_LABEL", "ZPL").body;
+    for (const line of zpl.split("\n")) {
+      const fo = line.match(/^\^FO(\d+),(\d+)/);
+      if (!fo) continue;
+      expect(Number(fo[1])).toBeGreaterThanOrEqual(20);
+      expect(Number(fo[1])).toBeLessThan(640);
+      expect(Number(fo[2])).toBeLessThan(400);
+    }
+
+    const tspl = compileLayout(DEFAULT_SAMPLE_CARD_LABEL_LAYOUT, "SAMPLE_LABEL", "TSPL").body;
+    for (const line of tspl.split("\n")) {
+      const at = line.match(/^(?:TEXT|QRCODE) (\d+),(\d+)/);
+      if (!at) continue;
+      expect(Number(at[1])).toBeGreaterThanOrEqual(20);
+      expect(Number(at[1])).toBeLessThan(640);
+      expect(Number(at[2])).toBeLessThan(400);
+    }
+  });
+
+  it("静态行标签写太长时，发布阶段就拒绝而不是打半张卡", () => {
+    const longLabel = "成分".repeat(16);
+    expect(() =>
+      compileLayout(
+        layoutWith([
+          { field: "sample.name", label: longLabel, visible: true, fontSize: 24, bold: false },
+        ]),
+        "SAMPLE_LABEL",
+        "ZPL",
+      ),
+    ).toThrowError(/行标签约/);
+    expect(() =>
+      compileLayout(
+        layoutWith([
+          { field: "sample.name", label: longLabel, visible: true, fontSize: 24, bold: false },
+        ]),
+        "SAMPLE_LABEL",
+        "TSPL",
+      ),
+    ).toThrowError(/行标签约/);
+  });
+
+  it("二维码尺寸超出画布时拒绝；上下位置改为居中", () => {
+    expect(() =>
+      compileLayout(
+        { ...layoutWith([]), qr: { visible: true, position: "RIGHT", sizeMm: 200 } },
+        "SAMPLE_LABEL",
+        "ZPL",
+      ),
+    ).toThrowError(/二维码尺寸超出/);
+
+    const bottom = compileLayout(
+      {
+        ...layoutWith([
+          { field: "sample.code", label: null, visible: true, fontSize: 12, bold: false },
+        ]),
+        qr: { visible: true, position: "BOTTOM", sizeMm: 26 },
+      },
+      "SAMPLE_LABEL",
+      "ZPL",
+    ).body;
+    const qrLine = bottom.split("\n").find((line) => line.includes("^BQN"))!;
+    const x = Number(qrLine.match(/^\^FO(\d+)/)![1]);
+    // 26mm → mag 3 → 65×3=195 点，居中 x=(640-195)/2≈222。
+    expect(x).toBeGreaterThan(200);
+    expect(x + 195).toBeLessThan(640);
+  });
+
+  it("侧边二维码给正文让位；左侧二维码时正文整体右移", () => {
+    const left = compileLayout(
+      {
+        ...layoutWith([
+          { field: "sample.code", label: null, visible: true, fontSize: 12, bold: false },
+        ]),
+        qr: { visible: true, position: "LEFT", sizeMm: 26 },
+      },
+      "SAMPLE_LABEL",
+      "ZPL",
+    ).body;
+    const textLine = left.split("\n").find((line) => line.includes("{{sample.code}}"))!;
+    const x = Number(textLine.match(/^\^FO(\d+)/)![1]);
+    // 左二维码 26mm → 195 点 + 8 点间距：正文从 223 点起。
+    expect(x).toBe(223);
+  });
+
+  it("按真实数据校验：常见值放得下，长样品名不会压到右侧二维码", () => {
+    const scalars = {
+      "tenant.brand": "织序 WEAVE",
+      "sample.code": "FM-220",
+      "sample.name": "32S 精梳棉汗布",
+      "sample.composition": "100% 棉",
+      "sample.weight": "220g/m2",
+      "salesperson.name": "孙巨中",
+      "salesperson.phone": "13800000000",
+    };
+    expect(() =>
+      assertSampleCardDataFits(DEFAULT_SAMPLE_CARD_LABEL_LAYOUT, { scalars, loops: {} }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertSampleCardDataFits(DEFAULT_SAMPLE_CARD_LABEL_LAYOUT, {
+        scalars: { ...scalars, "sample.name": "超长样品名称".repeat(4) },
+        loops: {},
+      }),
+    ).toThrowError(/标签放不下/);
   });
 
   it("编译产物可以用真实数据渲染：HTML 转义、标签不转义", () => {
