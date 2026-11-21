@@ -41,7 +41,14 @@ python3 apps/api/scripts/verify-sample-card-qr.py apps/api/.artifacts/sample-car
 - 因此样品编号同时受 **32 字符**（版面宽度）与 **32 字节**（token 容量）约束；中文按 3 字节计。
   超限时返回 `PRINT_FIELD_OVERFLOW`（400），不再因 token 层抛裸 `Error` 变成 500。
 
-## 5. 仍未完成的实物项（验收 2、5 的人工部分）
+## 5. 实物验收材料（降低人工成本）
+
+- `a4-preview-vs-artifact.png`：A4 对照（右侧就是会打出来的 PDF 版面）。
+- `print-kit-40-labels-a4.pdf`：**40 张样卡已排好版**（A4 纸、每页 8 张、实际 80×50mm、带真实二维码与中文），
+  任意打印机 1:1 打印后裁切即可做 40 张扫码；内容与 `labels.json` 的 40 个二维码一一对应。
+- `scan-record-template.md`：设备/纸张型号与 40 条扫码结果的记录模板，填完贴回 issue 即可。
+
+## 6. 仍未完成的实物项（验收 2、5 的人工部分）
 
 - A4 打印机与 80×50 热敏机各实际出纸一次，拍纸面照片，记录设备型号与纸张型号。
 - 连续打印 40 张，手机逐张扫码，记录 40/40 与失败原因。
