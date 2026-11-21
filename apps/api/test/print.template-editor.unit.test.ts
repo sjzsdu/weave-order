@@ -83,6 +83,47 @@ describe("样卡版式编译", () => {
     expect(labelLine).not.toContain("~");
   });
 
+  it("TSPL 行首标签里的引号/逗号被清掉，不能提前闭合 TEXT 字符串", () => {
+    const compiled = compileLayout(
+      layoutWith([
+        {
+          field: "sample.code",
+          label: 'a","0,1,1,"X',
+          visible: true,
+          fontSize: 12,
+          bold: false,
+        },
+      ]),
+      "SAMPLE_LABEL",
+      "TSPL",
+    );
+    const line = compiled.body.split("\n").find((item) => item.includes("{{sample.code}}"))!;
+    expect(line).not.toContain('a","0,1,1,"X');
+    // 合法形态：TEXT x,y,"字体",0,1,1,"标签 {{field}}" —— 整行只有 4 个引号。
+    expect(line.match(/"/g) ?? []).toHaveLength(4);
+  });
+
+  it("标签数据值也不能带指令字符：ZPL 去 ^/~，TSPL 去引号", () => {
+    const zpl = renderTemplate(
+      "^FD{{sample.name}}^FS",
+      "SAMPLE_LABEL",
+      { scalars: { "sample.name": "真丝^XA~HS面料" }, loops: {} },
+      { format: "ZPL" },
+    );
+    expect(zpl).toBe("^FD真丝 XA HS面料^FS");
+
+    const tspl = renderTemplate(
+      'TEXT 10,10,"TSS16.BF2",0,1,1,"{{sample.name}}"',
+      "SAMPLE_LABEL",
+      {
+        scalars: { "sample.name": 'He said "hi"' },
+        loops: {},
+      },
+      { format: "TSPL" },
+    );
+    expect(tspl).toBe('TEXT 10,10,"TSS16.BF2",0,1,1,"He said \'hi\'"');
+  });
+
   it("80×50 标签放不下时显式报错，而不是打一张被截断的卡", () => {
     const blocks = Array.from({ length: 12 }, () => ({
       field: "sample.name",

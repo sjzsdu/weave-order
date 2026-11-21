@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PrintTemplate } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner } from "@weave-order/ui";
+import { useCan } from "@/can";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
 
@@ -60,7 +61,13 @@ function TemplateResourcesContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [name, setName] = useState("我的样卡版式");
+  // HTML 版式会进渲染宿主，能力表只给了 OWNER；没有能力时不给这个选项。
+  const canHtmlTemplate = useCan("print.template.publish.html");
   const [format, setFormat] = useState<PrintTemplate["format"]>("HTML");
+  // 能力是异步取回的：确认没有权限后把默认值让给标签，而不是留一个不存在的选项。
+  useEffect(() => {
+    if (!canHtmlTemplate) setFormat((current) => (current === "HTML" ? "ZPL" : current));
+  }, [canHtmlTemplate]);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const templates = useQuery({
@@ -136,7 +143,7 @@ function TemplateResourcesContent() {
               value={format}
               onChange={(event) => setFormat(event.target.value as PrintTemplate["format"])}
             >
-              <option value="HTML">A4 样卡（HTML / PDF）</option>
+              {canHtmlTemplate ? <option value="HTML">A4 样卡（HTML / PDF）</option> : null}
               <option value="ZPL">80×50mm 标签（ZPL）</option>
               <option value="TSPL">80×50mm 标签（TSPL）</option>
             </select>

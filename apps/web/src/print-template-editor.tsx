@@ -12,6 +12,7 @@ import {
   type PrintTemplateLayout,
 } from "@weave-order/schema";
 import { Badge, Button, Spinner } from "@weave-order/ui";
+import { useCan } from "@/can";
 import { useApi } from "@/providers";
 
 /**
@@ -66,6 +67,7 @@ function move<T>(list: T[], index: number, delta: number): T[] {
 export function PrintTemplateEditor({ templateId }: { templateId: string }) {
   const api = useApi();
   const queryClient = useQueryClient();
+  const canHtmlTemplate = useCan("print.template.publish.html");
   const [layout, setLayout] = useState<PrintTemplateLayout | null>(null);
   const [dirty, setDirty] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -176,7 +178,9 @@ export function PrintTemplateEditor({ templateId }: { templateId: string }) {
   const data = detail.data;
   const template = data.template;
   const pdfHref = preview?.pdfBase64 ? `data:application/pdf;base64,${preview.pdfBase64}` : null;
-  const busy = save.isPending || publish.isPending || rollback.isPending;
+  // HTML 正文会进 headless Chromium 渲染，后端只允许 OWNER 保存/发布；界面同步禁用。
+  const htmlLocked = template.format === "HTML" && !canHtmlTemplate;
+  const busy = save.isPending || publish.isPending || rollback.isPending || htmlLocked;
 
   const updateBlock = (index: number, patch: Partial<PrintLayoutBlock>) => {
     if (!layout) return;
@@ -219,6 +223,12 @@ export function PrintTemplateEditor({ templateId }: { templateId: string }) {
           改版式只影响新版本；已经用旧版本打出去的样卡不会被改写。试打真实但不算正式记录。
         </p>
       </header>
+
+      {htmlLocked ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          A4（HTML）版式会进入渲染宿主，只有老板能保存和发布；标签版式不受影响。
+        </div>
+      ) : null}
 
       {feedback ? (
         <div
@@ -580,9 +590,11 @@ export function PrintTemplateEditor({ templateId }: { templateId: string }) {
                 </p>
               ) : preview.format === "HTML" ? (
                 <div className="mt-2 grid gap-2">
+                  {/* 预览的是服务端渲染的样卡 HTML：禁脚本/表单/同源，只当静态画布看。 */}
                   <iframe
                     title="样卡预览"
                     className="h-96 w-full rounded-md border border-line bg-white"
+                    sandbox=""
                     srcDoc={preview.html ?? ""}
                   />
                   {pdfHref ? (

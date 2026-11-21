@@ -22,6 +22,9 @@ const DATABASE_URL =
 const OWNER: KernelContext = {
   actor: { type: "HUMAN", id: "template-editor-owner", role: "OWNER" },
 };
+const SALES: KernelContext = {
+  actor: { type: "HUMAN", id: "template-editor-sales", role: "SALES" },
+};
 const QUOTE_ID = "44444444-4444-4444-8444-444444444444";
 
 let db: Db | null = null;
@@ -242,6 +245,81 @@ describe("样卡模板编辑闭环", () => {
     ).rejects.toThrowError(/order\.no/);
   });
 
+  it("HTML 版式只有 OWNER 能碰草稿：SALES 复制 A4 样卡被拒，复制标签可以", async (ctx) => {
+    if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证 HTML 能力边界");
+    const { templates } = services();
+
+    await expect(
+      templates.copyFromSystem(
+        { sourceTemplateId: "system/sample-card/classic-a4", name: `销售A4-${suffix()}` },
+        SALES,
+      ),
+    ).rejects.toThrowError(/HTML 打印模板只能由 OWNER 发布/);
+
+    const labelCopy = await templates.copyFromSystem(
+      { sourceTemplateId: "system/sample-card/zpl-80x50", name: `销售标签-${suffix()}` },
+      SALES,
+    );
+    expect(labelCopy.draft?.layout).not.toBeNull();
+    await expect(
+      templates.saveDraft(labelCopy.template.id, { layout: layoutHiding("sample.name") }, SALES),
+    ).resolves.toBeTruthy();
+  });
+
+  it("租户的文本模板不能被「复制成可视化模板」：否则正文会丢", async (ctx) => {
+    if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证复制来源校验");
+    const { templates } = services();
+    const published = await templates.publish(
+      {
+        kind: "SAMPLE_LABEL",
+        scope: "COMPANY",
+        name: `文本样卡-${suffix()}`,
+        format: "ZPL",
+        body: "^XA^FO20,20^A0N,30,30^FD{{sample.code}}^FS^XZ",
+      },
+      OWNER,
+    );
+    await expect(
+      templates.copyFromSystem(
+        { sourceTemplateId: published.id, name: `复制文本-${suffix()}` },
+        OWNER,
+      ),
+    ).rejects.toThrowError(/文本模板/);
+  });
+
+  it("版本打印次数只算已完成的正式打印：FAILED 与试打都不算", async (ctx) => {
+    if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证打印次数口径");
+    const { templates } = services();
+    const copied = await templates.copyFromSystem(
+      { sourceTemplateId: "system/sample-card/classic-a4", name: `计数-${suffix()}` },
+      OWNER,
+    );
+    const published = await templates.publishVersion(
+      { templateId: copied.template.id, layout: layoutHiding("sample.name") },
+      OWNER,
+    );
+    const versionId = published.activeVersion!.id;
+    const base = {
+      tenantId,
+      kind: "SAMPLE_LABEL" as const,
+      documentId: QUOTE_ID,
+      templateId: copied.template.id,
+      templateVersionId: versionId,
+      templateVersion: 1,
+      format: "HTML" as const,
+      copies: 1,
+      payload: "pdf",
+      requestedBy: OWNER.actor.id,
+    };
+    await db!.insert(printJobs).values([
+      { ...base, status: "DONE", isTest: false, idempotencyKey: `done-${suffix()}` },
+      { ...base, status: "FAILED", isTest: false, idempotencyKey: `failed-${suffix()}` },
+      { ...base, status: "DONE", isTest: true, idempotencyKey: `test-${suffix()}` },
+    ]);
+    const detail = await templates.detail(copied.template.id);
+    expect(detail.versions[0]?.printCount).toBe(1);
+  });
+
   it("可视化编辑只对样卡开放：其它单据仍走文本模板", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证范围");
     const { templates } = services();
@@ -278,6 +356,11 @@ describe("样卡模板编辑闭环", () => {
     expect(await kernel.print.jobs.listForQuote(quoteId)).toHaveLength(0);
     const detail = await kernel.print.templates.detail(jobTemplate.template.id);
     expect(detail.versions[0]?.printCount).toBe(0);
+
+    // 试打不构成「打印过」：没有正式任务时补打应被拒绝。
+    await expect(
+      kernel.print.jobs.reprintSampleCard(quoteId, { reason: "DAMAGED", lineIndex: 0 }, OWNER),
+    ).rejects.toThrowError(/还没有打印过/);
 
     const rows = await db!
       .select({ id: printJobs.id, isTest: printJobs.isTest })

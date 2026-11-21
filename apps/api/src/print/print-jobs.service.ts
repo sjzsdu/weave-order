@@ -38,7 +38,7 @@ import type {
   ShipmentView,
   Unit,
 } from "@weave-order/schema";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { appendAudit } from "../kernel/audit";
 import type { KernelContext } from "../kernel/audit";
@@ -49,6 +49,7 @@ import { renderBoxLabel, renderTestLabel } from "./labels";
 import type { SampleCardService } from "./sample-card.service";
 import { assertSampleCardPrintable, sampleCardValues } from "./sample-card";
 import { renderA4Pdf } from "./pdf";
+import { OFFICIAL_PRINT_JOB } from "./job-scope";
 import { PrintViewService } from "./print-view.service";
 import { buildBoxQr, parseBoxQr } from "./qr";
 import { PrintError, renderTemplate, valuesFromDocumentView } from "./template-engine";
@@ -609,6 +610,8 @@ export class PrintJobService {
           eq(printJobs.kind, "SAMPLE_LABEL"),
           eq(printJobs.documentId, quoteId),
           eq(printJobs.labelSeq, labelSeq),
+          // 试打不是「打印过」：只有正式任务才能作为补打的前置。
+          OFFICIAL_PRINT_JOB,
         ),
       );
     if (previous.length === 0) {
@@ -643,7 +646,7 @@ export class PrintJobService {
           eq(printJobs.tenantId, this.tenantId),
           eq(printJobs.kind, "SAMPLE_LABEL"),
           eq(printJobs.documentId, quoteId),
-          eq(printJobs.isTest, false),
+          OFFICIAL_PRINT_JOB,
         ),
       )
       .orderBy(desc(printJobs.createdAt));
@@ -673,19 +676,8 @@ export class PrintJobService {
       throw new PrintError("PRINT_MISSING_FIELD", "试打没有产出可打印的内容");
     }
 
-    // 每次试打都算新的一次：同一份草稿要能反复打，但不会与正式打印撞幂等键。
-    const previous = await this.db
-      .select({ id: printJobs.id })
-      .from(printJobs)
-      .where(
-        and(
-          eq(printJobs.tenantId, this.tenantId),
-          eq(printJobs.isTest, true),
-          eq(printJobs.documentId, parsed.quoteId),
-          eq(printJobs.templateId, templateId),
-        ),
-      );
-    const key = `test:${templateId}:${parsed.quoteId}:${parsed.lineIndex}:${format}:${previous.length + 1}`;
+    // 每次试打都是独立一次：用随机后缀而不是「第几次」，并发两次也不会撞唯一索引。
+    const key = `test:${templateId}:${parsed.quoteId}:${parsed.lineIndex}:${format}:${randomUUID()}`;
 
     const job = await this.db.transaction(async (tx) => {
       const rows = await tx
@@ -887,7 +879,7 @@ export class PrintJobService {
       .where(
         and(
           eq(printJobs.tenantId, this.tenantId),
-          eq(printJobs.isTest, false),
+          OFFICIAL_PRINT_JOB,
           ...(input.status ? [eq(printJobs.status, input.status as never)] : []),
         ),
       )
@@ -896,7 +888,7 @@ export class PrintJobService {
     const counts = await this.db
       .select({ status: printJobs.status, count: sql<number>`count(*)::int` })
       .from(printJobs)
-      .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.isTest, false)))
+      .where(and(eq(printJobs.tenantId, this.tenantId), OFFICIAL_PRINT_JOB))
       .groupBy(printJobs.status);
     const countOf = (status: string) => counts.find((row) => row.status === status)?.count ?? 0;
     return {
@@ -914,7 +906,7 @@ export class PrintJobService {
       .select({ job: printJobs, boxNo: orderBoxes.boxNo })
       .from(printJobs)
       .leftJoin(orderBoxes, eq(orderBoxes.id, printJobs.boxId))
-      .where(and(eq(printJobs.tenantId, this.tenantId), eq(printJobs.isTest, false)))
+      .where(and(eq(printJobs.tenantId, this.tenantId), OFFICIAL_PRINT_JOB))
       .orderBy(desc(printJobs.createdAt))
       .limit(Math.min(Math.max(limit, 1), 200));
     return rows.map(({ job, boxNo }) => ({

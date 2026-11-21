@@ -4,6 +4,7 @@ import {
   CopyPrintTemplateInput,
   PublishPrintTemplateInput,
   PublishPrintTemplateVersionInput,
+  PrintTemplateLayout,
   SavePrintTemplateDraftInput,
   hasCapability,
 } from "@weave-order/schema";
@@ -13,7 +14,6 @@ import type {
   PrintTemplateDetail,
   PrintTemplateDraft,
   PrintTemplateFormat,
-  PrintTemplateLayout,
   PrintTemplateVersion,
   PrintTemplateVersionSummary,
 } from "@weave-order/schema";
@@ -23,6 +23,7 @@ import type { KernelContext } from "../kernel/audit";
 import { KernelError } from "../kernel/errors";
 import { toIso } from "../kernel/mappers";
 import { assertHtmlTemplateSafe } from "./html-safety";
+import { OFFICIAL_PRINT_JOB } from "./job-scope";
 import { analyzeTemplate, PrintError } from "./template-engine";
 import { builtinTemplate, SYSTEM_TEMPLATES } from "./templates";
 import { compileLayout, defaultLayoutFor, isLayoutEditable } from "./template-layout";
@@ -38,12 +39,13 @@ export interface ResolvedTemplate {
   isSystem: boolean;
 }
 
+/**
+ * 版式读取：库里只存合法版式，但读路径同样做一次结构校验。
+ * 历史脏数据（手改库、旧版本写的行）宁可当「文本模板」处理，也不要把非法字段带进编辑器。
+ */
 function layoutFromRow(row: { layout?: unknown }): PrintTemplateLayout | null {
-  const value = row.layout;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const layout = value as PrintTemplateLayout;
-  if (layout.version !== 1 || !Array.isArray(layout.blocks) || !layout.qr) return null;
-  return layout;
+  const parsed = PrintTemplateLayout.safeParse(row.layout);
+  return parsed.success ? parsed.data : null;
 }
 
 function versionFromRow(row: typeof printTemplateVersions.$inferSelect): PrintTemplateVersion {
@@ -471,6 +473,8 @@ export class PrintTemplateService {
   async copyFromSystem(input: unknown, ctx: KernelContext): Promise<PrintTemplateDetail> {
     const parsed = CopyPrintTemplateInput.parse(input);
     const source = await this.resolveCopySource(parsed);
+    // 草稿正文同样会进 headless Chromium 渲染，所以 HTML 的 OWNER 限制在复制时就要生效。
+    assertTemplatePublishAllowed(source.format, ctx);
     if (!isLayoutEditable(source.kind)) {
       throw new KernelError(
         "KERNEL_REJECTED",
@@ -491,7 +495,16 @@ export class PrintTemplateService {
       .limit(1);
     if (taken[0]) throw new KernelError("KERNEL_REJECTED", `模板名称已存在：${parsed.name}`);
 
-    const layout = source.layout ?? defaultLayoutFor(source.format);
+    // 系统模板没有库里的版式（内容在代码里），用同版面的默认版式起步；
+    // 租户的文本模板没有版式，直接拒绝而不是悄悄换成默认版式——那会丢正文。
+    const layout = source.layout ?? (source.fromSystem ? defaultLayoutFor(source.format) : null);
+    if (!layout) {
+      throw new KernelError(
+        "KERNEL_REJECTED",
+        `模板「${source.name}」是文本模板，没有可视化版式：请先在编辑器外重新发布，或复制系统样卡`,
+        { reason: "PRINT_TEMPLATE_LAYOUT_UNSUPPORTED" },
+      );
+    }
     const compiled = this.compileLayoutFor(layout, source.kind, source.format);
     const analysis = this.validate(compiled.body, source.kind, source.format);
 
@@ -546,6 +559,7 @@ export class PrintTemplateService {
           format: system.format,
           name: system.name,
           layout: null as PrintTemplateLayout | null,
+          fromSystem: true,
         };
       }
       const row = await this.loadTemplateRow(parsed.sourceTemplateId);
@@ -556,6 +570,7 @@ export class PrintTemplateService {
         format: row.format,
         name: row.name,
         layout: active ? layoutFromRow(active) : null,
+        fromSystem: false,
       };
     }
     if (!parsed.kind || !parsed.format) {
@@ -567,7 +582,13 @@ export class PrintTemplateService {
     if (!system) {
       throw new KernelError("KERNEL_REJECTED", `没有 ${parsed.kind}/${parsed.format} 的系统模板`);
     }
-    return { kind: parsed.kind, format: parsed.format, name: system.name, layout: null };
+    return {
+      kind: parsed.kind,
+      format: parsed.format,
+      name: system.name,
+      layout: null,
+      fromSystem: true,
+    };
   }
 
   /** 保存草稿：只写 version = 0 的行，历史版本一行不动。 */
@@ -578,6 +599,8 @@ export class PrintTemplateService {
   ): Promise<PrintTemplateDetail> {
     const parsed = SavePrintTemplateDraftInput.parse(input);
     const template = await this.loadTemplateRow(templateId);
+    // 草稿会被渲染成 PDF/HTML，能力边界不能等到发布才拦。
+    assertTemplatePublishAllowed(template.format, ctx);
     const existing = await this.loadDraft(template.id);
     const versions = await this.publishedVersions(template.id);
     const active = versions.find((version) => version.id === template.activeVersionId) ?? null;
@@ -651,7 +674,8 @@ export class PrintTemplateService {
             and(
               eq(printJobs.tenantId, this.tenantId),
               eq(printJobs.templateId, template.id),
-              eq(printJobs.isTest, false),
+              OFFICIAL_PRINT_JOB,
+              eq(printJobs.status, "DONE"),
             ),
           )
           .groupBy(printJobs.templateVersionId)
