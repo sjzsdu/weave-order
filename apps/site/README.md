@@ -383,6 +383,67 @@ BAIDU_PUSH_TOKEN=xxx pnpm --filter @weave-order/site baidu:push --site https://�
 完整的上线清单、三家搜索平台步骤、统计配置与上线记录表见
 [`docs/site-launch-runbook.md`](../../docs/site-launch-runbook.md)。
 
+### 上线记录
+
+当前线上地址是测试/生产同构的 `https://weave.wnbgj.com`（2026-11-21 核查）。
+对外正式域名未定，域名仍由部署环境的 `WEAVE_SITE_URL` 注入。
+
+| 项目         | 值                                                                 |
+| ------------ | ------------------------------------------------------------------ |
+| 当前域名     | `https://weave.wnbgj.com`                                          |
+| 托管         | 云服务器容器；deploy 仓库 `weave-site` 服务，静态托管走 `serve-static.mjs` |
+| 证书         | Let's Encrypt，CN=`weave.wnbgj.com`，到期 `2027-02-11`（提前 30 天续） |
+| HTTP 跳转    | `http://weave.wnbgj.com/` → `https://weave.wnbgj.com/`，301 单跳   |
+| www          | `www.weave.wnbgj.com` 无 DNS；子域部署，不做 www 归一化            |
+| 上线核查     | `launch-check`：10 项通过 / 0 失败 / 1 提醒（www 未配置）          |
+| ICP / 公安备案 | 未配置（页脚隐藏）；国内节点上线前填 `WEAVE_ICP_LICENSE` / `WEAVE_PSB_LICENSE` |
+| 统计         | `provider=none`（Plausible / PostHog 未开通）                      |
+| GSC / Bing / 百度 | 未提交（待账号授权）                                          |
+
+2026-11-21 首屏采样（headless Chromium 1255，本地网络，单次采样，不是 Lighthouse 分数）：
+
+| 页面              | 390px TTFB / LCP | 1440px TTFB / LCP |
+| ----------------- | ---------------- | ----------------- |
+| `/`               | 72 / 272 ms      | 72 / 272 ms       |
+| `/pricing.html`   | 11 / 64 ms       | 17 / 76 ms        |
+| `/signup.html`    | 12 / 72 ms       | 14 / 80 ms        |
+| `/docs/`          | 11 / 56 ms       | 80 / 224 ms\*     |
+
+\* 桌面 `/docs/` 首次采样出现 1606 ms 抖动，重测 3 次 TTFB 76–88 ms、LCP 196–224 ms，取重测值。
+四个页面在 390px 与 1440px 下均无横向溢出、无 console 报错、无失败请求。
+
+### 备案号注入（国内节点运维）
+
+备案号不是构建期常量，填在生产主机的部署环境里，重启容器生效：
+
+1. 在生产主机 deploy 仓库根目录的 `.env`（与 `WEAVE_SITE_URL` 同一个文件）加：
+
+   ```bash
+   WEAVE_ICP_LICENSE=京ICP备2026000001号-1
+   WEAVE_PSB_LICENSE=京公网安备 11010502000001号
+   ```
+
+2. 确认 compose 的 `weave-site` 服务 `environment` 把它透传进容器
+   （deploy 仓库维护；新变量不会自动出现，缺这步容器里读不到）。
+3. `docker compose up -d weave-site`，看日志：
+
+   ```
+   [site-render] 备案号   → ICP=京ICP备… 公安=京公网安…
+   ```
+
+4. 线上验证：
+
+   ```bash
+   docker compose exec weave-site sh -c 'env | grep WEAVE_ICP'
+   curl -s https://正式域名/ | grep -o '<a data-weave-icp[^>]*>[^<]*'
+   ```
+
+   应看到不带 `hidden` 的链接和备案号文本；没配时是 `<a hidden data-weave-icp …>`，
+   页脚不展示，其它页面不受影响。
+
+搜索平台验证码同理，变量是 `WEAVE_VERIFY_GOOGLE` / `WEAVE_VERIFY_BING` /
+`WEAVE_VERIFY_BAIDU`，优先用 DNS TXT 验证，不需要往页面塞文件。
+
 ## 字体
 
 默认不加载外部字体，使用系统字体栈（标题思源宋体 / 宋体系，正文 Inter / 思源黑体 / 苹方）。国内首屏不依赖境外字体 CDN。若要严格统一字形，把 Inter 与 Noto Serif SC 子集化成 woff2 放进 `public/assets/fonts/`，在 `src/styles/legacy.css` 里 `@font-face` 引入；单页实际用字约 400 字，子集通常小于 120 KB。
