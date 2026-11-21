@@ -23,8 +23,11 @@ export function parseWeightGsm(raw: string | null | undefined): number | null {
   const match = PREFIX_WEIGHT.exec(text) ?? SUFFIX_WEIGHT.exec(text);
   if (!match) return null;
   const value = Number(match[1]);
-  if (!Number.isFinite(value) || value <= 0 || value > MAX_REASONABLE_GSM) return null;
-  return Math.round(value);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  // 取整后再判：0.4gsm 四舍五入成 0 会违反 `.positive()` 契约，必须留空。
+  const rounded = Math.round(value);
+  if (rounded < 1 || rounded > MAX_REASONABLE_GSM) return null;
+  return rounded;
 }
 
 /** 界面文案：解析不出来时明确说「未填」，不把 null 渲染成 0。 */

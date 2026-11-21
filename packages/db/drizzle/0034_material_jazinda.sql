@@ -17,4 +17,5 @@ CROSS JOIN (VALUES
   ('sample.color', 'COLOR-BLUE',  '蓝色', '蓝色', 70),
   ('sample.color', 'COLOR-RED',   '红色', '红色', 80)
 ) AS v("field_key", "code", "label", "normalized", "sort_order")
-ON CONFLICT ("tenant_id", "field_key", "normalized") DO NOTHING;
+-- 不带冲突目标：label 被改过的租户重跑时会撞 code 唯一约束，无目标 DO NOTHING 更稳。
+ON CONFLICT DO NOTHING;

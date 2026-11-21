@@ -37,8 +37,10 @@ describe("parseWeightGsm", () => {
     expect(parseWeightGsm("99999999gsm")).toBeNull();
   });
 
-  it("小数克重四舍五入到整数", () => {
+  it("小数克重四舍五入到整数；取整后不足 1 仍留空", () => {
     expect(parseWeightGsm("220.5g/m2")).toBe(221);
+    // 0.4 → 0 会违反 weightGsm 的 .positive() 契约，必须 null。
+    expect(parseWeightGsm("0.4gsm")).toBeNull();
   });
 
   it("界面文案：解析不到时明确写「未填」", () => {

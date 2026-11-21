@@ -32,7 +32,10 @@ export interface WeightBackfillReport {
   tenantId: string | null;
   total: number;
   parsed: number;
+  /** 本次会写入 / 已写入的行数（只处理 weight_gsm 为空的列）。 */
   updated: number;
+  /** 已有人工值而被保留、未参与写入的行数。 */
+  preserved: number;
   failed: number;
   failures: WeightBackfillFailure[];
 }
@@ -65,6 +68,7 @@ export async function backfillWeightGsm(
     total: rows.rowCount ?? rows.rows.length,
     parsed: 0,
     updated: 0,
+    preserved: 0,
     failed: 0,
     failures: [],
   };
@@ -77,9 +81,16 @@ export async function backfillWeightGsm(
       continue;
     }
     report.parsed += 1;
-    if (row.weight_gsm === gsm) continue;
+    // 已有值（可能是人工修正）一律保留：回填只填补空白，绝不覆盖。
+    if (row.weight_gsm !== null) {
+      report.preserved += 1;
+      continue;
+    }
     if (options.apply) {
-      await pool.query(`UPDATE samples SET weight_gsm = $2 WHERE id = $1`, [row.id, gsm]);
+      await pool.query(`UPDATE samples SET weight_gsm = $2 WHERE id = $1 AND weight_gsm IS NULL`, [
+        row.id,
+        gsm,
+      ]);
     }
     report.updated += 1;
   }
@@ -101,7 +112,8 @@ async function main(): Promise<void> {
     writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log(
       `${apply ? "已写入" : "只读巡检"}：共 ${report.total} 条，解析成功 ${report.parsed} 条，` +
-        `${apply ? "更新" : "待更新"} ${report.updated} 条，失败 ${report.failed} 条。`,
+        `${apply ? "更新" : "待更新"} ${report.updated} 条，` +
+        `保留已有值 ${report.preserved} 条，失败 ${report.failed} 条。`,
     );
     console.log(`失败清单：${outputPath}`);
     if (report.failed > 0) {
