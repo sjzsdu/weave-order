@@ -98,6 +98,31 @@ async function seedJourney(kernel: Kernel) {
 }
 
 describe("P0a-5 报价闭环", () => {
+  it("报价确认人展示姓名，不把 subject UUID 抛给前端", async (ctx) => {
+    if (!available) ctx.skip();
+    const { tenant, kernel } = await isolatedTenant("confirmer-name");
+    await kernel.tenancy.createMembership(
+      {
+        tenantId: tenant.id,
+        subject: OWNER.actor.id,
+        displayName: "王婷",
+        role: "OWNER",
+        dataScope: "ALL",
+      },
+      SYSTEM,
+    );
+    const { firstItemId } = await seedJourney(kernel);
+    const draft = await kernel.quotes.createForItem(firstItemId, {}, OWNER);
+    await kernel.quotes.confirmDraft(draft.draft.id, OWNER, draft.version, "confirmer-name-1");
+
+    const detail = await kernel.quotes.get(draft.draft.id);
+    expect(detail.confirmedBy).toBe(OWNER.actor.id);
+    expect(detail.confirmedByName).toBe("王婷");
+
+    const list = await kernel.quotes.listForItem(firstItemId);
+    expect(list.quotes[0]?.confirmedByName).toBe("王婷");
+  });
+
   it("报价挂 itemId；确认幂等；完成按 itemId 而不误判同客户同样品的另一条事项", async (ctx) => {
     if (!available) ctx.skip();
     const { kernel } = await isolatedTenant("journey");

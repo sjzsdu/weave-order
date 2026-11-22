@@ -222,7 +222,7 @@ export function QuoteWorkbench({ itemId, quoteId }: { itemId: string; quoteId: s
             v{quote.version} ｜ 有效期 {quote.draft.validityDays} 天（至{" "}
             {dateText(quote.draft.expiresAt)}）
             {quote.confirmedBy
-              ? ` ｜ 确认人 ${quote.confirmedBy} · ${dateText(quote.confirmedAt)}`
+              ? ` ｜ 确认人 ${quote.confirmedByName ?? "同事"} · ${dateText(quote.confirmedAt)}`
               : ""}
           </p>
         </div>

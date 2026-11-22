@@ -509,10 +509,15 @@ function TodayPageContent() {
         <IntentComposer
           initialText={initialIntent}
           autoFocus={autoFocusComposer}
+          submitLabel="下一步：补充并确认"
+          submittingLabel="正在打开…"
+          submittingHint="正在打开统一输入页，原话会带过去，不会丢。"
+          hint="点「下一步」会打开统一输入页：可以补充图片/附件、确认理解，再发给小织。"
           busy={intentChannel.submitting}
           error={intentChannel.submitError}
           onSubmit={(text) => {
             // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
+            // 按钮与提示已明确写成两步，避免用户误以为这一下已经发给小织。
             const params = new URLSearchParams({ text });
             for (const [key, value] of Object.entries(intentContext ?? {})) {
               params.set(key, String(value));

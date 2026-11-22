@@ -502,7 +502,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
         )}
       >
         <p className="mb-3 text-xs text-ink-400">
-          {tenant.name} · {ia === "new" ? "事项 / 资源 / 设置" : "桌面端"}
+          {tenant.name} · {ia === "new" ? "工作台 / 事项 / 资源 / 设置" : "桌面端"}
         </p>
         {children}
       </main>
@@ -513,7 +513,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 backdrop-blur md:hidden"
         >
           <div
-            className="mx-auto grid max-w-[480px] grid-cols-3"
+            className="mx-auto grid max-w-[480px] grid-cols-4"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             {visibleNav(WORKSPACE_NAV, capabilities).map((item) => {

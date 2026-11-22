@@ -186,6 +186,8 @@ export const QuoteDetail = z
     quoteNumber: z.string().min(1).max(64).optional(),
     /** 确认人审计：谁在什么时候把价格定稿。 */
     confirmedBy: z.string().min(1).max(128).nullable().default(null),
+    /** 确认人的可展示姓名；确认人已离开公司或未同步姓名时为 null。 */
+    confirmedByName: z.string().min(1).max(128).nullable().default(null),
     confirmedAt: Timestamp.nullable().default(null),
     /** 智能体原稿总额：改价后仍保留，依据抽屉用它展示「原价」。 */
     baselineTotal: Money.nullable().default(null),

@@ -291,7 +291,7 @@ export default function ItemDetailPage() {
             {confirmedQuote.quoteNumber} · {formatMoney(confirmedQuote.total)}
           </h2>
           <p className="mt-1 text-sm text-ink-400">
-            确认人 {confirmedQuote.confirmedBy ?? "—"}
+            确认人 {confirmedQuote.confirmedByName ?? (confirmedQuote.confirmedBy ? "同事" : "—")}
             {confirmedQuote.confirmedAt
               ? ` · ${new Date(confirmedQuote.confirmedAt).toLocaleString("zh-CN")}`
               : ""}

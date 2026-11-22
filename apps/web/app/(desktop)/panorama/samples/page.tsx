@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, FieldKey } from "@weave-order/schema";
-import { isSampleStatusAvailable } from "@weave-order/schema";
+import { isSampleStatusAvailable, sampleWeightText } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
@@ -467,11 +467,7 @@ function SampleCard({
             </Badge>
           </span>
           <span className="mt-0.5 block truncate text-xs text-ink-400">
-            {[
-              sample.color,
-              sample.composition,
-              sample.weightGsm ? `${sample.weightGsm} g/m²` : sample.weight,
-            ]
+            {[sample.color, sample.composition, sampleWeightText(sample.weightGsm, sample.weight)]
               .filter(Boolean)
               .join(" · ") || "规格未填"}
           </span>

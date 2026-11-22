@@ -42,6 +42,7 @@ export const ItemQuoteListResponse = z
         expiresAt: Timestamp,
         createdAt: Timestamp,
         confirmedBy: z.string().min(1).max(128).nullable(),
+        confirmedByName: z.string().min(1).max(128).nullable().default(null),
         confirmedAt: Timestamp.nullable(),
       }),
     ),

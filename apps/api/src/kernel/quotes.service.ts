@@ -2,6 +2,7 @@ import {
   customers,
   draftRevisions,
   items,
+  memberships,
   quoteItems,
   quotes,
   revisionRequests,
@@ -59,6 +60,7 @@ import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
 import { isOwnerInScope, ownerScopeFilter } from "./data-scope";
+import { memberDisplayName } from "./member-label";
 import { formatCents, formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
 import { currencyOf, toIso, toIsoOrNull } from "./mappers";
 import { isProductionLike } from "../platform/runtime-mode";
@@ -540,6 +542,7 @@ export class QuoteService {
   /** 只读详情：任何合法状态都读得到（批准后 SENT 也要能在单据页看到完整行项）。 */
   async get(quoteId: string, ctx?: KernelContext): Promise<QuoteDetail> {
     const { row, lines } = await this.loadQuote(quoteId, ctx);
+    const confirmedByName = await this.memberName(row.confirmedBy);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
@@ -552,6 +555,7 @@ export class QuoteService {
       itemId: row.itemId,
       quoteNumber: quoteNumberOf(row),
       confirmedBy: row.confirmedBy,
+      confirmedByName,
       confirmedAt: toIsoOrNull(row.confirmedAt),
       baselineTotal: baseline ? { amount: baseline.totalAmount, currency: row.currency } : null,
       pendingDiff: (row.pendingDiff as unknown as RevisionDiff[]) ?? [],
@@ -646,6 +650,7 @@ export class QuoteService {
       .from(quotes)
       .where(and(eq(quotes.tenantId, this.tenantId), eq(quotes.itemId, itemId)))
       .orderBy(desc(quotes.createdAt), desc(quotes.id));
+    const nameBySubject = await this.memberNames(rows.map((row) => row.confirmedBy));
     return ItemQuoteListResponse.parse({
       quotes: rows.map((row) => ({
         id: row.id,
@@ -658,6 +663,7 @@ export class QuoteService {
         expiresAt: toIso(row.expiresAt),
         createdAt: toIso(row.createdAt),
         confirmedBy: row.confirmedBy,
+        confirmedByName: row.confirmedBy ? (nameBySubject.get(row.confirmedBy) ?? null) : null,
         confirmedAt: toIsoOrNull(row.confirmedAt),
       })),
     });
@@ -1860,6 +1866,34 @@ export class QuoteService {
       );
     }
     return items;
+  }
+
+  /**
+   * 确认人姓名只用于展示：宁可返回 null 让界面兜底「同事」，
+   * 也绝不把 membership.subject（UUID）当姓名回给前端。
+   */
+  private async memberName(subject: string | null): Promise<string | null> {
+    if (!subject) return null;
+    return (await this.memberNames([subject])).get(subject) ?? null;
+  }
+
+  private async memberNames(subjects: Array<string | null>): Promise<Map<string, string>> {
+    const ids = [...new Set(subjects.filter((subject): subject is string => Boolean(subject)))];
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        subject: memberships.subject,
+        displayName: memberships.displayName,
+        email: memberships.email,
+      })
+      .from(memberships)
+      .where(and(eq(memberships.tenantId, this.tenantId), inArray(memberships.subject, ids)));
+    const names = new Map<string, string>();
+    for (const row of rows) {
+      const name = memberDisplayName(row.displayName, row.email);
+      if (name) names.set(row.subject, name);
+    }
+    return names;
   }
 
   private async loadQuote(

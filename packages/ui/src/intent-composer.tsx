@@ -23,6 +23,10 @@ export function IntentComposer({
   error,
   initialText,
   autoFocus,
+  submitLabel = "发给小织",
+  submittingLabel = "小织正在整理…",
+  submittingHint = "正在提交，小织受理后会立刻生成一张可追踪的卡片。",
+  hint,
 }: {
   onSubmit: (text: string) => Promise<boolean>;
   busy?: boolean;
@@ -31,6 +35,12 @@ export function IntentComposer({
   initialText?: string;
   /** 空状态「新建事项」跳进来：输入框为空，但光标要已就位。 */
   autoFocus?: boolean;
+  /** 按钮文案：两步流转的页面必须说清「这一步只是下一步」，不能写「已发送」。 */
+  submitLabel?: string;
+  submittingLabel?: string;
+  submittingHint?: string;
+  /** 覆盖输入框下方的提示；两步流转时用来解释下一屏会发生什么。 */
+  hint?: string;
 }) {
   const [text, setText] = useState(initialText ?? "");
   const [focused, setFocused] = useState(false);
@@ -107,15 +117,17 @@ export function IntentComposer({
           onClick={() => void submit()}
           disabled={submitting || text.trim().length === 0}
         >
-          {submitting ? "小织正在整理…" : "发给小织"}
+          {submitting ? submittingLabel : submitLabel}
         </Button>
       </div>
       <p className="mt-2 text-xs text-ink-400" aria-live="polite">
         {submitting
-          ? "正在提交，小织受理后会立刻生成一张可追踪的卡片。"
-          : focused
-            ? "⌘/Ctrl + Enter 发送；发送后焦点留在这里，可以接着说下一句。"
-            : "提交后可以在下方看到这句话的处理进展，10 分钟内可撤销。"}
+          ? submittingHint
+          : hint
+            ? hint
+            : focused
+              ? "⌘/Ctrl + Enter 发送；发送后焦点留在这里，可以接着说下一句。"
+              : "提交后可以在下方看到这句话的处理进展，10 分钟内可撤销。"}
       </p>
       {error && (
         <p className="mt-3 rounded-md border border-vermilion-600/30 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">

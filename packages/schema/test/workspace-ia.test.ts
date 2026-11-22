@@ -32,8 +32,9 @@ describe("工作台 IA 灰度开关", () => {
 });
 
 describe("新 IA 导航声明", () => {
-  it("一级入口固定为 事项 / 资源 / 设置，审批不再占一级", () => {
+  it("一级入口固定为 工作台 / 事项 / 资源 / 设置，审批不再占一级", () => {
     expect(WORKSPACE_NAV.map((item) => [item.href, item.label, item.key])).toEqual([
+      ["/workbench", "工作台", undefined],
       ["/items", "事项", "1"],
       ["/resources", "资源", "2"],
       ["/settings", "设置", "3"],
