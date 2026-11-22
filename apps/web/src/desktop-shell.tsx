@@ -443,11 +443,15 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
         </div>
         {showBusinessNav && businessNav.length > 0 && (
           <nav
-            aria-label="业务导航"
-            className="mx-auto flex max-w-[1440px] items-center gap-1 overflow-x-auto px-3 py-1.5 md:px-5"
+            aria-label="资源导航"
+            className="mx-auto flex h-11 max-w-[1440px] items-stretch gap-7 overflow-x-auto border-t border-line/70 bg-surface/40 px-3 md:px-5"
           >
             {businessNav.map((item) => {
-              const active = isNavItemActive(item.href, pathname, ia);
+              // 一级「资源」覆盖整个 /panorama，二级「资源首页」则只选中自身。
+              const active =
+                item.href === "/resources"
+                  ? pathname === item.href
+                  : isNavItemActive(item.href, pathname, ia);
               return (
                 <Link
                   key={item.href}
@@ -457,10 +461,10 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                     track("workspace_nav_clicked", { target: item.href, surface: "resources" })
                   }
                   className={cn(
-                    "inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-xs",
+                    "inline-flex shrink-0 items-center whitespace-nowrap border-b-2 px-1 text-sm transition-colors",
                     active
-                      ? "bg-surface font-medium text-ink-900 shadow-sm ring-1 ring-line"
-                      : "text-ink-500 hover:bg-surface hover:text-ink-900",
+                      ? "border-indigo-600 font-medium text-indigo-600"
+                      : "border-transparent text-ink-500 hover:text-ink-900",
                   )}
                 >
                   {item.label}
@@ -483,9 +487,6 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
           ia === "new" && "pb-[calc(env(safe-area-inset-bottom)+5.5rem)] md:pb-6",
         )}
       >
-        <p className="mb-3 text-xs text-ink-400">
-          {tenant.name} · {ia === "new" ? "工作台 / 事项 / 资源 / 设置" : "桌面端"}
-        </p>
         {children}
       </main>
 
