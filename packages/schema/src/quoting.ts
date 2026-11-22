@@ -184,10 +184,15 @@ export const QuoteDetail = z
     itemId: EntityId.nullable().default(null),
     /** 展示用编号（`BJ-YYYYMMDD-XXXX`），由内核按创建时间与 id 派生。 */
     quoteNumber: z.string().min(1).max(64).optional(),
-    /** 确认人审计：谁在什么时候把价格定稿。 */
+    /** 确认人审计：谁在什么时候把价格定稿。这是 SSO subject，**不可直接渲染**。 */
     confirmedBy: z.string().min(1).max(128).nullable().default(null),
-    /** 确认人的可展示姓名；确认人已离开公司或未同步姓名时为 null。 */
-    confirmedByName: z.string().min(1).max(128).nullable().default(null),
+    /**
+     * 确认人展示名（成员姓名，缺省回落到邮箱）。
+     *
+     * 页面只认这个字段：`confirmedBy` 是 Casdoor subject（UUID），直接显示就是泄漏
+     * 技术标识（WAN-203）。成员已离职 / 历史数据查不到时为 null，前端用「同事」兜底。
+     */
+    confirmedByName: z.string().max(255).nullable().default(null),
     confirmedAt: Timestamp.nullable().default(null),
     /** 智能体原稿总额：改价后仍保留，依据抽屉用它展示「原价」。 */
     baselineTotal: Money.nullable().default(null),

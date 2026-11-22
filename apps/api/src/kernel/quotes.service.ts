@@ -542,12 +542,12 @@ export class QuoteService {
   /** 只读详情：任何合法状态都读得到（批准后 SENT 也要能在单据页看到完整行项）。 */
   async get(quoteId: string, ctx?: KernelContext): Promise<QuoteDetail> {
     const { row, lines } = await this.loadQuote(quoteId, ctx);
-    const confirmedByName = await this.memberName(row.confirmedBy);
     const baseline = parseBaseline(row);
     const policies = await resolveApprovalPolicies(this.pricing, {
       customerId: row.customerId,
     });
     const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
+    const names = await this.confirmedNames([row.confirmedBy]);
     return QuoteDetail.parse({
       draft: mapQuote(row, lines, requirement),
       version: row.version,
@@ -555,7 +555,7 @@ export class QuoteService {
       itemId: row.itemId,
       quoteNumber: quoteNumberOf(row),
       confirmedBy: row.confirmedBy,
-      confirmedByName,
+      confirmedByName: row.confirmedBy ? (names.get(row.confirmedBy) ?? null) : null,
       confirmedAt: toIsoOrNull(row.confirmedAt),
       baselineTotal: baseline ? { amount: baseline.totalAmount, currency: row.currency } : null,
       pendingDiff: (row.pendingDiff as unknown as RevisionDiff[]) ?? [],
@@ -650,7 +650,7 @@ export class QuoteService {
       .from(quotes)
       .where(and(eq(quotes.tenantId, this.tenantId), eq(quotes.itemId, itemId)))
       .orderBy(desc(quotes.createdAt), desc(quotes.id));
-    const nameBySubject = await this.memberNames(rows.map((row) => row.confirmedBy));
+    const names = await this.confirmedNames(rows.map((row) => row.confirmedBy));
     return ItemQuoteListResponse.parse({
       quotes: rows.map((row) => ({
         id: row.id,
@@ -663,7 +663,7 @@ export class QuoteService {
         expiresAt: toIso(row.expiresAt),
         createdAt: toIso(row.createdAt),
         confirmedBy: row.confirmedBy,
-        confirmedByName: row.confirmedBy ? (nameBySubject.get(row.confirmedBy) ?? null) : null,
+        confirmedByName: row.confirmedBy ? (names.get(row.confirmedBy) ?? null) : null,
         confirmedAt: toIsoOrNull(row.confirmedAt),
       })),
     });
@@ -1484,7 +1484,11 @@ export class QuoteService {
     }
     const confirmedAt = new Date();
     let confirmedVersion = 0;
-    let existing: QuoteConfirmation | null = null;
+    // 幂等重放只记事务内读到的确认结果；展示名在事务外统一解析（成员表不在锁里查）。
+    // 用 holder 而不是裸变量：赋值发生在事务回调里，TS 的控制流分析看不到，
+    // 裸变量会在事务后被收窄成 null。
+    const replay: { value: { confirmedBy: string; confirmedAt: string; version: number } | null } =
+      { value: null };
 
     // 「读状态 → 判状态 → 改状态」必须在同一个事务里对同一行加锁完成。
     // 事务外判 DRAFT + UPDATE 只带版本谓词但不自增版本，会让并发两次确认都成功。
@@ -1509,9 +1513,7 @@ export class QuoteService {
         idempotencyKey !== undefined &&
         row.confirmIdempotencyKey === idempotencyKey
       ) {
-        existing = {
-          quoteId,
-          status: "SENT",
+        replay.value = {
           confirmedBy: row.confirmedBy,
           // confirmedBy 非空即已确认，confirmedAt 由同一事务写入。
           confirmedAt: toIso(row.confirmedAt!),
@@ -1595,11 +1597,22 @@ export class QuoteService {
         this.tenantId,
       );
     });
-    if (existing) return existing;
+    const replayed = replay.value;
+    if (replayed) {
+      const names = await this.confirmedNames([replayed.confirmedBy]);
+      return {
+        quoteId,
+        status: "SENT",
+        ...replayed,
+        confirmedByName: names.get(replayed.confirmedBy) ?? null,
+      };
+    }
+    const names = await this.confirmedNames([ctx.actor.id]);
     return {
       quoteId,
       status: "SENT",
       confirmedBy: ctx.actor.id,
+      confirmedByName: names.get(ctx.actor.id) ?? null,
       confirmedAt: confirmedAt.toISOString(),
       version: confirmedVersion,
     };
@@ -1869,16 +1882,14 @@ export class QuoteService {
   }
 
   /**
-   * 确认人姓名只用于展示：宁可返回 null 让界面兜底「同事」，
-   * 也绝不把 membership.subject（UUID）当姓名回给前端。
+   * 确认人展示名：`quotes.confirmed_by` 存的是 SSO subject（UUID），
+   * 面向用户的读取必须换成成员姓名 / 邮箱（WAN-203）。
+   *
+   * 一次批量解析，避免列表页按报价逐个查成员表；查不到（历史数据、成员已离职）
+   * 返回 null，由前端用「我 / 同事」兜底，绝不回退到 subject。
    */
-  private async memberName(subject: string | null): Promise<string | null> {
-    if (!subject) return null;
-    return (await this.memberNames([subject])).get(subject) ?? null;
-  }
-
-  private async memberNames(subjects: Array<string | null>): Promise<Map<string, string>> {
-    const ids = [...new Set(subjects.filter((subject): subject is string => Boolean(subject)))];
+  private async confirmedNames(subjects: Array<string | null>): Promise<Map<string, string>> {
+    const ids = [...new Set(subjects.filter((value): value is string => Boolean(value)))];
     if (ids.length === 0) return new Map();
     const rows = await this.db
       .select({

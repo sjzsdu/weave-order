@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QuoteDetail } from "@weave-order/schema";
 import { Badge, Button, Card, Spinner, formatMoney } from "@weave-order/ui";
-import { centsToYuanInput } from "@weave-order/core";
+import { centsToYuanInput, useTenantContext } from "@weave-order/core";
 import { useApi } from "@/providers";
+import { confirmedByLabel } from "@/format";
 import { ITEM_UNIT_LABEL } from "@/item-format";
 import { SampleCardPrint } from "@/sample-card-print";
 
@@ -69,6 +70,8 @@ function diffValue(value: unknown): string {
 
 export function QuoteWorkbench({ itemId, quoteId }: { itemId: string; quoteId: string }) {
   const api = useApi();
+  const tenantContext = useTenantContext(api);
+  const mySubject = tenantContext.status === "READY" ? tenantContext.membership.subject : null;
   const queryClient = useQueryClient();
   const quoteKey = ["quote", quoteId] as const;
 
@@ -222,7 +225,7 @@ export function QuoteWorkbench({ itemId, quoteId }: { itemId: string; quoteId: s
             v{quote.version} ｜ 有效期 {quote.draft.validityDays} 天（至{" "}
             {dateText(quote.draft.expiresAt)}）
             {quote.confirmedBy
-              ? ` ｜ 确认人 ${quote.confirmedByName ?? "同事"} · ${dateText(quote.confirmedAt)}`
+              ? ` ｜ 确认人 ${confirmedByLabel(quote.confirmedByName, quote.confirmedBy, mySubject)} · ${dateText(quote.confirmedAt)}`
               : ""}
           </p>
         </div>

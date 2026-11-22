@@ -6,7 +6,9 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ItemStatus } from "@weave-order/schema";
 import { Badge, Button, Card, EmptyState, Spinner, formatMoney } from "@weave-order/ui";
+import { useTenantContext } from "@weave-order/core";
 import { useApi } from "@/providers";
+import { confirmedByLabel } from "@/format";
 import { ITEM_STATUS_LABEL, ITEM_STATUS_TONE, itemQuantityText } from "@/item-format";
 
 const QUOTE_STATUS_TEXT: Record<string, string> = {
@@ -34,6 +36,8 @@ export default function ItemDetailPage() {
   const params = useParams<{ id: string }>();
   const itemId = params?.id;
   const api = useApi();
+  const tenantContext = useTenantContext(api);
+  const mySubject = tenantContext.status === "READY" ? tenantContext.membership.subject : null;
   const router = useRouter();
   const queryClient = useQueryClient();
   const key = ["item", itemId] as const;
@@ -291,7 +295,12 @@ export default function ItemDetailPage() {
             {confirmedQuote.quoteNumber} · {formatMoney(confirmedQuote.total)}
           </h2>
           <p className="mt-1 text-sm text-ink-400">
-            确认人 {confirmedQuote.confirmedByName ?? (confirmedQuote.confirmedBy ? "同事" : "—")}
+            确认人{" "}
+            {confirmedByLabel(
+              confirmedQuote.confirmedByName,
+              confirmedQuote.confirmedBy,
+              mySubject,
+            )}
             {confirmedQuote.confirmedAt
               ? ` · ${new Date(confirmedQuote.confirmedAt).toLocaleString("zh-CN")}`
               : ""}
