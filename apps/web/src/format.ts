@@ -115,6 +115,40 @@ const TECHNICAL_ID_PATTERN =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i;
 
 /**
+ * 人员展示名的统一口径（确认人 / 操作人 / 负责人）。
+ *
+ * 任何 `*By` 字段在渲染前都得过这里：后端给的展示名优先；原始值像 UUID 或 32 位
+ * 十六进制（SSO subject）就当没有，返回 null，绝不把技术标识显示给用户（WAN-203）。
+ */
+export function personLabel(...candidates: Array<string | null | undefined>): string | null {
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (!value || TECHNICAL_ID_PATTERN.test(value)) continue;
+    return value;
+  }
+  return null;
+}
+
+/**
+ * 确认人：有展示名用展示名；没有名字时区分「我 / 同事」，绝不回退到 subject。
+ *
+ * 后端 `confirmedByName` 为空（成员离职、历史数据）才有这条兜底路径。
+ */
+export function confirmedByLabel(
+  name: string | null | undefined,
+  subject: string | null | undefined,
+  mySubject?: string | null,
+  empty = "—",
+): string {
+  const label = personLabel(name);
+  if (label) return label;
+  const key = subject?.trim();
+  if (!key) return empty;
+  // subject 本身永远不显示：只用来判断「是不是我」。
+  return mySubject && key === mySubject ? "我" : "同事";
+}
+
+/**
  * 客户负责人的展示文案。
  *
  * 后端已经只返回姓名/邮箱副本，但历史数据与其它域仍可能把 SSO 主键当名字回传；
@@ -125,8 +159,8 @@ export function ownerLabel(
   ownerId: string | null | undefined,
   myMembershipId?: string | null,
 ): string {
-  const name = ownerName?.trim();
-  if (name && !TECHNICAL_ID_PATTERN.test(name)) return name;
+  const name = personLabel(ownerName);
+  if (name) return name;
   if (!ownerId) return "未分配";
   return myMembershipId && ownerId === myMembershipId ? "我" : "同事";
 }

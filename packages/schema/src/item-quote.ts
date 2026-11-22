@@ -41,7 +41,10 @@ export const ItemQuoteListResponse = z
         version: z.number().int().positive(),
         expiresAt: Timestamp,
         createdAt: Timestamp,
+        /** 确认人 SSO subject，仅用于内部判断，不要渲染。 */
         confirmedBy: z.string().min(1).max(128).nullable(),
+        /** 确认人展示名（姓名 / 邮箱），渲染确认人只认这个字段（WAN-203）。 */
+        confirmedByName: z.string().max(255).nullable().default(null),
         confirmedAt: Timestamp.nullable(),
       }),
     ),

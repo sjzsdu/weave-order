@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, quoteItems, quotes, items as itemsTable } from "@weave-order/db";
+import { createDb, memberships, quoteItems, quotes, items as itemsTable } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { createKernel, isKernelError } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
@@ -247,6 +247,60 @@ describe("P0a-5 报价闭环", () => {
     const completed = await kernel.items.complete(firstItemId, OWNER);
     expect(completed.item.status).toBe("COMPLETED");
   }, 20_000);
+
+  it("确认人读模型给展示名，查不到姓名时也不回退到 SSO subject（WAN-203）", async (ctx) => {
+    if (!available) ctx.skip();
+    const { tenant, kernel } = await isolatedTenant("confirmer");
+    const { firstItemId } = await seedJourney(kernel);
+    // OWNER 在成员表里有展示名副本；生产环境这两列来自登录 claims。
+    await db!.insert(memberships).values({
+      tenantId: tenant.id,
+      subject: OWNER.actor.id,
+      displayName: "海宝",
+      email: "haibao@example.com",
+      role: "OWNER",
+    });
+
+    const draft = await kernel.quotes.createForItem(
+      firstItemId,
+      { unitPrice: { amount: 1800, currency: "CNY" } },
+      OWNER,
+    );
+    const confirmed = await kernel.quotes.confirmDraft(
+      draft.draft.id,
+      OWNER,
+      draft.version,
+      "confirmer-name-1",
+    );
+    // confirmedBy 仍是审计用的 subject，但展示名必须单独给出。
+    expect(confirmed.confirmedBy).toBe(OWNER.actor.id);
+    expect(confirmed.confirmedByName).toBe("海宝");
+
+    const detail = await kernel.quotes.get(draft.draft.id);
+    expect(detail.confirmedBy).toBe(OWNER.actor.id);
+    expect(detail.confirmedByName).toBe("海宝");
+
+    const list = await kernel.quotes.listForItem(firstItemId);
+    expect(list.quotes[0]?.confirmedByName).toBe("海宝");
+
+    // 成员表里没有这个人（历史数据 / 已离职）：返回 null，由前端兜底「同事」，
+    // 绝不能把 subject 顶上来当名字。
+    const other = await isolatedTenant("confirmer-anon");
+    const seeded = await seedJourney(other.kernel);
+    const otherDraft = await other.kernel.quotes.createForItem(
+      seeded.firstItemId,
+      { unitPrice: { amount: 1800, currency: "CNY" } },
+      OWNER,
+    );
+    const otherConfirmed = await other.kernel.quotes.confirmDraft(
+      otherDraft.draft.id,
+      OWNER,
+      otherDraft.version,
+      "confirmer-name-2",
+    );
+    expect(otherConfirmed.confirmedByName).toBeNull();
+    expect((await other.kernel.quotes.get(otherDraft.draft.id)).confirmedByName).toBeNull();
+  }, 30_000);
 
   it("跨租户读不到别家事项的报价", async (ctx) => {
     if (!available) ctx.skip();

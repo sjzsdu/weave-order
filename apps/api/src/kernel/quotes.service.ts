@@ -2,6 +2,7 @@ import {
   customers,
   draftRevisions,
   items,
+  memberships,
   quoteItems,
   quotes,
   revisionRequests,
@@ -59,6 +60,7 @@ import { appendDecisionDeltaWithin } from "./decision-delta";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
 import { isOwnerInScope, ownerScopeFilter } from "./data-scope";
+import { memberDisplayName } from "./member-label";
 import { formatCents, formatMoney, milliToQuantity, multiplyCents, quantityToMilli } from "./money";
 import { currencyOf, toIso, toIsoOrNull } from "./mappers";
 import { isProductionLike } from "../platform/runtime-mode";
@@ -545,6 +547,7 @@ export class QuoteService {
       customerId: row.customerId,
     });
     const requirement = requirementFromRow(row, policies, baseline?.totalAmount ?? null);
+    const names = await this.confirmedNames([row.confirmedBy]);
     return QuoteDetail.parse({
       draft: mapQuote(row, lines, requirement),
       version: row.version,
@@ -552,6 +555,7 @@ export class QuoteService {
       itemId: row.itemId,
       quoteNumber: quoteNumberOf(row),
       confirmedBy: row.confirmedBy,
+      confirmedByName: row.confirmedBy ? (names.get(row.confirmedBy) ?? null) : null,
       confirmedAt: toIsoOrNull(row.confirmedAt),
       baselineTotal: baseline ? { amount: baseline.totalAmount, currency: row.currency } : null,
       pendingDiff: (row.pendingDiff as unknown as RevisionDiff[]) ?? [],
@@ -646,6 +650,7 @@ export class QuoteService {
       .from(quotes)
       .where(and(eq(quotes.tenantId, this.tenantId), eq(quotes.itemId, itemId)))
       .orderBy(desc(quotes.createdAt), desc(quotes.id));
+    const names = await this.confirmedNames(rows.map((row) => row.confirmedBy));
     return ItemQuoteListResponse.parse({
       quotes: rows.map((row) => ({
         id: row.id,
@@ -658,6 +663,7 @@ export class QuoteService {
         expiresAt: toIso(row.expiresAt),
         createdAt: toIso(row.createdAt),
         confirmedBy: row.confirmedBy,
+        confirmedByName: row.confirmedBy ? (names.get(row.confirmedBy) ?? null) : null,
         confirmedAt: toIsoOrNull(row.confirmedAt),
       })),
     });
@@ -1478,7 +1484,11 @@ export class QuoteService {
     }
     const confirmedAt = new Date();
     let confirmedVersion = 0;
-    let existing: QuoteConfirmation | null = null;
+    // 幂等重放只记事务内读到的确认结果；展示名在事务外统一解析（成员表不在锁里查）。
+    // 用 holder 而不是裸变量：赋值发生在事务回调里，TS 的控制流分析看不到，
+    // 裸变量会在事务后被收窄成 null。
+    const replay: { value: { confirmedBy: string; confirmedAt: string; version: number } | null } =
+      { value: null };
 
     // 「读状态 → 判状态 → 改状态」必须在同一个事务里对同一行加锁完成。
     // 事务外判 DRAFT + UPDATE 只带版本谓词但不自增版本，会让并发两次确认都成功。
@@ -1503,9 +1513,7 @@ export class QuoteService {
         idempotencyKey !== undefined &&
         row.confirmIdempotencyKey === idempotencyKey
       ) {
-        existing = {
-          quoteId,
-          status: "SENT",
+        replay.value = {
           confirmedBy: row.confirmedBy,
           // confirmedBy 非空即已确认，confirmedAt 由同一事务写入。
           confirmedAt: toIso(row.confirmedAt!),
@@ -1589,11 +1597,22 @@ export class QuoteService {
         this.tenantId,
       );
     });
-    if (existing) return existing;
+    const replayed = replay.value;
+    if (replayed) {
+      const names = await this.confirmedNames([replayed.confirmedBy]);
+      return {
+        quoteId,
+        status: "SENT",
+        ...replayed,
+        confirmedByName: names.get(replayed.confirmedBy) ?? null,
+      };
+    }
+    const names = await this.confirmedNames([ctx.actor.id]);
     return {
       quoteId,
       status: "SENT",
       confirmedBy: ctx.actor.id,
+      confirmedByName: names.get(ctx.actor.id) ?? null,
       confirmedAt: confirmedAt.toISOString(),
       version: confirmedVersion,
     };
@@ -1860,6 +1879,32 @@ export class QuoteService {
       );
     }
     return items;
+  }
+
+  /**
+   * 确认人展示名：`quotes.confirmed_by` 存的是 SSO subject（UUID），
+   * 面向用户的读取必须换成成员姓名 / 邮箱（WAN-203）。
+   *
+   * 一次批量解析，避免列表页按报价逐个查成员表；查不到（历史数据、成员已离职）
+   * 返回 null，由前端用「我 / 同事」兜底，绝不回退到 subject。
+   */
+  private async confirmedNames(subjects: Array<string | null>): Promise<Map<string, string>> {
+    const ids = [...new Set(subjects.filter((value): value is string => Boolean(value)))];
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        subject: memberships.subject,
+        displayName: memberships.displayName,
+        email: memberships.email,
+      })
+      .from(memberships)
+      .where(and(eq(memberships.tenantId, this.tenantId), inArray(memberships.subject, ids)));
+    const names = new Map<string, string>();
+    for (const row of rows) {
+      const name = memberDisplayName(row.displayName, row.email);
+      if (name) names.set(row.subject, name);
+    }
+    return names;
   }
 
   private async loadQuote(
