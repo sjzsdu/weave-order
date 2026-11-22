@@ -1755,6 +1755,7 @@ export function createMockApiClient(): ApiClient {
           quoteId: QUOTE_ID,
           status: "SENT",
           confirmedBy: "demo-owner",
+          confirmedByName: "孙巨中",
           confirmedAt: NOW,
         }),
       ),

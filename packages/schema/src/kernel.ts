@@ -201,6 +201,8 @@ export const QuoteConfirmation = z
     quoteId: EntityId,
     status: z.literal("SENT"),
     confirmedBy: z.string().min(1).max(128),
+    /** 确认人展示名；`confirmedBy` 是 SSO subject，页面只能显示这个字段（WAN-203）。 */
+    confirmedByName: z.string().max(255).nullable().default(null),
     confirmedAt: Timestamp,
     version: z.number().int().positive().optional(),
   })
