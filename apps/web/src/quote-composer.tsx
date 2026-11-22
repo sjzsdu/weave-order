@@ -11,6 +11,7 @@ import {
 } from "@weave-order/core";
 import type { NoticeContext, QuoteNotice } from "@weave-order/core";
 import type { QuoteDraft, QuoteStatus, SpecMatch, Unit } from "@weave-order/schema";
+import { weightLabel } from "@weave-order/schema";
 import { Badge, Button, Spinner, cn, formatMoney } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { SharePanel } from "@/share-panel";
@@ -464,7 +465,7 @@ export function QuoteComposer({
                               <span className="font-medium text-ink-900">{match.sample.name}</span>
                               <span className="ml-2 text-xs text-ink-400">
                                 {match.sample.code} · {match.sample.composition ?? "成分未填"} ·{" "}
-                                {match.sample.weight ?? "克重未填"}
+                                {weightLabel(match.sample.weight) ?? "克重未填"}
                               </span>
                             </span>
                             <span className="text-xs text-ink-400">

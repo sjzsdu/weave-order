@@ -21,7 +21,10 @@ const SAMPLE = {
   name: "全棉府绸",
   composition: "100% 棉",
   category: "针织",
-  weight: "220g/m²",
+  weight: { value: 220, unit: "gsm" },
+  width: { value: 150, unit: "cm" },
+  weightGsm: 220,
+  widthCm: 150,
   unit: "meter",
   costFloor: null,
   status: "ACTIVE",
@@ -77,7 +80,7 @@ describe("API client（契约解析 + 令牌）", () => {
           remaining: 0,
           categories: ["针织"],
           compositions: ["100% 棉"],
-          weights: ["220g/m²", "320g/m²"],
+          weights: ["220g/m2", "320g/m2"],
           colors: ["藏青"],
           weightGsmRange: { min: 220, max: 320 },
         }),
@@ -91,21 +94,21 @@ describe("API client（契约解析 + 令牌）", () => {
 
     const page = await client.listSamplesPage({
       composition: "棉",
-      weights: ["220g/m²", "320g/m²"],
+      weights: ["220g/m2", "320g/m2"],
       colors: ["藏青"],
       weightGsmMin: 200,
       weightGsmMax: 300,
       status: "ACTIVE",
     });
     expect(page.compositions).toEqual(["100% 棉"]);
-    expect(page.weights).toEqual(["220g/m²", "320g/m²"]);
+    expect(page.weights).toEqual(["220g/m2", "320g/m2"]);
     expect(page.colors).toEqual(["藏青"]);
     expect(page.weightGsmRange).toEqual({ min: 220, max: 320 });
 
     const [url] = fetchImpl.mock.calls[0] ?? [];
     const params = new URL(url as string).searchParams;
     expect(params.get("composition")).toBe("棉");
-    expect(params.get("weights")).toBe("220g/m²,320g/m²");
+    expect(params.get("weights")).toBe("220g/m2,320g/m2");
     expect(params.get("colors")).toBe("藏青");
     expect(params.get("weightGsmMin")).toBe("200");
     expect(params.get("weightGsmMax")).toBe("300");
@@ -126,7 +129,7 @@ describe("API client（契约解析 + 令牌）", () => {
             remaining: 5,
             categories: ["针织"],
             compositions: ["100% 棉"],
-            weights: ["220g/m²"],
+            weights: ["220g/m2"],
           }),
         ),
     });

@@ -13,6 +13,8 @@ import {
 } from "./domain";
 import { MemberRole } from "./tenancy";
 import { DraftFieldInput, ResourceFieldView } from "./resources";
+import { CompositionPartsInput } from "./composition";
+import { WeightMeasurement, WidthMeasurement } from "./measure";
 /**
  * 确定性内核的输入契约。
  *
@@ -55,10 +57,18 @@ export const CreateSampleInput = z
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
     composition: z.string().max(255).nullable().optional(),
+    /**
+     * 成分配比（原料 code + 百分比）：与 `composition` 互斥。
+     * 给了配比就由服务端派生 `composition`，文本以服务端为准 —— 两份口径不许并存。
+     */
+    compositionParts: CompositionPartsInput.nullable().optional(),
     category: z.string().max(64).nullable().optional(),
     /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理，未知值直接存原文。 */
     color: z.string().max(64).nullable().optional(),
-    weight: z.string().max(64).nullable().optional(),
+    /** 克重：数值 + 单位，整对出现；只给数值不给单位会被拒。 */
+    weight: WeightMeasurement.nullable().optional(),
+    /** 门幅：数值 + 单位，整对出现。 */
+    width: WidthMeasurement.nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
     status: SampleStatus.default("AVAILABLE"),
@@ -84,10 +94,18 @@ export const CreateSampleDraftInput = z
     sourceId: EntityId,
     name: z.string().min(1).max(255).optional(),
     composition: z.string().max(255).nullable().optional(),
+    /**
+     * 成分配比（原料 code + 百分比）：与 `composition` 互斥。
+     * 给了配比就由服务端派生 `composition`，文本以服务端为准 —— 两份口径不许并存。
+     */
+    compositionParts: CompositionPartsInput.nullable().optional(),
     category: z.string().max(64).nullable().optional(),
     /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理，未知值直接存原文。 */
     color: z.string().max(64).nullable().optional(),
-    weight: z.string().max(64).nullable().optional(),
+    /** 克重：数值 + 单位（标签 OCR 出来的是原文，落库前先解析成这一对）。 */
+    weight: WeightMeasurement.nullable().optional(),
+    /** 门幅：数值 + 单位。 */
+    width: WidthMeasurement.nullable().optional(),
     unit: Unit.default("meter"),
     costFloor: Money.nullable().optional(),
     /** OCR / 理解卡产出的逐字段候选（含出处）；同字段多候选落成 CONFLICT。 */
@@ -115,10 +133,18 @@ export const UpdateSampleInput = z
     code: z.string().min(1).max(64).optional(),
     name: z.string().min(1).max(255).optional(),
     composition: z.string().max(255).nullable().optional(),
+    /**
+     * 成分配比（原料 code + 百分比）：与 `composition` 互斥。
+     * 给了配比就由服务端派生 `composition`，文本以服务端为准 —— 两份口径不许并存。
+     */
+    compositionParts: CompositionPartsInput.nullable().optional(),
     category: z.string().max(64).nullable().optional(),
     /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理，未知值直接存原文。 */
     color: z.string().max(64).nullable().optional(),
-    weight: z.string().max(64).nullable().optional(),
+    /** 克重：数值 + 单位。传 `null` 表示清空（数值与单位一起清）。 */
+    weight: WeightMeasurement.nullable().optional(),
+    /** 门幅：数值 + 单位。传 `null` 表示清空。 */
+    width: WidthMeasurement.nullable().optional(),
     unit: Unit.optional(),
     costFloor: Money.nullable().optional(),
     status: SampleStatus.optional(),
@@ -250,6 +276,8 @@ export const AuditAction = z.enum([
   /** 租户级客户报价链接开关：影响公开面是否对外可用。 */
   "QUOTE_SHARING_UPDATED",
   "SALES_CONTACT_UPDATED",
+  /** 租户默认度量单位（克重 / 门幅）：只影响之后的录入默认值。 */
+  "TENANT_MEASURE_UNITS_UPDATED",
   "REVISION_REQUESTED",
   "REVISION_RESOLVED",
   "DECISION_DELTA_RECORDED",
@@ -311,6 +339,8 @@ export const AuditAction = z.enum([
   "MEMBERSHIP_LIMIT_CHANGED",
   "IMPORT_COMPLETED",
   "AUDIT_EXPORTED",
+  // 编号体系治理（客户/样品/报价/订单/寄样单的编号规则变更）
+  "CODE_RULE_SAVED",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 

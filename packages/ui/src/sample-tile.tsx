@@ -1,5 +1,5 @@
 import type { FabricSample } from "@weave-order/schema";
-import { sampleWeightText } from "@weave-order/schema";
+import { weightLabel } from "@weave-order/schema";
 import { Badge, cn } from "./primitives";
 
 /**
@@ -57,7 +57,7 @@ export function SampleTile({
           <Badge tone="neutral">{sample.code}</Badge>
         </span>
         <span className="mt-0.5 block text-xs text-ink-400">
-          {[sample.composition, sampleWeightText(null, sample.weight)]
+          {[sample.composition, weightLabel(sample.weight)]
             .filter(Boolean)
             .join(" · ") || "规格未填"}
         </span>

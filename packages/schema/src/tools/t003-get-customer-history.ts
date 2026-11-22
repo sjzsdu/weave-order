@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { toolResultSchema } from "../common";
 import { Currency, Customer, CustomerContext, EntityId, Money, Timestamp } from "../domain";
+import { WeightMeasurement } from "../measure";
 
 /** 报价单摘要（历史列表用，不携带完整明细）。 */
 export const QuoteSummary = z.object({
@@ -28,8 +29,8 @@ export const FabricSampleSummary = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   composition: z.string().nullable(),
-  /** 克重描述，如 "220g/m2" */
-  weight: z.string().nullable(),
+  /** 克重：数值 + 单位（g/m² / oz/yd² / kg/m²）。 */
+  weight: WeightMeasurement.nullable(),
 });
 export type FabricSampleSummary = z.infer<typeof FabricSampleSummary>;
 

@@ -43,6 +43,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   QUOTE_SHARE_REVOKED: "撤回了客户报价链接",
   QUOTE_SHARING_UPDATED: "更新了客户报价链接开关",
   SALES_CONTACT_UPDATED: "更新了业务员联系方式",
+  TENANT_MEASURE_UNITS_UPDATED: "更新了默认计量单位",
   // 系统 / 身份 / 运维动作：只在审计页出现，说清楚做了什么
   TENANT_CREATED: "创建了公司",
   TENANT_SWITCHED: "切换了公司",
@@ -103,6 +104,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   MEMBERSHIP_LIMIT_CHANGED: "调整了成员审批额度",
   IMPORT_COMPLETED: "完成了数据导入",
   AUDIT_EXPORTED: "导出了操作日志",
+  CODE_RULE_SAVED: "修改了业务编号规则",
 };
 
 /** 未映射动作的兜底：绝不把 SCREAMING_SNAKE 枚举直接丢到用户面前。 */

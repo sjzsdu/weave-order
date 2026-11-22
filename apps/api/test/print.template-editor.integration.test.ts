@@ -77,7 +77,7 @@ async function seedConfirmedQuote(kernel: Kernel): Promise<string> {
       code: `TE-S-${id}`,
       name: "32S 精梳棉汗布",
       composition: "100% 棉",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
       category: "汗布",
       unit: "meter",
       costFloor: { amount: 1200, currency: "CNY" },

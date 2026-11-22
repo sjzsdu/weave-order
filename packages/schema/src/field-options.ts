@@ -13,6 +13,7 @@ import { z } from "zod";
  *
  * - `customer.tier`：客户等级，`customers.tier` 存 `code`（code 引用）。
  * - `sample.category` / `sample.composition` / `sample.color`：样品品类/成分/颜色，业务表仍存原文，选项只是建议。
+ * - `sample.material`：样品原料（配比模式用的原料字典），按 code 引用进 `composition_parts`。
  * - `contact.role`：联系人角色，同「只做建议」。
  */
 export const FIELD_KEYS = [
@@ -20,6 +21,7 @@ export const FIELD_KEYS = [
   "sample.category",
   "sample.composition",
   "sample.color",
+  "sample.material",
   "contact.role",
 ] as const;
 export const FieldKey = z.enum(FIELD_KEYS);
@@ -177,6 +179,26 @@ export const DEFAULT_FIELD_OPTIONS: Readonly<
     { code: "COMP-COTTON-POLY", label: "棉涤混纺", sortOrder: 30 },
     { code: "COMP-LINEN", label: "100% 亚麻", sortOrder: 40 },
     { code: "COMP-SILK", label: "100% 真丝", sortOrder: 50 },
+  ],
+  "sample.material": [
+    { code: "MAT-COTTON", label: "棉", sortOrder: 10 },
+    { code: "MAT-POLYESTER", label: "涤纶", sortOrder: 20 },
+    { code: "MAT-NYLON", label: "锦纶", sortOrder: 30 },
+    { code: "MAT-ACRYLIC", label: "腈纶", sortOrder: 40 },
+    { code: "MAT-VISCOSE", label: "粘胶", sortOrder: 50 },
+    { code: "MAT-MODAL", label: "莫代尔", sortOrder: 60 },
+    { code: "MAT-LYOCELL", label: "莱赛尔", sortOrder: 70 },
+    { code: "MAT-CUPPRO", label: "铜氨", sortOrder: 80 },
+    { code: "MAT-ACETATE", label: "醋酸", sortOrder: 90 },
+    { code: "MAT-SPANDEX", label: "氨纶", sortOrder: 100 },
+    { code: "MAT-LINEN", label: "亚麻", sortOrder: 110 },
+    { code: "MAT-RAMIE", label: "苎麻", sortOrder: 120 },
+    { code: "MAT-JUTE", label: "黄麻", sortOrder: 130 },
+    { code: "MAT-SILK", label: "真丝", sortOrder: 140 },
+    { code: "MAT-WOOL", label: "羊毛", sortOrder: 150 },
+    { code: "MAT-CASHMERE", label: "羊绒", sortOrder: 160 },
+    { code: "MAT-BAMBOO", label: "竹纤维", sortOrder: 170 },
+    { code: "MAT-RAYON", label: "人造丝", sortOrder: 180 },
   ],
   "sample.color": [
     { code: "COLOR-BLACK", label: "黑色", sortOrder: 10 },

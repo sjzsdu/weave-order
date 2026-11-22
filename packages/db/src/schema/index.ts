@@ -4,6 +4,7 @@ export * from "./items";
 export * from "./resources";
 export * from "./customer-contacts";
 export * from "./field-options";
+export * from "./code-rules";
 export * from "./samples";
 export * from "./quotes";
 export * from "./tenants";

@@ -54,7 +54,8 @@ export const CreateOrderInput = z
   .object({
     customerId: EntityId,
     quoteId: EntityId.nullable().optional(),
-    code: z.string().min(1).max(64),
+    /** 编号体系治理：可选，缺省由服务端按规则生成；显式传入则优先。 */
+    code: z.string().min(1).max(64).optional(),
     currency: Currency,
     dueDate: Timestamp.nullable().optional(),
     items: z

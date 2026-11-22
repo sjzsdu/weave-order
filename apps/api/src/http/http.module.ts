@@ -39,6 +39,8 @@ import { PublicSampleCardController } from "./public-sample.controllers";
 import { PublicSampleCardService } from "../shares/public-sample-card.service";
 import { PrintAgentController, PrintController } from "./print.controllers";
 import { MediaController } from "./media.controllers";
+import { MeasureUnitsController } from "./measure-units.controllers";
+import { CodeRulesController } from "./code-rules.controllers";
 import { FieldOptionsController } from "./field-options.controllers";
 import { InboundController } from "./inbound.controllers";
 import { InboundInputController } from "./inbound-input.controllers";
@@ -139,6 +141,8 @@ const providers: Provider[] = [
     PublicQuoteController,
     PublicSampleCardController,
     QuoteSharesController,
+    MeasureUnitsController,
+    CodeRulesController,
     PrintController,
     PrintAgentController,
     MediaController,

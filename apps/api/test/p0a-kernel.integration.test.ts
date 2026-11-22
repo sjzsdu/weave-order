@@ -289,7 +289,7 @@ describe("P0a 资源草稿与字段出处", () => {
       .values({ id: sourceId, tenantId, kind: "TEXT", textContent: "标签原文" });
 
     const draft = await kernel.samples.createDraft(
-      { sourceId, name: "草稿面料", composition: "100% 棉", weight: "220g/m2" },
+      { sourceId, name: "草稿面料", composition: "100% 棉", weight: { value: 220, unit: "gsm" } },
       HUMAN,
     );
     expect(draft.created).toBe(true);

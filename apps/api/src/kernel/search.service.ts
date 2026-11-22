@@ -108,7 +108,12 @@ function ilikeLiteral(column: AnyColumn, pattern: string): SQL {
 }
 
 /** 找样检索词覆盖的字段顺序与 `matchedOn` 一致。 */
-const SEARCH_COLUMNS = [samples.code, samples.name, samples.composition, samples.weight] as const;
+const SEARCH_COLUMNS = [
+  samples.code,
+  samples.name,
+  samples.composition,
+  samples.weightText,
+] as const;
 
 const QUERY_SEPARATORS = /[\s,，、;；|]+/;
 /** 「聚酯纤维150g」这类中英文数字连写，在中文与数字交界处拆开。 */
@@ -361,7 +366,7 @@ export class SearchService {
       if (matchesAny(row.code)) matchedOn.push("code");
       if (matchesAny(row.name)) matchedOn.push("name");
       if (matchesAny(row.composition)) matchedOn.push("composition");
-      if (matchesAny(row.weight)) matchedOn.push("weight");
+      if (matchesAny(row.weightText)) matchedOn.push("weight");
       return {
         sample: mapSample(row),
         score: matchedOn.length / 4,

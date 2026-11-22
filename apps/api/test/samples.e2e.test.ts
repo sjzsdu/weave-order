@@ -54,7 +54,7 @@ interface SampleListBody {
     id: string;
     composition: string | null;
     color?: string | null;
-    weight: string | null;
+    weight: { value: number; unit: string } | null;
     weightGsm?: number | null;
     code: string;
   }[];
@@ -208,8 +208,9 @@ describe("样品 HTTP（e2e）", () => {
     const token = uniqueToken();
     const composition = `棉-${token}`;
     const category = `针织-${token}`;
-    const weightA = `220g/m²-${token}`;
-    const weightB = `320g/m²-${token}`;
+    // 克重档位现在是「数值 + 单位」，检索文本固定为 "220g/m2" 这样的规范写法。
+    const weightA = { value: 220, unit: "gsm" };
+    const weightB = { value: 320, unit: "gsm" };
     const otherCategory = `梭织-${token}`;
     const otherComposition = `涤纶-${token}`;
 
@@ -238,28 +239,41 @@ describe("样品 HTTP（e2e）", () => {
       name: "成分不符",
     });
 
-    const body = await listSamples({ composition, weights: weightA, category });
+    const body = await listSamples({ composition, weights: "220g/m2", category });
     const ids = body.samples.map((sample) => sample.id);
     expect(ids).toContain(hit.id);
     expect(ids).not.toContain(wrongWeight.id);
     expect(ids).not.toContain(wrongCategory.id);
     expect(ids).not.toContain(wrongComposition.id);
     expect(body.samples.every((sample) => sample.composition === composition)).toBe(true);
-    expect(body.samples.every((sample) => sample.weight === weightA)).toBe(true);
+    expect(
+      body.samples.every(
+        (sample) => sample.weight?.value === weightA.value && sample.weight?.unit === weightA.unit,
+      ),
+    ).toBe(true);
   });
 
   it("颜色 + 克重区间：颜色来自治理选项与原文，weight_gsm 只解析带单位的单一数值", async (ctx) => {
     if (!available) ctx.skip();
     const token = uniqueToken();
     const color = `藏青-${token}`;
-    const hit = await createSample({ color, weight: "220g/m2", name: `范围命中-${token}` });
-    const yarn = await createSample({ color, weight: "32S/2", name: `纱支-${token}` });
+    const hit = await createSample({
+      color,
+      weight: { value: 220, unit: "gsm" },
+      name: `范围命中-${token}`,
+    });
+    // 没填克重的样品不进克重区间。
+    const noWeight = await createSample({ color, name: `未填克重-${token}` });
 
     const byColor = await listSamples({ colors: color });
-    expect(byColor.samples.map((sample) => sample.id).sort()).toEqual([hit.id, yarn.id].sort());
+    expect(byColor.samples.map((sample) => sample.id).sort()).toEqual(
+      [hit.id, noWeight.id].sort(),
+    );
     expect(byColor.colors).toContain(color);
-    // 纱支不写克重：区间里只剩 220。
-    expect(byColor.weightGsmRange).toEqual({ min: 220, max: 220 });
+    // 没填克重的不进区间：220 落在区间里（区间是全租户口径，不随颜色筛）。
+    expect(byColor.weightGsmRange).not.toBeNull();
+    expect(byColor.weightGsmRange!.min).toBeLessThanOrEqual(220);
+    expect(byColor.weightGsmRange!.max).toBeGreaterThanOrEqual(220);
 
     const byRange = await listSamples({
       colors: color,
@@ -310,16 +324,15 @@ describe("样品 HTTP（e2e）", () => {
     const token = uniqueToken();
     const activeComposition = `稳定-${token}`;
     const archivedComposition = `归档-${token}`;
-    const archivedWeight = `500g/m²-${token}`;
     await createSample({
       name: "稳定档位在售",
       composition: activeComposition,
-      weight: `180g/m²-${token}`,
+      weight: { value: 180, unit: "gsm" },
     });
-    await createSample({
+    const archived = await createSample({
       name: "稳定档位归档",
       composition: archivedComposition,
-      weight: archivedWeight,
+      weight: { value: 500, unit: "gsm" },
       status: "ARCHIVED",
     });
 
@@ -330,14 +343,13 @@ describe("样品 HTTP（e2e）", () => {
 
     // 归档样品不进入 ACTIVE 的档位列表。
     expect(baseline.compositions).not.toContain(archivedComposition);
-    expect(baseline.weights).not.toContain(archivedWeight);
 
-    // 档位列表有 24 条截断，不能靠 `status=ALL` 里「出现归档值」来断言；
-    // 改用精确 weights 过滤：ACTIVE 下 0 条，ARCHIVED 下命中，证明状态范围生效。
-    expect((await listSamples({ weights: archivedWeight })).total).toBe(0);
-    expect(
-      (await listSamples({ weights: archivedWeight, status: "ARCHIVED" })).total,
-    ).toBeGreaterThan(0);
+    // 档位列表有 24 条截断，不能靠「列表里出现归档值」来断言；
+    // 改用精确 weights 过滤：ACTIVE 下查不到这条，ARCHIVED 下命中，证明状态范围生效。
+    const activeHit = await listSamples({ weights: "500g/m2" });
+    expect(activeHit.samples.map((sample) => sample.id)).not.toContain(archived.id);
+    const archivedHit = await listSamples({ weights: "500g/m2", status: "ARCHIVED" });
+    expect(archivedHit.samples.map((sample) => sample.id)).toContain(archived.id);
 
     // 档位来自真实数据：任选一个都能选出结果；且数组里没有空字符串。
     expect(baseline.compositions.every((value) => value.length > 0)).toBe(true);

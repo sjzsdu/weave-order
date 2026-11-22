@@ -1,6 +1,7 @@
 import { customerContacts, customers, fieldOptions, samples } from "@weave-order/db";
 import type { Db, Tx } from "@weave-order/db";
 import {
+  CompositionParts,
   DEFAULT_FIELD_OPTIONS,
   FieldKey,
   FieldOption,
@@ -10,9 +11,11 @@ import {
   ReorderFieldOptionsInput,
   RenameFieldOptionInput,
   CreateFieldOptionInput,
+  compositionText,
   generateOptionCode,
   generateTierCode,
   hasCapability,
+  mergeCompositionParts,
   normalizeFieldValue,
   resolveFieldValue,
 } from "@weave-order/schema";
@@ -348,6 +351,10 @@ export class FieldOptionsService {
           .where(and(eq(customers.tenantId, this.tenantId), eq(customers.tier, source.code)))
           .returning({ id: customers.id });
         affected = rows.length;
+      } else if (source.fieldKey === "sample.material") {
+        affected = parsed.rewriteText
+          ? await this.rewriteMaterialParts(tx, source, target)
+          : (await this.mergeImpact(source)).affected;
       } else if (parsed.rewriteText) {
         affected = await this.rewriteTextValues(tx, source, target.label);
       } else {
@@ -448,7 +455,12 @@ export class FieldOptionsService {
   }
 
   private usageKey(fieldKey: FieldKey, option: FieldOption | FieldOptionRow): string {
-    return fieldKey === "customer.tier" ? `code:${option.code}` : `n:${option.normalized}`;
+    // 等级与原料按 code 记用量：原料在配比里是以 code 引用的，
+    // 按名称统计会漏掉「同一原料两个叫法」的历史数据。
+    if (fieldKey === "customer.tier" || fieldKey === "sample.material") {
+      return `code:${option.code}`;
+    }
+    return `n:${option.normalized}`;
   }
 
   private async usageByNormalized(
@@ -492,6 +504,14 @@ export class FieldOptionsService {
       }
       return result;
     }
+    if (fieldKey === "sample.material") {
+      // 原料用量 = 含这个原料 code 的样品数；配比存在 jsonb 里，按 code 扫一遍。
+      const rows = await this.materialUsageCounts();
+      for (const option of options) {
+        result.set(this.usageKey(fieldKey, option), rows.get(option.code) ?? 0);
+      }
+      return result;
+    }
     const counts = await this.textValueCounts(fieldKey);
     for (const option of options) {
       let total = 0;
@@ -501,6 +521,25 @@ export class FieldOptionsService {
       result.set(this.usageKey(fieldKey, option), total);
     }
     return result;
+  }
+
+  /** 每个原料 code 被多少个样品的配比引用。 */
+  private async materialUsageCounts(): Promise<Map<string, number>> {
+    const rows = await this.db
+      .select({ parts: samples.compositionParts })
+      .from(samples)
+      .where(and(eq(samples.tenantId, this.tenantId), sql`${samples.compositionParts} is not null`));
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const parts = row.parts;
+      if (!Array.isArray(parts)) continue;
+      for (const part of parts) {
+        const code = (part as { code?: unknown } | null)?.code;
+        if (typeof code !== "string") continue;
+        counts.set(code, (counts.get(code) ?? 0) + 1);
+      }
+    }
+    return counts;
   }
 
   /** 纯文本字段按原文分组计数；归一化在应用层做，与表单/导入/智能体共用同一函数。 */
@@ -546,6 +585,26 @@ export class FieldOptionsService {
       };
     }
     const column = sampleTextColumn(source.fieldKey);
+    if (source.fieldKey === "sample.material") {
+      // 原料用量按 code 统计：配比里引用的就是 code。
+      const counts = await this.materialUsageCounts();
+      const affected = counts.get(source.code) ?? 0;
+      if (affected === 0) return { affected: 0, samples: [] };
+      const rows = await this.db
+        .select({ id: samples.id, code: samples.code, name: samples.name })
+        .from(samples)
+        .where(
+          and(
+            eq(samples.tenantId, this.tenantId),
+            sql`${samples.compositionParts} @> ${JSON.stringify([{ code: source.code }])}::jsonb`,
+          ),
+        )
+        .limit(5);
+      return {
+        affected,
+        samples: rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}` })),
+      };
+    }
     if (column) {
       const counts = await this.textValueCounts(source.fieldKey);
       const matched = counts
@@ -566,6 +625,40 @@ export class FieldOptionsService {
       };
     }
     return { affected: 0, samples: [] };
+  }
+
+  /**
+   * 原料合并：把配比里的源原料换成目标原料，并重算成分文本。
+   *
+   * 文本是配比派生出来的，所以改配比必须同步改文本 —— 否则样卡上印的还是旧比例。
+   */
+  private async rewriteMaterialParts(
+    tx: Tx,
+    source: FieldOptionRow,
+    target: FieldOptionRow,
+  ): Promise<number> {
+    const rows = await tx
+      .select({ id: samples.id, parts: samples.compositionParts })
+      .from(samples)
+      .where(and(eq(samples.tenantId, this.tenantId), sql`${samples.compositionParts} is not null`));
+    let affected = 0;
+    for (const row of rows) {
+      const parts = row.parts;
+      if (!Array.isArray(parts)) continue;
+      const parsed = CompositionParts.safeParse(parts);
+      if (!parsed.success) continue;
+      if (!parsed.data.some((part) => part.code === source.code)) continue;
+      const merged = mergeCompositionParts(parsed.data, source.code, {
+        code: target.code,
+        label: target.label,
+      });
+      await tx
+        .update(samples)
+        .set({ compositionParts: merged, composition: compositionText(merged) })
+        .where(eq(samples.id, row.id));
+      affected += 1;
+    }
+    return affected;
   }
 
   /** 把按归一化命中的原文值逐值改成目标 label；只碰匹配的行。 */

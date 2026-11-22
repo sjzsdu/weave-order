@@ -24,7 +24,7 @@ async function main(): Promise<void> {
       code: `FLW-S-${suffix}`,
       name: "寄样跟进演示面料",
       composition: "100% 棉",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
       unit: "meter",
       costFloor: { amount: 1200, currency: "CNY" },
     },

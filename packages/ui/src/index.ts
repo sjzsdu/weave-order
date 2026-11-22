@@ -2,6 +2,7 @@ export * from "./tokens";
 export * from "./money";
 export * from "./primitives";
 export * from "./combobox";
+export * from "./composition-input";
 export * from "./money-text";
 export * from "./draft-card";
 export * from "./approval-sheet";

@@ -15,7 +15,8 @@ export type SampleTextSource = {
   composition: string | null;
   category?: string | null;
   color?: string | null;
-  weight: string | null;
+  /** 克重检索文本（"220g/m2"）。 */
+  weightText: string | null;
 };
 
 /** 文本 sha256：样品改名 / 改成分 / 改克重都会变，索引据此重算。 */

@@ -8,6 +8,8 @@ import {
   StartInboundInput,
   SubmitInboundInput,
   SubmitInboundResult,
+  parseWeightMeasurement,
+  parseWidthMeasurement,
 } from "@weave-order/schema";
 import type {
   InboundAttachmentKind,
@@ -464,7 +466,11 @@ export class InboundService {
         message: "还缺样品品名",
       };
     }
-    const extra = ["width", "lot", "supplier"]
+    // 克重 / 门幅：OCR 给的是原文，落库前先解析成「数值 + 单位」。
+    // 解析不出就留空（宁可留空也不猜），由人在确认页补。
+    const weight = parseWeightMeasurement(text("weight"));
+    const width = parseWidthMeasurement(text("width"));
+    const extra = ["lot", "supplier"]
       .map((fieldName) => {
         const value = text(fieldName);
         if (!value) return null;
@@ -481,7 +487,8 @@ export class InboundService {
         sourceId: sourceId ?? this.fallbackSourceId(row),
         name,
         ...(text("composition") ? { composition: text("composition") } : {}),
-        ...(text("weight") ? { weight: text("weight") } : {}),
+        ...(weight ? { weight } : {}),
+        ...(width ? { width } : {}),
         ...(extra.length > 0 ? { fields: extra } : {}),
       },
       ctx,

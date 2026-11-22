@@ -83,9 +83,19 @@ function matchQuantity(text: string): { quantity: Quantity; hit: string } | null
   return null;
 }
 
+/**
+ * 克重槽位：从原话里认出克重，返回能命中样品的检索词。
+ *
+ * 检索词就是「数值 + 单位」的原文片段（"220g" / "6.5oz" / "0.22kg"），
+ * 与样品的检索文本（"220g/m2" / "6.5oz/yd2" / "0.22kg/m2"）同源：
+ * 客户说 oz，库里存 oz，词能对上。
+ */
 function matchWeight(text: string): string | null {
-  const match = /(\d+(?:\.\d+)?)\s*(?:gsm|g(?![a-z])|克)/i.exec(text);
+  const match = /(\d+(?:\.\d+)?)\s*(gsm|g(?![a-z])|oz(?![a-z])|kg(?![a-z])|克)/i.exec(text);
   if (!match?.[1]) return null;
+  const unit = match[2]!.toLowerCase();
+  if (unit === "oz") return `${match[1]}oz`;
+  if (unit === "kg") return `${match[1]}kg`;
   return `${match[1]}g`;
 }
 

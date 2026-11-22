@@ -5,12 +5,14 @@ import {
   CustomerTimelinePage,
   CreateQuoteShareInput,
   CreateRevisionRequestInput,
+  DEFAULT_MEASURE_UNITS,
   DecideRevisionRequestInput,
   T002SearchFabricBySpecInput,
   T004GenerateQuoteDraftInput,
   T006SuggestLinePriceInput,
-  parseWeightGsm,
   roleCapabilities,
+  weightGsmOf,
+  weightSearchText,
   statusForToolFailure,
 } from "@weave-order/schema";
 import type {
@@ -321,7 +323,7 @@ export function createMockServer(options: MockServerOptions): MockServer {
         ["code", sample.code],
         ["name", sample.name],
         ["composition", sample.composition ?? ""],
-        ["weight", sample.weight ?? ""],
+        ["weight", sample.weight ? weightSearchText(sample.weight) : ""],
       ];
       const matchedOn: Array<"code" | "name" | "composition" | "weight"> = [];
       for (const [field, value] of fields) {
@@ -1027,10 +1029,12 @@ export function createMockServer(options: MockServerOptions): MockServer {
           .slice(0, 24)
           .map(([value]) => value);
       const compositions = facet(scope.map((sample) => sample.composition));
-      const weights = facet(scope.map((sample) => sample.weight));
+      const weights = facet(
+        scope.map((sample) => (sample.weight ? weightSearchText(sample.weight) : null)),
+      );
       const colors = facet(scope.map((sample) => sample.color));
       const gsmValues = scope
-        .map((sample) => sample.weightGsm ?? parseWeightGsm(sample.weight))
+        .map((sample) => sample.weightGsm ?? (sample.weight ? weightGsmOf(sample.weight) : null))
         .filter((value): value is number => typeof value === "number");
       const query = (search.get("query") ?? "").trim().toLowerCase();
       const category = search.get("category");
@@ -1057,9 +1061,14 @@ export function createMockServer(options: MockServerOptions): MockServer {
         if (composition && !(sample.composition ?? "").toLowerCase().includes(composition)) {
           return false;
         }
-        if (weightFilters.length > 0 && !weightFilters.includes(sample.weight ?? "")) return false;
+        if (
+          weightFilters.length > 0 &&
+          !weightFilters.includes(sample.weight ? weightSearchText(sample.weight) : "")
+        ) {
+          return false;
+        }
         if (colorFilters.length > 0 && !colorFilters.includes(sample.color ?? "")) return false;
-        const gsm = sample.weightGsm ?? parseWeightGsm(sample.weight);
+        const gsm = sample.weightGsm ?? (sample.weight ? weightGsmOf(sample.weight) : null);
         if (gsmMin !== null && (gsm === null || gsm < gsmMin)) return false;
         if (gsmMax !== null && (gsm === null || gsm > gsmMax)) return false;
         return true;
@@ -1085,6 +1094,11 @@ export function createMockServer(options: MockServerOptions): MockServer {
             ? { min: Math.min(...gsmValues), max: Math.max(...gsmValues) }
             : null,
       });
+    }
+
+    if (method === "GET" && path === "/api/settings/measure-units") {
+      // 演示模式给行业默认单位；录入面的单位下拉读的就是它。
+      return jsonResponse(200, { ok: true, data: { ...DEFAULT_MEASURE_UNITS } });
     }
 
     if (method === "GET" && path === "/api/audit") {

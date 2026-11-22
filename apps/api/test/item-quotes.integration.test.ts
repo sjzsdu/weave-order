@@ -111,7 +111,7 @@ describe("P0a-5 报价闭环", () => {
     expect(draft.itemId).toBe(firstItemId);
     expect(draft.status).toBe("DRAFT");
     expect(draft.draft.items[0]?.unitPrice.amount).toBe(1800);
-    expect(draft.quoteNumber).toMatch(/^BJ-\d{8}-/);
+    expect(draft.quoteNumber).toMatch(/^BJ\d{6}-\d{4}$/);
 
     // 业务员没有 quote.confirm：确认被拒。
     await expect(
@@ -188,7 +188,7 @@ describe("P0a-5 报价闭环", () => {
 
     await kernel.quotes.confirmDraft(draft.draft.id, OWNER, revised.version, "revise-confirm-1");
     const copy = await kernel.quotes.copyText(draft.draft.id);
-    expect(copy.quoteNumber).toMatch(/^BJ-\d{8}-/);
+    expect(copy.quoteNumber).toMatch(/^BJ\d{6}-\d{4}$/);
     expect(copy.customerName).toBe("旅程客户");
     expect(copy.quantityText).toContain("100");
     expect(copy.unitPriceText).toContain("20.00");

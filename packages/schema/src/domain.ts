@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { CompositionParts } from "./composition";
+import { WeightMeasurement, WidthMeasurement } from "./measure";
 
 /** 实体 ID：PostgreSQL UUID。 */
 export const EntityId = z.string().uuid();
@@ -238,12 +240,19 @@ export const FabricSample = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   composition: z.string().max(255).nullable(),
+  /** 成分配比：原料 + 百分比。文本模式录入时为 null；配比模式由服务端派生 `composition`。 */
+  compositionParts: CompositionParts.nullable().optional(),
   category: z.string().max(64).nullable().optional(),
   /** 颜色原文；选项由 `field_options` 的 `sample.color` 治理。 */
   color: z.string().max(64).nullable().optional(),
-  weight: z.string().max(64).nullable(),
-  /** 从 `weight` 解析出的克重（g/m²）；解析不出为 null，不拿原文猜。 */
+  /** 克重：数值 + 单位（g/m² / oz/yd² / kg/m²）。单位受控，不存自由文本。 */
+  weight: WeightMeasurement.nullable(),
+  /** 门幅：数值 + 单位（cm / inch / m）。 */
+  width: WidthMeasurement.nullable(),
+  /** 归一克重（整数 g/m²）：区间筛选与比较的唯一口径；折不出有效值时为 null。 */
   weightGsm: z.number().int().positive().nullable().optional(),
+  /** 归一门幅（整数 cm）。 */
+  widthCm: z.number().int().positive().nullable().optional(),
   unit: Unit,
   /** 内核报价的价格底线（整数分）；低于此线一律 KERNEL_REJECTED。 */
   costFloor: Money.nullable(),
@@ -321,6 +330,8 @@ export const SampleShipment = z.object({
   id: EntityId,
   tenantId: EntityId,
   customerId: EntityId,
+  /** 编号体系治理：规则编号；历史寄样单为 null。 */
+  code: z.string().max(64).nullable(),
   status: SampleShipmentStatus,
   channel: ShipmentChannel,
   carrier: z.string().max(128).nullable(),

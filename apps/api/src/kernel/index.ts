@@ -24,12 +24,15 @@ import { QuotePricingService } from "./quote-pricing.service";
 import { UsageService } from "./usage.service";
 import { ContactService } from "./contacts.service";
 import { CustomerService } from "./customers.service";
+import { CodeNumberService } from "./code-number.service";
+import { CompositionService } from "./composition.service";
 import { FieldOptionsService } from "./field-options.service";
 import { ImportService } from "./import.service";
 import { InboundRepliesService } from "./inbound-replies.service";
 import { InboundService } from "./inbound.service";
 import { IntentService } from "./intents.service";
 import { ItemService } from "./items.service";
+import { MeasureUnitsService } from "./measure-units.service";
 import { OrderService } from "./orders.service";
 import { OrderShipmentService } from "./order-shipments.service";
 import { OnboardingStateService } from "./onboarding-state.service";
@@ -92,13 +95,16 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     options.imageEmbedder ??
     createImageEmbeddingProviderFromEnv(env, process.env.DASHSCOPE_API_KEY);
   const fieldOptions = new FieldOptionsService(db, tenantId);
-  const resourceFields = new ResourceFieldService(db, tenantId);
+  // 成分解析要查原料字典，所以排在 fieldOptions 之后。
+  const composition = new CompositionService(fieldOptions);
+  const resourceFields = new ResourceFieldService(db, tenantId, composition);
+  const codeNumber = new CodeNumberService(db, tenantId);
   const mergeSecret =
     options.mergeSecret ??
     process.env.MERGE_UNDO_SECRET ??
     env.QUOTE_SHARE_SECRET ??
     "weave-order-local-merge-secret";
-  const customers = new CustomerService(db, tenantId, fieldOptions, resourceFields, mergeSecret);
+  const customers = new CustomerService(db, tenantId, fieldOptions, resourceFields, mergeSecret, codeNumber);
   const contacts = new ContactService(db, tenantId, customers);
   const storage = options.storage ?? createObjectStorageFromEnv(env);
   const sampleImages = new SampleImageService(db, tenantId, storage, env);
@@ -118,12 +124,14 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     imageIndex,
     thumbs,
     resourceFields,
+    codeNumber,
+    composition,
   );
   const pricing = new PricingService(db, tenantId);
-  const shipments = new ShipmentService(db, customers, tenantId);
+  const shipments = new ShipmentService(db, customers, tenantId, codeNumber);
   const quotePricing = new QuotePricingService(customers, samples, pricing);
-  const quotes = new QuoteService(db, customers, samples, pricing, quotePricing, tenantId);
-  const orders = new OrderService(db, customers, pricing, tenantId);
+  const quotes = new QuoteService(db, customers, samples, pricing, quotePricing, tenantId, codeNumber);
+  const orders = new OrderService(db, customers, pricing, tenantId, codeNumber);
   const orderShipments = new OrderShipmentService(db, tenantId);
   const receivables = new ReceivableService(db, tenantId);
   const workbench = new WorkbenchService(
@@ -193,12 +201,14 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     publicAppUrl: options.publicAppUrl ?? env.PUBLIC_APP_URL,
   });
   const auditLogRead = new AuditLogService(db, tenantId, storage);
+  const measureUnits = new MeasureUnitsService(db, tenantId);
 
   return {
     tenantId,
     access,
     fieldOptions,
     resourceFields,
+    codeNumber,
     customers,
     contacts,
     samples,
@@ -228,6 +238,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
     inboundReplies,
     shares,
     print,
+    measureUnits,
     auditLog: auditLogRead,
     audit: {
       list: (limit?: number, entityId?: string) => listAuditLog(db, limit, tenantId, entityId),

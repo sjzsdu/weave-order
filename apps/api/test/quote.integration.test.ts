@@ -52,7 +52,7 @@ describe("报价 agent（集成）", () => {
           code: `QIT-S${index}-${id}`,
           name: `220g 棉汗布 ${index}`,
           composition: "100% 棉",
-          weight: "220g/m2",
+          weight: { value: 220, unit: "gsm" },
           unit: "meter",
           costFloor: { amount: 1200, currency: "CNY" },
         },

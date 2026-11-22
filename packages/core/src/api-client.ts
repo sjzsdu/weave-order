@@ -13,6 +13,10 @@ import {
   ContactExportResult,
   ContactMutationResult,
   ContactRoleOptionsResponse,
+  CodeEntityType,
+  CodeRule,
+  CodeRuleListResponse,
+  CodeRulePreviewResult,
   CreatedQuoteShare,
   CreateCustomerContactInput,
   CreateCustomerRequest,
@@ -40,6 +44,7 @@ import {
   CreateQuoteShareInput,
   CreateSampleInput,
   CreateSampleShipmentInput,
+  SaveCodeRuleInput,
   CreateBoxesInput,
   CreatePrintJobInput,
   SampleCardPrintInput,
@@ -1266,6 +1271,34 @@ export function createApiClient(options: ApiClientOptions) {
         .parse(
           await patch("/api/settings/measure-units", UpdateMeasureUnitsInput.parse(input)),
         ).data,
+
+    /**
+     * 五类业务编号规则。预览是纯计算（不写库、不占号），保存只由内核校验
+     * `settings.edit`；前端不得自行判断模板合法性，一律以接口返回的 errors 为准。
+     */
+    codeRules: async () => CodeRuleListResponse.parse(await request("/api/code-rules")),
+
+    previewCodeRule: async (entityType: CodeEntityType, template: string) =>
+      CodeRulePreviewResult.parse(
+        await request(
+          `/api/code-rules/preview?${new URLSearchParams({ entityType, template }).toString()}`,
+        ),
+      ),
+
+    saveCodeRule: async (input: z.input<typeof SaveCodeRuleInput>) =>
+      z
+        .object({ rule: CodeRule })
+        .parse(
+          await put(
+            `/api/code-rules/${encodeURIComponent(input.entityType)}`,
+            SaveCodeRuleInput.parse(input),
+          ),
+        ).rule,
+
+    resetCodeRule: async (entityType: CodeEntityType) =>
+      z
+        .object({ rule: CodeRule })
+        .parse(await post(`/api/code-rules/${encodeURIComponent(entityType)}/reset`, {})).rule,
 
     /** 补打样卡：必须选原因；不会新建样品。 */
     reprintSampleCard: async (quoteId: string, input: z.input<typeof SampleCardReprintInput>) =>

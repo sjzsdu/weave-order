@@ -275,6 +275,7 @@ describe("审批服务（离线，假内核）", () => {
           name: "已归档样品",
           composition: null,
           weight: null,
+          width: null,
           unit: "meter",
           costFloor: null,
           status: "ARCHIVED",

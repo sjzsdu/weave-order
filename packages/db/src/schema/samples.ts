@@ -4,12 +4,15 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
+  numeric,
   pgTable,
   timestamp,
   uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import type { CompositionParts } from "@weave-order/schema";
 import { currencyEnum, sampleImageVariantEnum, sampleStatusEnum, unitEnum } from "./enums";
 
 /**
@@ -25,17 +28,42 @@ export const samples = pgTable(
     code: varchar("code", { length: 64 }).notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     composition: varchar("composition", { length: 255 }),
+    /**
+     * 成分配比（JSON 数组：原料 code + 名称快照 + 百分比）。
+     *
+     * 与 `composition` 互斥：文本模式只有 `composition`，配比模式由这份明细派生它。
+     * 存 jsonb 而不是拆表，是因为一份成分最多十来项、只随样品整体读写，
+     * 而「哪些样品含氨纶」这类检索现在还没进需求，拆表会过早付出索引与关联的代价。
+     */
+    compositionParts: jsonb("composition_parts").$type<CompositionParts | null>(),
     /** 品类（定价继承的 CATEGORY 作用域）。 */
     category: varchar("category", { length: 64 }),
     /** 颜色原文；选项在 `field_options` 的 `sample.color` 治理，不另建颜色表。 */
     color: varchar("color", { length: 64 }),
-    /** 克重描述，如 "220g/m2" */
-    weight: varchar("weight", { length: 64 }),
     /**
-     * 从 `weight` 解析出的克重（g/m²）。写入时由同一解析器计算，
-     * 解析不出留 NULL；**禁止**在查询里用 SQL 从 `weight` 抽数字。
+     * 克重数值（用户录入时的单位，不折算）。
+     * 单位受控（`gsm` / `oz` / `kgm2`），所以数值与单位分列存，不再有自由文本。
+     */
+    weightValue: numeric("weight_value", { precision: 12, scale: 3, mode: "number" }),
+    /** 克重单位；与 `weight_value` 同时有值或同时为空。 */
+    weightUnit: varchar("weight_unit", { length: 8 }),
+    /** 门幅数值（用户录入时的单位）。 */
+    widthValue: numeric("width_value", { precision: 12, scale: 2, mode: "number" }),
+    /** 门幅单位：`cm` / `in` / `m`。 */
+    widthUnit: varchar("width_unit", { length: 8 }),
+    /**
+     * 归一克重（整数 g/m²）：区间筛选与比较的唯一口径，由数值 + 单位折算而来。
+     * 折不出有效值时为 null，不拿别的单位凑。
      */
     weightGsm: integer("weight_gsm"),
+    /** 归一门幅（整数 cm），同样由数值 + 单位折算而来。 */
+    widthCm: integer("width_cm"),
+    /**
+     * 克重检索文本（由 `weight_value` + `weight_unit` 合成，如 `220g/m2`）。
+     * 只服务检索与档位筛选：找样按「220g」这类词做子串匹配，
+     * 档位选项按精确文本匹配。真相仍是上面两列。
+     */
+    weightText: varchar("weight_text", { length: 64 }),
     unit: unitEnum("unit").notNull().default("meter"),
     costFloorAmount: bigint("cost_floor_amount", { mode: "number" }),
     costFloorCurrency: currencyEnum("cost_floor_currency"),

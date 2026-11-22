@@ -1,11 +1,12 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
-import { QuoteAgentResult, QuoteRequestInput } from "@weave-order/schema";
+import { QuoteAgentResult, QuoteRequestInput, weightLabel } from "@weave-order/schema";
 import type {
   MissingField,
   QuoteAgentResult as Result,
   QuoteIntentSlots,
   QuoteSampleCandidate,
+  WeightMeasurement,
 } from "@weave-order/schema";
 import type { LlmProvider } from "../platform/llm";
 import type { Tools } from "../tools";
@@ -96,12 +97,19 @@ const MATCH_LABELS: Record<string, string> = {
 };
 
 function candidateRationale(match: {
-  sample: { code: string; name: string; composition: string | null; weight: string | null };
+  sample: {
+    code: string;
+    name: string;
+    composition: string | null;
+    weight: WeightMeasurement | null;
+  };
   score: number;
   matchedOn: string[];
 }): string {
   const reasons = match.matchedOn.map((field) => MATCH_LABELS[field] ?? field).join("、");
-  const spec = [match.sample.composition, match.sample.weight].filter(Boolean).join(" / ");
+  const spec = [match.sample.composition, weightLabel(match.sample.weight)]
+    .filter(Boolean)
+    .join(" / ");
   return `${match.sample.code} ${match.sample.name}${spec ? `（${spec}）` : ""}：命中${reasons || "近似"}，相关度 ${(match.score * 100).toFixed(0)}%`;
 }
 

@@ -47,6 +47,7 @@ import { and, asc, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { CodeNumberService } from "./code-number.service";
 import { approvalListConditions } from "./approval-list";
 import type { ApprovalListQuery } from "./approval-list";
 import {
@@ -281,6 +282,9 @@ function diffBetween(
  * - 改幅超阈值时自动升级审批人（金额阈值与改幅阈值取较高者）。
  */
 export class QuoteService {
+  /** 编号生成服务；未注入时按自身 db/tenantId 构造（兼容老单测的直接 new）。 */
+  private readonly codeNumber: CodeNumberService;
+
   constructor(
     private readonly db: Db,
     private readonly customers: CustomerService,
@@ -288,7 +292,10 @@ export class QuoteService {
     private readonly pricing: PricingService,
     private readonly quotePricing: QuotePricingService,
     private readonly tenantId: string,
-  ) {}
+    codeNumber?: CodeNumberService,
+  ) {
+    this.codeNumber = codeNumber ?? new CodeNumberService(db, tenantId);
+  }
 
   async generateDraft(input: unknown, ctx: KernelContext): Promise<QuoteDraft> {
     const parsed = T004GenerateQuoteDraftInput.parse(input);
@@ -463,15 +470,17 @@ export class QuoteService {
       capturedAt: createdAt.toISOString(),
     };
 
-    return this.db.transaction(async (tx) => {
-      const quoteRows = await tx
-        .insert(quotes)
-        .values({
-          tenantId: this.tenantId,
-          customerId: parsed.customerId,
-          itemId,
-          status: "DRAFT",
-          currency: parsed.currency,
+    return this.db.transaction((tx) =>
+      this.codeNumber.allocateAndWrite(tx, "quote", createdAt, async (code) => {
+        const quoteRows = await tx
+          .insert(quotes)
+          .values({
+            tenantId: this.tenantId,
+            code,
+            customerId: parsed.customerId,
+            itemId,
+            status: "DRAFT",
+            currency: parsed.currency,
           subtotalAmount,
           totalAmount,
           version: 1,
@@ -536,7 +545,8 @@ export class QuoteService {
         .sort((a, b) => a.position - b.position)
         .map((row, index) => lineFromRow(row, index));
       return mapQuote(quoteRow, lines, requirement);
-    });
+      }),
+    );
   }
 
   /** 只读详情：任何合法状态都读得到（批准后 SENT 也要能在单据页看到完整行项）。 */
@@ -734,6 +744,7 @@ export class QuoteService {
             .select({
               quoteId: quotes.id,
               quoteCreatedAt: quotes.createdAt,
+              quoteCode: quotes.code,
               status: quotes.status,
               confirmedAt: quotes.confirmedAt,
               customerName: customers.name,
@@ -758,8 +769,12 @@ export class QuoteService {
 
     const history = historyRows.map((entry) => ({
       quoteId: entry.quoteId,
-      // 历史行只需要稳定编号，按 id 段取即可。
-      quoteNumber: quoteNumberOf({ id: entry.quoteId, createdAt: entry.quoteCreatedAt }),
+      // 新报价用规则编号；历史行 code 为空时回退 id 段派生值。
+      quoteNumber: quoteNumberOf({
+        id: entry.quoteId,
+        createdAt: entry.quoteCreatedAt,
+        code: entry.quoteCode,
+      }),
       customerName: entry.customerName,
       status: entry.status,
       unitPrice: { amount: entry.unitPriceAmount, currency: row.currency },
@@ -1963,12 +1978,14 @@ function mapDraftRevision(row: DraftRevisionRow): DraftRevision {
 }
 
 /**
- * 展示用报价编号：`BJ-YYYYMMDD-XXXX`。
+ * 展示用报价编号。编号体系治理后：
+ *  - 新报价有入库 code（`BJ{YYMMDD}-{SEQ:4}` 等规则编号）→ 直接用；
+ *  - 历史报价 code 为 NULL → 回退旧派生值 `BJ-YYYYMMDD-{id前4位大写}`，外观不变。
  *
- * 报价表没有独立编号列（P0 不新增序列），用创建日期 + id 前缀派生：
- * 同一天内 4 位十六进制足够区分；它只用于人读与复制文本，不是可寻址标识。
+ * 这样打印样卡、复制文本、客户分享页统一收口于此，历史单据不受规则变更影响。
  */
-export function quoteNumberOf(row: { id: string; createdAt: Date }): string {
+export function quoteNumberOf(row: { id: string; createdAt: Date; code?: string | null }): string {
+  if (row.code) return row.code;
   const day = row.createdAt.toISOString().slice(0, 10).replace(/-/g, "");
   return `BJ-${day}-${row.id.slice(0, 4).toUpperCase()}`;
 }

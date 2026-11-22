@@ -98,9 +98,14 @@ describe("样品筛选参数", () => {
   });
 
   it("卡片底部一行：有克重显示编号 · 克重，没有则「规格未填」", () => {
-    expect(sampleCardMeta({ code: "S-021", weight: "220g/m2" })).toBe("S-021 · 220g/m2");
+    expect(sampleCardMeta({ code: "S-021", weight: { value: 220, unit: "gsm" } })).toBe(
+      "S-021 · 220 g/m²",
+    );
+    expect(sampleCardMeta({ code: "S-021", weight: { value: 6.5, unit: "oz" } })).toBe(
+      "S-021 · 6.5 oz/yd²",
+    );
     expect(sampleCardMeta({ code: "S-024", weight: null })).toBe("S-024 · 规格未填");
-    expect(sampleCardMeta({ code: "S-025", weight: "  " })).toBe("S-025 · 规格未填");
+    expect(sampleCardMeta({ code: "S-025" })).toBe("S-025 · 规格未填");
   });
 
   it("空态分两种：库空 vs 条件没命中", () => {

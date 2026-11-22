@@ -6,15 +6,31 @@ import {
   SAMPLE_FILTER_TIER_LIMIT,
   SampleDraftResponse,
   UpdateSampleInput,
+  WeightMeasurement,
+  WeightUnit,
+  WidthMeasurement,
+  WidthUnit,
   hasCapability,
   isSampleStatusAvailable,
   normalizeFieldValue,
-  parseWeightGsm,
+  weightGsmOf,
+  weightMeasurementFrom,
+  weightSearchText,
+  widthCmOf,
+  widthMeasurementFrom,
 } from "@weave-order/schema";
-import type { DraftFieldInput, FabricSample, MemberRole, SampleStatus } from "@weave-order/schema";
+import type {
+  CompositionParts,
+  DraftFieldInput,
+  FabricSample,
+  JsonValue,
+  MemberRole,
+  SampleStatus,
+} from "@weave-order/schema";
 import { and, asc, count, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { CodeNumberService } from "./code-number.service";
 import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
 import { KernelError, isUniqueViolation, uniqueViolationConstraint } from "./errors";
 import { mayViewCost, toIso } from "./mappers";
@@ -25,6 +41,7 @@ import type { ImageIndexService } from "./image-index.service";
 import type { SampleThumbService } from "./sample-thumbs.service";
 import { escapeLikePattern } from "./like";
 import type { ResourceFieldService } from "./resource-fields.service";
+import type { CompositionService } from "./composition.service";
 
 type SampleRow = typeof samples.$inferSelect;
 
@@ -57,6 +74,84 @@ function assertCostFloorWritable(costFloor: unknown, ctx: KernelContext): void {
   }
 }
 
+/** 行 → 克重（数值 + 单位）；单位列是 varchar，非法单位读成 null 而不是假装合法。 */
+function weightMeasurementOf(row: SampleRow): WeightMeasurement | null {
+  return weightMeasurementFrom(row.weightValue, row.weightUnit);
+}
+
+/** 行 → 门幅（数值 + 单位）。 */
+function widthMeasurementOf(row: SampleRow): WidthMeasurement | null {
+  return widthMeasurementFrom(row.widthValue, row.widthUnit);
+}
+
+/**
+ * 克重 → 列。
+ *
+ * 归一列（g/m²）与检索文本都在这里派生：写入侧只有这一个入口，
+ * 筛选、找样与录入口径才不会各算各的。
+ */
+function weightColumns(measurement: WeightMeasurement | null): {
+  weightValue: number | null;
+  weightUnit: WeightUnit | null;
+  weightGsm: number | null;
+  weightText: string | null;
+} {
+  if (!measurement) {
+    return { weightValue: null, weightUnit: null, weightGsm: null, weightText: null };
+  }
+  return {
+    weightValue: measurement.value,
+    weightUnit: measurement.unit,
+    weightGsm: weightGsmOf(measurement),
+    weightText: weightSearchText(measurement),
+  };
+}
+
+/** 门幅 → 列（归一 cm）。 */
+function widthColumns(measurement: WidthMeasurement | null): {
+  widthValue: number | null;
+  widthUnit: WidthUnit | null;
+  widthCm: number | null;
+} {
+  if (!measurement) {
+    return { widthValue: null, widthUnit: null, widthCm: null };
+  }
+  return {
+    widthValue: measurement.value,
+    widthUnit: measurement.unit,
+    widthCm: widthCmOf(measurement),
+  };
+}
+
+/** 克重 → 检索文本；空值给 null（不是空串）。 */
+function weightSearchTextOrNull(measurement: WeightMeasurement | null | undefined): string | null {
+  return measurement ? weightSearchText(measurement) : null;
+}
+
+/**
+ * 成分落库形态：文本与配比互斥，只有一边为真。
+ *
+ * - 给了配比 → 服务端派生文本（客户端写的文本不作数，避免两份口径漂移）；
+ * - 只给文本 → 文本模式，配比清空。
+ */
+export interface CompositionColumns {
+  composition: string | null;
+  compositionParts: CompositionParts | null;
+}
+
+/**
+ * 成分在字段矩阵里的取值。
+ *
+ * 文本模式是原文，配比模式是明细对象 —— 与主表同构，
+ * 确认页拿到值就能显示，不必再猜一次「这是文本还是配比」。
+ */
+export function compositionValue(columns: CompositionColumns): JsonValue | null {
+  if (columns.compositionParts) {
+    return { parts: columns.compositionParts.map((part) => ({ ...part })) };
+  }
+  return columns.composition;
+}
+
 export function mapSample(row: SampleRow): FabricSample {
   return {
     id: row.id,
@@ -64,10 +159,13 @@ export function mapSample(row: SampleRow): FabricSample {
     code: row.code,
     name: row.name,
     composition: row.composition,
+    compositionParts: row.compositionParts ?? null,
     category: row.category,
     color: row.color,
-    weight: row.weight,
+    weight: weightMeasurementOf(row),
+    width: widthMeasurementOf(row),
     weightGsm: row.weightGsm,
+    widthCm: row.widthCm,
     unit: row.unit,
     costFloor:
       row.costFloorAmount === null || row.costFloorCurrency === null
@@ -106,11 +204,11 @@ export interface SampleListFilters {
   category?: string | null;
   /** 成分子串（`ILIKE`，已由 HTTP 层 trim 并限制长度）。 */
   composition?: string | null;
-  /** 克重档位原文，精确匹配 `samples.weight`。 */
+  /** 克重档位检索文本，精确匹配 `samples.weight_text`。 */
   weights?: string[] | null;
   /** 颜色原文，精确匹配 `samples.color`。 */
   colors?: string[] | null;
-  /** 克重区间（g/m²，闭区间），只命中解析出 `weight_gsm` 的样品。 */
+  /** 克重区间（g/m²，闭区间），只命中有归一克重的样品。 */
   weightGsmMin?: number | null;
   weightGsmMax?: number | null;
   status?: SampleStatus | "ALL" | null;
@@ -160,6 +258,9 @@ function afterCursor(cursor: SamplePageCursor) {
 
 /** 样品内核服务：samples 的唯一写入入口。 */
 export class SampleService {
+  /** 编号生成服务；未注入时按自身 db/tenantId 构造（兼容老单测的直接 new）。 */
+  private readonly codeNumber: CodeNumberService;
+
   constructor(
     private readonly db: Db,
     private readonly embedder: EmbeddingProvider,
@@ -172,7 +273,12 @@ export class SampleService {
     private readonly thumbs?: SampleThumbService,
     /** 字段出处矩阵；草稿 / 逐字段确认共用。 */
     private readonly resourceFields?: ResourceFieldService,
-  ) {}
+    codeNumber?: CodeNumberService,
+    /** 成分解析：配比 → 文本的派生与原料字典校验都在这里。 */
+    private readonly composition?: CompositionService,
+  ) {
+    this.codeNumber = codeNumber ?? new CodeNumberService(db, tenantId);
+  }
 
   /**
    * 图片写完（提交后）补算图像向量。
@@ -195,6 +301,31 @@ export class SampleService {
     await this.thumbs.deriveForSample(sampleId);
   }
 
+  /**
+   * 成分 → 主表两列（文本 + 配比）。
+   *
+   * 判定只在 `CompositionService` 一处：配比优先、文本由服务端派生；
+   * 只给文本就是文本模式，配比清空 —— 两种模式不会同时为真。
+   */
+  private async compositionColumns(input: {
+    composition?: string | null;
+    compositionParts?: unknown;
+  }): Promise<CompositionColumns> {
+    if (!this.composition) {
+      // 没有原料字典就认不了配比：宁可明确拒绝，也不把来路不明的原料名写进库。
+      if (input.compositionParts !== undefined && input.compositionParts !== null) {
+        throw new KernelError("KERNEL_REJECTED", "成分配比暂时不可用，请改用文本录入", {
+          reason: "COMPOSITION_UNAVAILABLE",
+        });
+      }
+      return { composition: input.composition ?? null, compositionParts: null };
+    }
+    return this.composition.resolve({
+      text: input.composition ?? null,
+      parts: input.compositionParts,
+    });
+  }
+
   async create(input: unknown, ctx: KernelContext): Promise<FabricSample> {
     assertCanWriteSamples(ctx);
     const parsed = CreateSampleInput.parse(input);
@@ -208,13 +339,19 @@ export class SampleService {
     // 校验图片与生成向量都在事务前完成：任一失败都不会留下半写入的样品。
     // 模型超时/5xx 会让整个请求失败（显式报错），绝不写入「看起来正常」的哈希分数。
     const resolvedImages = await this.images.resolveKeys(imageKeys);
+    // 成分先定稿：配比派生的文本要进向量文本，样卡与检索看到的都是它。
+    const composition = await this.compositionColumns({
+      composition: parsed.composition,
+      compositionParts: parsed.compositionParts,
+    });
     const preparedVector = await this.index.prepare({
       code: parsed.code,
       name: parsed.name,
-      composition: parsed.composition ?? null,
+      composition: composition.composition,
       category: parsed.category ?? null,
       color: parsed.color ?? null,
-      weight: parsed.weight ?? null,
+      // 检索文本用规范写法（"220g/m2"），向量文本与检索口径保持同一份。
+      weightText: parsed.weight ? weightSearchText(parsed.weight) : null,
     });
     try {
       const row = await this.db.transaction(async (tx) => {
@@ -224,11 +361,12 @@ export class SampleService {
             tenantId: this.tenantId,
             code: parsed.code,
             name: parsed.name,
-            composition: parsed.composition ?? null,
+            composition: composition.composition,
+            compositionParts: composition.compositionParts,
             category: parsed.category ?? null,
             color: parsed.color ?? null,
-            weight: parsed.weight ?? null,
-            weightGsm: parseWeightGsm(parsed.weight),
+            ...weightColumns(parsed.weight ?? null),
+            ...widthColumns(parsed.width ?? null),
             unit: parsed.unit,
             costFloorAmount: parsed.costFloor?.amount ?? null,
             costFloorCurrency: parsed.costFloor?.currency ?? null,
@@ -289,17 +427,22 @@ export class SampleService {
    * 注意：Excel 导入不带图，所以这里不处理 `imageKeys`（`SampleImportRow` 也不允许填）。
    */
   async insertWithin(tx: Tx, parsed: CreateSampleInput, ctx: KernelContext): Promise<FabricSample> {
+    const composition = await this.compositionColumns({
+      composition: parsed.composition,
+      compositionParts: parsed.compositionParts,
+    });
     const rows = await tx
       .insert(samples)
       .values({
         tenantId: this.tenantId,
         code: parsed.code,
         name: parsed.name,
-        composition: parsed.composition ?? null,
+        composition: composition.composition,
+        compositionParts: composition.compositionParts,
         category: parsed.category ?? null,
         color: parsed.color ?? null,
-        weight: parsed.weight ?? null,
-        weightGsm: parseWeightGsm(parsed.weight),
+        ...weightColumns(parsed.weight ?? null),
+        ...widthColumns(parsed.width ?? null),
         unit: parsed.unit,
         costFloorAmount: parsed.costFloor?.amount ?? null,
         costFloorCurrency: parsed.costFloor?.currency ?? null,
@@ -345,22 +488,25 @@ export class SampleService {
     const existing = await this.findByDraftSource(parsed.sourceId);
     if (existing) return this.draftResponse(existing, false);
 
-    const prefix = sampleCodePrefix();
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const code = `${prefix}${String(await this.nextSampleSequence(prefix)).padStart(4, "0")}`;
-      try {
-        const row = await this.db.transaction(async (tx) => {
+    try {
+      const composition = await this.compositionColumns({
+        composition: parsed.composition,
+        compositionParts: parsed.compositionParts,
+      });
+      const row = await this.db.transaction((tx) =>
+        this.codeNumber.allocateAndWrite(tx, "sample", new Date(), async (code) => {
           const rows = await tx
             .insert(samples)
             .values({
               tenantId: this.tenantId,
               code,
               name: parsed.name ?? "待确认样品",
-              composition: parsed.composition ?? null,
+              composition: composition.composition,
+              compositionParts: composition.compositionParts,
               category: parsed.category ?? null,
               color: parsed.color ?? null,
-              weight: parsed.weight ?? null,
-              weightGsm: parseWeightGsm(parsed.weight),
+              ...weightColumns(parsed.weight ?? null),
+              ...widthColumns(parsed.width ?? null),
               unit: parsed.unit,
               costFloorAmount: parsed.costFloor?.amount ?? null,
               costFloorCurrency: parsed.costFloor?.currency ?? null,
@@ -374,7 +520,7 @@ export class SampleService {
               reason: "INSERT_RETURNED_NO_ROW",
             });
           }
-          const fields = this.draftFieldInputs(parsed);
+          const fields = this.draftFieldInputs(parsed, composition);
           await this.resourceFields?.writeDraftFields(tx, "sample", inserted.id, fields);
           if (!fields.some((field) => field.fieldName === "name")) {
             await this.resourceFields?.markPending(tx, "sample", inserted.id, "name");
@@ -393,29 +539,33 @@ export class SampleService {
             this.tenantId,
           );
           return inserted;
-        });
-        return this.draftResponse(row, true);
-      } catch (error) {
-        const duplicate = await this.findByDraftSource(parsed.sourceId);
-        if (duplicate) return this.draftResponse(duplicate, false);
-        if (!isUniqueViolation(error)) throw error;
-      }
+        }),
+      );
+      return this.draftResponse(row, true);
+    } catch (error) {
+      // 草稿幂等键（sourceId）冲突不是撞码：allocateAndWrite 原样冒泡，
+      // 命中既有草稿就返回 created=false，与改造前语义一致。
+      const duplicate = await this.findByDraftSource(parsed.sourceId);
+      if (duplicate) return this.draftResponse(duplicate, false);
+      throw error;
     }
-    throw new KernelError("KERNEL_REJECTED", "样品编号连续冲突，请稍后重试", {
-      reason: "SAMPLE_CODE_EXISTS",
-    });
   }
 
   private draftFieldInputs(
     parsed: ReturnType<typeof CreateSampleDraftInput.parse>,
+    composition: CompositionColumns,
   ): DraftFieldInput[] {
     const fields: DraftFieldInput[] = [];
-    const topLevel: Array<[string, string | null | undefined]> = [
+    // 克重 / 门幅在矩阵里存「数值 + 单位」这一对（与主表同构），
+    // 不是文本：矩阵是逐字段确认的现场，文本会让确认页重新猜一次单位。
+    const topLevel: Array<[string, JsonValue | undefined]> = [
       ["name", parsed.name],
-      ["composition", parsed.composition],
+      // 成分同理：文本模式存原文，配比模式存结构化明细，确认页不必再猜一次。
+      ["composition", compositionValue(composition)],
       ["category", parsed.category],
       ["color", parsed.color],
       ["weight", parsed.weight],
+      ["width", parsed.width],
     ];
     for (const [fieldName, value] of topLevel) {
       if (value === undefined || value === null || value === "") continue;
@@ -502,13 +652,28 @@ export class SampleService {
     const values: Partial<typeof samples.$inferInsert> = { updatedAt: new Date() };
     if (parsed.code !== undefined) values.code = parsed.code;
     if (parsed.name !== undefined) values.name = parsed.name;
-    if (parsed.composition !== undefined) values.composition = parsed.composition;
+    if (parsed.compositionParts !== undefined) {
+      // 配比优先：文本由服务端派生，客户端写的文本不作数（避免两份口径漂移）。
+      const composition = await this.compositionColumns({
+        composition: parsed.composition,
+        compositionParts: parsed.compositionParts,
+      });
+      values.composition = composition.composition;
+      values.compositionParts = composition.compositionParts;
+    } else if (parsed.composition !== undefined) {
+      // 只给文本就是文本模式：配比一并清空，两种模式不会同时为真。
+      values.composition = parsed.composition?.trim() ? parsed.composition.trim() : null;
+      values.compositionParts = null;
+    }
     if (parsed.category !== undefined) values.category = parsed.category;
     if (parsed.color !== undefined) values.color = parsed.color;
     if (parsed.weight !== undefined) {
-      values.weight = parsed.weight;
-      // 克重只从原文派生；客户端不能直接写 `weightGsm`，避免两套口径打架。
-      values.weightGsm = parseWeightGsm(parsed.weight);
+      // 克重整对写入：数值、单位、归一 g/m² 与检索文本一起落库，
+      // 客户端不能单独写 `weightGsm`，避免两套口径打架。
+      Object.assign(values, weightColumns(parsed.weight));
+    }
+    if (parsed.width !== undefined) {
+      Object.assign(values, widthColumns(parsed.width));
     }
     if (parsed.unit !== undefined) values.unit = parsed.unit;
     if (parsed.status !== undefined) values.status = parsed.status;
@@ -520,18 +685,20 @@ export class SampleService {
     const textChanged =
       (parsed.code !== undefined && parsed.code !== before.code) ||
       (parsed.name !== undefined && parsed.name !== before.name) ||
-      (parsed.composition !== undefined && (parsed.composition ?? null) !== before.composition) ||
+      // 配比模式的文本是派生出来的，所以比的是落库后的文本，不是客户端写的那个。
+      (values.composition !== undefined && values.composition !== before.composition) ||
       (parsed.category !== undefined && (parsed.category ?? null) !== before.category) ||
       (parsed.color !== undefined && (parsed.color ?? null) !== before.color) ||
-      (parsed.weight !== undefined && parsed.weight !== before.weight);
+      (parsed.weight !== undefined &&
+        weightSearchTextOrNull(parsed.weight) !== (before.weightText ?? null));
     const preparedVector = textChanged
       ? await this.index.prepare({
           code: parsed.code ?? before.code,
           name: parsed.name ?? before.name,
-          composition: parsed.composition ?? before.composition,
+          composition: values.composition !== undefined ? values.composition : before.composition,
           category: parsed.category ?? before.category,
           color: parsed.color ?? before.color,
-          weight: parsed.weight ?? before.weight,
+          weightText: weightSearchTextOrNull(parsed.weight) ?? before.weightText,
         })
       : null;
     try {
@@ -675,19 +842,6 @@ export class SampleService {
     return eq(samples.status, status);
   }
 
-  private async nextSampleSequence(prefix: string): Promise<number> {
-    const start = prefix.length + 1;
-    const result = await this.db.execute<{ max_seq: number | string | null }>(sql`
-      SELECT MAX(substring(code from (${start})::int)::int) AS max_seq
-      FROM samples
-      WHERE tenant_id = ${this.tenantId}
-        AND code LIKE ${`${prefix}%`}
-        AND substring(code from (${start})::int) ~ '^[0-9]+$'
-    `);
-    const max = result.rows[0]?.max_seq;
-    return (max === null || max === undefined ? 0 : Number(max)) + 1;
-  }
-
   async listPage(filters: SampleListFilters = {}, ctx?: KernelContext): Promise<SamplePage> {
     const limit = clampLimit(filters.limit, 24, 100);
     const conditions = [eq(samples.tenantId, this.tenantId)];
@@ -701,7 +855,7 @@ export class SampleService {
       conditions.push(sql`${samples.composition} ILIKE ${literal}`);
     }
     if (filters.weights && filters.weights.length > 0) {
-      conditions.push(inArray(samples.weight, filters.weights));
+      conditions.push(inArray(samples.weightText, filters.weights));
     }
     if (filters.colors && filters.colors.length > 0) {
       conditions.push(inArray(samples.color, filters.colors));
@@ -771,7 +925,7 @@ export class SampleService {
     // 让它自己从选项里消失。只跟随租户 + 状态，与 categories 的已知行为一致。
     const [compositions, weights, colors, weightGsmRange] = await Promise.all([
       this.listTierOptions(samples.composition, status),
-      this.listTierOptions(samples.weight, status),
+      this.listTierOptions(samples.weightText, status),
       this.listColorOptions(status),
       this.weightGsmRange(status),
     ]);
@@ -860,7 +1014,7 @@ export class SampleService {
    * 返回原文而不是 trim 后的值 —— `weights` 要用它做精确 `IN`，改写会选出空结果。
    */
   private async listTierOptions(
-    column: typeof samples.composition | typeof samples.weight,
+    column: typeof samples.composition | typeof samples.weightText,
     status: SampleStatus | "ALL",
   ): Promise<string[]> {
     const conditions = [
@@ -943,6 +1097,7 @@ function auditSnapshot(row: SampleRow): Record<string, string | number | null> {
     category: row.category,
     color: row.color,
     weightGsm: row.weightGsm,
+    widthCm: row.widthCm,
     status: row.status,
     costFloorAmount: row.costFloorAmount,
   };

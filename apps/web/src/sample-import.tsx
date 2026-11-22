@@ -6,8 +6,19 @@ import type {
   FieldOptionWithUsage,
   ImportBatchResult,
   ImportRowError,
+  WeightMeasurement,
+  WeightUnit,
+  WidthMeasurement,
+  WidthUnit,
 } from "@weave-order/schema";
-import { MAX_IMPORT_ROWS, resolveFieldValue } from "@weave-order/schema";
+import {
+  MAX_IMPORT_ROWS,
+  parseWeightMeasurement,
+  parseWidthMeasurement,
+  resolveFieldValue,
+  weightLabel,
+  widthLabel,
+} from "@weave-order/schema";
 import { Button, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { CsvImportResultPanel } from "@/csv-import-result";
@@ -28,6 +39,7 @@ export const SAMPLE_CSV_COLUMNS = [
   "category",
   "color",
   "weight",
+  "width",
   "unit",
   "costFloorYuan",
   "status",
@@ -61,6 +73,14 @@ const COLUMN_ALIASES: Record<string, SampleColumn> = {
   "克重（g/m2）": "weight",
   "克重（g/m²）": "weight",
   "克重（g/㎡）": "weight",
+  width: "width",
+  门幅: "width",
+  幅宽: "width",
+  "门幅(cm)": "width",
+  "门幅(inch)": "width",
+  "门幅（cm）": "width",
+  "门幅（inch）": "width",
+  "门幅(m)": "width",
   unit: "unit",
   单位: "unit",
   costflooryuan: "costFloorYuan",
@@ -69,6 +89,24 @@ const COLUMN_ALIASES: Record<string, SampleColumn> = {
   status: "status",
   状态: "status",
 };
+
+/**
+ * 表头 → 契约列。
+ *
+ * 先查别名表；表头里写了单位的写法（`克重(oz/yd²)`、`门幅(inch)`）不在别名表里，
+ * 按「表头出现克重/门幅字样」兜底 —— 与服务端 `import/parse.ts` 同一口径，
+ * 否则前端认得、服务端不认，两边解析结果会打架。
+ */
+function matchColumn(header: string): SampleColumn | null {
+  const direct = COLUMN_ALIASES[header.toLowerCase()] ?? COLUMN_ALIASES[header];
+  if (direct) return direct;
+  const normalized = header.normalize("NFKC").toLowerCase();
+  if (normalized.includes("克重") || normalized.includes("weight")) return "weight";
+  if (normalized.includes("门幅") || normalized.includes("幅宽") || normalized.includes("width")) {
+    return "width";
+  }
+  return null;
+}
 
 const UNIT_VALUES: Record<string, string> = {
   米: "meter",
@@ -94,7 +132,7 @@ const STATUS_VALUES: Record<string, string> = {
 
 export const SAMPLE_CSV_TEMPLATE = [
   SAMPLE_CSV_COLUMNS.join(","),
-  "SP-0001,32S 精梳棉汗布,100% 棉,针织,本白,220g/m²,米,18.5,在售",
+  "SP-0001,32S 精梳棉汗布,100% 棉,针织,本白,220g/m²,150cm,米,18.5,在售",
   "",
 ].join("\n");
 
@@ -111,16 +149,52 @@ export interface ParsedSampleCsv {
 }
 
 /**
- * 表头写了单位，单元格就可以是纯数字：`克重(g/m²)` 下的 `220` 补成 `220g/m2`。
- * 只有「克重」没写单位时不补 —— 那正是「无单位纯数字」必须留空的边界。
+ * 表头里写了单位，单元格就可以是纯数字：`克重(g/m²)` 下的 `220` 认成 220 g/m²。
+ * 只有表头没写单位时不认 —— 那正是「无单位纯数字」必须留空的边界。
  */
-function weightCellWithHeaderUnit(header: string, value: string): string {
+function weightUnitFromHeader(header: string): WeightUnit | null {
   const normalized = header.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
-  if (!normalized.includes("克重") && normalized !== "weight") return value;
-  if (!/^\d+(?:\.\d+)?$/.test(value)) return value;
-  if (normalized.includes("/m2")) return `${value}g/m2`;
-  if (normalized.includes("gsm")) return `${value}gsm`;
-  return value;
+  if (!normalized.includes("克重") && !normalized.includes("weight")) return null;
+  if (normalized.includes("oz/yd2") || normalized.includes("oz")) return "oz";
+  if (normalized.includes("kg/m2") || normalized.includes("kgm2") || normalized.includes("kg")) {
+    return "kgm2";
+  }
+  if (normalized.includes("/m2") || normalized.includes("gsm")) return "gsm";
+  return null;
+}
+
+/** 门幅单位来自表头：`门幅(cm)` / `门幅(inch)` / `门幅(m)`。 */
+function widthUnitFromHeader(header: string): WidthUnit | null {
+  const normalized = header.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  if (
+    !normalized.includes("门幅") &&
+    !normalized.includes("幅宽") &&
+    !normalized.includes("width")
+  ) {
+    return null;
+  }
+  if (normalized.includes("inch") || normalized.includes("英寸")) return "in";
+  if (normalized.includes("cm") || normalized.includes("厘米")) return "cm";
+  if (normalized.includes("米") || /m\)/.test(normalized)) return "m";
+  return null;
+}
+
+/** 单元格 → 克重（数值 + 单位）。带单位的原文直接解析；纯数字要有表头单位，否则留空。 */
+function weightCell(value: string, header: string): WeightMeasurement | null {
+  const parsed = parseWeightMeasurement(value);
+  if (parsed) return parsed;
+  const unit = weightUnitFromHeader(header);
+  if (unit && /^\d+(?:\.\d+)?$/.test(value)) return { value: Number(value), unit };
+  return null;
+}
+
+/** 单元格 → 门幅（数值 + 单位）。规则与克重一致。 */
+function widthCell(value: string, header: string): WidthMeasurement | null {
+  const parsed = parseWidthMeasurement(value);
+  if (parsed) return parsed;
+  const unit = widthUnitFromHeader(header);
+  if (unit && /^\d+(?:\.\d+)?$/.test(value)) return { value: Number(value), unit };
+  return null;
 }
 
 /** 元 → 分（契约里金额是整数分）；非法值原样交给服务端判 INVALID_INPUT。 */
@@ -142,9 +216,7 @@ export function parseSampleCsv(text: string): ParsedSampleCsv {
     return { rows: [], error: "这个文件是空的，先下载模板照着填。", skippedBlankRows: 0 };
   }
   const header = headerRecord.map((cell) => cell.trim());
-  const keys: Array<SampleColumn | null> = header.map((cell) => {
-    return COLUMN_ALIASES[cell.toLowerCase()] ?? COLUMN_ALIASES[cell] ?? null;
-  });
+  const keys: Array<SampleColumn | null> = header.map((cell) => matchColumn(cell));
   const unknown = header.filter((cell, index) => cell !== "" && keys[index] === null);
   if (unknown.length > 0) {
     return {
@@ -180,9 +252,14 @@ export function parseSampleCsv(text: string): ParsedSampleCsv {
       if (key === "unit") values.unit = UNIT_VALUES[value] ?? value;
       else if (key === "status") values.status = STATUS_VALUES[value] ?? value.toUpperCase();
       else if (key === "costFloorYuan") values.costFloor = costFloorCell(value);
-      else if (key === "weight")
-        values.weight = weightCellWithHeaderUnit(header[cellIndex] ?? "", value);
-      else values[key] = value;
+      else if (key === "weight") {
+        // 克重是「数值 + 单位」成对：解析不出就整格留空，不把裸数字塞进去。
+        const measurement = weightCell(value, header[cellIndex] ?? "");
+        if (measurement) values.weight = measurement;
+      } else if (key === "width") {
+        const measurement = widthCell(value, header[cellIndex] ?? "");
+        if (measurement) values.width = measurement;
+      } else values[key] = value;
     });
     rows.push({ line: index + 1, values });
   }
@@ -207,6 +284,7 @@ const FIELD_LABEL: Record<string, string> = {
   category: "品类",
   color: "颜色",
   weight: "克重",
+  width: "门幅",
   unit: "单位",
   status: "状态",
   costFloor: "成本底线",
@@ -618,6 +696,7 @@ export function SampleImport({
                           <th className="px-3 py-2 text-left font-normal">成分</th>
                           <th className="px-3 py-2 text-left font-normal">颜色</th>
                           <th className="px-3 py-2 text-left font-normal">克重</th>
+                          <th className="px-3 py-2 text-left font-normal">门幅</th>
                           <th className="px-3 py-2 text-left font-normal">单位</th>
                           <th className="px-3 py-2 text-left font-normal">成本底线</th>
                         </tr>
@@ -640,7 +719,12 @@ export function SampleImport({
                                 ) && <span className="ml-1 text-amber-700">新选项</span>}
                             </td>
                             <td className="px-3 py-2 text-xs">{cellText(row.values.color)}</td>
-                            <td className="px-3 py-2 text-xs">{cellText(row.values.weight)}</td>
+                            <td className="px-3 py-2 text-xs">
+                              {weightLabel(row.values.weight as WeightMeasurement | undefined) ?? "—"}
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              {widthLabel(row.values.width as WidthMeasurement | undefined) ?? "—"}
+                            </td>
                             <td className="px-3 py-2 text-xs">
                               {UNIT_LABEL[cellText(row.values.unit, "")] ??
                                 cellText(row.values.unit)}

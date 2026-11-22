@@ -6,6 +6,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { CodeNumberService } from "./code-number.service";
 import { approvalListConditions } from "./approval-list";
 import type { ApprovalListQuery } from "./approval-list";
 import type { CustomerService } from "./customers.service";
@@ -22,6 +23,7 @@ function mapShipment(row: ShipmentRow, items: SampleShipmentItem[]): SampleShipm
     id: row.id,
     tenantId: row.tenantId,
     customerId: row.customerId,
+    code: row.code,
     status: row.status,
     channel: row.channel,
     carrier: row.carrier,
@@ -42,11 +44,17 @@ function mapShipment(row: ShipmentRow, items: SampleShipmentItem[]): SampleShipm
  * - confirm 先判 actor.type === "HUMAN"，智能体/系统调用一律 PERMISSION_DENIED。
  */
 export class ShipmentService {
+  /** 编号生成服务；未注入时按自身 db/tenantId 构造（兼容老单测的直接 new）。 */
+  private readonly codeNumber: CodeNumberService;
+
   constructor(
     private readonly db: Db,
     private readonly customers: CustomerService,
     private readonly tenantId: string,
-  ) {}
+    codeNumber?: CodeNumberService,
+  ) {
+    this.codeNumber = codeNumber ?? new CodeNumberService(db, tenantId);
+  }
 
   async createDraft(input: unknown, ctx: KernelContext): Promise<SampleShipment> {
     const parsed = CreateSampleShipmentInput.parse(input);
@@ -77,14 +85,16 @@ export class ShipmentService {
       }
     }
 
-    return this.db.transaction(async (tx) => {
-      const rows = await tx
-        .insert(sampleShipments)
-        .values({
-          tenantId: this.tenantId,
-          customerId: parsed.customerId,
-          status: "DRAFT",
-          channel: parsed.channel,
+    return this.db.transaction((tx) =>
+      this.codeNumber.allocateAndWrite(tx, "sample_shipment", new Date(), async (code) => {
+        const rows = await tx
+          .insert(sampleShipments)
+          .values({
+            tenantId: this.tenantId,
+            code,
+            customerId: parsed.customerId,
+            status: "DRAFT",
+            channel: parsed.channel,
           carrier: parsed.carrier ?? null,
           trackingNumber: parsed.trackingNumber ?? null,
           note: parsed.note ?? null,
@@ -133,7 +143,8 @@ export class ShipmentService {
       );
 
       return mapShipment(shipmentRow, items);
-    });
+      }),
+    );
   }
 
   /** 单条读取；`ctx` 带数据范围时，客户不在范围内的按「不存在」返回。 */

@@ -14,7 +14,8 @@ describe("parseSampleCsv", () => {
       composition: "100% 棉",
       category: "针织",
       color: "本白",
-      weight: "220g/m²",
+      weight: { value: 220, unit: "gsm" },
+      width: { value: 150, unit: "cm" },
       unit: "meter",
       status: "ACTIVE",
       costFloor: { amount: 1850, currency: "CNY" },
@@ -42,8 +43,20 @@ describe("parseSampleCsv", () => {
       code: "S10",
       name: "亚麻平纹",
       color: "本白",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
     });
+  });
+
+  it("表头带单位时纯数字认；表头没写单位就留空，不猜", () => {
+    const withUnit = parseSampleCsv("code,name,克重(oz/yd²),门幅(inch)\nS1,汗布,6.5,59\n");
+    expect(withUnit.rows[0]?.values).toMatchObject({
+      weight: { value: 6.5, unit: "oz" },
+      width: { value: 59, unit: "in" },
+    });
+
+    // 表头只有「克重」：裸数字没有单位依据，必须整格留空。
+    const noUnit = parseSampleCsv("code,name,克重\nS2,汗布,220\n");
+    expect(noUnit.rows[0]?.values.weight).toBeUndefined();
   });
 
   it("成本底线不是数字时原样交给服务端判 INVALID_INPUT，不在本地猜", () => {

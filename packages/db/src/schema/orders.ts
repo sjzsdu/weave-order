@@ -5,6 +5,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -36,6 +37,11 @@ export const orders = pgTable(
   (table) => [
     index("orders_tenant_due_status_idx").on(table.tenantId, table.dueDate, table.status),
     index("orders_tenant_customer_idx").on(table.tenantId, table.customerId),
+    /**
+     * 编号体系治理：订单 code 列原本就非空，但缺唯一约束（可重号不报错）。
+     * 迁移前置检查按 (tenant_id, code) 分组阻断存量重号后再建此索引。
+     */
+    uniqueIndex("orders_tenant_code_idx").on(table.tenantId, table.code),
   ],
 );
 

@@ -153,7 +153,8 @@ async function createSample(input: {
   code: string;
   name: string;
   composition: string;
-  weight: string;
+  /** 克重是「数值 + 单位」成对结构，单位不许猜。 */
+  weight: { value: number; unit: "gsm" | "oz" | "kgm2" };
   costFloor?: { amount: number; currency: "CNY" };
 }): Promise<ApiSample> {
   const created = await api<{ sample: ApiSample }>("/api/samples", {
@@ -315,7 +316,7 @@ export async function ensureSeed(): Promise<SeedManifest> {
         code,
         name: `E2E 样品 ${String(index).padStart(2, "0")}`,
         composition: "100% 棉 · E2E",
-        weight: "220g/m2",
+        weight: { value: 220, unit: "gsm" },
         // 成本底线只给 01，详情页按角色裁剪的断言用它。
         ...(index === 1 ? { costFloor: { amount: 1200, currency: "CNY" as const } } : {}),
       });
@@ -336,7 +337,7 @@ export async function ensureSeed(): Promise<SeedManifest> {
       code: carouselCode,
       name: "E2E 双图样品",
       composition: "55% 麻 45% 棉 · E2E",
-      weight: "180g/m2",
+      weight: { value: 180, unit: "gsm" },
     });
   }
   if (carousel.images.length < 2) {

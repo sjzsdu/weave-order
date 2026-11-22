@@ -5,6 +5,9 @@
  * （WAN-187），端上不做全量过滤 —— 手机上拉全量再 filter 会卡，而且分页会错。
  */
 
+import type { WeightMeasurement } from "@weave-order/schema";
+import { weightLabel } from "@weave-order/schema";
+
 export interface SampleFilters {
   category: string | null;
   composition: string | null;
@@ -109,8 +112,11 @@ export function activeFilterChips(filters: SampleFilters): ActiveFilterChip[] {
 }
 
 /** 卡片底部一行：编号 · 克重；都为空时才说「规格未填」。 */
-export function sampleCardMeta(sample: { code: string; weight?: string | null }): string {
-  const weight = sample.weight?.trim();
+export function sampleCardMeta(sample: {
+  code: string;
+  weight?: WeightMeasurement | null;
+}): string {
+  const weight = weightLabel(sample.weight ?? null);
   return weight ? `${sample.code} · ${weight}` : `${sample.code} · 规格未填`;
 }
 

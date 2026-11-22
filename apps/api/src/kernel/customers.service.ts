@@ -29,6 +29,7 @@ import {
   normalizePhone,
   MergeCustomerInput,
   UndoCustomerMergeInput,
+  weightMeasurementFrom,
 } from "@weave-order/schema";
 import type { MemberRole } from "@weave-order/schema";
 import type {
@@ -56,7 +57,8 @@ import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { loadActiveContacts, loadPrimaryContactRow } from "./contact-read";
 import { loadCustomerList, loadCustomerSummary, loadCustomerTimeline } from "./customer-aggregates";
-import { KernelError, isKernelError, isUniqueViolation } from "./errors";
+import { CodeNumberService } from "./code-number.service";
+import { KernelError, isUniqueViolation } from "./errors";
 import type { FieldOptionsService } from "./field-options.service";
 import { memberDisplayName } from "./member-label";
 import { ownerScopeFilter } from "./data-scope";
@@ -148,6 +150,9 @@ function mapContext(row: ContextRow): CustomerContext {
  * 唯一写入 customers / customer_contexts 的入口，每次写入都带同事务审计。
  */
 export class CustomerService {
+  /** 编号生成服务；未注入时按自身 db/tenantId 构造（兼容老单测的直接 new）。 */
+  private readonly codeNumber: CodeNumberService;
+
   constructor(
     private readonly db: Db,
     private readonly tenantId: string,
@@ -160,7 +165,10 @@ export class CustomerService {
     private readonly resourceFields?: ResourceFieldService,
     /** 合并票据签名密钥（预览与撤销窗口共用）。 */
     private readonly mergeSecret: string = "weave-order-local-merge-secret",
-  ) {}
+    codeNumber?: CodeNumberService,
+  ) {
+    this.codeNumber = codeNumber ?? new CodeNumberService(db, tenantId);
+  }
 
   async create(input: unknown, ctx: KernelContext): Promise<Customer> {
     const parsed = CreateCustomerInput.parse(input);
@@ -177,43 +185,19 @@ export class CustomerService {
   }
 
   /**
-   * 人类新建客户：`code` 可省略，由服务端按「同租户当日最大序号 + 1」生成。
+   * 人类新建客户：`code` 可省略，由服务端按编号规则生成。
    *
-   * 序号查询与写入不在同一事务里，因此并发请求可能算出同一编号；唯一索引兜底，
-   * 撞码时重算并重试（最多 3 次），仍失败就明确报错，绝不吞掉冲突。
+   * 取号与写入同一事务、原子计数器递增（见 CodeNumberService.allocateAndWrite），
+   * 唯一索引只作兜底且只有命中客户编号索引才重算。显式 code 优先，规则不介入。
    */
   async createForHuman(input: unknown, ctx: KernelContext): Promise<Customer> {
     const parsed = CreateCustomerRequest.parse(input);
     if (parsed.code) return this.create(parsed, ctx);
-
-    const prefix = customerCodePrefix();
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const code = formatCustomerCode(prefix, await this.nextCustomerSequence(prefix));
-      try {
-        return await this.create({ ...parsed, code }, ctx);
-      } catch (error) {
-        if (!isKernelError(error) || error.details.reason !== "CUSTOMER_CODE_EXISTS") throw error;
-      }
-    }
-    throw new KernelError("KERNEL_REJECTED", "客户编号连续冲突，请稍后重试", {
-      reason: "CUSTOMER_CODE_EXISTS",
-    });
-  }
-
-  /** 同租户、同前缀（当日）的最大序号；非本格式的历史编号不参与计算。 */
-  private async nextCustomerSequence(prefix: string): Promise<number> {
-    const start = prefix.length + 1;
-    const result = await this.db.execute<{ max_seq: number | string | null }>(sql`
-      -- 显式 ::int：不带类型的参数会让 PostgreSQL 选到 regex 版 substring，
-      -- 结果恒为 null，序号永远从 1 开始（并发时直接撞唯一索引）。
-      SELECT MAX(substring(code from (${start})::int)::int) AS max_seq
-      FROM customers
-      WHERE tenant_id = ${this.tenantId}
-        AND code LIKE ${`${prefix}%`}
-        AND substring(code from (${start})::int) ~ '^[0-9]+$'
-    `);
-    const max = result.rows[0]?.max_seq;
-    return (max === null || max === undefined ? 0 : Number(max)) + 1;
+    return this.db.transaction((tx) =>
+      this.codeNumber.allocateAndWrite(tx, "customer", new Date(), (code) =>
+        this.insertWithin(tx, { ...parsed, code }, ctx),
+      ),
+    );
   }
 
   /**
@@ -328,11 +312,9 @@ export class CustomerService {
       return this.draftResponse(existing, false);
     }
 
-    const prefix = customerCodePrefix();
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const code = formatCustomerCode(prefix, await this.nextCustomerSequence(prefix));
-      try {
-        const customer = await this.db.transaction(async (tx) => {
+    try {
+      const customer = await this.db.transaction((tx) =>
+        this.codeNumber.allocateAndWrite(tx, "customer", new Date(), async (code) => {
           const rows = await tx
             .insert(customers)
             .values({
@@ -394,18 +376,16 @@ export class CustomerService {
             this.tenantId,
           );
           return row;
-        });
-        return this.draftResponse(customer, true);
-      } catch (error) {
-        const duplicateSource = await this.findByDraftSource(parsed.sourceId);
-        if (duplicateSource) return this.draftResponse(duplicateSource, false);
-        if (!isUniqueViolation(error)) throw error;
-        // 撞的是客户编号：重算序号再试；撞草稿幂等键的并发请求已在上面处理。
-      }
+        }),
+      );
+      return this.draftResponse(customer, true);
+    } catch (error) {
+      // 草稿幂等键（sourceId）冲突不是撞码：allocateAndWrite 会原样冒泡，
+      // 这里命中既有草稿就返回 created=false，与改造前语义一致。
+      const duplicateSource = await this.findByDraftSource(parsed.sourceId);
+      if (duplicateSource) return this.draftResponse(duplicateSource, false);
+      throw error;
     }
-    throw new KernelError("KERNEL_REJECTED", "客户编号连续冲突，请稍后重试", {
-      reason: "CUSTOMER_CODE_EXISTS",
-    });
   }
 
   private draftFieldInputs(
@@ -1157,7 +1137,7 @@ export class CustomerService {
       code: sample.code,
       name: sample.name,
       composition: sample.composition,
-      weight: sample.weight,
+      weight: weightMeasurementFrom(sample.weightValue, sample.weightUnit),
     }));
 
     return {

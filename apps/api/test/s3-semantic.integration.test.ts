@@ -135,7 +135,7 @@ describe("S3 向量索引（集成）", () => {
         code: "S3-HASH-1",
         name: "高支棉 220g",
         composition: "100% 棉",
-        weight: null,
+        weightText: null,
       }),
     );
 
@@ -358,7 +358,7 @@ describe("S3 真实语义检索（DashScope text-embedding-v3）", () => {
           code: `S3-SEM-${index + 1}`,
           name: pair.name,
           composition: pair.composition,
-          weight: `${200 + index * 10}g/m2`,
+          weight: { value: 200 + index * 10, unit: "gsm" },
           unit: "meter",
         },
         HUMAN,

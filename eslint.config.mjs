@@ -61,6 +61,8 @@ export default tseslint.config(
       "apps/site/public/**",
       "apps/mobile/src/pwa/**",
       "apps/print-agent/src/**",
+      // Rust/Tauri 构建产物（已 gitignore），里面是打包后的 JS，不是源码。
+      "apps/print-agent/src-tauri/target/**",
       "packages/db/drizzle/**",
     ],
   },

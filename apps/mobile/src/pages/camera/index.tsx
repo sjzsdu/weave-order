@@ -1,9 +1,17 @@
-import { Image, Input, Text, View } from "@tarojs/components";
+import { Image, Input, Picker, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@weave-order/core";
-import type { ImageMatch } from "@weave-order/schema";
+import type { ImageMatch, MeasureUnits, WeightUnit, WidthUnit } from "@weave-order/schema";
+import {
+  DEFAULT_MEASURE_UNITS,
+  WEIGHT_UNITS,
+  WEIGHT_UNIT_LABEL,
+  WIDTH_UNITS,
+  WIDTH_UNIT_LABEL,
+  weightLabel,
+} from "@weave-order/schema";
 import { Badge, Button, Card, NavBar, Page, SectionTitle } from "../../components/ui";
 import { useNetworkStatus } from "../../lib/hooks";
 import {
@@ -36,6 +44,19 @@ import {
 export default function CameraPage() {
   const queryClient = useQueryClient();
   const network = useNetworkStatus();
+  // 公司默认单位：只影响下拉的初始选中，读不到就用行业默认，不挡建样。
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .measureUnits()
+      .then((units) => {
+        if (!cancelled) setDefaults(units);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [mode, setMode] = useState<CameraMode>("find");
   const [busy, setBusy] = useState(false);
   const [image, setImage] = useState<CompressedImage | null>(null);
@@ -54,8 +75,31 @@ export default function CameraPage() {
   const [sampleName, setSampleName] = useState("");
   const [sampleComposition, setSampleComposition] = useState("");
   const [sampleColor, setSampleColor] = useState("");
+  // 克重：数值与单位分开填（单位下拉默认取公司默认单位）。
   const [sampleWeight, setSampleWeight] = useState("");
+  // null = 还没选，用公司默认单位；选了就是这条样品自己的单位。
+  const [sampleWeightUnit, setSampleWeightUnit] = useState<WeightUnit | null>(null);
+  // 门幅同理：数值与单位成对，单位下拉默认取公司默认单位。
+  const [sampleWidth, setSampleWidth] = useState("");
+  const [sampleWidthUnit, setSampleWidthUnit] = useState<WidthUnit | null>(null);
+  const [defaults, setDefaults] = useState<MeasureUnits>(DEFAULT_MEASURE_UNITS);
   const [savingSample, setSavingSample] = useState(false);
+  /** 克重：null = 没填；undefined = 录错了。 */
+  const weightMeasurement = useMemo(() => {
+    const text = sampleWeight.trim();
+    if (text === "") return null;
+    const value = Number(text);
+    if (!Number.isFinite(value) || value <= 0) return undefined;
+    return { value, unit: sampleWeightUnit ?? defaults.weight };
+  }, [sampleWeight, sampleWeightUnit, defaults.weight]);
+  /** 门幅：null = 没填；undefined = 录错了。 */
+  const widthMeasurement = useMemo(() => {
+    const text = sampleWidth.trim();
+    if (text === "") return null;
+    const value = Number(text);
+    if (!Number.isFinite(value) || value <= 0) return undefined;
+    return { value, unit: sampleWidthUnit ?? defaults.width };
+  }, [sampleWidth, sampleWidthUnit, defaults.width]);
 
   useDidShow(() => {
     const pending = parseCameraMode(prefs.takeCameraMode());
@@ -238,6 +282,14 @@ export default function CameraPage() {
       setError("品名必填（其余字段可以之后补）");
       return;
     }
+    if (weightMeasurement === undefined) {
+      setError("克重要是大于 0 的数字");
+      return;
+    }
+    if (widthMeasurement === undefined) {
+      setError("门幅要是大于 0 的数字");
+      return;
+    }
     if (!network.online) {
       setError("建样品需要联网；图片已留在本页，联网后重试。");
       return;
@@ -252,7 +304,8 @@ export default function CameraPage() {
         name: sampleName.trim(),
         composition: sampleComposition.trim() || null,
         color: sampleColor.trim() || null,
-        weight: sampleWeight.trim() || null,
+        weight: weightMeasurement ?? null,
+        width: widthMeasurement ?? null,
         unit: "meter",
       });
       try {
@@ -294,6 +347,7 @@ export default function CameraPage() {
       setSampleComposition("");
       setSampleColor("");
       setSampleWeight("");
+      setSampleWidth("");
       setImage(null);
       void Taro.showToast({ title: "样品已保存", icon: "success" });
     } catch (caught) {
@@ -433,12 +487,51 @@ export default function CameraPage() {
                 onInput={(event) => setSampleColor(event.detail.value)}
               />
               <View className="label">克重</View>
-              <Input
-                className="input"
-                value={sampleWeight}
-                placeholder="如 220g/m²"
-                onInput={(event) => setSampleWeight(event.detail.value)}
-              />
+              <View className="measure-row">
+                <Input
+                  className="input measure-input"
+                  type="digit"
+                  value={sampleWeight}
+                  placeholder="如 220"
+                  onInput={(event) => setSampleWeight(event.detail.value)}
+                />
+                {/* 单位单独放在输入框后面：数值与单位各管各的。 */}
+                <Picker
+                  mode="selector"
+                  range={WEIGHT_UNITS.map((unit) => WEIGHT_UNIT_LABEL[unit])}
+                  value={Math.max(0, WEIGHT_UNITS.indexOf(sampleWeightUnit ?? defaults.weight))}
+                  onChange={(event) =>
+                    setSampleWeightUnit(WEIGHT_UNITS[Number(event.detail.value)] ?? "gsm")
+                  }
+                >
+                  <View className="input measure-unit">
+                    {WEIGHT_UNIT_LABEL[sampleWeightUnit ?? defaults.weight]}
+                  </View>
+                </Picker>
+              </View>
+              <View className="label">门幅</View>
+              <View className="measure-row">
+                <Input
+                  className="input measure-input"
+                  type="digit"
+                  value={sampleWidth}
+                  placeholder="如 150"
+                  onInput={(event) => setSampleWidth(event.detail.value)}
+                />
+                {/* 门幅单位同样单独放在输入框后面。 */}
+                <Picker
+                  mode="selector"
+                  range={WIDTH_UNITS.map((unit) => WIDTH_UNIT_LABEL[unit])}
+                  value={Math.max(0, WIDTH_UNITS.indexOf(sampleWidthUnit ?? defaults.width))}
+                  onChange={(event) =>
+                    setSampleWidthUnit(WIDTH_UNITS[Number(event.detail.value)] ?? "cm")
+                  }
+                >
+                  <View className="input measure-unit">
+                    {WIDTH_UNIT_LABEL[sampleWidthUnit ?? defaults.width]}
+                  </View>
+                </Picker>
+              </View>
               <View className="actions">
                 <Button onClick={() => void saveSample()} loading={savingSample}>
                   保存到样品库
@@ -487,7 +580,7 @@ export default function CameraPage() {
                   <View className="list-title">{match.sample.name}</View>
                   <View className="list-sub">
                     {match.sample.code} · {match.sample.composition ?? "成分未填"} ·{" "}
-                    {match.sample.weight ?? ""}
+                    {weightLabel(match.sample.weight) ?? ""}
                   </View>
                 </View>
                 <View className="row" style={{ gap: 8, alignItems: "center" }}>

@@ -2,6 +2,16 @@ import { readFile } from "node:fs/promises";
 import { parse } from "csv-parse/sync";
 import ExcelJS from "exceljs";
 import type { ImportBatch } from "@weave-order/schema";
+import {
+  parseWeightMeasurement,
+  parseWidthMeasurement,
+} from "@weave-order/schema";
+import type {
+  WeightMeasurement,
+  WeightUnit,
+  WidthMeasurement,
+  WidthUnit,
+} from "@weave-order/schema";
 
 /**
  * 导入文件的「输入适配器」：把 Excel/CSV 读成扁平字符串记录，再映射成
@@ -30,7 +40,6 @@ const SAMPLE_TEXT_COLUMNS = [
   "composition",
   "category",
   "color",
-  "weight",
   "unit",
   "status",
 ] as const;
@@ -61,6 +70,9 @@ const SAMPLE_HEADER_ALIASES: Record<string, string> = {
   "克重（g/m2）": "weight",
   "克重（g/m²）": "weight",
   "克重（g/㎡）": "weight",
+  width: "width",
+  门幅: "width",
+  幅宽: "width",
   unit: "unit",
   单位: "unit",
   status: "status",
@@ -73,14 +85,90 @@ const SAMPLE_HEADER_ALIASES: Record<string, string> = {
 };
 
 /**
- * 表头里写了单位，单元格就可以是纯数字：`克重(g/m²)` 下的 `220` 补成 `220g/m2`。
- * 只有「克重」没写单位时不补 —— 那正是「无单位纯数字」必须留空的边界。
+ * 表头 → 契约字段。
+ *
+ * 克重 / 门幅的单位写在表头里（`克重(g/m²)`、`门幅(inch)`），所以这两列
+ * 不能只做全等匹配：先看别名表，再按「表头里出现了克重/门幅字样」兜底。
  */
-function weightUnitFromHeader(header: string): string | null {
+function matchSampleHeader(header: string): string | null {
+  const direct = SAMPLE_HEADER_ALIASES[header] ?? SAMPLE_HEADER_ALIASES[header.toLowerCase()];
+  if (direct) return direct;
+  const normalized = header.normalize("NFKC").toLowerCase();
+  if (normalized.includes("克重") || normalized.includes("weight")) return "weight";
+  if (normalized.includes("门幅") || normalized.includes("幅宽") || normalized.includes("width")) {
+    return "width";
+  }
+  return null;
+}
+
+/**
+ * 表头里写了单位，单元格就可以是纯数字：`克重(g/m²)` 下的 `220` 认成 220 g/m²。
+ * 只有表头没写单位时不认 —— 那正是「无单位纯数字」必须留空的边界。
+ */
+function weightUnitFromHeader(header: string): WeightUnit | null {
   const normalized = header.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
-  if (!normalized.includes("克重") && normalized !== "weight") return null;
-  if (normalized.includes("/m2")) return "g/m2";
-  if (normalized.includes("gsm")) return "gsm";
+  if (!normalized.includes("克重") && !normalized.includes("weight")) return null;
+  if (normalized.includes("oz/yd2") || normalized.includes("oz")) return "oz";
+  if (normalized.includes("kg/m2") || normalized.includes("kgm2") || normalized.includes("kg")) {
+    return "kgm2";
+  }
+  if (normalized.includes("/m2") || normalized.includes("gsm")) return "gsm";
+  return null;
+}
+
+/** 门幅单位来自表头：`门幅(cm)` / `门幅(inch)` / `门幅(m)`。 */
+function widthUnitFromHeader(header: string): WidthUnit | null {
+  const normalized = header.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  if (
+    !normalized.includes("门幅") &&
+    !normalized.includes("幅宽") &&
+    !normalized.includes("width")
+  ) {
+    return null;
+  }
+  if (normalized.includes("inch") || normalized.includes("英寸")) return "in";
+  if (normalized.includes("cm") || normalized.includes("厘米")) return "cm";
+  if (normalized.includes("米") || /m\)/.test(normalized)) return "m";
+  return null;
+}
+
+/** 找到某一契约字段对应的原始表头。 */
+function sourceHeader(record: FlatRecord, field: string): string | null {
+  for (const header of Object.keys(record)) {
+    if (matchSampleHeader(header) === field) return header;
+  }
+  return null;
+}
+
+/**
+ * 单元格 → 克重。
+ *
+ * 带单位的原文直接解析；纯数字必须有表头单位，否则留空 —— 不猜。
+ */
+function weightCell(
+  value: string | undefined,
+  headerUnit: WeightUnit | null,
+): WeightMeasurement | null {
+  if (value === undefined) return null;
+  const text = value.trim();
+  if (text === "") return null;
+  const parsed = parseWeightMeasurement(text);
+  if (parsed) return parsed;
+  if (headerUnit && /^\d+(?:\.\d+)?$/.test(text)) return { value: Number(text), unit: headerUnit };
+  return null;
+}
+
+/** 单元格 → 门幅。规则与克重一致。 */
+function widthCell(
+  value: string | undefined,
+  headerUnit: WidthUnit | null,
+): WidthMeasurement | null {
+  if (value === undefined) return null;
+  const text = value.trim();
+  if (text === "") return null;
+  const parsed = parseWidthMeasurement(text);
+  if (parsed) return parsed;
+  if (headerUnit && /^\d+(?:\.\d+)?$/.test(text)) return { value: Number(text), unit: headerUnit };
   return null;
 }
 
@@ -88,14 +176,12 @@ function weightUnitFromHeader(header: string): string | null {
 function canonicalSampleRecord(record: FlatRecord): FlatRecord {
   const canonical: FlatRecord = {};
   for (const [header, value] of Object.entries(record)) {
-    const key = SAMPLE_HEADER_ALIASES[header] ?? SAMPLE_HEADER_ALIASES[header.toLowerCase()];
+    const key = matchSampleHeader(header);
     if (!key) {
       canonical[header] = value;
       continue;
     }
-    const unit = key === "weight" ? weightUnitFromHeader(header) : null;
-    canonical[key] =
-      unit && /^\d+(?:\.\d+)?$/.test(value.trim()) ? `${value.trim()}${unit}` : value;
+    canonical[key] = value;
   }
   return canonical;
 }
@@ -207,6 +293,19 @@ export function toSampleRow(record: FlatRecord): unknown {
     const value = canonical[column];
     if (value !== undefined && value !== "") row[column] = value;
   }
+  // 克重 / 门幅：表头带单位时纯数字也算数；表头没写单位就留空，不猜。
+  const weightHeader = sourceHeader(record, "weight");
+  const weight = weightCell(
+    weightHeader === null ? undefined : record[weightHeader],
+    weightHeader === null ? null : weightUnitFromHeader(weightHeader),
+  );
+  if (weight) row["weight"] = weight;
+  const widthHeader = sourceHeader(record, "width");
+  const width = widthCell(
+    widthHeader === null ? undefined : record[widthHeader],
+    widthHeader === null ? null : widthUnitFromHeader(widthHeader),
+  );
+  if (width) row["width"] = width;
   const amount = canonical["costFloorAmount"];
   if (amount !== undefined && amount !== "") {
     row["costFloor"] = {

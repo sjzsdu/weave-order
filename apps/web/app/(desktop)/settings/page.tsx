@@ -4,8 +4,16 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthContext } from "@weave-order/core";
-import type { Capability, Currency, MemberRole } from "@weave-order/schema";
-import { SETTINGS_SECTIONS, memberRoleLabel, visibleNav } from "@weave-order/schema";
+import type { Capability, Currency, MemberRole, WeightUnit, WidthUnit } from "@weave-order/schema";
+import {
+  SETTINGS_SECTIONS,
+  WEIGHT_UNITS,
+  WEIGHT_UNIT_LABEL,
+  WIDTH_UNITS,
+  WIDTH_UNIT_LABEL,
+  memberRoleLabel,
+  visibleNav,
+} from "@weave-order/schema";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { formatMoney } from "@weave-order/ui";
@@ -15,6 +23,8 @@ import { useMounted } from "@/use-mounted";
 import { FieldOptionsSummary } from "@/field-options-manager";
 import { AuditLogView } from "@/audit-log";
 import { useWorkspaceIA } from "@/workspace-ia";
+import { useMeasureUnits } from "@/measure-units";
+import { CodeRulesSection } from "./code-rules-section";
 import { MembersSection } from "./members-section";
 
 const SCOPE_LABEL: Record<string, string> = {
@@ -232,6 +242,10 @@ function SectionContent({
       return <PrintSection />;
     case "input":
       return <InputSection />;
+    case "units":
+      return <MeasureUnitsSection />;
+    case "codes":
+      return <CodeRulesSection canEdit={capabilities.includes("settings.edit")} />;
     case "audit":
       return <AuditSection />;
     case "import":
@@ -575,6 +589,98 @@ function InputSection() {
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * 默认计量单位：公司层面的录入习惯。
+ *
+ * 克重与门幅的单位是有限集合，所以单位不猜：录入面上是「数值框 + 单位下拉」，
+ * 下拉默认选中这里配的单位。用户随时可以改成别的单位，改公司默认值不会动历史数据。
+ */
+function MeasureUnitsSection() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const defaults = useMeasureUnits();
+  const [weight, setWeight] = useState<WeightUnit>(defaults.weight);
+  const [width, setWidth] = useState<WidthUnit>(defaults.width);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setWeight(defaults.weight);
+    setWidth(defaults.width);
+  }, [defaults.weight, defaults.width]);
+
+  const save = useMutation({
+    mutationFn: () => api.updateMeasureUnits({ weight, width }),
+    onSuccess: (saved) => {
+      setFeedback(`已保存：之后新建样品的克重按 ${WEIGHT_UNIT_LABEL[saved.weight]}、门幅按 ${WIDTH_UNIT_LABEL[saved.width]} 录入`);
+      void queryClient.invalidateQueries({ queryKey: ["settings", "measure-units"] });
+    },
+    onError: (error) => {
+      setFeedback(error instanceof Error ? error.message : "保存失败，请稍后重试");
+    },
+  });
+
+  return (
+    <section className="rounded-lg border border-line bg-surface px-5 py-4">
+      <h2 className="text-sm font-medium text-ink-900">默认计量单位</h2>
+      <p className="mt-1 text-xs text-ink-400">
+        克重与门幅的单位是固定的几档，所以录入时分开填：数值填数字，单位用下拉选。
+        这里配的是下拉的默认值，只影响之后新建的样品；已经录好的样品保留自己的单位。
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-xs text-ink-400">
+          默认克重单位
+          <select
+            className="min-h-11 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value as WeightUnit)}
+          >
+            {WEIGHT_UNITS.map((unit) => (
+              <option key={unit} value={unit}>
+                {WEIGHT_UNIT_LABEL[unit]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-xs text-ink-400">
+          默认门幅单位
+          <select
+            className="min-h-11 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+            value={width}
+            onChange={(event) => setWidth(event.target.value as WidthUnit)}
+          >
+            {WIDTH_UNITS.map((unit) => (
+              <option key={unit} value={unit}>
+                {WIDTH_UNIT_LABEL[unit]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button
+          variant="primary"
+          className="min-h-11"
+          disabled={save.isPending}
+          onClick={() => {
+            setFeedback(null);
+            save.mutate();
+          }}
+        >
+          {save.isPending ? "保存中…" : "保存默认单位"}
+        </Button>
+        {feedback ? (
+          <span className="text-xs text-ink-700" role="status">
+            {feedback}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-3 text-xs text-ink-400">
+        克重区间筛选统一按 g/m² 比较，门幅按 cm；所以不管你用哪个单位录，筛选口径都不会漂。
+      </p>
+    </section>
   );
 }
 

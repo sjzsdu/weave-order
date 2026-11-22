@@ -18,20 +18,20 @@ async function main(): Promise<void> {
     HUMAN,
   );
   const fabrics = [
-    { code: `QT-S1-${suffix}`, name: "220g 精梳棉汗布", composition: "100% 棉", weight: "220g/m2" },
+    { code: `QT-S1-${suffix}`, name: "220g 精梳棉汗布", composition: "100% 棉", weight: { value: 220, unit: "gsm" } },
     {
       code: `QT-S2-${suffix}`,
       name: "220g 棉氨纶罗纹",
       composition: "95% 棉 5% 氨纶",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
     },
     {
       code: `QT-S3-${suffix}`,
       name: "220g 有机棉双面布",
       composition: "100% 有机棉",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
     },
-    { code: `QT-S4-${suffix}`, name: "涤纶运动布", composition: "100% 涤纶", weight: "180g/m2" },
+    { code: `QT-S4-${suffix}`, name: "涤纶运动布", composition: "100% 涤纶", weight: { value: 180, unit: "gsm" } },
   ];
   const samples: FabricSample[] = [];
   for (const fabric of fabrics) {

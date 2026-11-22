@@ -60,6 +60,16 @@ export const SETTINGS_SECTIONS: readonly NavItem[] = [
     requiredCapability: "field_options.manage",
   },
   { href: "/settings?section=input", label: "输入与识别", requiredCapability: "settings.edit" },
+  {
+    href: "/settings?section=units",
+    label: "计量单位",
+    requiredCapability: "settings.edit",
+  },
+  {
+    href: "/settings?section=codes",
+    label: "业务编号",
+    requiredCapability: "settings.edit",
+  },
   { href: "/settings?section=print", label: "打印与外设", requiredCapability: "settings.edit" },
   { href: "/settings?section=import", label: "数据导入", requiredCapability: "data.import" },
   { href: "/settings?section=audit", label: "审计日志", requiredCapability: "audit.read.own" },

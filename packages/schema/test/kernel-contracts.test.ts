@@ -51,6 +51,7 @@ describe("T-005 create_sample_shipment 输出契约", () => {
           id: UUID_A,
           tenantId: UUID_A,
           customerId: UUID_B,
+          code: null,
           status: "DRAFT",
           channel: "COURIER",
           carrier: null,

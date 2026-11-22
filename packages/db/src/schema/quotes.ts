@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -38,6 +39,8 @@ export const sampleShipments = pgTable(
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
     status: shipmentStatusEnum("status").notNull().default("DRAFT"),
+    /** 编号体系治理：寄样单规则编号；历史行为 NULL。 */
+    code: varchar("code", { length: 64 }),
     channel: shipmentChannelEnum("channel").notNull().default("COURIER"),
     carrier: varchar("carrier", { length: 128 }),
     trackingNumber: varchar("tracking_number", { length: 128 }),
@@ -52,6 +55,8 @@ export const sampleShipments = pgTable(
   (table) => [
     index("sample_shipments_tenant_customer_idx").on(table.tenantId, table.customerId),
     index("sample_shipments_status_idx").on(table.status),
+    /** 编号体系治理：寄样单规则编号；历史行为 NULL。 */
+    uniqueIndex("sample_shipments_tenant_code_idx").on(table.tenantId, table.code),
   ],
 );
 
@@ -88,6 +93,8 @@ export const quotes = pgTable(
      */
     itemId: uuid("item_id").references(() => items.id, { onDelete: "set null" }),
     status: quoteStatusEnum("status").notNull().default("DRAFT"),
+    /** 编号体系治理：规则生成的可寻址编号；历史行为 NULL，回退派生编号。 */
+    code: varchar("code", { length: 64 }),
     currency: currencyEnum("currency").notNull(),
     subtotalAmount: bigint("subtotal_amount", { mode: "number" }).notNull(),
     totalAmount: bigint("total_amount", { mode: "number" }).notNull(),
@@ -121,6 +128,11 @@ export const quotes = pgTable(
     index("quotes_tenant_customer_idx").on(table.tenantId, table.customerId),
     index("quotes_tenant_item_idx").on(table.tenantId, table.itemId),
     index("quotes_tenant_status_created_idx").on(table.tenantId, table.status, table.createdAt),
+    /**
+     * 编号体系治理：新报价写入规则编号；历史行为 NULL，展示层回退派生编号。
+     * NULL 不参与唯一约束（Postgres 唯一索引允许多个 NULL），历史数据无需回填。
+     */
+    uniqueIndex("quotes_tenant_code_idx").on(table.tenantId, table.code),
   ],
 );
 

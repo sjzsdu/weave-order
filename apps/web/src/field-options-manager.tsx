@@ -10,6 +10,7 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   "sample.category": "样品品类",
   "sample.composition": "样品成分",
   "sample.color": "样品颜色",
+  "sample.material": "样品原料",
   "contact.role": "联系人角色",
 };
 
@@ -480,6 +481,7 @@ const SUMMARY_FIELDS: FieldKey[] = [
   "sample.category",
   "sample.composition",
   "sample.color",
+  "sample.material",
   "contact.role",
 ];
 

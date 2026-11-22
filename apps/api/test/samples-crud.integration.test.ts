@@ -150,7 +150,7 @@ describe("样品 CRUD 与图墙", () => {
           name: "32S 精梳棉汗布",
           composition: "100% 棉",
           category: "针织",
-          weight: "220g/m²",
+          weight: { value: 220, unit: "gsm" },
           unit: "meter",
           costFloor: { amount: 1420, currency: "CNY" },
         },

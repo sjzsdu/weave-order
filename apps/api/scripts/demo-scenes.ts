@@ -112,7 +112,7 @@ async function main(): Promise<void> {
           code: SAMPLE_CODE,
           name: SAMPLE_NAME,
           composition: "100% 棉",
-          weight: "220g/m2",
+          weight: { value: 220, unit: "gsm" },
           unit: "meter",
           costFloor: { amount: 1200, currency: "CNY" },
         },

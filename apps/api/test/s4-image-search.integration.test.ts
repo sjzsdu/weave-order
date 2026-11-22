@@ -252,7 +252,7 @@ async function harness(options: { captionFallback?: boolean } = {}): Promise<Har
         code: `S4-${suffix()}`,
         name: name ?? `S4 样品 ${tag}`,
         composition: "100% 棉",
-        weight: "180g/m2",
+        weight: { value: 180, unit: "gsm" },
         unit: "meter",
         imageKeys: [objectKey],
       },

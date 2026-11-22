@@ -4,9 +4,16 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   ResourceFieldConflictValue,
   UpdateResourceFieldsInput,
-  parseWeightGsm,
+  WeightMeasurement,
+  WidthMeasurement,
+  weightGsmOf,
+  weightMeasurementFrom,
+  weightSearchText,
+  widthCmOf,
+  widthMeasurementFrom,
 } from "@weave-order/schema";
 import type {
+  CompositionParts,
   DraftFieldInput,
   JsonValue,
   ResourceFieldSourceKind,
@@ -16,6 +23,7 @@ import type {
 } from "@weave-order/schema";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import type { CompositionService } from "./composition.service";
 import { KernelError } from "./errors";
 import { toIso } from "./mappers";
 
@@ -67,6 +75,7 @@ const WRITABLE_SAMPLE_FIELDS = new Set([
   "category",
   "color",
   "weight",
+  "width",
   "unit",
 ]);
 
@@ -117,6 +126,8 @@ export class ResourceFieldService {
   constructor(
     private readonly db: Db,
     private readonly tenantId: string,
+    /** 成分解析：确认页可以提交配比，文本由服务端派生。 */
+    private readonly composition?: CompositionService,
   ) {}
 
   /**
@@ -322,7 +333,10 @@ export class ResourceFieldService {
       composition: sample.composition,
       category: sample.category,
       color: sample.color,
-      weight: sample.weight,
+      // 克重 / 门幅在矩阵里也是「数值 + 单位」这一对，与主表同构：
+      // 确认页拿到什么就写回什么，中间不再过一遍文本解析。
+      weight: weightMeasurementFrom(sample.weightValue, sample.weightUnit),
+      width: widthMeasurementFrom(sample.widthValue, sample.widthUnit),
       unit: sample.unit,
     };
     for (const fieldName of SAMPLE_FIELDS) {
@@ -495,13 +509,39 @@ export class ResourceFieldService {
         }
         values.name = text;
       }
-      if (field.fieldName === "composition") values.composition = text;
+      if (field.fieldName === "composition") {
+        // 成分有两种形态：文本原文，或配比明细 `{ parts: [...] }`。
+        // 配比要经原料字典解析并派生文本，不把客户端的原文直接写进主表。
+        const resolved = await this.resolveComposition(field.value);
+        values.composition = resolved.composition;
+        values.compositionParts = resolved.compositionParts;
+      }
       if (field.fieldName === "category") values.category = text;
       if (field.fieldName === "color") values.color = text;
       if (field.fieldName === "weight") {
-        values.weight = text;
-        // 逐字段确认也是写入侧：克重仍由同一解析器派生。
-        values.weightGsm = parseWeightGsm(text);
+        // 确认页提交的是「数值 + 单位」这一对；形状不对直接拒，
+        // 不把半个值写进主表（那会让筛选口径和显示口径各说各话）。
+        const measurement = WeightMeasurement.safeParse(field.value);
+        if (!measurement.success) {
+          throw new KernelError("KERNEL_REJECTED", "克重需要同时给出数值和单位", {
+            reason: "SAMPLE_WEIGHT_INVALID",
+          });
+        }
+        values.weightValue = measurement.data.value;
+        values.weightUnit = measurement.data.unit;
+        values.weightGsm = weightGsmOf(measurement.data);
+        values.weightText = weightSearchText(measurement.data);
+      }
+      if (field.fieldName === "width") {
+        const measurement = WidthMeasurement.safeParse(field.value);
+        if (!measurement.success) {
+          throw new KernelError("KERNEL_REJECTED", "门幅需要同时给出数值和单位", {
+            reason: "SAMPLE_WIDTH_INVALID",
+          });
+        }
+        values.widthValue = measurement.data.value;
+        values.widthUnit = measurement.data.unit;
+        values.widthCm = widthCmOf(measurement.data);
       }
       if (
         field.fieldName === "unit" &&
@@ -514,6 +554,34 @@ export class ResourceFieldService {
       .update(samples)
       .set(values)
       .where(and(eq(samples.id, resourceId), eq(samples.tenantId, this.tenantId)));
+  }
+
+  /**
+   * 确认页的成分取值 → 主表两列。
+   *
+   * - 字符串 / 空值：文本模式，原文照存，配比清空；
+   * - `{ parts: [...] }`：配比模式，原料 code 要过字典校验，文本由服务端派生
+   *   （形状不对直接拒，不能退化成「把 JSON 存进成分列」那种脏数据）。
+   */
+  private async resolveComposition(value: JsonValue): Promise<{
+    composition: string | null;
+    compositionParts: CompositionParts | null;
+  }> {
+    const isPartsShape =
+      typeof value === "object" && value !== null && !Array.isArray(value) && "parts" in value;
+    if (isPartsShape) {
+      if (!this.composition) {
+        throw new KernelError("KERNEL_REJECTED", "成分配比暂时不可用，请改用文本录入", {
+          reason: "COMPOSITION_UNAVAILABLE",
+        });
+      }
+      return this.composition.resolve({
+        text: null,
+        parts: (value as { parts: unknown }).parts,
+      });
+    }
+    const text = asText(value);
+    return { composition: text?.trim() ? text.trim() : null, compositionParts: null };
   }
 
   /** 草稿确认前的阻塞检查：必填字段必须已有用户确认的值。 */

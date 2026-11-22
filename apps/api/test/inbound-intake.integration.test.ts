@@ -92,7 +92,7 @@ describe("手工录入客户回复（真连 PG）", () => {
         code: `IN-S-${id}`,
         name: "录入用面料",
         composition: "100% 棉",
-        weight: "220g/m2",
+        weight: { value: 220, unit: "gsm" },
         unit: "meter",
         costFloor: { amount: 1200, currency: "CNY" },
       },

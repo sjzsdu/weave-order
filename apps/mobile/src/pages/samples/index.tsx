@@ -2,7 +2,7 @@ import { Image, Input, Text, View } from "@tarojs/components";
 import { useDidShow } from "@tarojs/taro";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FabricSample } from "@weave-order/schema";
-import { isSampleStatusAvailable } from "@weave-order/schema";
+import { isSampleStatusAvailable, weightLabel } from "@weave-order/schema";
 import { Badge, Button, Card, EmptyState, Page, Sheet } from "../../components/ui";
 import { api, IS_MOCK } from "../../lib/runtime";
 import { userFacingErrorMessage } from "../../lib/upload-failure";
@@ -364,7 +364,7 @@ export default function SamplesPage() {
             <Text>
               {[
                 selected.composition ?? "成分未填",
-                selected.weightGsm ? `${selected.weightGsm} g/m²` : (selected.weight ?? "克重未填"),
+                weightLabel(selected.weight) ?? "克重未填",
               ].join(" · ")}
             </Text>
             <View className="label">状态</View>

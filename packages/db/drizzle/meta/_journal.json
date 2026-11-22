@@ -253,6 +253,41 @@
       "when": 1795317592527,
       "tag": "0035_sample_spec_normalize",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795345596916,
+      "tag": "0036_sample_measure_units",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795345601712,
+      "tag": "0037_drop_legacy_sample_weight_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795348686885,
+      "tag": "0038_code_numbering_governance",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795350823417,
+      "tag": "0039_sample_composition_parts",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795351268165,
+      "tag": "0040_material_presets",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { customers, orderItems, orders, samples } from "@weave-order/db";
-import type { Db } from "@weave-order/db";
+import type { Db, Tx } from "@weave-order/db";
 import { CreateOrderInput } from "@weave-order/schema";
 import type {
   Order,
@@ -11,6 +11,7 @@ import type {
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
+import { CodeNumberService } from "./code-number.service";
 import type { CustomerService } from "./customers.service";
 import { KernelError } from "./errors";
 import { ownerScopeFilter } from "./data-scope";
@@ -60,12 +61,18 @@ function mapItem(row: OrderItemRow, currency: Order["currency"]): OrderLineItem 
  * 最低毛利规则（同样的价格不可能在报价合规、在订单不合规）。
  */
 export class OrderService {
+  /** 编号生成服务；未注入时按自身 db/tenantId 构造（兼容老单测的直接 new）。 */
+  private readonly codeNumber: CodeNumberService;
+
   constructor(
     private readonly db: Db,
     private readonly customers: CustomerService,
     private readonly pricing: PricingService,
     private readonly tenantId: string,
-  ) {}
+    codeNumber?: CodeNumberService,
+  ) {
+    this.codeNumber = codeNumber ?? new CodeNumberService(db, tenantId);
+  }
 
   async create(input: unknown, ctx: KernelContext): Promise<Order> {
     const parsed = CreateOrderInput.parse(input);
@@ -152,68 +159,95 @@ export class OrderService {
     }
     const totalAmount = lines.reduce((sum, line) => sum + line.lineTotalAmount, 0);
 
-    return this.db.transaction(async (tx) => {
-      const rows = await tx
-        .insert(orders)
-        .values({
+    // 显式 code 优先（规则不介入）；缺省走原子计数器取号，与写入同一事务。
+    if (parsed.code) {
+      const code = parsed.code;
+      return this.db.transaction((tx) => this.insertOrder(tx, parsed, code, lines, totalAmount, ctx));
+    }
+    return this.db.transaction((tx) =>
+      this.codeNumber.allocateAndWrite(tx, "order", new Date(), (code) =>
+        this.insertOrder(tx, parsed, code, lines, totalAmount, ctx),
+      ),
+    );
+  }
+
+  /** 订单主表 + 行项 + 审计的同事务写入，供显式编号与规则编号两条路径共用。 */
+  private async insertOrder(
+    tx: Tx,
+    parsed: ReturnType<typeof CreateOrderInput.parse>,
+    code: string,
+    lines: Array<{
+      sampleId: string;
+      position: number;
+      description: string;
+      quantityMilli: number;
+      unit: Unit;
+      unitPriceAmount: number;
+      lineTotalAmount: number;
+    }>,
+    totalAmount: number,
+    ctx: KernelContext,
+  ): Promise<Order> {
+    const rows = await tx
+      .insert(orders)
+      .values({
+        tenantId: this.tenantId,
+        customerId: parsed.customerId,
+        quoteId: parsed.quoteId ?? null,
+        code,
+        status: "DRAFT",
+        currency: parsed.currency,
+        totalAmount,
+        dueDate: parsed.dueDate ? new Date(parsed.dueDate) : null,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) {
+      throw new KernelError("KERNEL_REJECTED", "订单写入未返回记录", {
+        reason: "INSERT_RETURNED_NO_ROW",
+      });
+    }
+    const inserted = await tx
+      .insert(orderItems)
+      .values(
+        lines.map((line) => ({
           tenantId: this.tenantId,
-          customerId: parsed.customerId,
-          quoteId: parsed.quoteId ?? null,
-          code: parsed.code,
-          status: "DRAFT",
-          currency: parsed.currency,
+          orderId: row.id,
+          sampleId: line.sampleId,
+          position: line.position,
+          description: line.description,
+          quantityMilli: line.quantityMilli,
+          unit: line.unit,
+          unitPriceAmount: line.unitPriceAmount,
+          lineTotalAmount: line.lineTotalAmount,
+        })),
+      )
+      .returning();
+    await appendAudit(
+      tx,
+      ctx,
+      {
+        action: "ORDER_CREATED",
+        entityType: "order",
+        entityId: row.id,
+        before: null,
+        after: {
+          code: row.code,
+          customerId: row.customerId,
           totalAmount,
-          dueDate: parsed.dueDate ? new Date(parsed.dueDate) : null,
-        })
-        .returning();
-      const row = rows[0];
-      if (!row) {
-        throw new KernelError("KERNEL_REJECTED", "订单写入未返回记录", {
-          reason: "INSERT_RETURNED_NO_ROW",
-        });
-      }
-      const inserted = await tx
-        .insert(orderItems)
-        .values(
-          lines.map((line) => ({
-            tenantId: this.tenantId,
-            orderId: row.id,
-            sampleId: line.sampleId,
-            position: line.position,
-            description: line.description,
-            quantityMilli: line.quantityMilli,
-            unit: line.unit,
-            unitPriceAmount: line.unitPriceAmount,
-            lineTotalAmount: line.lineTotalAmount,
-          })),
-        )
-        .returning();
-      await appendAudit(
-        tx,
-        ctx,
-        {
-          action: "ORDER_CREATED",
-          entityType: "order",
-          entityId: row.id,
-          before: null,
-          after: {
-            code: row.code,
-            customerId: row.customerId,
-            totalAmount,
-            currency: row.currency,
-            lineCount: inserted.length,
-          },
+          currency: row.currency,
+          lineCount: inserted.length,
         },
-        this.tenantId,
-      );
-      return mapOrder(
-        row,
-        inserted
-          .slice()
-          .sort((a, b) => a.position - b.position)
-          .map((item) => mapItem(item, row.currency)),
-      );
-    });
+      },
+      this.tenantId,
+    );
+    return mapOrder(
+      row,
+      inserted
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((item) => mapItem(item, row.currency)),
+    );
   }
 
   /** 人工确认订单：DRAFT -> CONFIRMED；智能体无权确认。 */

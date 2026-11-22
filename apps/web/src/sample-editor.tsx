@@ -2,11 +2,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { FabricSample, FieldKey, Unit } from "@weave-order/schema";
-import { parseWeightGsm } from "@weave-order/schema";
-import { Badge, Button, ComboBox, cn } from "@weave-order/ui";
+import type {
+  CompositionPartInput,
+  FabricSample,
+  FieldKey,
+  Unit,
+  WeightUnit,
+  WidthUnit,
+} from "@weave-order/schema";
+import {
+  WEIGHT_UNITS,
+  WEIGHT_UNIT_LABEL,
+  WIDTH_UNITS,
+  WIDTH_UNIT_LABEL,
+  weightGsmOf,
+  widthCmOf,
+} from "@weave-order/schema";
+import { Badge, Button, ComboBox, CompositionInput, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { FieldOptionsManager, useFieldOptions } from "@/field-options-manager";
+import { useMeasureUnits } from "@/measure-units";
 import { compressImageFile, uploadToPresignedUrl } from "@/image-compress";
 import type { CompressedImage } from "@/image-compress";
 
@@ -31,6 +46,22 @@ interface SampleDraftErrors {
   code?: string;
   name?: string;
   costFloor?: string;
+  weight?: string;
+  width?: string;
+}
+
+/**
+ * 数值文本 → 数值。
+ *
+ * 空 = 没填（null）；不是正数 = 录错了（undefined）。
+ * 单位由下拉单独选，所以这里只管数值。
+ */
+function measurementNumber(raw: string): number | null | undefined {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return value;
 }
 
 function suggestCode(): string {
@@ -66,9 +97,15 @@ export function SampleEditor({
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [composition, setComposition] = useState("");
+  // 成分配比（原料 code + 百分比）：null = 文本模式。
+  const [compositionParts, setCompositionParts] = useState<CompositionPartInput[] | null>(null);
   const [category, setCategory] = useState("");
   const [color, setColor] = useState("");
-  const [weight, setWeight] = useState("");
+  const [weightValue, setWeightValue] = useState("");
+  // 单位下拉的选中项：null = 还没选，用公司默认；选了就是这条样品自己的单位。
+  const [weightUnit, setWeightUnit] = useState<WeightUnit | null>(null);
+  const [widthValue, setWidthValue] = useState("");
+  const [widthUnit, setWidthUnit] = useState<WidthUnit | null>(null);
   const [unit, setUnit] = useState<Unit>("meter");
   const [costFloorYuan, setCostFloorYuan] = useState("");
   const [images, setImages] = useState<DraftImage[]>([]);
@@ -81,8 +118,10 @@ export function SampleEditor({
   const nameRef = useRef<HTMLInputElement>(null);
   const costFloorRef = useRef<HTMLInputElement>(null);
   const compositionOptions = useFieldOptions("sample.composition");
+  const materialOptions = useFieldOptions("sample.material");
   const categoryOptions = useFieldOptions("sample.category");
   const colorOptions = useFieldOptions("sample.color");
+  const defaults = useMeasureUnits();
 
   useEffect(() => {
     if (!open) return;
@@ -92,9 +131,14 @@ export function SampleEditor({
     setCode(sample?.code ?? suggestCode());
     setName(sample?.name ?? "");
     setComposition(sample?.composition ?? "");
+    setCompositionParts(sample?.compositionParts ?? null);
     setCategory(sample?.category ?? "");
     setColor(sample?.color ?? "");
-    setWeight(sample?.weight ?? "");
+    // 数值与单位分开存：数值是文本框，单位是下拉。
+    setWeightValue(sample?.weight ? String(sample.weight.value) : "");
+    setWeightUnit(sample?.weight?.unit ?? null);
+    setWidthValue(sample?.width ? String(sample.width.value) : "");
+    setWidthUnit(sample?.width?.unit ?? null);
     setUnit(sample?.unit ?? "meter");
     setCostFloorYuan(sample?.costFloor ? (sample.costFloor.amount / 100).toFixed(2) : "");
     const existing = (sample?.images ?? []).map((image) => ({
@@ -112,6 +156,26 @@ export function SampleEditor({
     if (!Number.isFinite(yuan) || yuan < 0) return undefined;
     return { amount: Math.round(yuan * 100), currency: "CNY" as const };
   }, [costFloorYuan]);
+
+  /** 生效的单位：用户选过就用用户的，否则用公司默认。 */
+  const effectiveWeightUnit = weightUnit ?? defaults.weight;
+  const effectiveWidthUnit = widthUnit ?? defaults.width;
+
+  /** 克重：null = 没填；undefined = 录错了。 */
+  const weightMeasurement = useMemo(() => {
+    const value = measurementNumber(weightValue);
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    return { value, unit: effectiveWeightUnit };
+  }, [weightValue, effectiveWeightUnit]);
+
+  /** 门幅：同上。 */
+  const widthMeasurement = useMemo(() => {
+    const value = measurementNumber(widthValue);
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    return { value, unit: effectiveWidthUnit };
+  }, [widthValue, effectiveWidthUnit]);
 
   if (!open) return null;
 
@@ -181,6 +245,8 @@ export function SampleEditor({
     if (!code.trim()) found.code = "编码必填";
     if (!name.trim()) found.name = "品名必填";
     if (costFloor === undefined) found.costFloor = "成本底线必须是数字（元）";
+    if (weightMeasurement === undefined) found.weight = "克重要填大于 0 的数字";
+    if (widthMeasurement === undefined) found.width = "门幅要填大于 0 的数字";
     setFieldErrors(found);
     if (Object.keys(found).length > 0) {
       // 错误必须在字段旁边出现，并把焦点带到第一个缺失项：底部通用错误在长表单里会被忽略。
@@ -203,9 +269,11 @@ export function SampleEditor({
               code: code.trim(),
               name: name.trim(),
               composition: composition.trim() || null,
+              compositionParts,
               category: category.trim() || null,
               color: color.trim() || null,
-              weight: weight.trim() || null,
+              weight: weightMeasurement ?? null,
+              width: widthMeasurement ?? null,
               unit,
               costFloor,
             });
@@ -243,9 +311,11 @@ export function SampleEditor({
           code: code.trim(),
           name: name.trim(),
           composition: composition.trim() || null,
+          compositionParts,
           category: category.trim() || null,
           color: color.trim() || null,
-          weight: weight.trim() || null,
+          weight: weightMeasurement ?? null,
+          width: widthMeasurement ?? null,
           unit,
           costFloor,
           // 整组替换：即使是「全部删掉」也要把空数组发出去，否则删除不会落库。
@@ -322,9 +392,17 @@ export function SampleEditor({
               />
             </Field>
             <Field label="成分">
-              <ComboBox
+              <CompositionInput
+                id="sample-composition"
                 value={composition}
-                onChange={setComposition}
+                parts={compositionParts}
+                onChange={(next) => {
+                  setComposition(next.text);
+                  setCompositionParts(next.parts);
+                }}
+                materials={materialOptions.options
+                  .filter((option) => option.active)
+                  .map((option) => ({ code: option.code, label: option.label }))}
                 options={compositionOptions.options
                   .filter((option) => option.active)
                   .map((option) => ({ value: option.code, label: option.label }))}
@@ -348,7 +426,6 @@ export function SampleEditor({
                     管理成分
                   </button>
                 }
-                placeholder="如 100% 棉"
               />
             </Field>
             <Field label="品类">
@@ -411,19 +488,75 @@ export function SampleEditor({
                 placeholder="如 藏青"
               />
             </Field>
-            <Field label="克重">
-              <input
-                className="input"
-                value={weight}
-                onChange={(event) => setWeight(event.target.value)}
-                placeholder="如 220g/m²"
-              />
+            <Field label="克重" error={fieldErrors.weight} errorId="sample-weight-error">
+              <div className="flex gap-2">
+                <input
+                  id="sample-weight"
+                  className="input flex-1"
+                  inputMode="decimal"
+                  value={weightValue}
+                  onChange={(event) => {
+                    setWeightValue(event.target.value);
+                    setFieldErrors((current) => ({ ...current, weight: undefined }));
+                  }}
+                  placeholder="如 220"
+                  aria-invalid={fieldErrors.weight ? true : undefined}
+                  aria-describedby={fieldErrors.weight ? "sample-weight-error" : undefined}
+                />
+                {/* 单位单独放在输入框后面：数值与单位各管各的，录错单位的概率从根上没了。 */}
+                <select
+                  className="input w-28"
+                  value={effectiveWeightUnit}
+                  onChange={(event) => setWeightUnit(event.target.value as WeightUnit)}
+                >
+                  {WEIGHT_UNITS.map((option) => (
+                    <option key={option} value={option}>
+                      {WEIGHT_UNIT_LABEL[option]}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <span className="mt-1 block text-xs text-ink-400">
-                {weight.trim() === ""
-                  ? "克重未填（填带单位的单一数值，如 220g/m² / 220gsm）"
-                  : parseWeightGsm(weight) === null
-                    ? "这段原文无法解析成克重；区间、纱支、无单位数字不会写入筛选克重"
-                    : `筛选克重：${parseWeightGsm(weight)} g/m²`}
+                {weightMeasurement === undefined
+                  ? "克重要填大于 0 的数字"
+                  : weightMeasurement === null
+                    ? "克重未填"
+                    : `筛选克重：${weightGsmOf(weightMeasurement)} g/m²`}
+              </span>
+            </Field>
+            <Field label="门幅" error={fieldErrors.width} errorId="sample-width-error">
+              <div className="flex gap-2">
+                <input
+                  id="sample-width"
+                  className="input flex-1"
+                  inputMode="decimal"
+                  value={widthValue}
+                  onChange={(event) => {
+                    setWidthValue(event.target.value);
+                    setFieldErrors((current) => ({ ...current, width: undefined }));
+                  }}
+                  placeholder="如 150"
+                  aria-invalid={fieldErrors.width ? true : undefined}
+                  aria-describedby={fieldErrors.width ? "sample-width-error" : undefined}
+                />
+                <select
+                  className="input w-28"
+                  value={effectiveWidthUnit}
+                  onChange={(event) => setWidthUnit(event.target.value as WidthUnit)}
+                >
+                  {WIDTH_UNITS.map((option) => (
+                    <option key={option} value={option}>
+                      {WIDTH_UNIT_LABEL[option]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="mt-1 block text-xs text-ink-400">
+                {widthMeasurement === undefined
+                  ? "门幅要填大于 0 的数字"
+                  : widthMeasurement === null
+                    ? "门幅未填"
+                    : `折合 ${widthCmOf(widthMeasurement)} cm`}
               </span>
             </Field>
             <Field

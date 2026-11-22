@@ -4,6 +4,9 @@ import {
   ApprovalDecisionResult,
   ApprovalQueue,
   AuthContextResponse,
+  CODE_ENTITY_TYPES,
+  CODE_RULE_PRESETS,
+  CodeRuleListResponse,
   TenantChoicesResponse,
   CreatedQuoteShare,
   Customer360,
@@ -30,14 +33,19 @@ import {
   T006SuggestLinePriceResult,
   IntentView,
   DEFAULT_MEASURE_UNITS,
+  defaultCodeTemplate,
+  previewCodeRule,
   isSampleStatusAvailable,
   roleCapabilities,
+  compositionText,
   weightGsmOf,
   weightSearchText,
   widthCmOf,
 } from "@weave-order/schema";
 import type {
   ApprovalDecisionInput,
+  CompositionPart,
+  CompositionPartInput,
   IntentSource,
   JsonValue,
   OnboardingState,
@@ -91,6 +99,27 @@ function mockOption(
   };
 }
 
+/**
+ * mock 的成分落库形态：配比优先（文本由配比派生），否则就是文本。
+ * 原料名从 mock 字典里取，与真后端「服务端取字典 label」同一口径。
+ */
+function mockComposition(
+  text: string | null | undefined,
+  parts: CompositionPartInput[] | null | undefined,
+): { composition: string | null; compositionParts: CompositionPart[] | null } {
+  if (!parts || parts.length === 0) {
+    return { composition: text?.trim() ? text.trim() : null, compositionParts: null };
+  }
+  const full: CompositionPart[] = parts.map((part) => ({
+    code: part.code,
+    label:
+      mockFieldOptions.find((option) => option.code === part.code && option.fieldKey === "sample.material")
+        ?.label ?? part.code,
+    percent: part.percent,
+  }));
+  return { composition: compositionText(full), compositionParts: full };
+}
+
 const mockFieldOptions: FieldOption[] = [
   mockOption("customer.tier", "NEW", "新客", 10),
   mockOption("customer.tier", "REGULAR", "常规", 20),
@@ -102,6 +131,24 @@ const mockFieldOptions: FieldOption[] = [
   mockOption("sample.composition", "COMP-COTTON", "100% 棉", 10),
   mockOption("sample.composition", "COMP-POLYESTER", "100% 涤纶", 20),
   mockOption("sample.composition", "COMP-COTTON-POLY", "棉涤混纺", 30),
+  mockOption("sample.material", "MAT-COTTON", "棉", 10),
+  mockOption("sample.material", "MAT-POLYESTER", "涤纶", 20),
+  mockOption("sample.material", "MAT-NYLON", "锦纶", 30),
+  mockOption("sample.material", "MAT-ACRYLIC", "腈纶", 40),
+  mockOption("sample.material", "MAT-VISCOSE", "粘胶", 50),
+  mockOption("sample.material", "MAT-MODAL", "莫代尔", 60),
+  mockOption("sample.material", "MAT-LYOCELL", "莱赛尔", 70),
+  mockOption("sample.material", "MAT-CUPPRO", "铜氨", 80),
+  mockOption("sample.material", "MAT-ACETATE", "醋酸", 90),
+  mockOption("sample.material", "MAT-SPANDEX", "氨纶", 100),
+  mockOption("sample.material", "MAT-LINEN", "亚麻", 110),
+  mockOption("sample.material", "MAT-RAMIE", "苎麻", 120),
+  mockOption("sample.material", "MAT-JUTE", "黄麻", 130),
+  mockOption("sample.material", "MAT-SILK", "真丝", 140),
+  mockOption("sample.material", "MAT-WOOL", "羊毛", 150),
+  mockOption("sample.material", "MAT-CASHMERE", "羊绒", 160),
+  mockOption("sample.material", "MAT-BAMBOO", "竹纤维", 170),
+  mockOption("sample.material", "MAT-RAYON", "人造丝", 180),
 ];
 
 const customer = {
@@ -1125,7 +1172,8 @@ export function createMockApiClient(): ApiClient {
         id: SAMPLE_ID,
         code: input.code,
         name: input.name,
-        composition: input.composition ?? null,
+        // 配比优先：文本由配比派生（与真后端同一份派生函数）。
+        ...mockComposition(input.composition, input.compositionParts),
         color: input.color ?? null,
         weight: input.weight ?? null,
         width: input.width ?? null,
@@ -1668,6 +1716,31 @@ export function createMockApiClient(): ApiClient {
     updateSalesContact: () => Promise.reject(new Error("演示模式不改业务员联系方式")),
     measureUnits: () => Promise.resolve({ ...DEFAULT_MEASURE_UNITS }),
     updateMeasureUnits: () => Promise.reject(new Error("演示模式不改默认计量单位")),
+    codeRules: () =>
+      Promise.resolve(
+        CodeRuleListResponse.parse({
+          rules: CODE_ENTITY_TYPES.map((entityType) => ({
+            id: "00000000-0000-0000-0000-000000000000",
+            tenantId: TENANT_ID,
+            entityType,
+            template: defaultCodeTemplate(entityType),
+            presetKey: "classic",
+            enabled: true,
+            createdBy: "system",
+            createdAt: NOW,
+            updatedAt: NOW,
+          })),
+          presets: CODE_RULE_PRESETS.map((preset) => ({
+            key: preset.key,
+            name: preset.name,
+            templates: preset.templates,
+          })),
+        }),
+      ),
+    previewCodeRule: (entityType, template) =>
+      Promise.resolve(previewCodeRule({ entityType, template })),
+    saveCodeRule: () => Promise.reject(new Error("演示模式不保存编号规则")),
+    resetCodeRule: () => Promise.reject(new Error("演示模式不恢复编号规则")),
     printSampleCards: () => Promise.reject(new Error("演示模式不实际打印")),
     sampleCardJobs: () => Promise.resolve([]),
     reprintSampleCard: () => Promise.reject(new Error("演示模式不补打样卡")),

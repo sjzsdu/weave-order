@@ -51,6 +51,13 @@ describe("rls.sql：授权名单与 RLS 名单", () => {
     expect(grantList).toContain("onboarding_state");
   });
 
+  it("编号规则与计数器两张表都在名单里（编号体系治理）", () => {
+    expect(grantList).toContain("code_rules");
+    expect(grantList).toContain("code_counters");
+    expect(businessTables).toContain("code_rules");
+    expect(businessTables).toContain("code_counters");
+  });
+
   it("两份名单没有重复项（重复说明合并冲突没清理干净）", () => {
     expect(new Set(grantList).size).toBe(grantList.length);
     expect(new Set(businessTables).size).toBe(businessTables.length);

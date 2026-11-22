@@ -6,6 +6,8 @@ import { createDb, sampleEmbeddings, samples, tenants } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { createKernel, errorChainMessage } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
+import { weightSearchText } from "@weave-order/schema";
+import type { WeightMeasurement } from "@weave-order/schema";
 import type { ObjectBytes, ObjectHead, ObjectStorage } from "../src/platform/storage";
 import { LocalStubEmbeddingProvider } from "../src/platform/embedding";
 
@@ -276,7 +278,7 @@ describe("确定性内核（集成）", () => {
         code: `IT-SEARCH-C-${id}`,
         name: "高支棉测试面料",
         composition: "100% 棉",
-        weight: "220g/m2",
+        weight: { value: 220, unit: "gsm" },
         unit: "meter",
       },
       HUMAN,
@@ -329,7 +331,7 @@ describe("确定性内核（集成）", () => {
             code: `IT-IMG-${batch}-${index}`,
             name: `以图搜图样品 ${batch}-${index}`,
             composition: index % 2 === 0 ? "100% 棉" : "100% polyester",
-            weight: `${200 + index}g/m2`,
+            weight: { value: 200 + index, unit: "gsm" },
             unit: "meter",
             imageKeys: [key],
           },
@@ -452,7 +454,12 @@ describe("确定性内核（集成）", () => {
 
     const fieldValue = (
       match: {
-        sample: { code: string; name: string; composition: string | null; weight: string | null };
+        sample: {
+          code: string;
+          name: string;
+          composition: string | null;
+          weight: WeightMeasurement | null;
+        };
       },
       field: "code" | "name" | "composition" | "weight" | "semantic",
     ): string => {
@@ -460,7 +467,7 @@ describe("确定性内核（集成）", () => {
       if (field === "code") return match.sample.code;
       if (field === "name") return match.sample.name;
       if (field === "composition") return match.sample.composition ?? "";
-      return match.sample.weight ?? "";
+      return match.sample.weight ? weightSearchText(match.sample.weight) : "";
     };
 
     const queries = ["100%棉", "_", "SMP%"];
@@ -503,7 +510,7 @@ describe("确定性内核（集成）", () => {
         code: `IT-COMBO-${id}`,
         name: "组合检索回归布",
         composition: "100%聚酯纤维",
-        weight: "150g/m",
+        weight: { value: 150, unit: "gsm" },
         unit: "meter",
       },
       HUMAN,
@@ -513,7 +520,7 @@ describe("确定性内核（集成）", () => {
         code: `IT-COMBO-D-${id}`,
         name: "同克重异成分回归布",
         composition: "100%棉",
-        weight: "150g/m",
+        weight: { value: 150, unit: "gsm" },
         unit: "meter",
       },
       HUMAN,

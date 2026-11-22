@@ -420,6 +420,25 @@ body {
   line-height: 1.6;
 }
 
+/* 度量行：数值框 + 单位选择器（单位单独放在输入框后面）。 */
+.measure-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.measure-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.measure-unit {
+  width: 200px;
+  flex: none;
+  text-align: center;
+  color: $muted;
+}
+
 .input-inline {
   border: none;
   border-bottom: 1px solid $line;

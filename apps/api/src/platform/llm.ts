@@ -315,10 +315,20 @@ function parseQuantity(text: string): QuoteIntentSlots["quantity"] {
   return { value, unit };
 }
 
+/**
+ * 克重槽位：认出「数值 + 单位」，返回能命中样品的检索词。
+ * 单位不止 g/m²：出口客户说 oz/yd²，词要能对上库里的检索文本。
+ */
 function parseWeight(text: string): string | null {
-  const match = /(\d{2,4})\s*(?:g|克)\s*(?:\/\s*(?:m2|㎡|平方米))?/i.exec(text);
+  const match =
+    /(\d+(?:\.\d+)?)\s*(?:g\s*\/\s*m\s*2|gsm|g|克|oz\s*\/\s*yd\s*2|oz|kg\s*\/\s*m\s*2|kg)/i.exec(
+      text,
+    );
   if (!match) return null;
-  return /\/|每平方米|平方米/.test(match[0]) ? `${match[1]}g/m2` : `${match[1]}g`;
+  const raw = match[0].toLowerCase();
+  if (raw.includes("oz")) return `${match[1]}oz`;
+  if (raw.includes("kg")) return `${match[1]}kg`;
+  return `${match[1]}g`;
 }
 
 function parseComposition(text: string): string | null {

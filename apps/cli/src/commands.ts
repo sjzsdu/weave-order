@@ -334,7 +334,8 @@ interface SampleRow {
   code: string;
   name: string;
   composition: string | null;
-  weight?: string | null;
+  // 克重不再是自由文本，而是「数值 + 单位」成对结构，与样品录入口径一致。
+  weight?: { value: number; unit: string } | null;
 }
 
 export async function dataCommand(

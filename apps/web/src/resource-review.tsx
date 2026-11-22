@@ -2,9 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ResourceFieldView } from "@weave-order/schema";
-import { Badge, Button, Card, EmptyState, Spinner } from "@weave-order/ui";
+import type {
+  CompositionPartInput,
+  JsonValue,
+  ResourceFieldView,
+  WeightUnit,
+  WidthUnit,
+} from "@weave-order/schema";
+import {
+  WEIGHT_UNITS,
+  WEIGHT_UNIT_LABEL,
+  WIDTH_UNITS,
+  WIDTH_UNIT_LABEL,
+} from "@weave-order/schema";
+import { Badge, Button, Card, CompositionInput, EmptyState, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
+import { useMeasureUnits } from "@/measure-units";
+import { useFieldOptions } from "./field-options-manager";
 import { FIELD_LABEL, confirmErrorMessage } from "./resource-review-copy";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -29,7 +43,40 @@ function valueText(value: ResourceFieldView["value"]): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
+  // 克重 / 门幅在矩阵里是「数值 + 单位」这一对：这里只取数值，单位另外渲染。
+  const measurement = measurementOf(value);
+  if (measurement) return String(measurement.value);
   return JSON.stringify(value);
+}
+
+/** 矩阵里的克重 / 门幅值：`{ value, unit }`。 */
+function measurementOf(
+  value: ResourceFieldView["value"],
+): { value: number; unit: string } | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.value !== "number" || typeof record.unit !== "string") return null;
+  return { value: record.value, unit: record.unit };
+}
+
+/** 矩阵里的成分值：文本模式是字符串，配比模式是 `{ parts: [...] }`。 */
+function compositionPartsOf(
+  value: ResourceFieldView["value"],
+): { text: string; parts: CompositionPartInput[] | null } {
+  if (typeof value === "string") return { text: value, parts: null };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { text: "", parts: null };
+  }
+  const parts = (value as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) return { text: "", parts: null };
+  const parsed: CompositionPartInput[] = [];
+  for (const part of parts) {
+    if (typeof part !== "object" || part === null) continue;
+    const record = part as { code?: unknown; percent?: unknown };
+    if (typeof record.code !== "string" || typeof record.percent !== "number") continue;
+    parsed.push({ code: record.code, percent: record.percent });
+  }
+  return { text: "", parts: parsed.length > 0 ? parsed : null };
 }
 
 interface ResourceReviewProps {
@@ -44,6 +91,7 @@ interface ResourceReviewProps {
 export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps) {
   const api = useApi();
   const queryClient = useQueryClient();
+  const defaults = useMeasureUnits();
   const key = [resourceType, resourceId, "fields"] as const;
   const fieldsQuery = useQuery({
     queryKey: key,
@@ -51,6 +99,21 @@ export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps
       resourceType === "customer" ? api.customerFields(resourceId) : api.sampleFields(resourceId),
   });
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // 克重 / 门幅：数值进文本框，单位进下拉（与样品编辑面同一套口径）。
+  const [weightDraft, setWeightDraft] = useState<{ value: string; unit: WeightUnit }>({
+    value: "",
+    unit: defaults.weight,
+  });
+  const [widthDraft, setWidthDraft] = useState<{ value: string; unit: WidthUnit }>({
+    value: "",
+    unit: defaults.width,
+  });
+  // 成分：文本与配比同存一份（配比模式下文本由服务端派生）。
+  const [compositionDraft, setCompositionDraft] = useState<{
+    text: string;
+    parts: CompositionPartInput[] | null;
+  }>({ text: "", parts: null });
+  const materialOptions = useFieldOptions("sample.material");
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const data = fieldsQuery.data;
@@ -59,14 +122,53 @@ export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps
     const next: Record<string, string> = {};
     for (const field of data.fields) next[field.fieldName] = valueText(field.value);
     setDraft(next);
-  }, [data]);
+    const weight = measurementOf(data.fields.find((f) => f.fieldName === "weight")?.value ?? null);
+    const width = measurementOf(data.fields.find((f) => f.fieldName === "width")?.value ?? null);
+    setWeightDraft({
+      value: weight ? String(weight.value) : "",
+      unit: (weight?.unit as WeightUnit | undefined) ?? defaults.weight,
+    });
+    setWidthDraft({
+      value: width ? String(width.value) : "",
+      unit: (width?.unit as WidthUnit | undefined) ?? defaults.width,
+    });
+    setCompositionDraft(
+      compositionPartsOf(data.fields.find((f) => f.fieldName === "composition")?.value ?? null),
+    );
+  }, [data, defaults.weight, defaults.width]);
+
+  /**
+   * 提交用的字段值。
+   *
+   * 克重 / 门幅提交「数值 + 单位」这一对；填不出正数就当没填（不写半个值进主表）。
+   */
+  const fieldValue = (fieldName: string): JsonValue => {
+    if (fieldName === "weight") {
+      const value = Number(weightDraft.value.trim());
+      if (weightDraft.value.trim() === "" || !Number.isFinite(value) || value <= 0) return "";
+      return { value, unit: weightDraft.unit };
+    }
+    if (fieldName === "width") {
+      const value = Number(widthDraft.value.trim());
+      if (widthDraft.value.trim() === "" || !Number.isFinite(value) || value <= 0) return "";
+      return { value, unit: widthDraft.unit };
+    }
+    if (fieldName === "composition") {
+      // 配比模式交结构化明细，文本由服务端派生；文本模式交原文。
+      if (compositionDraft.parts && compositionDraft.parts.length > 0) {
+        return { parts: compositionDraft.parts };
+      }
+      return compositionDraft.text.trim() || draft[fieldName] || "";
+    }
+    return draft[fieldName] ?? "";
+  };
 
   const save = useMutation({
     mutationFn: async () => {
       if (!data) throw new Error("字段还没加载");
       const fields = data.fields
         .filter((field) => !["code", "tier", "unit"].includes(field.fieldName))
-        .map((field) => ({ fieldName: field.fieldName, value: draft[field.fieldName] ?? "" }))
+        .map((field) => ({ fieldName: field.fieldName, value: fieldValue(field.fieldName) }))
         .filter((field) => field.value !== "");
       if (fields.length === 0) throw new Error("没有可确认的字段");
       return resourceType === "customer"
@@ -181,6 +283,77 @@ export function ResourceReview({ resourceType, resourceId }: ResourceReviewProps
                       </label>
                     );
                   })}
+                </div>
+              ) : field.fieldName === "weight" ? (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    id="field-weight"
+                    className="min-h-11 flex-1 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+                    inputMode="decimal"
+                    value={weightDraft.value}
+                    placeholder="如 220"
+                    onChange={(event) =>
+                      setWeightDraft((current) => ({ ...current, value: event.target.value }))
+                    }
+                  />
+                  {/* 单位单独放在输入框后面：数值与单位各管各的。 */}
+                  <select
+                    className="min-h-11 w-28 rounded-md border border-line bg-surface px-2 text-sm text-ink-900"
+                    value={weightDraft.unit}
+                    onChange={(event) =>
+                      setWeightDraft((current) => ({
+                        ...current,
+                        unit: event.target.value as WeightUnit,
+                      }))
+                    }
+                  >
+                    {WEIGHT_UNITS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {WEIGHT_UNIT_LABEL[unit]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : field.fieldName === "width" ? (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    id="field-width"
+                    className="min-h-11 flex-1 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+                    inputMode="decimal"
+                    value={widthDraft.value}
+                    placeholder="如 150"
+                    onChange={(event) =>
+                      setWidthDraft((current) => ({ ...current, value: event.target.value }))
+                    }
+                  />
+                  <select
+                    className="min-h-11 w-28 rounded-md border border-line bg-surface px-2 text-sm text-ink-900"
+                    value={widthDraft.unit}
+                    onChange={(event) =>
+                      setWidthDraft((current) => ({
+                        ...current,
+                        unit: event.target.value as WidthUnit,
+                      }))
+                    }
+                  >
+                    {WIDTH_UNITS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {WIDTH_UNIT_LABEL[unit]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : field.fieldName === "composition" ? (
+                <div className="mt-3">
+                  <CompositionInput
+                    id="field-composition"
+                    value={compositionDraft.text}
+                    parts={compositionDraft.parts}
+                    onChange={(next) => setCompositionDraft(next)}
+                    materials={materialOptions.options
+                      .filter((option) => option.active)
+                      .map((option) => ({ code: option.code, label: option.label }))}
+                  />
                 </div>
               ) : (
                 <input

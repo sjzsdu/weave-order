@@ -3,6 +3,7 @@ import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, ReceivableListItem } from "@weave-order/schema";
+import { weightLabel } from "@weave-order/schema";
 import { Badge, Button, Card, SectionTitle, Sheet } from "./ui";
 import { formatMoneyShort, shortDate } from "../lib/format";
 import { api } from "../lib/runtime";
@@ -192,7 +193,7 @@ function ShipSampleSheet({
             <View className="list-sub">
               {sample.code}
               {sample.composition ? ` · ${sample.composition}` : ""}
-              {sample.weight ? ` · ${sample.weight}` : ""}
+              {sample.weight ? ` · ${weightLabel(sample.weight)}` : ""}
             </View>
           </View>
           {selected?.id === sample.id ? (

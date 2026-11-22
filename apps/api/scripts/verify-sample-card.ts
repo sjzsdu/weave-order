@@ -10,6 +10,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createDb } from "@weave-order/db";
+import { weightLabel } from "@weave-order/schema";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
 import { buildSampleCardUrl, createSampleCardToken } from "../src/kernel/share-token";
@@ -56,7 +57,7 @@ async function main() {
       code: `FM-220-${suffix.slice(0, 4).toUpperCase()}`,
       name: "32S 精梳棉汗布",
       composition: "100% 精梳棉",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
       category: "汗布",
       unit: "meter",
       costFloor: { amount: 1200, currency: "CNY" },
@@ -115,7 +116,7 @@ async function main() {
           code,
           name: names[index % names.length]!,
           composition: sample.composition ?? null,
-          weight: sample.weight ?? null,
+          weight: weightLabel(sample.weight),
           category: sample.category ?? null,
         },
         tenant: { name: tenant.name ?? "", brand: null },
