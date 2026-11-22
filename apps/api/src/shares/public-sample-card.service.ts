@@ -1,11 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { withTenantSession } from "@weave-order/db";
-import { samples, tenants } from "@weave-order/db";
-import { PublicSampleCard } from "@weave-order/schema";
+import { sampleImages, samples, tenants } from "@weave-order/db";
+import { PublicSampleCard, weightLabel, weightMeasurementFrom } from "@weave-order/schema";
 import { QuoteLinkError } from "../kernel";
 import { parseSampleCardToken } from "../kernel/share-token";
 import { loadEnv } from "../platform/env";
+import type { Env } from "../platform/env";
+import { objectUrl } from "../platform/thumbnail";
+import { createObjectStorageFromEnv } from "../platform/storage";
 
 /**
  * 样卡二维码的公开面。
@@ -16,9 +19,12 @@ import { loadEnv } from "../platform/env";
  */
 export class PublicSampleCardService {
   private readonly secret: string;
+  private readonly env: Env;
 
   constructor(private readonly pool: Pool) {
-    this.secret = loadEnv().QUOTE_SHARE_SECRET;
+    const env = loadEnv();
+    this.env = env;
+    this.secret = env.QUOTE_SHARE_SECRET;
   }
 
   async view(token: string): Promise<PublicSampleCard> {
@@ -28,7 +34,16 @@ export class PublicSampleCardService {
     }
     return withTenantSession(this.pool, payload.t, async (db) => {
       const sampleRows = await db
-        .select({ code: samples.code })
+        .select({
+          id: samples.id,
+          code: samples.code,
+          name: samples.name,
+          composition: samples.composition,
+          color: samples.color,
+          weightValue: samples.weightValue,
+          weightUnit: samples.weightUnit,
+          category: samples.category,
+        })
         .from(samples)
         .where(and(eq(samples.tenantId, payload.t), eq(samples.code, payload.c)))
         .limit(1);
@@ -37,6 +52,34 @@ export class PublicSampleCardService {
         // 样品已删除或编号已改：与假链接同一句话，不区分原因。
         throw new QuoteLinkError("INVALID_LINK", "链接无效，请扫描样卡上的二维码");
       }
+
+      // 主图只给 URL，不给 objectKey；缩略图没就绪时回退原图。
+      const imageRows = await db
+        .select({
+          objectKey: sampleImages.objectKey,
+          thumb320Key: sampleImages.thumb320Key,
+          thumbStatus: sampleImages.thumbStatus,
+        })
+        .from(sampleImages)
+        .where(
+          and(
+            eq(sampleImages.tenantId, payload.t),
+            eq(sampleImages.sampleId, sample.id),
+            eq(sampleImages.isPrimary, true),
+          ),
+        )
+        .orderBy(sampleImages.sortOrder)
+        .limit(1);
+      const image = imageRows[0];
+      const imageKey =
+        image?.thumbStatus === "ready" && image.thumb320Key
+          ? image.thumb320Key
+          : image?.objectKey;
+      const imageUrl = imageKey
+        ? await objectUrl(this.env, createObjectStorageFromEnv(this.env), imageKey).catch(
+            () => null,
+          )
+        : null;
 
       const tenantRows = await db
         .select({ name: tenants.name, settings: tenants.settings })
@@ -61,6 +104,14 @@ export class PublicSampleCardService {
 
       return PublicSampleCard.parse({
         sampleCode: sample.code,
+        sample: {
+          name: sample.name?.trim() || sample.code,
+          composition: sample.composition?.trim() || null,
+          color: sample.color?.trim() || null,
+          weight: weightLabel(weightMeasurementFrom(sample.weightValue, sample.weightUnit)),
+          category: sample.category?.trim() || null,
+          imageUrl,
+        },
         salesperson: {
           // 未配置业务员时退回公司名，而不是让人在页面上看到空白。
           name: name || tenant?.name?.trim() || "",

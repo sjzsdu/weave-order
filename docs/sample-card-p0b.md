@@ -16,6 +16,19 @@
 
 未确认价格（`DRAFT`）的报价不能预览、不能打印：草稿信息跟着样品流出去比打不出来更糟。
 
+### 独立样品标签（不依赖报价）
+
+样品本身也是可打印单据：样品图墙卡片与样品详情都有「打印标签」入口，按 `sampleId` 直接预览、入队、查记录与补打。标签字段取自样品，二维码与报价样卡共用同一枚确定性 token；扫码看到样品属性与业务员联系方式，不需要先在报价里确认价格。
+
+```
+样品图墙 / 样品详情
+  └─ 打印标签
+       ├─ 默认 80×50 标签（ZPL / TSPL），可选 A4 样卡
+       ├─ 预览：服务端同一份打印产物
+       ├─ 打印：按 sampleId 入队
+       └─ 打印记录：状态 + 补打（必须选原因）
+```
+
 ## 数据来源
 
 | 卡面字段                             | 来源                                                                                                                 |
@@ -36,15 +49,19 @@
 
 | 方法 | 路径                                   | 说明                                                                                     |
 | ---- | -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| POST | `/print/preview`                       | `{ quoteId, lineIndex?, format: HTML\|ZPL\|TSPL }`，返回本次打印会用的 HTML/PDF/标签文本 |
-| POST | `/print/jobs`                          | `{ kind: "SAMPLE_LABEL", quoteId, lineIndex?, format?, copies }`，单张入队               |
+| POST | `/print/preview`                       | `{ quoteId \| sampleId, lineIndex?, format: HTML\|ZPL\|TSPL }`，返回本次打印会用的产物    |
+| POST | `/print/sample-labels/:sampleId/preview` | 独立样品标签预览，默认 ZPL 80×50                                                      |
+| POST | `/print/jobs`                          | `{ kind: "SAMPLE_LABEL", quoteId \| sampleId, lineIndex?, format?, copies }`，单张入队   |
+| POST | `/print/sample-labels/:sampleId`       | 独立样品标签入队，默认 ZPL 80×50                                                       |
 | GET  | `/print/jobs/:id`                      | 任务详情（不含载荷）                                                                     |
 | POST | `/print/sample-cards/:quoteId`         | 报价每行一张，一键入队                                                                   |
 | GET  | `/print/sample-cards/:quoteId`         | 打印记录（补打入口）                                                                     |
 | POST | `/print/sample-cards/:quoteId/reprint` | `{ reason, lineIndex?, format?, copies? }`，补打                                         |
-| GET  | `/api/public/sample-cards/:token`      | 扫码公开面：`{ sampleCode, salesperson: { name, phone } }`                               |
+| GET  | `/print/sample-labels/:sampleId`       | 独立样品标签打印记录                                                                     |
+| POST | `/print/sample-labels/:sampleId/reprint` | `{ reason, format?, copies? }`，独立标签补打                                            |
+| GET  | `/api/public/sample-cards/:token`      | 扫码公开面：样品属性 + 业务员联系方式（无价格/客户/成本）                                |
 
-幂等键 = 单据（报价 id）+ 模板版本 + 份数 + 操作人（样卡再加行号与补打序号）。
+幂等键 = 单据（报价 id 或样品 id）+ 模板版本 + 份数 + 操作人（报价样卡再加行号与补打序号）。
 同一操作人重复点「打印」只有一条任务；更换操作人/模板或补打才生成新任务。
 补打只新增打印任务，不新增样品。
 

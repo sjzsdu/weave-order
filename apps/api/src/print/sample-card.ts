@@ -82,8 +82,8 @@ const REQUIRED_FIELDS: SampleCardFieldPath[] = [
 ];
 
 export interface SampleCardSource {
-  /** 展示用报价编号，只上 A4 样卡做内部追溯，不上标签。 */
-  quoteNo: string;
+  /** 展示用报价编号，只上 A4 样卡做内部追溯；独立样品标签为 null。 */
+  quoteNo: string | null;
   sample: {
     code: string;
     name: string;

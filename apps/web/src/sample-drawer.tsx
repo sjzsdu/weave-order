@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, SampleImage, Unit } from "@weave-order/schema";
-import { isSampleStatusAvailable, sampleWeightText } from "@weave-order/schema";
+import { isSampleStatusAvailable, weightLabel, widthLabel } from "@weave-order/schema";
 import { Badge, Button, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { canRetryImage, imageStatusBadges, thumbnailNote } from "@/sample-image-status";
@@ -24,10 +24,12 @@ export function SampleDrawer({
   sampleId,
   onClose,
   onEdit,
+  onPrint,
 }: {
   sampleId: string;
   onClose: () => void;
   onEdit: (sample: FabricSample) => void;
+  onPrint?: (sampleId: string) => void;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -231,10 +233,8 @@ export function SampleDrawer({
                   <Row label="成分" value={sample.composition ?? "—"} />
                   <Row label="品类" value={sample.category ?? "—"} />
                   <Row label="颜色" value={sample.color ?? "—"} />
-                  <Row
-                    label="克重"
-                    value={sampleWeightText(sample.weightGsm, sample.weight) ?? "克重未填"}
-                  />
+                  <Row label="克重" value={weightLabel(sample.weight) ?? "克重未填"} />
+                  <Row label="门幅" value={widthLabel(sample.width) ?? "门幅未填"} />
                   <Row label="单位" value={UNIT_LABEL[sample.unit]} />
                   <Row
                     label="状态"
@@ -267,14 +267,21 @@ export function SampleDrawer({
               >
                 {searching ? "找样中…" : "以图找样"}
               </Button>
-              <Button
-                variant="secondary"
-                className="min-h-9 px-3 text-xs"
-                onClick={() => setShipmentOpen((open) => !open)}
-              >
-                建寄样单
-              </Button>
-              {isSampleStatusAvailable(sample.status) && (
+            <Button
+              variant="secondary"
+              className="min-h-9 px-3 text-xs"
+              onClick={() => setShipmentOpen((open) => !open)}
+            >
+              建寄样单
+            </Button>
+            <Button
+              variant="secondary"
+              className="min-h-9 px-3 text-xs"
+              onClick={() => onPrint?.(sampleId)}
+            >
+              打印标签
+            </Button>
+            {isSampleStatusAvailable(sample.status) && (
                 <Button
                   variant="ghost"
                   className="min-h-9 px-3 text-xs text-rose-700"

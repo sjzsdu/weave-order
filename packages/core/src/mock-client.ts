@@ -29,9 +29,12 @@ import {
   T004GenerateQuoteDraftResult,
   T006SuggestLinePriceResult,
   IntentView,
+  DEFAULT_MEASURE_UNITS,
   isSampleStatusAvailable,
-  parseWeightGsm,
   roleCapabilities,
+  weightGsmOf,
+  weightSearchText,
+  widthCmOf,
 } from "@weave-order/schema";
 import type {
   ApprovalDecisionInput,
@@ -311,8 +314,10 @@ const sample = {
   composition: "100% 棉",
   category: "针织",
   color: "藏青",
-  weight: "220g/m²",
+  weight: { value: 220, unit: "gsm" as const },
+  width: { value: 150, unit: "cm" as const },
   weightGsm: 220,
+  widthCm: 150,
   unit: "meter" as const,
   costFloor: { amount: 1420, currency: "CNY" as const },
   status: "ACTIVE" as const,
@@ -362,7 +367,8 @@ const mockSamples = [
     name: "32S 棉毛布 320g",
     composition: "100% 棉",
     category: "毛圈",
-    weight: "320g/m²",
+    weight: { value: 320, unit: "gsm" as const },
+    weightGsm: 320,
     costFloor: { amount: 1860, currency: "CNY" as const },
   },
   {
@@ -372,7 +378,8 @@ const mockSamples = [
     name: "涤棉交织布 180g",
     composition: "65% 涤纶 35% 棉",
     category: "梭织",
-    weight: "180g/m²",
+    weight: { value: 180, unit: "gsm" as const },
+    weightGsm: 180,
     costFloor: { amount: 980, currency: "CNY" as const },
   },
   {
@@ -382,7 +389,8 @@ const mockSamples = [
     name: "粘胶弹力汗布 240g",
     composition: "95% 粘胶 5% 氨纶",
     category: "针织",
-    weight: "240g/m²",
+    weight: { value: 240, unit: "gsm" as const },
+    weightGsm: 240,
     costFloor: { amount: 1580, currency: "CNY" as const },
   },
 ];
@@ -409,7 +417,8 @@ function mockTiers(status: SampleStatus | "ALL", key: "composition" | "weight" |
     ) {
       continue;
     }
-    const value = item[key];
+    // 克重档位用的是检索文本（"220g/m2"），与真实服务端一致。
+    const value = key === "weight" ? weightSearchText(item.weight) : item[key];
     if (!value) continue;
     counts.set(value, (counts.get(value) ?? 0) + 1);
   }
@@ -1077,7 +1086,7 @@ export function createMockApiClient(): ApiClient {
           (!composition || (item.composition ?? "").toLowerCase().includes(composition)) &&
           (!params.weights ||
             params.weights.length === 0 ||
-            params.weights.includes(item.weight)) &&
+            params.weights.includes(weightSearchText(item.weight))) &&
           (!params.colors ||
             params.colors.length === 0 ||
             params.colors.includes(item.color ?? null)) &&
@@ -1119,7 +1128,9 @@ export function createMockApiClient(): ApiClient {
         composition: input.composition ?? null,
         color: input.color ?? null,
         weight: input.weight ?? null,
-        weightGsm: parseWeightGsm(input.weight),
+        width: input.width ?? null,
+        weightGsm: input.weight ? weightGsmOf(input.weight) : null,
+        widthCm: input.width ? widthCmOf(input.width) : null,
       }),
 
     createSampleDraft: (input) =>
@@ -1130,6 +1141,7 @@ export function createMockApiClient(): ApiClient {
           name: input.name ?? "待确认样品",
           composition: input.composition ?? null,
           weight: input.weight ?? null,
+          width: input.width ?? null,
           status: "DRAFT" as const,
         },
         created: true,
@@ -1654,9 +1666,15 @@ export function createMockApiClient(): ApiClient {
     salesContact: () =>
       Promise.resolve(TenantSalesContact.parse({ name: "李娜", phone: "13800136621" })),
     updateSalesContact: () => Promise.reject(new Error("演示模式不改业务员联系方式")),
+    measureUnits: () => Promise.resolve({ ...DEFAULT_MEASURE_UNITS }),
+    updateMeasureUnits: () => Promise.reject(new Error("演示模式不改默认计量单位")),
     printSampleCards: () => Promise.reject(new Error("演示模式不实际打印")),
     sampleCardJobs: () => Promise.resolve([]),
     reprintSampleCard: () => Promise.reject(new Error("演示模式不补打样卡")),
+    previewSampleLabel: () => Promise.reject(new Error("演示模式不预览样品标签")),
+    printSampleLabel: () => Promise.reject(new Error("演示模式不实际打印")),
+    sampleLabelJobs: () => Promise.resolve([]),
+    reprintSampleLabel: () => Promise.reject(new Error("演示模式不补打样品标签")),
     printLogs: () => Promise.resolve(PrintLogList.parse({ logs: [] }).logs),
     printTemplates: () => Promise.resolve(PrintTemplateList.parse({ templates: [] })),
     printTemplate: () => Promise.reject(new Error("演示模式没有模板")),

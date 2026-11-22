@@ -110,6 +110,8 @@ import {
   QuoteBasis,
   QuoteConfirmation,
   TenantSalesContact as TenantSalesContactSchema,
+  MeasureUnits,
+  UpdateMeasureUnitsInput,
   QuoteCopyText,
   QuoteListResponse,
   QuoteShareStats,
@@ -149,6 +151,7 @@ import type {
   ApprovalKind,
   FieldKey,
   PersonaKey,
+  PrintTemplateFormat,
   ReprintReason,
   SampleStatus,
 } from "@weave-order/schema";
@@ -1193,6 +1196,49 @@ export function createApiClient(options: ApiClientOptions) {
       PrintJobHistory.parse(await request(`/api/print/sample-cards/${encodeURIComponent(quoteId)}`))
         .jobs,
 
+    /** 独立样品标签预览：默认 80×50 热敏标签，返回的就是入队产物。 */
+    previewSampleLabel: async (
+      sampleId: string,
+      input: { format?: PrintTemplateFormat; templateId?: string | null } = {},
+    ) =>
+      z
+        .object({ preview: PrintPreviewArtifact })
+        .parse(
+          await post(`/api/print/sample-labels/${encodeURIComponent(sampleId)}/preview`, {
+            format: "ZPL",
+            ...input,
+          }),
+        ).preview,
+
+    /** 独立样品标签入队：不依赖报价，重复点击按幂等键去重。 */
+    printSampleLabel: async (sampleId: string, input: z.input<typeof SampleCardPrintInput> = {}) =>
+      z
+        .object({ job: PrintJob, deduplicated: z.boolean() })
+        .parse(
+          await post(
+            `/api/print/sample-labels/${encodeURIComponent(sampleId)}`,
+            SampleCardPrintInput.parse({ format: "ZPL", ...input }),
+          ),
+        ),
+
+    sampleLabelJobs: async (sampleId: string) =>
+      PrintJobHistory.parse(
+        await request(`/api/print/sample-labels/${encodeURIComponent(sampleId)}`),
+      ).jobs,
+
+    reprintSampleLabel: async (
+      sampleId: string,
+      input: z.input<typeof SampleCardReprintInput>,
+    ) =>
+      z
+        .object({ job: PrintJob, deduplicated: z.boolean() })
+        .parse(
+          await post(
+            `/api/print/sample-labels/${encodeURIComponent(sampleId)}/reprint`,
+            SampleCardReprintInput.parse({ format: "ZPL", ...input }),
+          ),
+        ),
+
     /** 样卡与客户报价页共用的业务员联系方式。 */
     salesContact: async () =>
       z
@@ -1204,6 +1250,22 @@ export function createApiClient(options: ApiClientOptions) {
         .object({ ok: z.literal(true), data: TenantSalesContactSchema })
         .parse(await patch("/api/settings/sales-contact", TenantSalesContactSchema.parse(input)))
         .data,
+
+    /**
+     * 租户默认度量单位（克重 / 门幅）。
+     * 只影响之后的录入默认值，不改已经录好的样品。
+     */
+    measureUnits: async () =>
+      z
+        .object({ ok: z.literal(true), data: MeasureUnits })
+        .parse(await request("/api/settings/measure-units")).data,
+
+    updateMeasureUnits: async (input: z.input<typeof UpdateMeasureUnitsInput>) =>
+      z
+        .object({ ok: z.literal(true), data: MeasureUnits })
+        .parse(
+          await patch("/api/settings/measure-units", UpdateMeasureUnitsInput.parse(input)),
+        ).data,
 
     /** 补打样卡：必须选原因；不会新建样品。 */
     reprintSampleCard: async (quoteId: string, input: z.input<typeof SampleCardReprintInput>) =>

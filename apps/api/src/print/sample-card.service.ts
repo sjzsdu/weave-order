@@ -3,6 +3,7 @@ import { customers, memberships, quoteItems, quotes, samples, tenants } from "@w
 import type { Db } from "@weave-order/db";
 import { PrintPreviewArtifact, PrintPreviewInput } from "@weave-order/schema";
 import type { PrintTemplateFormat } from "@weave-order/schema";
+import { weightLabel, weightMeasurementFrom } from "@weave-order/schema";
 import { KernelError } from "../kernel/errors";
 import { quoteNumberOf } from "../kernel/quotes.service";
 import { buildSampleCardUrl, createSampleCardToken } from "../kernel/share-token";
@@ -123,6 +124,26 @@ export class SampleCardService {
     return { name: rows[0]?.displayName?.trim() || null, phone };
   }
 
+  private async tenantSettings() {
+    const tenantRows = await this.db
+      .select({ name: tenants.name, brand: tenants.brand, settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, this.tenantId))
+      .limit(1);
+    const tenant = tenantRows[0];
+    return { tenant, settings: (tenant?.settings ?? {}) as Record<string, unknown> };
+  }
+
+  /** token 只编码租户与样品编号；报价样卡与独立样品标签共用同一条扫码链路。 */
+  private qrFor(sampleCode: string): string {
+    assertSampleCodeFitsToken(sampleCode);
+    const token = createSampleCardToken(
+      { tenantId: this.tenantId, sampleCode },
+      this.options.shareSecret,
+    );
+    return buildSampleCardUrl(this.options.publicAppUrl, token);
+  }
+
   /** 报价行 → 样卡数据源。一张卡只对应一个样品。 */
   async buildSource(input: {
     quoteId: string;
@@ -157,13 +178,7 @@ export class SampleCardService {
       throw new KernelError("RESOURCE_NOT_FOUND", `样品不存在：${line.sampleId}`);
     }
 
-    const tenantRows = await this.db
-      .select({ name: tenants.name, brand: tenants.brand, settings: tenants.settings })
-      .from(tenants)
-      .where(eq(tenants.id, this.tenantId))
-      .limit(1);
-    const tenant = tenantRows[0];
-    const settings = (tenant?.settings ?? {}) as Record<string, unknown>;
+    const { tenant, settings } = await this.tenantSettings();
 
     const customerRows = await this.db
       .select({ ownerId: customers.ownerId })
@@ -177,12 +192,7 @@ export class SampleCardService {
     );
 
     // token 之前先校验编号：超限要变成可读的业务错误，而不是 500。
-    assertSampleCodeFitsToken(sample.code);
-    const token = createSampleCardToken(
-      { tenantId: this.tenantId, sampleCode: sample.code },
-      this.options.shareSecret,
-    );
-    const qrPayload = buildSampleCardUrl(this.options.publicAppUrl, token);
+    const qrPayload = this.qrFor(sample.code);
 
     return {
       quoteNo: quoteNumberOf(quote),
@@ -190,7 +200,7 @@ export class SampleCardService {
         code: sample.code,
         name: sample.name,
         composition: sample.composition,
-        weight: sample.weight,
+        weight: weightLabel(weightMeasurementFrom(sample.weightValue, sample.weightUnit)),
         category: sample.category,
       },
       tenant: {
@@ -202,6 +212,64 @@ export class SampleCardService {
             : null),
       },
       salesperson,
+      qrPayload,
+      qrImageDataUrl: await sampleCardQrDataUrl(qrPayload),
+      printedAt: printedAtText(input.printedAt ?? new Date()),
+      operator: input.operator,
+      reprintReason: input.reprintReason,
+    };
+  }
+
+  /**
+   * 独立样品标签：只看样品本身，不查报价、不要求报价确认。
+   * 卡面字段与二维码沿用样卡，因此扫码仍指向同一张公开样品详情。
+   */
+  async buildSourceBySampleId(input: {
+    sampleId: string;
+    operator: string;
+    reprintReason: string | null;
+    printedAt?: Date;
+  }): Promise<SampleCardSource> {
+    const sampleRows = await this.db
+      .select()
+      .from(samples)
+      .where(and(eq(samples.id, input.sampleId), eq(samples.tenantId, this.tenantId)))
+      .limit(1);
+    const sample = sampleRows[0];
+    if (!sample) {
+      throw new KernelError("RESOURCE_NOT_FOUND", `样品不存在：${input.sampleId}`, {
+        resourceType: "sample",
+        resourceId: input.sampleId,
+      });
+    }
+
+    const { tenant, settings } = await this.tenantSettings();
+    const configured = await this.salesperson(settings, null, null);
+    const qrPayload = this.qrFor(sample.code);
+
+    return {
+      quoteNo: null,
+      sample: {
+        code: sample.code,
+        name: sample.name,
+        composition: sample.composition,
+        weight: weightLabel(weightMeasurementFrom(sample.weightValue, sample.weightUnit)),
+        category: sample.category,
+      },
+      tenant: {
+        name: tenant?.name ?? "",
+        brand:
+          tenant?.brand?.trim() ||
+          (typeof settings.brand === "string" && settings.brand.trim()
+            ? settings.brand.trim()
+            : null),
+      },
+      // 独立标签没有报价确认人可兜底；未配置业务员时退回公司名，
+      // 至少保证卡上有一个可联系的主体，而不是打一张没人认领的纸。
+      salesperson: {
+        name: configured.name || tenant?.name?.trim() || null,
+        phone: configured.phone,
+      },
       qrPayload,
       qrImageDataUrl: await sampleCardQrDataUrl(qrPayload),
       printedAt: printedAtText(input.printedAt ?? new Date()),
@@ -237,12 +305,18 @@ export class SampleCardService {
     if (parsed.kind !== "SAMPLE_LABEL") {
       throw new PrintError("PRINT_UNSUPPORTED_KIND", `暂不支持预览：${parsed.kind}`);
     }
-    const source = await this.buildSource({
-      quoteId: parsed.quoteId,
-      lineIndex: parsed.lineIndex,
-      operator,
-      reprintReason: null,
-    });
+    const source = parsed.sampleId
+      ? await this.buildSourceBySampleId({
+          sampleId: parsed.sampleId,
+          operator,
+          reprintReason: null,
+        })
+      : await this.buildSource({
+          quoteId: parsed.quoteId!,
+          lineIndex: parsed.lineIndex,
+          operator,
+          reprintReason: null,
+        });
     const values = sampleCardValues(source);
     assertSampleCardPrintable(values);
     const resolved =
@@ -257,8 +331,9 @@ export class SampleCardService {
     const rendered = await this.render({ source, values, resolved, format });
     return PrintPreviewArtifact.parse({
       kind: "SAMPLE_LABEL",
-      quoteId: parsed.quoteId,
-      lineIndex: parsed.lineIndex,
+      quoteId: parsed.quoteId ?? null,
+      sampleId: parsed.sampleId ?? null,
+      lineIndex: parsed.sampleId ? 0 : parsed.lineIndex,
       format,
       templateName: resolved.name,
       pageSize: resolved.pageSize,

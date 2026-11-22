@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, FieldKey } from "@weave-order/schema";
-import { isSampleStatusAvailable, sampleWeightText } from "@weave-order/schema";
+import { isSampleStatusAvailable, weightLabel } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { useMounted } from "@/use-mounted";
@@ -12,12 +12,16 @@ import { SampleEditor } from "@/sample-editor";
 import { SampleImport } from "@/sample-import";
 import { SampleDrawer } from "@/sample-drawer";
 import { SampleImageSearch } from "@/sample-image-search";
+import { SampleLabelPrintDrawer } from "@/sample-label-print";
 import { SampleSavedToast, toSampleSaveFeedback } from "@/sample-saved-toast";
 import type { SampleSaveFeedback } from "@/sample-saved-toast";
 import { thumbBadge } from "@/sample-image-status";
 import { FieldOptionsManager } from "@/field-options-manager";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
+
+const FILTER_CONTROL_CLASS =
+  "h-10 rounded-md border border-line bg-surface px-3 text-sm text-ink-900 outline-none transition-colors hover:border-line-strong focus:border-indigo-600";
 
 /**
  * 样品图墙：桌面 4~5 列、移动 2 列。
@@ -54,6 +58,7 @@ function SamplesWall() {
   const [importOpen, setImportOpen] = useState(false);
   const [importedCount, setImportedCount] = useState<number | null>(null);
   const [openSampleId, setOpenSampleId] = useState<string | null>(null);
+  const [printSampleId, setPrintSampleId] = useState<string | null>(null);
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   // 品类/成分治理弹层：既能从设置页深链打开，也能直接在图墙管理。
   const [manageField, setManageField] = useState<FieldKey | null>(null);
@@ -136,6 +141,18 @@ function SamplesWall() {
     appliedGsm.max !== null ||
     status !== "ACTIVE";
 
+  const resetFilters = () => {
+    setSearch("");
+    setQuery("");
+    setCategory("");
+    setColor("");
+    setGsmMin("");
+    setGsmMax("");
+    setAppliedGsm({ min: null, max: null });
+    setGsmError(null);
+    setStatus("ACTIVE");
+  };
+
   return (
     <div className="grid gap-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -216,79 +233,114 @@ function SamplesWall() {
         </div>
       )}
 
-      <section className="grid gap-2 rounded-lg border border-line bg-surface px-3 py-3 md:grid-cols-[1fr_auto_auto]">
-        <input
-          className="input"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜编码 / 品名 / 成分"
-          aria-label="搜索样品"
-        />
-        <select
-          className="input md:w-40"
-          value={category}
-          onChange={(event) => setCategory(event.target.value)}
-          aria-label="品类筛选"
-        >
-          <option value="">全部品类</option>
-          {categories.map((entry) => (
-            <option key={entry} value={entry}>
-              {entry}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input md:w-32"
-          value={color}
-          onChange={(event) => setColor(event.target.value)}
-          aria-label="颜色筛选"
-        >
-          <option value="">全部颜色</option>
-          {colors.map((entry) => (
-            <option key={entry} value={entry}>
-              {entry}
-            </option>
-          ))}
-        </select>
-        <div className="flex items-center gap-1" aria-label="克重区间筛选">
-          <input
-            className="input w-20"
-            inputMode="numeric"
-            value={gsmMin}
-            onChange={(event) => setGsmMin(event.target.value.replace(/[^0-9]/g, ""))}
-            placeholder={weightGsmRange ? String(weightGsmRange.min) : "下限"}
-            aria-label="克重下限"
-          />
-          <span className="text-xs text-ink-400">–</span>
-          <input
-            className="input w-20"
-            inputMode="numeric"
-            value={gsmMax}
-            onChange={(event) => setGsmMax(event.target.value.replace(/[^0-9]/g, ""))}
-            placeholder={weightGsmRange ? String(weightGsmRange.max) : "上限"}
-            aria-label="克重上限"
-          />
-          <span className="text-xs text-ink-400">g/m²</span>
-          <button
-            type="button"
-            className="rounded border border-line px-2 py-1 text-xs text-ink-700 hover:border-ink-400"
-            onClick={applyGsmRange}
-          >
-            应用
-          </button>
+      <section aria-label="样品筛选" className="rounded-lg border border-line bg-surface p-3">
+        <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-center">
+          <div className="relative min-w-0">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 20 20"
+              fill="none"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400"
+            >
+              <circle cx="8.5" cy="8.5" r="5.25" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="m12.5 12.5 4 4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+            <input
+              className={cn(FILTER_CONTROL_CLASS, "w-full pl-9")}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索编码、品名或成分"
+              aria-label="搜索样品"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className={cn(FILTER_CONTROL_CLASS, "w-full sm:w-40")}
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              aria-label="品类筛选"
+            >
+              <option value="">全部品类</option>
+              {categories.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+            <select
+              className={cn(FILTER_CONTROL_CLASS, "w-full sm:w-36")}
+              value={color}
+              onChange={(event) => setColor(event.target.value)}
+              aria-label="颜色筛选"
+            >
+              <option value="">全部颜色</option>
+              {colors.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+
+            <div
+              className="flex h-10 items-center rounded-md border border-line bg-surface text-sm transition-colors focus-within:border-indigo-600 hover:border-line-strong"
+              aria-label="克重区间筛选"
+            >
+              <span className="pl-3 text-xs text-ink-400">克重</span>
+              <input
+                className="h-full w-14 bg-transparent px-1 text-center text-sm text-ink-900 outline-none placeholder:text-ink-400"
+                inputMode="numeric"
+                value={gsmMin}
+                onChange={(event) => setGsmMin(event.target.value.replace(/[^0-9]/g, ""))}
+                placeholder={weightGsmRange ? String(weightGsmRange.min) : "下限"}
+                aria-label="克重下限"
+              />
+              <span className="text-xs text-ink-400">–</span>
+              <input
+                className="h-full w-14 bg-transparent px-1 text-center text-sm text-ink-900 outline-none placeholder:text-ink-400"
+                inputMode="numeric"
+                value={gsmMax}
+                onChange={(event) => setGsmMax(event.target.value.replace(/[^0-9]/g, ""))}
+                placeholder={weightGsmRange ? String(weightGsmRange.max) : "上限"}
+                aria-label="克重上限"
+              />
+              <span className="pr-3 text-[10px] text-ink-400">g/m²</span>
+            </div>
+            <button
+              type="button"
+              className="h-10 rounded-md border border-line px-3 text-xs text-ink-700 transition-colors hover:border-ink-400 hover:text-ink-900"
+              onClick={applyGsmRange}
+            >
+              应用
+            </button>
+            <select
+              className={cn(FILTER_CONTROL_CLASS, "w-full sm:w-32")}
+              value={status}
+              onChange={(event) => setStatus(event.target.value as StatusFilter)}
+              aria-label="状态筛选"
+            >
+              <option value="ACTIVE">在售</option>
+              <option value="ARCHIVED">已归档</option>
+              <option value="ALL">全部状态</option>
+            </select>
+            {narrowed && (
+              <button
+                type="button"
+                className="h-10 px-2 text-xs text-ink-500 hover:text-indigo-600"
+                onClick={resetFilters}
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
         </div>
-        <select
-          className="input md:w-36"
-          value={status}
-          onChange={(event) => setStatus(event.target.value as StatusFilter)}
-          aria-label="状态筛选"
-        >
-          <option value="ACTIVE">在售</option>
-          <option value="ARCHIVED">已归档</option>
-          <option value="ALL">全部状态</option>
-        </select>
+        {gsmError && <p className="mt-2 text-xs text-vermilion-600">{gsmError}</p>}
       </section>
-      {gsmError && <p className="text-xs text-red-600">{gsmError}</p>}
 
       <div className="flex items-center justify-between text-xs text-ink-400">
         <span>共 {total} 个样品</span>
@@ -309,19 +361,7 @@ function SamplesWall() {
             title="没有匹配的样品"
             description="换个关键词，或把筛选清掉。"
             actions={
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setSearch("");
-                  setCategory("");
-                  setColor("");
-                  setGsmMin("");
-                  setGsmMax("");
-                  setAppliedGsm({ min: null, max: null });
-                  setGsmError(null);
-                  setStatus("ACTIVE");
-                }}
-              >
+              <Button variant="secondary" onClick={resetFilters}>
                 清空筛选
               </Button>
             }
@@ -348,6 +388,7 @@ function SamplesWall() {
             sample={sample}
             onOpen={() => setOpenSampleId(sample.id)}
             onFillImage={() => openEdit(sample)}
+            onPrint={() => setPrintSampleId(sample.id)}
           />
         ))}
       </ul>
@@ -403,6 +444,14 @@ function SamplesWall() {
             setOpenSampleId(null);
             openEdit(sample);
           }}
+          onPrint={(id) => setPrintSampleId(id)}
+        />
+      )}
+      {printSampleId && (
+        <SampleLabelPrintDrawer
+          sampleId={printSampleId}
+          sampleName={samples.find((sample) => sample.id === printSampleId)?.name}
+          onClose={() => setPrintSampleId(null)}
         />
       )}
     </div>
@@ -413,10 +462,12 @@ function SampleCard({
   sample,
   onOpen,
   onFillImage,
+  onPrint,
 }: {
   sample: FabricSample;
   onOpen: () => void;
   onFillImage: () => void;
+  onPrint: () => void;
 }) {
   const primary = sample.images?.find((image) => image.isPrimary) ?? sample.images?.[0] ?? null;
   const thumb = primary?.thumbUrl ?? primary?.url ?? sample.primaryImageUrl ?? null;
@@ -467,14 +518,21 @@ function SampleCard({
             </Badge>
           </span>
           <span className="mt-0.5 block truncate text-xs text-ink-400">
-            {[sample.color, sample.composition, sampleWeightText(sample.weightGsm, sample.weight)]
+            {[sample.color, sample.composition, weightLabel(sample.weight)]
               .filter(Boolean)
               .join(" · ") || "规格未填"}
           </span>
         </span>
       </button>
-      {!thumb && (
-        <div className="px-3 pb-2">
+      <div className="flex items-center gap-2 px-3 pb-2">
+        <button
+          type="button"
+          onClick={onPrint}
+          className="w-full rounded-md border border-line py-1 text-xs text-ink-700 hover:border-ink-400"
+        >
+          打印标签
+        </button>
+        {!thumb && (
           <button
             type="button"
             onClick={onFillImage}
@@ -485,8 +543,8 @@ function SampleCard({
           >
             一键补图
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </li>
   );
 }

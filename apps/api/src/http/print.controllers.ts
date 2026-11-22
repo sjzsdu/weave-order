@@ -209,6 +209,76 @@ export class PrintController {
     });
   }
 
+  /** 独立样品标签：按样品出纸，不依赖报价。 */
+  @Post("print/sample-labels/:sampleId/preview")
+  @HttpCode(200)
+  async previewSampleLabel(
+    @Param("sampleId") sampleId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        const input =
+          body && typeof body === "object" && !Array.isArray(body)
+            ? (body as Record<string, unknown>)
+            : {};
+        return {
+          preview: await this.attach(kernel).sampleCards.preview(
+            { ...input, sampleId },
+            ctx.actor.id,
+          ),
+        };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  @Post("print/sample-labels/:sampleId")
+  async printSampleLabel(
+    @Param("sampleId") sampleId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).jobs.printSampleLabel(sampleId, body, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  @Get("print/sample-labels/:sampleId")
+  async sampleLabelJobs(
+    @Param("sampleId") sampleId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel) => {
+      try {
+        return { jobs: await this.attach(kernel).jobs.listForSample(sampleId) };
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
+  @Post("print/sample-labels/:sampleId/reprint")
+  async reprintSampleLabel(
+    @Param("sampleId") sampleId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
+      try {
+        return await this.attach(kernel).jobs.reprintSampleLabel(sampleId, body, ctx);
+      } catch (error) {
+        rethrowPrint(error);
+      }
+    });
+  }
+
   @Post("print/jobs/bundle")
   async bundle(
     @Body() body: unknown,

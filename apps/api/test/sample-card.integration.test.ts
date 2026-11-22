@@ -13,7 +13,8 @@ import { PublicSampleCardService } from "../src/shares/public-sample-card.servic
  * - 未确认报价不能出卡；
  * - 预览与入队产物一致（A4 PDF 是真 PDF，标签是 ZPL 指令）；
  * - 幂等：同一操作人重复点打印只有一条任务；补打新增任务但不新增样品；
- * - 二维码公开面只有「样品编号 + 业务员联系方式」。
+ * - 独立样品标签按 sampleId 直接出纸，不依赖报价；
+ * - 二维码公开面展示样品属性与业务员联系方式，不带客户/价格/成本。
  */
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://weave:weave@localhost:5433/weave_order";
@@ -97,7 +98,7 @@ async function seedConfirmedQuote(kernel: Kernel, sampleCode?: string) {
       code: sampleCode ?? `CARD-S-${id}`,
       name: "32S 精梳棉汗布",
       composition: "100% 棉",
-      weight: "220g/m2",
+      weight: { value: 220, unit: "gsm" },
       category: "汗布",
       unit: "meter",
       costFloor: { amount: 1200, currency: "CNY" },
@@ -139,7 +140,33 @@ describe("P0b 样卡打印", () => {
     );
   });
 
-  it("A4 预览就是打印产物；标签指令含二维码；二维码公开面只有编号与业务员", async (ctx) => {
+  it("独立样品标签不需要报价：按 sampleId 预览、入队、查记录", async (ctx) => {
+    if (!available) ctx.skip();
+    const { kernel } = await isolatedTenant("sample-label");
+    // 故意造一份未确认报价：独立标签不应被它挡住。
+    const { sample } = await seedConfirmedQuote(kernel);
+
+    const preview = await kernel.print.sampleCards.preview(
+      { sampleId: sample.id, format: "ZPL" },
+      "owner",
+    );
+    expect(preview.kind).toBe("SAMPLE_LABEL");
+    expect(preview.quoteId).toBeNull();
+    expect(preview.sampleId).toBe(sample.id);
+    expect(preview.text).toContain(sample.code);
+    expect(preview.text).toContain("^BQN");
+
+    const result = await kernel.print.jobs.printSampleLabel(
+      sample.id,
+      { format: "ZPL", copies: 2 },
+      OWNER,
+    );
+    expect(result.job.documentId).toBe(sample.id);
+    expect(result.job.labelSeq).toBe(1);
+    expect(await kernel.print.jobs.listForSample(sample.id)).toHaveLength(1);
+  });
+
+  it("A4 预览就是打印产物；标签指令含二维码；二维码公开面展示样品属性", async (ctx) => {
     if (!available) ctx.skip();
     const { kernel } = await isolatedTenant("preview");
     const { draft, sample } = await seedConfirmedQuote(kernel);
@@ -170,18 +197,26 @@ describe("P0b 样卡打印", () => {
     expect(label.text).not.toContain("青禾服饰");
     expect(label.qrPayload).toBe(a4.qrPayload);
 
-    // 扫码页只看两件事：样品编号 + 业务员联系方式。
+    // 扫码页展示样品属性与联系方式，但不带客户、价格或内部 UUID。
     const publicService = new PublicSampleCardService(pool!);
     const token = label.qrPayload.split("/").pop()!;
     const scanned = await publicService.view(token);
     expect(scanned).toEqual({
       sampleCode: sample.code,
+      sample: {
+        name: "32S 精梳棉汗布",
+        composition: "100% 棉",
+        color: null,
+        weight: "220 g/m²",
+        category: "汗布",
+        imageUrl: null,
+      },
       salesperson: { name: "孙巨中", phone: "13800000000" },
     });
     const serialized = JSON.stringify(scanned);
     expect(serialized).not.toContain("青禾");
     expect(serialized).not.toContain("1800");
-    expect(Object.keys(scanned).sort()).toEqual(["salesperson", "sampleCode"]);
+    expect(Object.keys(scanned).sort()).toEqual(["salesperson", "sample", "sampleCode"]);
   });
 
   it("幂等：重复打印只有一条任务；补打新增任务但不新增样品", async (ctx) => {
