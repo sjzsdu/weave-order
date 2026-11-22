@@ -117,7 +117,11 @@ export function PersonaBar() {
   return (
     <div
       data-testid="persona-bar"
-      className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2"
+      // z-30（不是 z-50）：抽屉/弹窗的遮罩是 z-40，这条 dev 浮条必须让位。
+      // 它固定在右下角，z-50 时会压在「新建客户」抽屉的提交按钮上——
+      // 按钮右半边被盖住，人点不到，e2e 的 click 也被它拦下（pointer events 拦截）。
+      // 浮层比浮条重要；这条 bar 又排在壳层最后，同为 z-30 时仍在顶栏与底部导航之上。
+      className="fixed bottom-4 right-4 z-30 flex flex-col items-end gap-2"
     >
       {open && (
         <section
