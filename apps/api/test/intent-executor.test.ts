@@ -69,7 +69,7 @@ describe("报价结果 → 意图结局", () => {
     expect(outcome.draft.title).toContain(draft.id.slice(0, 8));
   });
 
-  it("NEEDS_INPUT 说清阻断项，并保留降级说明", () => {
+  it("NEEDS_INPUT 说清阻断项，降级说明不暴露 HTTP / 令牌", () => {
     const outcome = intentOutcomeFromQuoteResult(
       baseResult({
         status: "NEEDS_INPUT",
@@ -93,7 +93,9 @@ describe("报价结果 → 意图结局", () => {
     expect(outcome.reason).toContain("客户");
     expect(outcome.reason).toContain("数量");
     expect(outcome.reason).toContain("克重");
-    expect(outcome.reason).toContain("HTTP 403");
+    expect(outcome.reason).toContain("本地规则整理");
+    expect(outcome.reason).not.toContain("HTTP");
+    expect(outcome.reason).not.toContain("令牌");
     expect(outcome.reason).toContain("原话已保留");
   });
 
@@ -131,7 +133,8 @@ describe("报价结果 → 意图结局", () => {
     if (leaked.status !== "FAILED") return;
     expect(leaked.reason).not.toContain("request id");
     expect(leaked.reason).not.toContain("abc123");
-    expect(leaked.reason).toContain("HTTP 403");
+    expect(leaked.reason).not.toContain("HTTP");
+    expect(leaked.reason).toContain("模型服务暂时不可用");
   });
 });
 

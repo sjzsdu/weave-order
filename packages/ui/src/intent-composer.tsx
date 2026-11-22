@@ -22,12 +22,15 @@ export function IntentComposer({
   busy,
   error,
   initialText,
+  autoFocus,
 }: {
   onSubmit: (text: string) => Promise<boolean>;
   busy?: boolean;
   error?: string | null;
   /** 从客户 360 带过来的上下文（如「给杭州青禾报价：」）。 */
   initialText?: string;
+  /** 空状态「新建事项」跳进来：输入框为空，但光标要已就位。 */
+  autoFocus?: boolean;
 }) {
   const [text, setText] = useState(initialText ?? "");
   const [focused, setFocused] = useState(false);
@@ -36,8 +39,8 @@ export function IntentComposer({
 
   useEffect(() => {
     // 从客户 360 跳进来时，带过来的上下文要能直接接着打。
-    if (initialText) inputRef.current?.focus();
-  }, [initialText]);
+    if (initialText || autoFocus) inputRef.current?.focus();
+  }, [initialText, autoFocus]);
 
   /*
    * 同路由软导航（开张清单第③步、客户 360 的快捷动作）不会重新挂载组件，
@@ -61,11 +64,11 @@ export function IntentComposer({
 
   return (
     <div className="rounded-lg border border-line bg-surface p-5">
-      <label htmlFor="intent" className="text-sm font-medium text-ink-900">
+      <label htmlFor="intent-input" className="text-sm font-medium text-ink-900">
         粘贴客户原话，小织会整理成报价草稿
       </label>
       <textarea
-        id="intent"
+        id="intent-input"
         ref={inputRef}
         value={text}
         onChange={(event) => setText(event.target.value)}

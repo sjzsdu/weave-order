@@ -69,6 +69,8 @@ function TodayPageContent() {
   const scene = useDemoScene(api, productionLike ? null : sceneKey);
   // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
   const initialIntent = searchParams.get("intent") ?? undefined;
+  // 空状态「新建事项」只打开输入位置：不预填指导语，但要把光标放进去。
+  const autoFocusComposer = searchParams.get("compose") === "1";
   // 开张清单第③步：这次输入带着刚建的客户 + 样品，提交时随意图一起落库。
   const onboardingQuote = searchParams.get("onboard") === "quote";
   const pending = approvals.data?.items ?? [];
@@ -506,6 +508,7 @@ function TodayPageContent() {
         )}
         <IntentComposer
           initialText={initialIntent}
+          autoFocus={autoFocusComposer}
           busy={intentChannel.submitting}
           error={intentChannel.submitError}
           onSubmit={(text) => {

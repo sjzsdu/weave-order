@@ -13,6 +13,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { appendAudit } from "./audit";
 import type { KernelContext } from "./audit";
 import { KernelError } from "./errors";
+import { sanitizeUserNotice } from "../platform/notice-text";
 import {
   assertIntentTransition,
   canRestartIntent,
@@ -42,6 +43,8 @@ const EXECUTOR_STATE = "CONNECTED" as const;
 function mapRow(row: IntentRow): IntentViewType {
   const executorState = row.executorState === "CONNECTED" ? "CONNECTED" : "NOT_CONNECTED";
   const draft = row.result ?? null;
+  // 历史行可能存着网关原文；读侧统一洗掉，旧卡片也不会再把 HTTP 403 / 令牌抛给用户。
+  const failureReason = sanitizeUserNotice(row.failureReason);
   // 理解卡已就绪但尚未执行：SUCCEEDED 指的是「这次理解成功了」，不是「业务完成了」。
   const awaitingConfirm = row.status === "SUCCEEDED" && row.understanding !== null && !draft;
   return IntentView.parse({
@@ -57,9 +60,9 @@ function mapRow(row: IntentRow): IntentViewType {
       : intentNotice({
           status: row.status,
           executorState,
-          failureReason: row.failureReason,
+          failureReason,
         }),
-    failureReason: row.failureReason,
+    failureReason,
     draft,
     attachments: row.attachments ?? [],
     understanding: row.understanding ?? null,

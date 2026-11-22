@@ -13,11 +13,18 @@ describe("统一输入入口降级", () => {
     );
   });
 
-  it("配置了统一输入路由后直接去该路由", () => {
+  it("配置了统一输入路由后直接去该路由，并改用该页读取的 text 参数", () => {
     process.env.NEXT_PUBLIC_UNIFIED_INPUT_ROUTE = "/inbound";
     expect(unifiedInputHref("报价 500 米")).toBe(
-      `/inbound?intent=${encodeURIComponent("报价 500 米")}`,
+      `/inbound?text=${encodeURIComponent("报价 500 米")}`,
     );
+  });
+
+  it("不传提示语时只打开空白输入框，绝不把指导文案当成用户内容", () => {
+    expect(unifiedInputHref()).toBe("/today?compose=1");
+    expect(unifiedInputHref("   ")).toBe("/today?compose=1");
+    process.env.NEXT_PUBLIC_UNIFIED_INPUT_ROUTE = "/inbound";
+    expect(unifiedInputHref()).toBe("/inbound?compose=1");
   });
 
   it("空配置不产生双斜杠或空路由", () => {

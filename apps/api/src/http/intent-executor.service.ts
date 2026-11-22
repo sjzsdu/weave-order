@@ -3,6 +3,7 @@ import type { IntentDraft, JsonValue, QuoteAgentResult } from "@weave-order/sche
 import type { Kernel } from "../kernel";
 import { EXECUTION_FAILURE_REASON } from "../platform/execution-error";
 import { humanizeLlmError } from "../platform/llm";
+import { sanitizeUserNotice } from "../platform/notice-text";
 import { HumanActorService } from "./human-actor.service";
 import type { QuoteAgentService } from "./quote-agent.service";
 import { HUMAN_ACTOR, KERNEL, QUOTE_AGENT } from "./tokens";
@@ -92,10 +93,12 @@ export function intentOutcomeFromQuoteResult(result: QuoteAgentResult): IntentOu
     const prompts = result.missingFields.filter((field) => !field.blocking);
     const missing = blocking.map((field) => `${field.label}（${field.prompt}）`).join("；");
     const optional = prompts.map((field) => field.label).join("、");
+    // notice 可能来自历史快照或第三方 provider：落库前再洗一次，确保内部细节不外泄。
+    const notice = sanitizeUserNotice(result.notice) ?? "";
     const reason = [
       missing ? `还差：${missing}。` : "还差一些信息才能出报价草稿。",
       optional ? `建议补充：${optional}。` : "",
-      result.notice ?? "",
+      notice,
       "原话已保留，补齐后重试即可。",
     ]
       .filter(Boolean)

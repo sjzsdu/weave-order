@@ -3,6 +3,7 @@ import { safeNext } from "@/public-origin";
 import { SupportMailto } from "@/support";
 import { TrackedLink } from "@/tracked-link";
 import { isProductionLike } from "@/runtime-mode";
+import { friendlyLoginError } from "@/login-error";
 
 // MARKETING_URL 是部署时注入的运行时变量，优先读它。
 // NEXT_PUBLIC_* 会在构建期被内联，只靠它的话改 .env 换官网域名不会生效。
@@ -28,13 +29,7 @@ export default async function LoginPage({
     <main className="flex min-h-screen items-center justify-center bg-paper px-4 py-10 sm:px-6">
       <div className="w-full max-w-md rounded-lg border border-line bg-surface p-6 shadow-card sm:p-8">
         <div className="mb-7 flex items-center gap-3 border-b border-line pb-6">
-          <img
-            src="/icon.svg"
-            alt=""
-            width={40}
-            height={40}
-            className="h-10 w-10 shrink-0"
-          />
+          <img src="/icon.svg" alt="" width={40} height={40} className="h-10 w-10 shrink-0" />
           <div>
             <p className="font-serif text-lg font-semibold tracking-[0.06em] text-ink-900">
               织序 WeaveOrder
@@ -48,7 +43,7 @@ export default async function LoginPage({
 
         {error && (
           <p className="mt-4 rounded-md border border-vermilion-600/40 bg-vermilion-600/10 px-3 py-2 text-sm text-vermilion-600">
-            登录没有成功：{error}。可以重试一次，或者联系公司管理员确认账号是否已开通。
+            登录没有成功：{friendlyLoginError(error)}
           </p>
         )}
 
@@ -61,6 +56,7 @@ export default async function LoginPage({
           >
             使用公司账号登录
           </TrackedLink>
+          <p className="text-center text-xs text-ink-400">用户名、邮箱或手机号都可以登录。</p>
           <div className="flex items-center justify-between text-xs text-ink-400">
             <a
               href={SSO_URL}

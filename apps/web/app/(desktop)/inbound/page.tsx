@@ -21,6 +21,7 @@ export default function InboundPage() {
     <div className="mx-auto max-w-3xl p-4 sm:p-6">
       <InboundComposer
         initialText={params.get("text") ?? ""}
+        autoFocus={params.get("compose") === "1"}
         {...(Object.keys(context).length > 0 ? { initialContext: context } : {})}
       />
     </div>

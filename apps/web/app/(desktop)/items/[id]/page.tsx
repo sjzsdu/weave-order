@@ -135,16 +135,17 @@ export default function ItemDetailPage() {
     <div className="grid gap-4 pb-24 md:pb-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <nav className="flex flex-wrap items-center gap-1 text-xs text-ink-400">
+          <nav
+            aria-label="面包屑"
+            className="flex flex-wrap items-center gap-1 text-xs text-ink-400"
+          >
             <Link href="/items" className="hover:text-ink-900">
               事项
             </Link>
             <span>/</span>
-            <Link href="/resources" className="hover:text-ink-900">
-              资源
-            </Link>
-            <span>/</span>
-            <span className="text-ink-700">事项详情</span>
+            <span aria-current="page" className="text-ink-700">
+              事项详情
+            </span>
           </nav>
           <h1 className="mt-1 text-2xl font-semibold text-ink-900">
             {customer?.name ?? "未关联客户"} · {sample?.name ?? "未关联样品"}

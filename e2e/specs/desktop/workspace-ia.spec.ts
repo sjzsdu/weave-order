@@ -45,6 +45,28 @@ test.describe("工作台信息架构（新 IA）", () => {
     await expect(nav.getByRole("link", { name: "审批" })).toHaveCount(0);
   });
 
+  test("新建事项打开空白输入框，不把指导语当成用户内容", async ({ page }) => {
+    await page.goto("/items?filter=recent");
+    await page.getByRole("link", { name: "新建事项" }).click();
+    await expect(page).toHaveURL(/\/today\?compose=1$/);
+    const composer = page.locator("#intent-input");
+    await expect(composer).toBeVisible();
+    await expect(composer).toHaveValue("");
+    await expect(composer).toBeFocused();
+    await expect(page.getByRole("button", { name: "发给小织" })).toBeDisabled();
+  });
+
+  test("事项详情面包屑不再把「资源」当父级", async ({ page }) => {
+    await page.goto("/items?filter=recent");
+    const firstItem = page.getByRole("listitem").getByRole("link").first();
+    await expect(firstItem).toBeVisible();
+    await firstItem.click();
+    const crumbs = page.getByRole("navigation", { name: "面包屑" });
+    await expect(crumbs.getByRole("link", { name: "事项" })).toBeVisible();
+    await expect(crumbs.getByRole("link", { name: "资源" })).toHaveCount(0);
+    await expect(crumbs.locator('[aria-current="page"]')).toHaveText("事项详情");
+  });
+
   test("/panorama 307 到资源，客户/样品/模板三块都在", async ({ page }) => {
     await page.goto("/panorama");
     await expect(page).toHaveURL(/\/resources$/);

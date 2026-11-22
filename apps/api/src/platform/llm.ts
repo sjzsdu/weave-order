@@ -109,14 +109,14 @@ export function humanizeLlmError(error: unknown): string {
   if (http) {
     const status = Number(http[1]);
     if (status === 401 || status === 403) {
-      return `模型网关拒绝了本次调用（HTTP ${status}）：令牌可能无权使用当前模型`;
+      return "模型服务暂时不可用，本次已切换本地规则";
     }
-    if (status === 429) return "模型网关限流了本次调用（HTTP 429），稍后会自动重试";
-    if (status >= 500) return `模型网关暂时不可用（HTTP ${status}）`;
-    return `模型网关拒绝了本次调用（HTTP ${status}）`;
+    if (status === 429) return "模型服务当前繁忙，稍后会自动重试";
+    if (status >= 500) return "模型服务暂时不可用";
+    return "模型服务暂时不可用，本次已切换本地规则";
   }
   if (/abort|timed?\s*out|timeout|fetch failed|ECONN|EAI_AGAIN|ENOTFOUND/i.test(raw)) {
-    return "模型网关响应超时或网络不可达";
+    return "模型服务响应超时或网络不可达";
   }
   if (
     raw.includes("不在租户白名单") ||
