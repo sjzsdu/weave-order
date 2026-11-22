@@ -100,6 +100,13 @@ test.describe("工作台信息架构（新 IA）", () => {
 
   test("工作台有独立入口，不再只能从新建事项的深链进入", async ({ page }) => {
     await page.goto("/items?filter=recent");
+    // 等事项列表真的挂载再点顶栏链接。
+    //
+    // 顶栏是服务端渲染的：goto 一回来「工作台」就可见、可点，但那时 React 还没
+    // hydrate。Next 的全局点击代理会 preventDefault 掉这次点击并发起路由跳转，
+    // 可跳转提交不了 —— URL 不变，链接像坏了一样（e2e-nightly 上偶发，2026-11-22 实测）。
+    // 事项列表是挂载后才渲染的，看到标题就说明 hydrate 完了，链接的 onClick 已就位。
+    await expect(page.getByRole("heading", { name: "最近在办的事" })).toBeVisible();
     await page
       .getByRole("navigation", { name: "桌面窗口" })
       .getByRole("link", { name: "工作台" })
