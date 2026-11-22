@@ -17,6 +17,7 @@ export interface Dict {
   accept: string;
   acceptTitle: string;
   phoneTail: string;
+  phoneTailPlaceholder: string;
   phoneTailHint: string;
   confirmAccept: string;
   cancel: string;
@@ -71,6 +72,7 @@ const ZH: Dict = {
   accept: "接受此报价",
   acceptTitle: "确认接受报价",
   phoneTail: "联系人手机尾号后 4 位",
+  phoneTailPlaceholder: "后 4 位",
   phoneTailHint: "用于确认您是这单的联系人，不做注册、不留明文。",
   confirmAccept: "确认接受",
   cancel: "取消",
@@ -125,6 +127,7 @@ const EN: Dict = {
   accept: "Accept this quotation",
   acceptTitle: "Confirm acceptance",
   phoneTail: "Last 4 digits of contact phone",
+  phoneTailPlaceholder: "Last 4 digits",
   phoneTailHint: "Only used to confirm you are the contact on this quote. No signup.",
   confirmAccept: "Confirm",
   cancel: "Cancel",
