@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { API_URL, MEDIA_BASE_URL } from "../../support/env";
+import { API_URL } from "../../support/env";
 import { readSeed } from "../../support/seed";
 import { screenshot } from "../../support/ui";
 
@@ -131,9 +131,23 @@ test.describe("移动端 H5 关键路径", () => {
 
     await expect(page.getByText("候选面料", { exact: false })).toBeVisible({ timeout: 30_000 });
     // 候选卡片上的缩略图来自对象存储（matchedImageUrl），不是占位色块。
-    const candidateThumbs = page.locator(`img[src^="${MEDIA_BASE_URL}"]`);
+    //
+    // 这里必须按类名定位，不能用 `img[src^="<对象存储>"]`：样品图墙（sample-thumb）
+    // 与候选缩略图指向同一个 /thumbs/… 地址，而 Taro 的 tabbar 页面会一直留在 DOM 里
+    // （切走的那个只是被藏起来）。全局 URL 前缀定位会先命中图墙里那张，
+    // 它在隐藏的 tabbar 面板里，Playwright 永远判定为 hidden —— 断言只能等超时。
+    const candidateThumbs = page.locator(".candidate-thumb img");
     await expect(candidateThumbs.first()).toBeVisible();
     await candidateThumbs.first().scrollIntoViewIfNeeded();
+    // 真的取回来了：图片解码完成且有自然宽度，不是加载失败的空图。
+    await expect
+      .poll(async () =>
+        candidateThumbs.first().evaluate((element) => {
+          const image = element as HTMLImageElement;
+          return image.complete && image.naturalWidth > 0;
+        }),
+      )
+      .toBe(true);
     // local-stub 必须显示「演示模式」，不能把哈希分数说成视觉相似。
     if (body.data && !body.data.semantic) {
       await expect(page.getByText("演示模式", { exact: true })).toBeVisible();

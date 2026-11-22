@@ -496,6 +496,9 @@ export default function CameraPage() {
                       // 优先显示命中的那张图：让用户看到「你拍的这张最像这个角度的这张图」。
                       src={(match.matchedImageUrl ?? match.sample.primaryImageUrl)!}
                       mode="aspectFill"
+                      // 候选缩略图与样品图墙（sample-thumb）会同时在 DOM 里，且指向同一个
+                      // /thumbs/… 地址；类名用来把两者区分开，e2e 只认候选这一张。
+                      className="candidate-thumb"
                       style={{ width: 44, height: 44, borderRadius: 6 }}
                     />
                   ) : (

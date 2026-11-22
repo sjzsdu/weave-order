@@ -16,6 +16,12 @@ import { requirePrintTestEnv } from "./support/print-env";
  * 复制系统样卡 → 存草稿 → 发版本 → 再改再发 → 回滚 → 打印次数统计。
  *
  * 钉死两件事：已发布版本一行不会被改写；试打任务不算正式打印记录。
+ *
+ * 每个用例都显式声明 30s 超时（与本目录其它 DB 用例一致）：
+ * 这套件每个用例都要打十几次 PG，整仓 114 个测试文件并行跑时连接池互相排队，
+ * 单个用例从本地的百来毫秒被拖到 CI 的秒级是常态（2026-11-22 实测首条 5008ms，
+ * 撞上 vitest 默认的 5s 直接变红）。默认 5s 是给纯单元用例的，
+ * 拿它卡真连库的重用例就是假红灯——超时该放宽到用例自己身上，不是全局配置上。
  */
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://weave:weave@localhost:5433/weave_order";
@@ -221,7 +227,7 @@ describe("样卡模板编辑闭环", () => {
     const history = await jobs.listForQuote(QUOTE_ID);
     expect(history).toHaveLength(1);
     expect(history[0]?.isTest).toBe(false);
-  });
+  }, 30_000);
 
   it("非法字段被拒绝：版式只能从白名单里选", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证白名单");
@@ -243,7 +249,7 @@ describe("样卡模板编辑闭环", () => {
         OWNER,
       ),
     ).rejects.toThrowError(/order\.no/);
-  });
+  }, 30_000);
 
   it("HTML 版式只有 OWNER 能碰草稿：SALES 复制 A4 样卡被拒，复制标签可以", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证 HTML 能力边界");
@@ -264,7 +270,7 @@ describe("样卡模板编辑闭环", () => {
     await expect(
       templates.saveDraft(labelCopy.template.id, { layout: layoutHiding("sample.name") }, SALES),
     ).resolves.toBeTruthy();
-  });
+  }, 30_000);
 
   it("租户的文本模板不能被「复制成可视化模板」：否则正文会丢", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证复制来源校验");
@@ -285,7 +291,7 @@ describe("样卡模板编辑闭环", () => {
         OWNER,
       ),
     ).rejects.toThrowError(/文本模板/);
-  });
+  }, 30_000);
 
   it("版本打印次数只算已完成的正式打印：FAILED 与试打都不算", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证打印次数口径");
@@ -318,7 +324,7 @@ describe("样卡模板编辑闭环", () => {
     ]);
     const detail = await templates.detail(copied.template.id);
     expect(detail.versions[0]?.printCount).toBe(1);
-  });
+  }, 30_000);
 
   it("可视化编辑只对样卡开放：其它单据仍走文本模板", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证范围");
@@ -329,7 +335,7 @@ describe("样卡模板编辑闭环", () => {
         OWNER,
       ),
     ).rejects.toThrowError(/还不能可视化编辑/);
-  });
+  }, 30_000);
 
   it("试打真的入队，但不进正式打印记录、也不算版本用量", async (ctx) => {
     if (!available) requirePrintTestEnv(ctx, "数据库不可用，无法验证试打隔离");
@@ -370,5 +376,5 @@ describe("样卡模板编辑闭环", () => {
       );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.isTest).toBe(true);
-  });
+  }, 30_000);
 });
