@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
 import { formatMoney } from "@weave-order/ui";
 import { useApi } from "@/providers";
-import { SupportMailto } from "@/support";
+import { SUPPORT_EMAIL, SupportMailto } from "@/support";
 import { useMounted } from "@/use-mounted";
 import { FieldOptionsSummary } from "@/field-options-manager";
 import { AuditLogView } from "@/audit-log";
@@ -669,8 +669,11 @@ function BillingSection() {
           <>
             <p className="mt-2 text-2xl font-semibold text-ink-900">
               {data.creditsUsed.toLocaleString()}
-              <span className="ml-1 text-sm font-normal text-ink-400">
-                / {data.creditsIncluded === null ? "不限" : data.creditsIncluded.toLocaleString()}{" "}
+              <span className="text-sm font-normal text-ink-400">
+                {" / "}
+                {data.creditsIncluded === null
+                  ? "不限"
+                  : data.creditsIncluded.toLocaleString()}{" "}
                 credits
               </span>
             </p>
@@ -694,7 +697,12 @@ function BillingSection() {
         <h2 className="text-sm font-medium text-ink-900">订阅</h2>
         <p className="mt-1 text-xs text-ink-400">
           套餐、发票与付款方式由平台侧维护，本期这里只读展示。需要变更请
-          <SupportMailto className="text-indigo-600 underline" label="联系对接人" />。
+          {SUPPORT_EMAIL ? (
+            <SupportMailto className="text-indigo-600 underline" label="联系对接人" />
+          ) : (
+            <span>联系你的对接人或平台管理员</span>
+          )}
+          。
         </p>
       </section>
     </div>
