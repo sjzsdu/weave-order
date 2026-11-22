@@ -5,6 +5,7 @@ import type { Capability, Currency, DataScope, MemberRole, TeamInvite } from "@w
 import {
   CAPABILITY_ROLES,
   Capability as CapabilityEnum,
+  MEMBER_ROLE_LABEL,
   memberRoleLabel,
 } from "@weave-order/schema";
 import { Badge, cn } from "@weave-order/ui";
@@ -12,15 +13,13 @@ import { useApi } from "@/providers";
 import { track } from "@/analytics";
 import { formatMoney } from "@weave-order/ui";
 
-const ROLE_OPTIONS: Array<{ value: MemberRole; label: string }> = [
-  { value: "OWNER", label: "老板" },
-  { value: "MANAGER", label: "主管" },
-  { value: "SALES", label: "销售" },
-  { value: "MERCHANDISER", label: "跟单" },
-  { value: "SAMPLE_ADMIN", label: "样品管理" },
-  { value: "FINANCE", label: "财务" },
-  { value: "VIEWER", label: "只读" },
-];
+/**
+ * 角色下拉与能力矩阵必须共用同一份中文名，否则会出现
+ * 「矩阵里有经理、邀请时只能选主管」的权限认知断层（WAN-204）。
+ */
+const ROLE_OPTIONS: Array<{ value: MemberRole; label: string }> = (
+  Object.keys(MEMBER_ROLE_LABEL) as MemberRole[]
+).map((value) => ({ value, label: memberRoleLabel(value) }));
 
 const SCOPE_OPTIONS: Array<{ value: DataScope; label: string }> = [
   { value: "ALL", label: "全公司" },
