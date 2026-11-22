@@ -69,6 +69,8 @@ function TodayPageContent() {
   const scene = useDemoScene(api, productionLike ? null : sceneKey);
   // 客户 360 的「新建报价 / 建寄样单」把它带到意图栏，客户名不用重打。
   const initialIntent = searchParams.get("intent") ?? undefined;
+  // 空状态「新建事项」只打开输入位置：不预填指导语，但要把光标放进去。
+  const autoFocusComposer = searchParams.get("compose") === "1";
   // 开张清单第③步：这次输入带着刚建的客户 + 样品，提交时随意图一起落库。
   const onboardingQuote = searchParams.get("onboard") === "quote";
   const pending = approvals.data?.items ?? [];
@@ -506,10 +508,16 @@ function TodayPageContent() {
         )}
         <IntentComposer
           initialText={initialIntent}
+          autoFocus={autoFocusComposer}
+          submitLabel="下一步：补充并确认"
+          submittingLabel="正在打开…"
+          submittingHint="正在打开统一输入页，原话会带过去，不会丢。"
+          hint="点「下一步」会打开统一输入页：可以补充图片/附件、确认理解，再发给小织。"
           busy={intentChannel.submitting}
           error={intentChannel.submitError}
           onSubmit={(text) => {
             // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
+            // 按钮与提示已明确写成两步，避免用户误以为这一下已经发给小织。
             const params = new URLSearchParams({ text });
             for (const [key, value] of Object.entries(intentContext ?? {})) {
               params.set(key, String(value));

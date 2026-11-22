@@ -24,6 +24,8 @@ describe("客户报价页展示逻辑", () => {
   it("中英切换与行号文案", () => {
     expect(dict("zh").accept).toBe("接受此报价");
     expect(dict("en").accept).toBe("Accept this quotation");
+    expect(dict("zh").phoneTailPlaceholder).toBe("后 4 位");
+    expect(dict("en").phoneTailPlaceholder).toBe("Last 4 digits");
     expect(nextLang("zh")).toBe("en");
     expect(nextLang("en")).toBe("zh");
     expect(lineLabel(1, "zh")).toBe("第 2 行");

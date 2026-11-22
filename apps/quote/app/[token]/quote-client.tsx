@@ -212,7 +212,9 @@ export function QuoteClient({
                 alt={t.wechatQr}
                 width={88}
                 height={88}
-                onError={(event) => { event.currentTarget.style.display = "none"; }}
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
               />
             )}
           </div>
@@ -237,6 +239,8 @@ export function QuoteClient({
                     autoComplete="off"
                     maxLength={4}
                     pattern="\d{4}"
+                    placeholder={t.phoneTailPlaceholder}
+                    aria-required="true"
                     value={phoneTail}
                     onChange={(event) => setPhoneTail(event.target.value.replace(/\D/g, ""))}
                   />

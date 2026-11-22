@@ -43,10 +43,11 @@ describe("报价槽位抽取降级", () => {
     expect(provider.lastFallback?.task).toBe("QUOTE_INTENT");
   });
 
-  it("降级原因收成人话，不带 request id 与响应体", () => {
+  it("降级原因收成人话，不带 HTTP 状态码、令牌、request id 与响应体", () => {
     const reason = humanizeLlmError(new Error(GATEWAY_403));
-    expect(reason).toContain("HTTP 403");
-    expect(reason).toContain("无权使用");
+    expect(reason).toContain("模型服务暂时不可用");
+    expect(reason).not.toContain("HTTP");
+    expect(reason).not.toContain("令牌");
     expect(reason).not.toContain("request id");
     expect(reason).not.toContain("deepseek-chat");
     expect(reason).not.toContain("{");

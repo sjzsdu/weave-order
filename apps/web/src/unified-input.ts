@@ -8,12 +8,19 @@
  *   `/today` 对带 `intent` 的深链不重定向（见 today/page.tsx）。
  *
  * 这样在 WAN-194 合并前空状态不会点出一个 404，合并后也不用改调用点。
+ *
+ * prompt 是「用户真的说了这句话」时才传；从空状态点「新建事项」不传，
+ * 只打开输入位置（`compose=1`），否则指导语会被当成用户内容预填。
  */
-export function unifiedInputHref(prompt: string): string {
+export function unifiedInputHref(prompt?: string): string {
   const route = process.env.NEXT_PUBLIC_UNIFIED_INPUT_ROUTE;
   const base = route?.trim() || "/today";
   const separator = base.includes("?") ? "&" : "?";
-  return `${base}${separator}intent=${encodeURIComponent(prompt)}`;
+  const text = prompt?.trim();
+  if (!text) return `${base}${separator}compose=1`;
+  // `/inbound` 读 `text`，`/today` 读 `intent`；参数名跟着落地页走。
+  const key = base.startsWith("/inbound") ? "text" : "intent";
+  return `${base}${separator}${key}=${encodeURIComponent(text)}`;
 }
 
 export const UNIFIED_INPUT_PROMPT = "用一句话或一张照片开始：客户、样品、数量说清楚就行";

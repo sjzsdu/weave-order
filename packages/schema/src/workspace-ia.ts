@@ -3,7 +3,7 @@ import { BUSINESS_NAV, PRIMARY_NAV } from "./navigation";
 import type { NavItem } from "./navigation";
 
 /**
- * 工作台信息架构（IA）开关 —— WAN-196 / D4「事项 / 资源 / 设置」。
+ * 工作台信息架构（IA）开关 —— WAN-196 / D4「工作台 / 事项 / 资源 / 设置」。
  *
  * 为什么放在 schema 而不是 web：导航、路由映射与灰度开关必须由同一份判定投影出来。
  * 页面、服务端重定向与 e2e 都读这里，避免出现「导航已经是新 IA、/today 却还在渲染旧页」。
@@ -40,10 +40,11 @@ export function resolveWorkspaceIA(
 }
 
 /**
- * 新 IA 一级入口：事项 / 资源 / 设置。
+ * 新 IA 一级入口：工作台 / 事项 / 资源 / 设置。
  * 审批不再是入口（D1 取消审批），日志归入设置里的「审计日志」。
  */
 export const WORKSPACE_NAV: readonly NavItem[] = [
+  { href: "/workbench", label: "工作台", hint: "小织今天的动态与待决事项" },
   { href: "/items", label: "事项", key: "1", hint: "⌘1" },
   { href: "/resources", label: "资源", key: "2", hint: "⌘2" },
   { href: "/settings", label: "设置", key: "3", hint: "⌘3" },

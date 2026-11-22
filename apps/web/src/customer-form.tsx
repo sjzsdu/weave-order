@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Customer, CustomerTierCode } from "@weave-order/schema";
 import { ApiError } from "@weave-order/core";
@@ -92,6 +92,8 @@ export function CustomerForm({
   const [errors, setErrors] = useState<CustomerDraftErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const contactNameRef = useRef<HTMLInputElement>(null);
 
   const update = <K extends keyof CustomerDraft>(key: K, value: CustomerDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -112,7 +114,14 @@ export function CustomerForm({
     if (busy) return;
     const found = validateCustomerDraft(draft);
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      // 表单可能很长：把焦点带到第一个缺失项，别让用户自己找红字。
+      requestAnimationFrame(() => {
+        if (found.name) nameRef.current?.focus();
+        else if (found.contactName) contactNameRef.current?.focus();
+      });
+      return;
+    }
 
     setBusy(true);
     setSubmitError(null);
@@ -141,6 +150,7 @@ export function CustomerForm({
       onClick={busy ? undefined : onClose}
     >
       <form
+        noValidate
         className="flex h-full w-full max-w-[520px] flex-col overflow-y-auto bg-surface shadow-xl"
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
@@ -151,9 +161,7 @@ export function CustomerForm({
         <header className="flex items-center justify-between border-b border-line px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-ink-900">新建客户</h2>
-            <p className="mt-0.5 text-xs text-ink-400">
-              编号自动生成；客户名与第一位联系人必填。
-            </p>
+            <p className="mt-0.5 text-xs text-ink-400">编号自动生成；客户名与第一位联系人必填。</p>
           </div>
           <Button
             variant="ghost"
@@ -175,14 +183,19 @@ export function CustomerForm({
             </p>
           )}
 
-          <Field label="客户名称" required error={errors.name}>
+          <Field label="客户名称" required error={errors.name} errorId="customer-name-error">
             <input
+              id="customer-name"
+              ref={nameRef}
               autoFocus
               value={draft.name}
               onChange={(event) => update("name", event.target.value)}
               className={FIELD_CLASS}
               placeholder="例如 杭州青禾服饰"
+              required
+              aria-required="true"
               aria-invalid={errors.name ? true : undefined}
+              aria-describedby={errors.name ? "customer-name-error" : undefined}
             />
           </Field>
 
@@ -203,12 +216,23 @@ export function CustomerForm({
             )}
           </Field>
 
-          <Field label="联系人" required error={errors.contactName}>
+          <Field
+            label="联系人"
+            required
+            error={errors.contactName}
+            errorId="customer-contact-name-error"
+          >
             <input
+              id="customer-contact-name"
+              ref={contactNameRef}
               value={draft.contactName}
               onChange={(event) => update("contactName", event.target.value)}
               className={FIELD_CLASS}
               placeholder="例如 周敏"
+              required
+              aria-required="true"
+              aria-invalid={errors.contactName ? true : undefined}
+              aria-describedby={errors.contactName ? "customer-contact-name-error" : undefined}
             />
           </Field>
 
@@ -251,11 +275,13 @@ function Field({
   label,
   required,
   error,
+  errorId,
   children,
 }: {
   label: string;
   required?: boolean;
   error?: string;
+  errorId?: string;
   children: ReactNode;
 }) {
   return (
@@ -265,7 +291,11 @@ function Field({
         {required && <span className="ml-0.5 text-vermilion-600">*</span>}
       </span>
       {children}
-      {error && <span className="text-xs text-vermilion-600">{error}</span>}
+      {error && (
+        <span id={errorId} role="alert" className="text-xs text-vermilion-600">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

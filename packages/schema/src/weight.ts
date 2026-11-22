@@ -34,3 +34,18 @@ export function parseWeightGsm(raw: string | null | undefined): number | null {
 export function weightGsmLabel(value: number | null | undefined): string {
   return typeof value === "number" ? `${value} g/m²` : "克重未填";
 }
+
+/**
+ * 样品卡片的克重展示：老数据的 `weight` 可能只写了一个裸数字（如 `230`）。
+ * 这里只负责把单位补全给人看，不把它当成可筛选的 weightGsm（判定仍走 parseWeightGsm）。
+ */
+export function sampleWeightText(
+  weightGsm: number | null | undefined,
+  weight: string | null | undefined,
+): string | null {
+  if (typeof weightGsm === "number") return `${weightGsm} g/m²`;
+  const text = weight?.trim();
+  if (!text) return null;
+  if (/^\d+(?:\.\d+)?$/.test(text)) return `${Math.round(Number(text))} g/m²`;
+  return text;
+}

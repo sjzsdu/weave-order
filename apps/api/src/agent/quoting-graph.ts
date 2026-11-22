@@ -149,7 +149,7 @@ export function createQuoteAgentGraph(deps: QuoteAgentGraphDeps) {
         usage: llm.lastUsage,
         // 降级事实必须跟着结果走：用户看到的是「报价出来了 + 模型暂时降级」，
         // 而不是一个静默的假成功。
-        notice: fallback ? `模型网关不可用：${fallback.reason}。本次已用本地规则整理。` : null,
+        notice: fallback ? `本次已用本地规则整理：${fallback.reason}。` : null,
         stage: advanceQuoting(state.stage, "INTENT_PARSED"),
         steps: [
           `parseIntent: ${intent.provider} 抽取槽位（成分=${intent.slots.composition ?? "-"}，克重=${intent.slots.weight ?? "-"}，数量=${intent.slots.quantity ? `${intent.slots.quantity.value}${intent.slots.quantity.unit}` : "-"}）`,

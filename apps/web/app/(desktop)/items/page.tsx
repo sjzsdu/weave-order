@@ -85,7 +85,7 @@ function ItemsPageContent() {
           </p>
         </div>
         <Link
-          href={unifiedInputHref(UNIFIED_INPUT_PROMPT)}
+          href={unifiedInputHref()}
           className="inline-flex min-h-11 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
         >
           新建事项
@@ -121,7 +121,7 @@ function ItemsPageContent() {
           actions={
             <>
               <Link
-                href={unifiedInputHref(UNIFIED_INPUT_PROMPT)}
+                href={unifiedInputHref()}
                 className="inline-flex min-h-11 items-center rounded-md bg-ink-900 px-4 text-sm text-white hover:bg-ink-700"
               >
                 用一句话或一张照片开始

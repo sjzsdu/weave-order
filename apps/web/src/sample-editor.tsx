@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { FabricSample, FieldKey, Unit } from "@weave-order/schema";
 import { parseWeightGsm } from "@weave-order/schema";
@@ -26,6 +26,12 @@ const UNIT_LABEL: Record<Unit, string> = {
   yard: "码",
   piece: "件",
 };
+
+interface SampleDraftErrors {
+  code?: string;
+  name?: string;
+  costFloor?: string;
+}
 
 function suggestCode(): string {
   return `SP-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${Math.random()
@@ -69,7 +75,11 @@ export function SampleEditor({
   const [primaryIndex, setPrimaryIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<SampleDraftErrors>({});
   const [manageField, setManageField] = useState<FieldKey | null>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const costFloorRef = useRef<HTMLInputElement>(null);
   const compositionOptions = useFieldOptions("sample.composition");
   const categoryOptions = useFieldOptions("sample.category");
   const colorOptions = useFieldOptions("sample.color");
@@ -77,6 +87,7 @@ export function SampleEditor({
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setFieldErrors({});
     setBusy(false);
     setCode(sample?.code ?? suggestCode());
     setName(sample?.name ?? "");
@@ -166,9 +177,20 @@ export function SampleEditor({
 
   const save = async () => {
     setError(null);
-    if (!code.trim()) return setError("编码必填");
-    if (!name.trim()) return setError("品名必填");
-    if (costFloor === undefined) return setError("成本底线必须是数字（元）");
+    const found: SampleDraftErrors = {};
+    if (!code.trim()) found.code = "编码必填";
+    if (!name.trim()) found.name = "品名必填";
+    if (costFloor === undefined) found.costFloor = "成本底线必须是数字（元）";
+    setFieldErrors(found);
+    if (Object.keys(found).length > 0) {
+      // 错误必须在字段旁边出现，并把焦点带到第一个缺失项：底部通用错误在长表单里会被忽略。
+      requestAnimationFrame(() => {
+        if (found.code) codeRef.current?.focus();
+        else if (found.name) nameRef.current?.focus();
+        else costFloorRef.current?.focus();
+      });
+      return;
+    }
     setBusy(true);
     let created: FabricSample | null = null;
     // 编辑走 PATCH，返回的是保存后的实体；新建则复用刚创建的那条。
@@ -265,20 +287,38 @@ export function SampleEditor({
 
         <div className="grid gap-4 px-5 py-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="编码 *">
+            <Field label="编码 *" error={fieldErrors.code} errorId="sample-code-error">
               <input
+                id="sample-code"
+                ref={codeRef}
                 className="input"
                 value={code}
-                onChange={(event) => setCode(event.target.value)}
+                onChange={(event) => {
+                  setCode(event.target.value);
+                  setFieldErrors((current) => ({ ...current, code: undefined }));
+                }}
                 placeholder="如 FM-220"
+                required
+                aria-required="true"
+                aria-invalid={fieldErrors.code ? true : undefined}
+                aria-describedby={fieldErrors.code ? "sample-code-error" : undefined}
               />
             </Field>
-            <Field label="品名 *">
+            <Field label="品名 *" error={fieldErrors.name} errorId="sample-name-error">
               <input
+                id="sample-name"
+                ref={nameRef}
                 className="input"
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setFieldErrors((current) => ({ ...current, name: undefined }));
+                }}
                 placeholder="如 32S 精梳棉汗布"
+                required
+                aria-required="true"
+                aria-invalid={fieldErrors.name ? true : undefined}
+                aria-describedby={fieldErrors.name ? "sample-name-error" : undefined}
               />
             </Field>
             <Field label="成分">
@@ -386,7 +426,11 @@ export function SampleEditor({
                     : `筛选克重：${parseWeightGsm(weight)} g/m²`}
               </span>
             </Field>
-            <Field label="单位与成本底线（元）">
+            <Field
+              label="单位与成本底线（元）"
+              error={fieldErrors.costFloor}
+              errorId="sample-cost-floor-error"
+            >
               <div className="flex gap-2">
                 <select
                   className="input w-28"
@@ -400,11 +444,18 @@ export function SampleEditor({
                   ))}
                 </select>
                 <input
+                  id="sample-cost-floor"
+                  ref={costFloorRef}
                   className="input flex-1"
                   inputMode="decimal"
                   value={costFloorYuan}
-                  onChange={(event) => setCostFloorYuan(event.target.value)}
+                  onChange={(event) => {
+                    setCostFloorYuan(event.target.value);
+                    setFieldErrors((current) => ({ ...current, costFloor: undefined }));
+                  }}
                   placeholder="不填则未设置"
+                  aria-invalid={fieldErrors.costFloor ? true : undefined}
+                  aria-describedby={fieldErrors.costFloor ? "sample-cost-floor-error" : undefined}
                 />
               </div>
             </Field>
@@ -521,11 +572,26 @@ export function SampleEditor({
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  error,
+  errorId,
+  children,
+}: {
+  label: string;
+  error?: string;
+  errorId?: string;
+  children: ReactNode;
+}) {
   return (
     <label className="grid gap-1">
       <span className="text-xs text-ink-400">{label}</span>
       {children}
+      {error && (
+        <span id={errorId} role="alert" className="text-xs text-vermilion-600">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

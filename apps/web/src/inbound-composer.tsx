@@ -70,9 +70,12 @@ function valueText(value: JsonValue): string {
 export function InboundComposer({
   initialText = "",
   initialContext,
+  autoFocus = false,
 }: {
   initialText?: string;
   initialContext?: Record<string, string>;
+  /** 空状态「新建事项」跳进来：输入框为空，但光标要已就位。 */
+  autoFocus?: boolean;
 }) {
   const api = useApi();
   const customers = useCustomers(api, 100);
@@ -297,6 +300,7 @@ export function InboundComposer({
 
         <textarea
           ref={pasteRef}
+          autoFocus={autoFocus}
           value={text}
           onChange={(event) => setText(event.target.value)}
           onPaste={(event) => {

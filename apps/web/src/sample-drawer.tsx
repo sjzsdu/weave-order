@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, SampleImage, Unit } from "@weave-order/schema";
-import { isSampleStatusAvailable } from "@weave-order/schema";
+import { isSampleStatusAvailable, sampleWeightText } from "@weave-order/schema";
 import { Badge, Button, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { canRetryImage, imageStatusBadges, thumbnailNote } from "@/sample-image-status";
@@ -233,9 +233,7 @@ export function SampleDrawer({
                   <Row label="颜色" value={sample.color ?? "—"} />
                   <Row
                     label="克重"
-                    value={
-                      sample.weightGsm ? `${sample.weightGsm} g/m²` : (sample.weight ?? "克重未填")
-                    }
+                    value={sampleWeightText(sample.weightGsm, sample.weight) ?? "克重未填"}
                   />
                   <Row label="单位" value={UNIT_LABEL[sample.unit]} />
                   <Row
