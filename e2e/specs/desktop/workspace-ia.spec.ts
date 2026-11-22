@@ -1,5 +1,57 @@
 import { expect, test } from "../../support/test";
+import { API_URL } from "../../support/env";
+import { readSeed } from "../../support/seed";
 import { noHorizontalScroll } from "../../support/ui";
+import type { Page } from "@playwright/test";
+
+/**
+ * 造一条「还没结束」的事项，返回它的 id。
+ *
+ * 为什么不能直接点「最近事项的第一条」：那一条可能是别的用例跑完的已完成事项，
+ * 终态（COMPLETED / CLOSED）不允许迁移到 CLOSED，详情页就不会渲染「更多操作」，
+ * 按第一条点会随跑批顺序时红时绿。断言必须落在一件自己造的、非终态的事项上。
+ */
+async function createOpenItem(page: Page): Promise<string> {
+  const seed = await readSeed();
+  const headers = { Authorization: `Bearer ${seed.ownerCredential}` };
+
+  const customersResponse = await page.request.get(
+    `${API_URL}/api/customers?query=${encodeURIComponent(seed.persona.customerCode)}&limit=50`,
+    { headers },
+  );
+  expect(customersResponse.ok(), `查客户失败：HTTP ${customersResponse.status()}`).toBe(true);
+  const customersBody = (await customersResponse.json()) as {
+    customers: { id: string; code: string }[];
+  };
+  const customer = customersBody.customers.find((row) => row.code === seed.persona.customerCode);
+  if (!customer) throw new Error(`seed 里没有客户 ${seed.persona.customerCode}`);
+  const sample = seed.fabricSamples[0];
+  if (!sample) throw new Error("seed 里没有可用的样品");
+
+  const createResponse = await page.request.post(`${API_URL}/api/items`, {
+    headers,
+    data: {
+      customerId: customer.id,
+      sampleId: sample.id,
+      // 数量带上轮次：同客户+样品+数量会「续接」已有事项，用新数量保证是新建的一条。
+      quantity: { value: 1000 + (Date.now() % 1_000_000), unit: "meter" },
+    },
+  });
+  expect(createResponse.ok(), `建事项失败：HTTP ${createResponse.status()}`).toBe(true);
+  const created = (await createResponse.json()) as {
+    outcome: string;
+    item: { id: string; status: string } | null;
+    message: string;
+  };
+  if (!created.item) {
+    throw new Error(`建事项没有落库：${created.outcome} / ${created.message}`);
+  }
+  expect(created.item.status, "新建的事项必须是未结束状态，否则不会渲染「更多操作」").not.toBe(
+    "COMPLETED",
+  );
+  expect(created.item.status).not.toBe("CLOSED");
+  return created.item.id;
+}
 
 /**
  * WAN-196 信息架构重组验收：
@@ -60,13 +112,14 @@ test.describe("工作台信息架构（新 IA）", () => {
   test("新建事项打开空白输入框，不把指导语当成用户内容", async ({ page }) => {
     await page.goto("/items?filter=recent");
     await page.getByRole("link", { name: "新建事项" }).click();
-    await expect(page).toHaveURL(/\/today\?compose=1$/);
-    const composer = page.locator("#intent-input");
+    // 统一输入页就是 /inbound：以前这里回退到 /today，只是因为统一输入页还没上线，
+    // 现在「新建事项」直接去它，空状态只打开输入位置（compose=1）。
+    await expect(page).toHaveURL(/\/inbound\?compose=1$/);
+    const composer = page.locator("textarea");
     await expect(composer).toBeVisible();
+    // 指导语只当提示，不进输入框；光标已经在框里，可以直接打字。
     await expect(composer).toHaveValue("");
     await expect(composer).toBeFocused();
-    await expect(page.getByRole("button", { name: "下一步：补充并确认" })).toBeDisabled();
-    await expect(page.getByText(/打开统一输入页：可以补充图片/)).toBeVisible();
   });
 
   test("事项详情面包屑不再把「资源」当父级", async ({ page }) => {
@@ -81,10 +134,8 @@ test.describe("工作台信息架构（新 IA）", () => {
   });
 
   test("关闭事项必须二次确认，不直接执行", async ({ page }) => {
-    await page.goto("/items?filter=recent");
-    const firstItem = page.getByRole("listitem").getByRole("link").first();
-    await expect(firstItem).toBeVisible();
-    await firstItem.click();
+    const itemId = await createOpenItem(page);
+    await page.goto(`/items/${itemId}`);
     await page.getByRole("button", { name: "更多操作" }).click();
     await page.getByRole("button", { name: "关闭事项（不可撤销）" }).click();
     await expect(page.getByText("关闭后不能再改状态，确定关闭？")).toBeVisible();
