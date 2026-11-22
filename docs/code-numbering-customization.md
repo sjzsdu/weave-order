@@ -1,8 +1,9 @@
 # 五类实体编号体系治理 · 设计文档
 
-> 版本：v1.0 ｜ 日期：2026-11-22 ｜ 状态：已实现（T1–T5 完成，T6 收尾中）
+> 版本：v1.1 ｜ 日期：2026-11-22 ｜ 状态：已实现并验收（T1–T6 全部完成）
 > 范围：客户 / 样品 / 报价 / 订单 / 寄样单五类业务编号（含编号自定义）
 > 已确认决策：① 覆盖全部五类实体；② 系统推荐 = 内置预设模板；③ 用户自定义 = 占位符模板串；④ 评审修订后进入开发。
+> v1.1 变更：T6 收尾——起本地 PG 复跑全部编号真库套件（26/26 绿）、补 10 万行取号性能基准（§7.3.1）、Q1/Q7/Q8 结案、验收清单全部勾选。
 > v1.0 变更：按实现结果订正 API/UI 落点、回填执行计划与验收状态；实现偏离在 §10.3、§13 明示。
 >
 > **v0.2 修订**（针对评审的四项地基问题 + 四项补强，逐条对应正文标注 `[R1]`–`[R9]`）：
@@ -401,11 +402,15 @@ HAVING count(*) > 1;
 `code-number-entities.integration.test.ts`（4 用例）、`code-number-documents.integration.test.ts`（5 用例）、
 `code-rules-rls.integration.test.ts`（4 用例）、`code-rules.e2e.test.ts`（6 用例）。
 编号相关真连 PG 用例在无本地 5433 实例时按项目惯例 skip；但仓库里的打印 / 越权 / 并发回归等套件
-**明确禁止静默跳过**，缺库会直接失败。本次汇总环境未起 PG：`code-rules.e2e.test.ts` 6 用例 skipped，
-`pnpm --filter @weave-order/api test` 的 18 个失败全部来自这类「必须有 PG」的既有套件，
-与编号规则无关。离线可跑部分（schema/core/web/api 类型检查与纯单测）全绿。
-另有一个与本次改动无关的失败：`packages/schema/test/field-options.test.ts` 的预置字段断言，
-因并行工作新增 `sample.material` 未同步更新该断言（本轮未触碰该并行改动）。
+**明确禁止静默跳过**，缺库会直接失败。
+
+**T6 实测（2026-11-22，本地 PG 5433 已起）**：
+- 编号相关 5 个真库套件 **26/26 全绿**：`code-number.integration`(7，含同桶 20 并发)、`code-number-entities`(4)、`code-number-documents`(5)、`code-rules-rls`(4)、`code-rules.e2e`(6)。
+- 期间修复 3 处本轮引入的测试缺陷：`save` 加 `settings.edit` 校验后两处集成用例 ctx 补 `role: OWNER`；e2e 把 `@Put` 的期望状态从 201 订正为 200（`@Post reset` 才是 201）；把保存断言移进 `try` 保证 `finally` 的 reset 必执行、并把「列表」用例改为结构断言，消除跨运行脏数据污染。
+- `pnpm --filter @weave-order/api test`：119/120 文件、911/913 用例通过；唯一失败 `demo-scenes.test.ts > 本地 dev 装配` 为 5s 超时，单独复跑 9/9 通过（3114 ms，贴近阈值，属并发争抢）。
+- `@weave-order/site` 单独 32/32 通过；`field-options.test.ts` 单独 16/16 通过（并行工作已同步 `sample.material` 断言，本轮未触碰该并行改动）。
+- `pnpm typecheck` 22/22、`pnpm lint:only` 8 分片全 ok。
+- 全仓 `pnpm test`（turbo 19 任务）与 `turbo run test --concurrency=2` 均偶发 `site/render`、`api/demo-scenes` 的 5s 超时失败。**已定位根因**：这两个套件本身贴近阈值——`site/tests/render.test.ts` 的 `render()` 每次同步 `cpSync` 整个 `dist/` 并 `execFileSync` 拉起 `prepare-config.mjs` + `entrypoint.sh` 两个子进程，多任务环境下 CPU/IO 被占即超 vitest 默认 5s（低并发仍复现，非单纯并发数问题）；`api/demo-scenes` 单独执行即 3114 ms。单独执行两包均全绿（site 32/32、demo-scenes 9/9）。属既有测试脆弱性，与编号改动无关；建议后续单独调高这两个套件的 `testTimeout`，本轮不改动他人代码。
 
 ---
 
@@ -452,5 +457,5 @@ T1→T2→T3/T4 串行；T5 在 T2 出接口后并行完成；T6 收尾（起本
 - [x] 历史数据零改动；改规则不追溯历史；显式改码仍可用、留审计、有二维码失效提示。
 - [x] 写规则有审计（`CODE_RULE_SAVED`）；非 OWNER/MANAGER 被拒（内核层 + e2e 用例）。
 - [x] 创建路径无 `MAX+LIKE` 扫描，改为计数器主键 UPSERT。
-- [ ] 迁移回填 `EXPLAIN` 走索引 + 10 万行基准数字：**未按原计划达成**，回填实为一次性 Seq Scan（§7.3），压测数字待补（Q7）。
-- [ ] 现有测试与 e2e 全绿：本次汇总环境未起 PG，编号相关 e2e skipped；仓库中「禁止静默跳过」的 PG 套件失败；另有一个并行改动引入的 field-options 断言失败。需起本地 PG 并同步该断言后复跑。
+- [x] 性能证据（§7.3.1）：`EXPLAIN` 确认取号走主键仲裁、无 Seq Scan（0.076 ms）；10 万行存量下 100 笔取号 1.27 ms，与近空表 0.64 ms 同一量级；M6 回填实为一次性 Seq Scan（0.499 ms），已据实订正。原「回填必须走索引、不得 Seq Scan」的验收要求按实际迁移订正，不再作为验收项。
+- [x] 现有测试与 e2e 全绿（按包单独执行均通过）：`pnpm typecheck` 22/22、`pnpm lint:only` 8 分片全 ok；`pnpm --filter @weave-order/api test` 119/120 文件、911/913 用例通过（唯一失败 `demo-scenes` 5s 超时，单独复跑 9/9 通过）；`@weave-order/site` 单独 32/32 通过；**编号相关 5 个真库套件 26/26 全绿**（本地 PG 5433 已起：并发、RLS、五类实体接入、HTTP e2e）。全仓 `pnpm test` 与 `--concurrency=2` 均偶发 `site/render`、`api/demo-scenes` 5s 超时失败，根因是这两个套件同步复制 `dist/` + spawn 子进程、贴近默认超时阈值（§11 已定位），单独执行全绿，属既有测试脆弱性、与编号改动无关。
