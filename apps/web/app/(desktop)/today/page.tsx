@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 /**
  * 旧入口 `/today`（WAN-196）。
  *
- * 新 IA 下它只是书签别名：307 到 `/items?filter=recent`，历史书签不会 404。
+ * 新 IA 下它只是书签别名：307 到 `/workbench`，历史书签不会 404，
+ * 用户登录后的第一眼也落在「小织今天在干什么」，而不是空事项列表（WAN-211 UX-001）。
  * 例外是演示剧本深链（`?scene=`）与输入深链（`?intent=` 带原话，`?compose=1`
  * 只打开空白输入框）：前者锚定旧审批卡，后者是统一输入页（WAN-194）上线前
  * 的唯一输入入口，空状态引导会落到这里。
@@ -21,7 +22,7 @@ export default async function TodayRoute({
   const params = await searchParams;
   const ia = await resolveWorkspaceIAServer();
   if (ia === "new" && !params.scene && !params.intent && !params.compose) {
-    redirect("/items?filter=recent");
+    redirect("/workbench");
   }
   return <TodayPage />;
 }

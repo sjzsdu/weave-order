@@ -59,18 +59,13 @@ async function createOpenItem(page: Page): Promise<string> {
  * 灰度关闭（worktree cookie `weave_ia=legacy`）后旧界面完整回来。
  */
 test.describe("工作台信息架构（新 IA）", () => {
-  test("登录后第一屏是事项，/today 307 映射不 404", async ({ page }) => {
-    const itemsRequest = page.waitForResponse(
-      (response) => response.url().includes("/api/items?") && response.ok(),
-    );
+  test("登录后第一屏是工作台，/today 307 映射不 404", async ({ page }) => {
     await page.goto("/today");
-    await expect(page).toHaveURL(/\/items\?filter=recent$/);
-    await itemsRequest;
-    await expect(page.getByRole("heading", { name: "最近在办的事" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "最近事项" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    await expect(page).toHaveURL(/\/workbench$/);
+    await expect(page.getByRole("heading", { name: /小织|今天|件等你决定/ }).first()).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "桌面窗口" }).getByRole("link", { name: "工作台" }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   test("两个过滤都打同一条 /api/items，待我处理带 filter=mine", async ({ page }) => {
@@ -113,7 +108,7 @@ test.describe("工作台信息架构（新 IA）", () => {
       .click();
     await expect(page).toHaveURL(/\/workbench$/);
     await expect(page.getByText("工作台", { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: /小织|今天|件等你决定/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /小织|今天|件等你决定/ }).first()).toBeVisible();
   });
 
   test("新建事项打开空白输入框，不把指导语当成用户内容", async ({ page }) => {
