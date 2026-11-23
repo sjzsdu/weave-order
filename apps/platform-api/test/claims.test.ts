@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SignJWT, exportJWK, generateKeyPair, type JWK, type KeyLike } from "jose";
+import { SignJWT, exportJWK, generateKeyPair, type CryptoKey, type JWK } from "jose";
 import { PlatformError } from "../src/domain/errors";
 import type { Env } from "../src/env";
 import { assertPlatformClaims, createOidcVerifier } from "../src/auth/claims";
@@ -216,7 +216,8 @@ describe("assertPlatformClaims — 社交登录拒绝不回归", () => {
 
 interface KeyPair {
   publicJwk: JWK;
-  privateKey: KeyLike;
+  // jose 6 只接受 WebCrypto CryptoKey（KeyLike 已移除），generateKeyPair 返回的也是它。
+  privateKey: CryptoKey;
 }
 
 let server: Server;
@@ -263,7 +264,7 @@ function verifierEnv(overrides: Partial<Env> = {}): Env {
 }
 
 async function signToken(options: {
-  key?: KeyLike;
+  key?: CryptoKey;
   issuer?: string;
   audience?: string;
   kid?: string;
