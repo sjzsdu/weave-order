@@ -43,6 +43,8 @@ export interface Dict {
   expiredBody: string;
   revokedTitle: string;
   revokedBody: string;
+  unavailableTitle: string;
+  unavailableBody: string;
   pdfDisabled: string;
   contactSales: string;
   wechatQr: string;
@@ -98,6 +100,8 @@ const ZH: Dict = {
   expiredBody: "这条报价已超过有效期，请联系您的业务员获取最新报价。",
   revokedTitle: "链接已撤回",
   revokedBody: "业务员已撤回这条报价链接。如有疑问，请直接联系业务员。",
+  unavailableTitle: "暂时无法打开报价",
+  unavailableBody: "服务正在恢复中，这条链接本身没有失效。请稍后刷新重试。",
   pdfDisabled: "该报价未开放 PDF 下载。",
   contactSales: "联系业务员",
   wechatQr: "微信二维码",
@@ -157,6 +161,9 @@ const EN: Dict = {
     "This quotation is past its validity date. Please ask your salesperson for an update.",
   revokedTitle: "Link withdrawn",
   revokedBody: "Your salesperson has withdrawn this quote link. Please contact them directly.",
+  unavailableTitle: "Quotation temporarily unavailable",
+  unavailableBody:
+    "The service is recovering; this link has not been invalidated. Please refresh and try again shortly.",
   pdfDisabled: "PDF download is not enabled for this quotation.",
   contactSales: "Contact salesperson",
   wechatQr: "WeChat QR code",

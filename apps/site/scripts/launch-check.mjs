@@ -96,24 +96,31 @@ async function checkRedirect(startUrl, label) {
   const final = new URL(finalUrl);
   const targetOk = final.origin === origin && final.pathname === "/";
   if (response.status !== 200) {
-    fail(`${label}跳转`, `${startUrl} 最终状态 ${response.status}`);
+    fail(`${label} 跳转`, `${startUrl} 最终状态 ${response.status}`);
     return;
   }
   if (!targetOk) {
-    fail(`${label}跳转`, `${startUrl} 最终落到 ${final.origin}${final.pathname}，期望 ${origin}/`);
+    fail(`${label} 跳转`, `${startUrl} 最终落到 ${final.origin}${final.pathname}，期望 ${origin}/`);
     return;
   }
-  if (chain.length > 1) {
+  // 验收要求「只跳一次」：0 次说明这一层没做归一化（http 还能访问、或裸域与 www
+  // 各自独立 200），对 SEO 是重复内容；多于 1 次是多余跳转。
+  if (chain.length !== 1) {
     fail(
-      `${label}跳转`,
-      `${startUrl} 跳了 ${chain.length} 次：${chain.map((hop) => `${hop.status}→${hop.location}`).join("，")}`,
+      `${label} 跳转`,
+      chain.length === 0
+        ? `${startUrl} 直接返回 ${response.status}，没有跳到 ${origin}/`
+        : `${startUrl} 跳了 ${chain.length} 次：${chain.map((hop) => `${hop.status}→${hop.location}`).join("，")}`,
     );
     return;
   }
-  pass(
-    `${label}跳转`,
-    chain.length === 0 ? "无跳转" : `${chain[0].status} → ${final.origin}/（1 次）`,
-  );
+  pass(`${label} 跳转`, `${chain[0].status} → ${final.origin}/（1 次）`);
+}
+
+/** 主机压根没配 DNS（子域部署常见）。这不是跳转做错，只提醒，不算失败。 */
+function isDnsFailure(error) {
+  const code = error?.cause?.code ?? "";
+  return /ENOTFOUND|EAI_AGAIN/.test(code) || /ENOTFOUND|EAI_AGAIN/.test(String(error));
 }
 
 async function timed(url, init) {
@@ -129,12 +136,22 @@ const homeUrl = new URL("/", origin).href;
 /* ------------------------------------------------------------------ 跳转 */
 try {
   if (site.protocol === "https:") {
-    await checkRedirect(`http://${host}/`, "http→https ");
+    await checkRedirect(`http://${host}/`, "http→https");
     if (!skipWww) {
       const alternative = site.origin.includes(`//${bareHost}`) ? expectWww : bareHost;
       const altUrl = `https://${alternative}/`;
-      if (alternative !== host)
-        await checkRedirect(altUrl, `${alternative === expectWww ? "裸域→www" : "www→裸域"}`);
+      if (alternative !== host) {
+        const label = alternative === expectWww ? "裸域→www" : "www→裸域";
+        try {
+          await checkRedirect(altUrl, label);
+        } catch (error) {
+          if (isDnsFailure(error)) {
+            warn(`${label} 跳转`, `${alternative} 未配置 DNS（子域部署可跳过 www 归一化）`);
+          } else {
+            fail(`${label} 跳转`, msg(error));
+          }
+        }
+      }
     }
   } else {
     warn("跳转检查", "本地或 http 站点，跳过 http→https 与 www 归一化检查");
