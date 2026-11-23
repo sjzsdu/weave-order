@@ -98,10 +98,13 @@ export function IntentComposer({
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
+          <span className="w-full text-[11px] text-ink-400">试试：点一下填入，再点发送</span>
           {EXAMPLES.map((example) => (
             <button
               key={example}
               type="button"
+              aria-label={`填入示例：${example}`}
+              title="填入输入框"
               onClick={() => {
                 setText(example);
                 inputRef.current?.focus();

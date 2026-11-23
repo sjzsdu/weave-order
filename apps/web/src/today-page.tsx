@@ -266,6 +266,61 @@ function TodayPageContent() {
         )}
       </section>
 
+      <section
+        id="intent"
+        className="rounded-lg border border-indigo-600/25 bg-indigo-600/[0.03] p-4 sm:p-5"
+      >
+        <h2 className="text-sm font-medium text-ink-700">对小织说句话</h2>
+        <p className="mb-3 mt-1 text-xs text-ink-400">
+          一句话 + 几张图，小织先理解再执行；这是织序最顺手的入口，别等想清楚再点。
+        </p>
+        {onboardingQuote && (
+          <p className="mb-2 rounded-md border border-indigo-600/25 bg-indigo-600/5 px-3 py-2 text-xs text-ink-700">
+            {intentContext
+              ? `已带上客户 ${intentContext.customerName ?? ""}${
+                  intentContext.sampleCode ? ` · 样品 ${intentContext.sampleCode}` : ""
+                }，只补数量和价格。`
+              : "先在客户/样品页建好一个，这里提交时就会自动带上。"}
+          </p>
+        )}
+        <IntentComposer
+          initialText={initialIntent}
+          autoFocus={autoFocusComposer}
+          submitLabel="下一步：补充并确认"
+          submittingLabel="正在打开…"
+          submittingHint="正在打开统一输入页，原话会带过去，不会丢。"
+          hint="点「下一步」会打开统一输入页：可以补充图片/附件、确认理解，再发给小织。"
+          busy={intentChannel.submitting}
+          error={intentChannel.submitError}
+          onSubmit={(text) => {
+            // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
+            // 按钮与提示已明确写成两步，避免用户误以为这一下已经发给小织。
+            const params = new URLSearchParams({ text });
+            for (const [key, value] of Object.entries(intentContext ?? {})) {
+              params.set(key, String(value));
+            }
+            router.push(`/inbound?${params.toString()}`);
+            return Promise.resolve(true);
+          }}
+        />
+        {(intentChannel.items.length > 0 || intentChannel.submitError) && (
+          <div className="mt-3 grid gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-ink-400">
+              这句话的去向
+            </h3>
+            {intentChannel.items.slice(0, 5).map((intent) => (
+              <IntentRunCard
+                key={intent.id}
+                intent={intent}
+                busy={intentChannel.submitting}
+                onCancel={(id) => void intentChannel.cancel(id)}
+                onRetry={(item) => void intentChannel.retry(item)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       {(shipping.data?.length ?? 0) > 0 && (
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
           <div className="flex items-center justify-between">
@@ -492,55 +547,6 @@ function TodayPageContent() {
               );
             })}
           </ul>
-        )}
-      </section>
-
-      <section id="intent">
-        <h2 className="mb-2 text-sm font-medium text-ink-700">说点什么</h2>
-        {onboardingQuote && (
-          <p className="mb-2 rounded-md border border-indigo-600/25 bg-indigo-600/5 px-3 py-2 text-xs text-ink-700">
-            {intentContext
-              ? `已带上客户 ${intentContext.customerName ?? ""}${
-                  intentContext.sampleCode ? ` · 样品 ${intentContext.sampleCode}` : ""
-                }，只补数量和价格。`
-              : "先在客户/样品页建好一个，这里提交时就会自动带上。"}
-          </p>
-        )}
-        <IntentComposer
-          initialText={initialIntent}
-          autoFocus={autoFocusComposer}
-          submitLabel="下一步：补充并确认"
-          submittingLabel="正在打开…"
-          submittingHint="正在打开统一输入页，原话会带过去，不会丢。"
-          hint="点「下一步」会打开统一输入页：可以补充图片/附件、确认理解，再发给小织。"
-          busy={intentChannel.submitting}
-          error={intentChannel.submitError}
-          onSubmit={(text) => {
-            // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
-            // 按钮与提示已明确写成两步，避免用户误以为这一下已经发给小织。
-            const params = new URLSearchParams({ text });
-            for (const [key, value] of Object.entries(intentContext ?? {})) {
-              params.set(key, String(value));
-            }
-            router.push(`/inbound?${params.toString()}`);
-            return Promise.resolve(true);
-          }}
-        />
-        {(intentChannel.items.length > 0 || intentChannel.submitError) && (
-          <div className="mt-3 grid gap-2">
-            <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-ink-400">
-              这句话的去向
-            </h3>
-            {intentChannel.items.slice(0, 5).map((intent) => (
-              <IntentRunCard
-                key={intent.id}
-                intent={intent}
-                busy={intentChannel.submitting}
-                onCancel={(id) => void intentChannel.cancel(id)}
-                onRetry={(item) => void intentChannel.retry(item)}
-              />
-            ))}
-          </div>
         )}
       </section>
     </div>

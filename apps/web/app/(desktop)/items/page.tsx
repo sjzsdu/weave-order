@@ -113,6 +113,9 @@ function ItemsPageContent() {
           );
         })}
       </nav>
+      <p className="text-xs text-ink-400">
+        待我处理只看你创建、还没结束的事项；最近事项按更新时间排全部事项。
+      </p>
 
       {rows.length === 0 ? (
         <EmptyState
@@ -201,7 +204,9 @@ function ItemsPageContent() {
           </button>
         </div>
       ) : rows.length > 0 ? (
-        <p className="text-center text-xs text-ink-400">没有更多了</p>
+        <p className="text-center text-xs text-ink-400">
+          没有更多了 · 有新需求随时去工作台对小织说一句
+        </p>
       ) : null}
     </div>
   );

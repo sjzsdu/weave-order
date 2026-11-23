@@ -24,6 +24,7 @@ import { useWorkspaceIA } from "@/workspace-ia";
 import { track } from "@/analytics";
 import { SUPPORT_EMAIL, SupportMailto } from "@/support";
 import { NoMembershipNotice, TenantChooser, TenantSwitcher } from "@/tenant-switch";
+import { XiaozhiAssistant } from "@/xiaozhi-assistant";
 
 /**
  * 页脚只留版本与帮助：内部工程口径（几个窗口、只读与否）不属于用户界面。
@@ -242,7 +243,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-3 md:px-5 lg:gap-6">
           <Link
-            href={ia === "new" ? "/items" : "/today"}
+            href={ia === "new" ? "/workbench" : "/today"}
             className="flex shrink-0 items-baseline gap-2 whitespace-nowrap"
           >
             <span className="text-lg font-semibold tracking-wide text-ink-900">织序</span>
@@ -536,6 +537,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
       <PrintDrawer open={printOpen} onClose={() => setPrintOpen(false)} />
       {/* 本地 dev 专属：API 有 dev 路由才出现（生产 404 自动隐藏），⌘⇧I 展开 7 个 persona。 */}
       <PersonaBar />
+      <XiaozhiAssistant pendingCount={pending} />
     </div>
   );
 }
