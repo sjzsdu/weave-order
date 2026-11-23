@@ -68,7 +68,7 @@ docker compose logs weave-site | head -30
 [site-render] 已渲染 N 个静态文件
 [site-render] 访问统计 → provider=...
 [site-render] 备案号   → ICP=... 公安=...
-[site-render] 搜索验证 → Google=已配置 Bing= Baidu=
+[site-render] 搜索验证 → Google=已配置 Bing= 百度=
 ```
 
 `访问统计 → provider=none` 或验证码为空都是合法状态，但如果配置了却没生效，
@@ -93,6 +93,9 @@ node apps/site/scripts/launch-check.mjs --site https://www.example.com
 - 不存在的路径返回 404（不是 200），且是站点自己的 404 页；
 - HTML `Cache-Control: no-cache`，静态资源 `max-age ≥ 86400`；
 - 文本响应有 gzip / br（没有只提醒，不放行失败）。
+
+子域部署（如 `weave.wnbgj.com`）没有 `www` 时，脚本会对 www 归一化给一条提醒而不是失败；
+也可以用 `--skip-www` 显式跳过。域名用 www 还是裸域要提前定死一个，另一个必须 301 过来。
 
 脚本覆盖不到、必须人工看的：
 
