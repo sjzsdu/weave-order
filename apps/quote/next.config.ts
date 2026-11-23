@@ -1,21 +1,19 @@
 import type { NextConfig } from "next";
+import { QUOTE_BASE_PATH } from "./src/base-path";
 
 /**
  * 客户报价页挂在 /s/[token] 下，与租户端同域但独立应用/独立 Cookie 域。
  * 公开路由不带任何鉴权 Cookie，避免与租户会话串 Cookie。
+ *
+ * 浏览器侧的 `/api` 反代**不在这里配置**。`rewrites` 的 destination 会在
+ * `next build` 时固化进 `routes-manifest.json`，同一镜像跑不同环境时只能有
+ * 一个目标且运行时改 env 无效（WAN-210：配错表现为「所有链接都显示链接无效」）。
+ * 反代改由 `app/api/[...path]/route.ts` 在每次请求时读 env。
  */
 const nextConfig: NextConfig = {
-  basePath: "/s",
+  basePath: QUOTE_BASE_PATH,
   reactStrictMode: true,
   poweredByHeader: false,
-  /**
-   * 浏览器默认走同源 `/api`（不带 basePath），由 Next 反代到后端：
-   * 生产不需要为公开页单独开 CORS，本地 `next start` 也能直接点接受/提问。
-   */
-  async rewrites() {
-    const api = process.env.QUOTE_API_BASE_URL ?? "http://localhost:3000";
-    return [{ source: "/api/:path*", destination: `${api}/api/:path*`, basePath: false }];
-  },
   async headers() {
     return [
       {

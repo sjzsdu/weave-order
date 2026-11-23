@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { QuoteLinkErrorCode } from "@weave-order/schema";
+import type { ClientErrorCode } from "@/src/api";
 import { dict, nextLang } from "@/src/i18n";
 import type { Lang } from "@/src/i18n";
 
@@ -12,7 +12,7 @@ export function LinkErrorPage({
   token,
   lang,
 }: {
-  code: QuoteLinkErrorCode;
+  code: ClientErrorCode;
   token: string;
   lang: Lang;
 }) {
@@ -22,7 +22,9 @@ export function LinkErrorPage({
       ? { title: t.expiredTitle, body: t.expiredBody }
       : code === "REVOKED"
         ? { title: t.revokedTitle, body: t.revokedBody }
-        : { title: t.invalidTitle, body: t.invalidBody };
+        : code === "UPSTREAM"
+          ? { title: t.unavailableTitle, body: t.unavailableBody }
+          : { title: t.invalidTitle, body: t.invalidBody };
   const other = nextLang(lang);
 
   return (

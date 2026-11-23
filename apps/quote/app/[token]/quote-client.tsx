@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { QuoteLinkErrorCode } from "@weave-order/schema";
-import { acceptQuote, askQuestion, type QuotePageData } from "@/src/api";
+import { acceptQuote, askQuestion, type ClientErrorCode, type QuotePageData } from "@/src/api";
 import { dict, nextLang } from "@/src/i18n";
 import type { Lang } from "@/src/i18n";
 import {
@@ -17,9 +16,11 @@ import {
 
 const WATERMARK_COUNT = 18;
 
-function localError(code: QuoteLinkErrorCode, lang: Lang): string {
+function localError(code: ClientErrorCode, lang: Lang): string {
   const zh = lang !== "en";
   switch (code) {
+    case "UPSTREAM":
+      return zh ? "服务正在恢复，请稍后重试。" : "The service is recovering. Please try again shortly.";
     case "PHONE_TAIL_REQUIRED":
       return zh ? "请填写手机尾号后 4 位。" : "Please enter the last 4 digits.";
     case "PHONE_TAIL_MISMATCH":
