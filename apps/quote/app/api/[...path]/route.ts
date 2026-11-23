@@ -63,11 +63,16 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
       cache: "no-store",
       ...(request.method === "POST" ? { body: await request.text() } : {}),
     });
-    const body = await upstream.arrayBuffer();
+    // 204/304 不允许带 body：`new Response(buffer, {status:204})` 会直接抛 TypeError，
+    // 让后端的「记录 PDF 下载」（POST :token/pdf，HttpCode 204）变成 503。
+    const nullBody = upstream.status === 204 || upstream.status === 304;
+    const body = nullBody ? null : await upstream.arrayBuffer();
     return new Response(body, {
       status: upstream.status,
       headers: {
-        "content-type": upstream.headers.get("content-type") ?? "application/json",
+        ...(nullBody
+          ? {}
+          : { "content-type": upstream.headers.get("content-type") ?? "application/json" }),
         "cache-control": "no-store",
       },
     });
