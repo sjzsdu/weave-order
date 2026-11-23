@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb } from "@weave-order/db";
+import { createDb, sampleImages } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { createKernel } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
@@ -300,6 +300,187 @@ describe("订单工作面（集成）", () => {
         HUMAN,
       ),
     ).rejects.toMatchObject({ details: { reason: "PROOF_KEY_INVALID" } });
+  }, 90_000);
+
+  it("资源概览：准确聚合品类与完整度，并遵守租户和客户数据范围", async (ctx) => {
+    const database = db;
+    if (!available || !database || !pool) return ctx.skip();
+    const id = suffix();
+    const kernel = await tenantKernel(id);
+    const tenantId = createdTenants.at(-1)!;
+
+    const teamId = randomUUID();
+    const salesA = await kernel.tenancy.createMembership(
+      {
+        tenantId: tenantId,
+        subject: `resource-a-${id}`,
+        casdoorOrg: `wb-${id}`,
+        role: "SALES",
+        dataScope: "OWN",
+        teamId,
+      },
+      SYSTEM,
+    );
+    const salesB = await kernel.tenancy.createMembership(
+      {
+        tenantId: tenantId,
+        subject: `resource-b-${id}`,
+        casdoorOrg: `wb-${id}`,
+        role: "SALES",
+        dataScope: "OWN",
+        teamId,
+      },
+      SYSTEM,
+    );
+    const manager = await kernel.tenancy.createMembership(
+      {
+        tenantId: tenantId,
+        subject: `resource-manager-${id}`,
+        casdoorOrg: `wb-${id}`,
+        role: "MANAGER",
+        dataScope: "TEAM",
+        teamId,
+      },
+      SYSTEM,
+    );
+    const contextOf = (
+      memberId: string,
+      role: "SALES" | "MANAGER",
+      dataScope: "OWN" | "TEAM",
+    ): KernelContext => ({
+      actor: { type: "HUMAN", id: `resource-${memberId}`, role },
+      dataScope,
+      ownerId: memberId,
+      teamId,
+    });
+    const contextA = contextOf(salesA.id, "SALES", "OWN");
+    const contextB = contextOf(salesB.id, "SALES", "OWN");
+    const teamContext = contextOf(manager.id, "MANAGER", "TEAM");
+
+    await kernel.customers.create(
+      { code: `WB-RA-${id}`, name: "资源客户 A", tier: "VIP" },
+      contextA,
+    );
+    await kernel.customers.create(
+      { code: `WB-RB-${id}`, name: "资源客户 B", tier: "REGULAR" },
+      contextB,
+    );
+    const draftCustomer = await kernel.customers.create(
+      { code: `WB-RC-${id}`, name: "资源草稿客户" },
+      HUMAN,
+    );
+    await pool.query("UPDATE customers SET status = 'DRAFT' WHERE id = $1", [draftCustomer.id]);
+
+    const full = await kernel.samples.create(
+      {
+        code: `WB-RF-${id}`,
+        name: "完整针织",
+        category: "KNIT",
+        composition: "100% 棉",
+        weight: { value: 220, unit: "gsm" },
+        width: { value: 150, unit: "cm" },
+        status: "ACTIVE",
+      },
+      HUMAN,
+    );
+    await database.insert(sampleImages).values([
+      {
+        tenantId: tenantId,
+        sampleId: full.id,
+        objectKey: `tenant/${id}/primary.jpg`,
+        isPrimary: true,
+        mimeType: "image/jpeg",
+        byteSize: 100,
+      },
+      {
+        tenantId: tenantId,
+        sampleId: full.id,
+        objectKey: `tenant/${id}/secondary.jpg`,
+        isPrimary: false,
+        mimeType: "image/jpeg",
+        byteSize: 100,
+      },
+    ]);
+    await kernel.samples.create(
+      {
+        code: `WB-RP-${id}`,
+        name: "部分梭织",
+        category: "WOVEN",
+        composition: "   ",
+        status: "AVAILABLE",
+      },
+      HUMAN,
+    );
+    await kernel.samples.create(
+      {
+        code: `WB-RU-${id}`,
+        name: "未分类样品",
+        category: "   ",
+        weight: { value: 180, unit: "gsm" },
+        status: "ACTIVE",
+      },
+      HUMAN,
+    );
+    await kernel.samples.create(
+      {
+        code: `WB-RD-${id}`,
+        name: "草稿样品",
+        category: "DRAFT_ONLY",
+        composition: "不进入可用统计",
+        status: "DRAFT",
+      },
+      HUMAN,
+    );
+    await kernel.samples.create(
+      {
+        code: `WB-RX-${id}`,
+        name: "归档样品",
+        category: "ARCHIVED_ONLY",
+        status: "ARCHIVED",
+      },
+      HUMAN,
+    );
+
+    const own = await kernel.workbench.resourceOverview(contextA);
+    expect(own.customers).toEqual({ total: 1, tiers: [{ code: "VIP", count: 1 }] });
+    expect(own.samples.available).toBe(3);
+
+    const team = await kernel.workbench.resourceOverview(teamContext);
+    expect(team.customers).toEqual({
+      total: 2,
+      tiers: [
+        { code: "REGULAR", count: 1 },
+        { code: "VIP", count: 1 },
+      ],
+    });
+    expect(team.samples).toMatchObject({ available: 3, draft: 1, archived: 1 });
+    expect(team.samples.categories).toEqual([
+      { code: "KNIT", count: 1 },
+      { code: "WOVEN", count: 1 },
+      { code: null, count: 1 },
+    ]);
+    expect(team.samples.completeness).toEqual([
+      { key: "composition", completeCount: 1, missingCount: 2 },
+      { key: "weight", completeCount: 2, missingCount: 1 },
+      { key: "width", completeCount: 1, missingCount: 2 },
+      { key: "primaryImage", completeCount: 1, missingCount: 2 },
+    ]);
+
+    const all = await kernel.workbench.resourceOverview(HUMAN);
+    expect(all.customers.total).toBe(2);
+    expect(all.samples).toEqual(team.samples);
+
+    const emptyKernel = await tenantKernel(`empty-${id}`);
+    const empty = await emptyKernel.workbench.resourceOverview(HUMAN);
+    expect(empty.customers).toEqual({ total: 0, tiers: [] });
+    expect(empty.samples).toMatchObject({ available: 0, draft: 0, archived: 0, categories: [] });
+    expect(empty.samples.completeness.every((row) => row.completeCount === 0)).toBe(true);
+
+    await emptyKernel.customers.create({ code: `WB-OTHER-${id}`, name: "其他租户客户" }, HUMAN);
+    await emptyKernel.samples.create({ code: `WB-OTHER-${id}`, name: "其他租户样品" }, HUMAN);
+    const isolated = await kernel.workbench.resourceOverview(HUMAN);
+    expect(isolated.customers.total).toBe(2);
+    expect(isolated.samples.available).toBe(3);
   }, 90_000);
 
   it("sales 数据范围：只看得到自己客户的订单", async (ctx) => {

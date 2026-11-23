@@ -72,7 +72,7 @@ export function assertSampleCodeFitsToken(code: string): void {
   }
 }
 
-/** 缺了就不能出卡的字段：宁可不打，也不打一张找不到人的卡。 */
+/** 报价样卡的必填字段；独立样品标签会单独移除非必要的业务员电话。 */
 const REQUIRED_FIELDS: SampleCardFieldPath[] = [
   "tenant.name",
   "sample.code",
@@ -100,7 +100,7 @@ export interface SampleCardSource {
   reprintReason: string | null;
 }
 
-/** 把业务数据拍平成模板可用的标量；null 一律保留，交给完整性校验判死。 */
+/** 把业务数据拍平成模板可用的标量；独立标签的空电话按空白打印，其余 null 留给完整性校验。 */
 export function sampleCardValues(source: SampleCardSource): TemplateValues {
   return {
     scalars: {
@@ -113,7 +113,7 @@ export function sampleCardValues(source: SampleCardSource): TemplateValues {
       "sample.category": source.sample.category || "—",
       "quote.no": source.quoteNo,
       "salesperson.name": source.salesperson.name || null,
-      "salesperson.phone": source.salesperson.phone || null,
+      "salesperson.phone": source.salesperson.phone || (source.quoteNo === null ? "" : null),
       "card.qr": source.qrPayload,
       "card.qrImage": source.qrImageDataUrl,
       "meta.printedAt": source.printedAt,
@@ -134,10 +134,16 @@ export function sampleCardValues(source: SampleCardSource): TemplateValues {
 
 /**
  * 完整性 + 版面校验。缺字段与超长都抛错，不做「留空 / 截断」的隐式降级：
- * 一张看不清是谁的样卡比打不出来更糟。
+ * 一张看不清是谁的样卡比打不出来更糟。独立样品标签只放开业务员电话。
  */
-export function assertSampleCardPrintable(values: TemplateValues): void {
-  const missing = REQUIRED_FIELDS.filter((path) => {
+export function assertSampleCardPrintable(
+  values: TemplateValues,
+  options: { standalone?: boolean } = {},
+): void {
+  const requiredFields = options.standalone
+    ? REQUIRED_FIELDS.filter((path) => path !== "salesperson.phone")
+    : REQUIRED_FIELDS;
+  const missing = requiredFields.filter((path) => {
     const value = values.scalars[path];
     return value === null || value === undefined || String(value).trim().length === 0;
   });

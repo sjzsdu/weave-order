@@ -29,4 +29,11 @@ describe("mock transport（无后端预览）", () => {
     }
     expect((await client.approvals()).items).toHaveLength(0);
   });
+
+  it("资源概览演示数据的分类合计与可用样品一致", async () => {
+    const overview = await createMockApiClient().resourceOverview();
+    const categoryTotal = overview.samples.categories.reduce((sum, row) => sum + row.count, 0);
+    expect(categoryTotal).toBe(overview.samples.available);
+    expect(overview.samples.completeness).toHaveLength(4);
+  });
 });

@@ -166,6 +166,26 @@ describe("P0b 样卡打印", () => {
     expect(await kernel.print.jobs.listForSample(sample.id)).toHaveLength(1);
   });
 
+  it("独立样品标签未配置业务员电话时仍可预览并入队", async (ctx) => {
+    if (!available) ctx.skip();
+    const { kernel, tenant } = await isolatedTenant("sample-label-no-phone");
+    const { sample } = await seedConfirmedQuote(kernel);
+    await pool!.query("UPDATE tenants SET settings = '{}'::jsonb WHERE id = $1", [tenant.id]);
+
+    const preview = await kernel.print.sampleCards.preview(
+      { sampleId: sample.id, format: "ZPL" },
+      "owner",
+    );
+    expect(preview.text).toContain(sample.code);
+
+    const result = await kernel.print.jobs.printSampleLabel(
+      sample.id,
+      { format: "ZPL", copies: 1 },
+      OWNER,
+    );
+    expect(result.job.documentId).toBe(sample.id);
+  });
+
   it("A4 预览就是打印产物；标签指令含二维码；二维码公开面展示样品属性", async (ctx) => {
     if (!available) ctx.skip();
     const { kernel } = await isolatedTenant("preview");

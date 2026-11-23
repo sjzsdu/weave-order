@@ -16,6 +16,12 @@ body {
   font-size: 14px;
 }
 
+@layer components {
+  .input {
+    @apply min-h-11 w-full min-w-0 rounded-md border border-line bg-surface px-3 text-sm text-ink-900 placeholder:text-ink-400 disabled:cursor-not-allowed disabled:bg-paper disabled:text-ink-400;
+  }
+}
+
 *:focus-visible {
   outline: 2px solid rgba(31, 78, 121, 0.5);
   outline-offset: 2px;

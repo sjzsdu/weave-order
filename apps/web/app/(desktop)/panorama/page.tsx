@@ -14,5 +14,5 @@ export const dynamic = "force-dynamic";
 export default async function PanoramaRoute() {
   const ia = await resolveWorkspaceIAServer();
   if (ia === "new") redirect("/resources");
-  return <PanoramaOverview variant="legacy" />;
+  return <PanoramaOverview />;
 }

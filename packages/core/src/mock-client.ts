@@ -21,6 +21,7 @@ import {
   PrintLogList,
   PrintTemplateList,
   PanoramaSnapshot,
+  ResourceOverview,
   QuoteDetail,
   QuoteConfirmation,
   QuoteListResponse,
@@ -113,8 +114,9 @@ function mockComposition(
   const full: CompositionPart[] = parts.map((part) => ({
     code: part.code,
     label:
-      mockFieldOptions.find((option) => option.code === part.code && option.fieldKey === "sample.material")
-        ?.label ?? part.code,
+      mockFieldOptions.find(
+        (option) => option.code === part.code && option.fieldKey === "sample.material",
+      )?.label ?? part.code,
     percent: part.percent,
   }));
   return { composition: compositionText(full), compositionParts: full };
@@ -1347,6 +1349,41 @@ export function createMockApiClient(): ApiClient {
             rejectedCount: 0,
             auditCount: 30,
             todayAgentDoneCount: 1,
+          },
+        }),
+      ),
+
+    resourceOverview: () =>
+      Promise.resolve(
+        ResourceOverview.parse({
+          generatedAt: NOW,
+          customers: {
+            total: 12,
+            tiers: [
+              { code: "REGULAR", count: 6 },
+              { code: "VIP", count: 4 },
+              { code: "NEW", count: 2 },
+            ],
+          },
+          samples: {
+            available: 48,
+            draft: 3,
+            archived: 2,
+            categories: [
+              { code: "针织", count: 18 },
+              { code: "梭织", count: 12 },
+              { code: "印花", count: 6 },
+              { code: "毛圈", count: 4 },
+              { code: "牛仔", count: 3 },
+              { code: "功能面料", count: 3 },
+              { code: null, count: 2 },
+            ],
+            completeness: [
+              { key: "composition", completeCount: 42, missingCount: 6 },
+              { key: "weight", completeCount: 45, missingCount: 3 },
+              { key: "width", completeCount: 39, missingCount: 9 },
+              { key: "primaryImage", completeCount: 36, missingCount: 12 },
+            ],
           },
         }),
       ),

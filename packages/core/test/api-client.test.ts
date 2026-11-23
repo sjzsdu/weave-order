@@ -60,6 +60,43 @@ describe("API client（契约解析 + 令牌）", () => {
     expect(headers.get("authorization")).toBe("Bearer dev:alice:acme");
   });
 
+  it("请求并解析资源首页聚合读模型", async () => {
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        jsonResponse({
+          generatedAt: "2026-11-22T00:00:00.000Z",
+          customers: { total: 2, tiers: [{ code: "VIP", count: 2 }] },
+          samples: {
+            available: 3,
+            draft: 1,
+            archived: 1,
+            categories: [
+              { code: "KNIT", count: 2 },
+              { code: null, count: 1 },
+            ],
+            completeness: [
+              { key: "composition", completeCount: 2, missingCount: 1 },
+              { key: "weight", completeCount: 3, missingCount: 0 },
+              { key: "width", completeCount: 1, missingCount: 2 },
+              { key: "primaryImage", completeCount: 2, missingCount: 1 },
+            ],
+          },
+        }),
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl,
+    });
+
+    const overview = await client.resourceOverview();
+
+    expect(overview.customers.total).toBe(2);
+    expect(overview.samples.categories).toHaveLength(2);
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://api.test/api/resources/overview");
+  });
+
   it("契约不符时抛出 ZodError（不把脏数据带进页面）", async () => {
     const client = createApiClient({
       baseUrl: "http://api.test",

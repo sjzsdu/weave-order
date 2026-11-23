@@ -23,6 +23,7 @@ export const queryKeys = {
   customerTimeline: (id: string, kinds: CustomerTimelineKind[]) =>
     ["customers", id, "timeline", kinds.join(",")] as const,
   panorama: ["panorama"] as const,
+  resourceOverview: ["panorama", "resources"] as const,
   intents: ["intents", "recent"] as const,
   onboardingState: ["onboarding", "state"] as const,
   approvals: ["approvals"] as const,
@@ -106,6 +107,13 @@ export function useCustomerTimeline(
 
 export function usePanorama(client: ApiClient) {
   return useQuery({ queryKey: queryKeys.panorama, queryFn: () => client.panorama() });
+}
+
+export function useResourceOverview(client: ApiClient) {
+  return useQuery({
+    queryKey: queryKeys.resourceOverview,
+    queryFn: () => client.resourceOverview(),
+  });
 }
 
 export function useApprovals(client: ApiClient) {

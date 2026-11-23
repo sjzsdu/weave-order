@@ -200,3 +200,51 @@ export const ResourceFieldsResponse = z
   })
   .strict();
 export type ResourceFieldsResponse = z.infer<typeof ResourceFieldsResponse>;
+
+const ResourceCount = z.number().int().nonnegative();
+
+/** 资源首页的聚合读模型；只返回计数，不携带资源或审计明细。 */
+export const ResourceOverview = z
+  .object({
+    generatedAt: Timestamp,
+    customers: z
+      .object({
+        total: ResourceCount,
+        tiers: z.array(
+          z
+            .object({
+              code: z.string().min(1).max(64),
+              count: ResourceCount,
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+    samples: z
+      .object({
+        available: ResourceCount,
+        draft: ResourceCount,
+        archived: ResourceCount,
+        categories: z.array(
+          z
+            .object({
+              /** null 统一表示 NULL 或纯空白的未分类样品。 */
+              code: z.string().min(1).max(64).nullable(),
+              count: ResourceCount,
+            })
+            .strict(),
+        ),
+        completeness: z.array(
+          z
+            .object({
+              key: z.enum(["composition", "weight", "width", "primaryImage"]),
+              completeCount: ResourceCount,
+              missingCount: ResourceCount,
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+export type ResourceOverview = z.infer<typeof ResourceOverview>;

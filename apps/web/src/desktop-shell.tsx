@@ -240,7 +240,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-paper">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-3 md:gap-6 md:px-5">
+        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-3 md:px-5 lg:gap-6">
           <Link
             href={ia === "new" ? "/items" : "/today"}
             className="flex shrink-0 items-baseline gap-2 whitespace-nowrap"

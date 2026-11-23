@@ -30,6 +30,20 @@ export class ResourceController {
     @Inject(HUMAN_ACTOR) private readonly human: HumanActorService,
   ) {}
 
+  @Get("resources/overview")
+  async overview(@Headers("authorization") authorization?: string) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.workbench.resourceOverview(ctx),
+        { scope: "read" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
   @Post("customers/draft")
   async createCustomerDraft(
     @Body() body: unknown,

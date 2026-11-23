@@ -8,6 +8,8 @@ import {
   quotes,
   receivablePayments,
   receivables,
+  sampleImages,
+  samples,
 } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import type {
@@ -21,6 +23,7 @@ import type {
   ReceivableListResponse,
   ReceivableStatement,
   ReceivableStatus,
+  ResourceOverview,
 } from "@weave-order/schema";
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -109,6 +112,92 @@ export class WorkbenchService {
     private readonly receivableService: ReceivableService,
     private readonly tenantId: string,
   ) {}
+
+  /** 资源首页：只读聚合计数，与客户/样品列表共用状态和数据范围口径。 */
+  async resourceOverview(ctx?: KernelContext): Promise<ResourceOverview> {
+    const now = new Date();
+    const customerConditions: SQL[] = [
+      eq(customers.tenantId, this.tenantId),
+      ne(customers.status, "DRAFT"),
+    ];
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) customerConditions.push(scope);
+
+    const tierRows = await this.db
+      .select({ code: customers.tier, count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(and(...customerConditions))
+      .groupBy(customers.tier)
+      .orderBy(desc(sql`count(*)`), asc(customers.tier));
+
+    const available = inArray(samples.status, ["ACTIVE", "AVAILABLE"]);
+    const totalsRows = await this.db
+      .select({
+        available: sql<number>`count(*) filter (where ${available})::int`,
+        draft: sql<number>`count(*) filter (where ${samples.status} = 'DRAFT')::int`,
+        archived: sql<number>`count(*) filter (where ${samples.status} = 'ARCHIVED')::int`,
+        composition: sql<number>`count(*) filter (
+          where ${available} and nullif(btrim(${samples.composition}), '') is not null
+        )::int`,
+        weight: sql<number>`count(*) filter (
+          where ${available} and ${samples.weightGsm} is not null
+        )::int`,
+        width: sql<number>`count(*) filter (
+          where ${available} and ${samples.widthCm} is not null
+        )::int`,
+        primaryImage: sql<number>`count(*) filter (
+          where ${available} and exists (
+            select 1 from ${sampleImages}
+            where ${and(
+              eq(sampleImages.tenantId, this.tenantId),
+              eq(sampleImages.sampleId, samples.id),
+              eq(sampleImages.isPrimary, true),
+            )}
+          )
+        )::int`,
+      })
+      .from(samples)
+      .where(eq(samples.tenantId, this.tenantId));
+
+    const normalizedCategory = sql`nullif(btrim(${samples.category}), '')`;
+    const categoryRows = await this.db
+      .select({
+        code: sql<string | null>`${normalizedCategory}`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(samples)
+      .where(and(eq(samples.tenantId, this.tenantId), available))
+      .groupBy(normalizedCategory)
+      .orderBy(desc(sql`count(*)`), sql`${normalizedCategory} asc nulls last`);
+
+    const totals = totalsRows[0];
+    const availableCount = totals?.available ?? 0;
+    const completeCounts = {
+      composition: totals?.composition ?? 0,
+      weight: totals?.weight ?? 0,
+      width: totals?.width ?? 0,
+      primaryImage: totals?.primaryImage ?? 0,
+    };
+
+    return {
+      generatedAt: toIso(now),
+      customers: {
+        total: tierRows.reduce((sum, row) => sum + row.count, 0),
+        tiers: tierRows,
+      },
+      samples: {
+        available: availableCount,
+        draft: totals?.draft ?? 0,
+        archived: totals?.archived ?? 0,
+        categories: categoryRows,
+        completeness: (["composition", "weight", "width", "primaryImage"] as const).map((key) => ({
+          key,
+          completeCount: completeCounts[key],
+          missingCount: availableCount - completeCounts[key],
+        })),
+      },
+    };
+  }
 
   /** 订单列表：交期升序（最急在前），空的交期排最后。 */
   async listOrders(request: OrderListRequest, ctx?: KernelContext): Promise<OrderListResponse> {

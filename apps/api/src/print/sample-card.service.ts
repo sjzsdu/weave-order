@@ -318,7 +318,7 @@ export class SampleCardService {
           reprintReason: null,
         });
     const values = sampleCardValues(source);
-    assertSampleCardPrintable(values);
+    assertSampleCardPrintable(values, { standalone: Boolean(parsed.sampleId) });
     const resolved =
       override ??
       (await this.templates.resolve({

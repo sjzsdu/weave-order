@@ -356,7 +356,7 @@ export function SampleEditor({
         </header>
 
         <div className="grid gap-4 px-5 py-4">
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid items-start gap-3 md:grid-cols-2">
             <Field label="编码 *" error={fieldErrors.code} errorId="sample-code-error">
               <input
                 id="sample-code"

@@ -151,16 +151,154 @@ test.describe("工作台信息架构（新 IA）", () => {
     await expect(page.getByText("关闭后不能再改状态，确定关闭？")).toHaveCount(0);
   });
 
-  test("/panorama 307 到资源，客户/样品/模板三块都在", async ({ page }) => {
+  test("/panorama 307 到资源概览，统计图表取代资源明细与审计", async ({ page }) => {
     await page.goto("/panorama");
     await expect(page).toHaveURL(/\/resources$/);
-    await expect(page.getByRole("heading", { name: "客户、样品与模板" })).toBeVisible();
-    for (const label of ["客户", "样品", "模板"]) {
+    await expect(page.getByRole("heading", { name: "资源概览" })).toBeVisible();
+    for (const label of ["客户档案", "样品库", "报价模板"]) {
       await expect(page.getByRole("link", { name: new RegExp(`^${label}`) }).first()).toBeVisible();
+    }
+    await expect(page.getByRole("heading", { name: "样品品类分布" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "客户等级分布" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "样品资料完整度" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "可用样品品类分布" })).toBeVisible();
+    for (const label of ["客户", "样品", "单据", "最近审计（只追加）"]) {
+      await expect(page.getByRole("heading", { name: label, exact: true })).toHaveCount(0);
     }
     // 旧业务深链不迁移。
     await page.goto("/panorama/customers");
     await expect(page).toHaveURL(/\/panorama\/customers/);
+  });
+
+  test("资源概览只请求聚合接口，三档宽度无横向滚动且支持键盘进入建客户", async ({ page }) => {
+    const panoramaRequests: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/panorama") panoramaRequests.push(request.url());
+    });
+
+    for (const width of [375, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const overviewResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === "/api/resources/overview" && response.ok(),
+      );
+      await page.goto("/resources");
+      await overviewResponse;
+      await expect(page.getByRole("heading", { name: "资源概览" })).toBeVisible();
+      await noHorizontalScroll(page);
+    }
+    expect(panoramaRequests).toEqual([]);
+
+    const createCustomer = page.getByRole("link", { name: "建客户", exact: true });
+    await createCustomer.focus();
+    await expect(createCustomer).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/panorama\/customers\?new=1$/);
+    await expect(page.getByRole("dialog", { name: "新建客户" })).toBeVisible();
+  });
+
+  test("建客户和建样品后，资源概览重新拉取并更新计数", async ({ page }) => {
+    const isOverview = (response: import("@playwright/test").Response) =>
+      new URL(response.url()).pathname === "/api/resources/overview" && response.ok();
+    const firstResponse = page.waitForResponse(isOverview);
+    await page.goto("/resources");
+    const before = (await (await firstResponse).json()) as {
+      customers: { total: number };
+      samples: { available: number };
+    };
+
+    await page.getByRole("link", { name: "建客户", exact: true }).click();
+    const customerDialog = page.getByRole("dialog", { name: "新建客户" });
+    await customerDialog.locator("#customer-name").fill(`E2E 概览客户 ${Date.now()}`);
+    await customerDialog.locator("#customer-contact-name").fill("验收联系人");
+    const createCustomer = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/customers" &&
+        response.request().method() === "POST",
+    );
+    await customerDialog.getByRole("button", { name: "建客户", exact: true }).click();
+    expect((await createCustomer).ok()).toBe(true);
+    await expect(customerDialog).toHaveCount(0);
+
+    const customerRefresh = page.waitForResponse(isOverview);
+    await page.getByRole("link", { name: "资源首页", exact: true }).click();
+    const afterCustomer = (await (await customerRefresh).json()) as {
+      customers: { total: number };
+    };
+    expect(afterCustomer.customers.total).toBe(before.customers.total + 1);
+
+    await page.getByRole("link", { name: "建样品", exact: true }).click();
+    await page.locator("#sample-code").fill(`E2E-OVERVIEW-${Date.now()}`);
+    await page.locator("#sample-name").fill("E2E 概览样品");
+    await page.getByPlaceholder("如 针织 / 梭织").fill("E2E 梭织");
+    await page.locator("#sample-weight").fill("220");
+    await page.locator("#sample-width").fill("150");
+    const createSample = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/samples" &&
+        response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    expect((await createSample).ok()).toBe(true);
+    await expect(page.locator("#sample-code")).toHaveCount(0);
+
+    const sampleRefresh = page.waitForResponse(isOverview);
+    await page.getByRole("link", { name: "资源首页", exact: true }).click();
+    const afterSample = (await (await sampleRefresh).json()) as {
+      samples: { available: number; categories: { code: string | null; count: number }[] };
+    };
+    expect(afterSample.samples.available).toBe(before.samples.available + 1);
+    expect(afterSample.samples.categories.some((row) => row.code === "E2E 梭织")).toBe(true);
+  });
+
+  test("资源概览的加载、失败和空数据状态都有可读反馈", async ({ page }) => {
+    let releaseOverview!: () => void;
+    const overviewGate = new Promise<void>((resolve) => {
+      releaseOverview = resolve;
+    });
+    await page.route("**/api/resources/overview", async (route) => {
+      await overviewGate;
+      await route.continue();
+    });
+    await page.goto("/resources", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("正在汇总资源概览…")).toBeVisible();
+    releaseOverview();
+    await expect(page.getByRole("heading", { name: "资源概览" })).toBeVisible();
+    await page.unroute("**/api/resources/overview");
+
+    await page.route("**/api/resources/overview", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: "{}" }),
+    );
+    await page.goto("/resources");
+    await expect(page.getByText("资源概览暂时不可用")).toBeVisible();
+    await page.unroute("**/api/resources/overview");
+
+    await page.route("**/api/resources/overview", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          generatedAt: new Date().toISOString(),
+          customers: { total: 0, tiers: [] },
+          samples: {
+            available: 0,
+            draft: 0,
+            archived: 0,
+            categories: [],
+            completeness: ["composition", "weight", "width", "primaryImage"].map((key) => ({
+              key,
+              completeCount: 0,
+              missingCount: 0,
+            })),
+          },
+        }),
+      }),
+    );
+    await page.goto("/resources");
+    await expect(page.getByText("还没有可用样品", { exact: true })).toBeVisible();
+    await expect(page.getByText("还没有客户档案", { exact: true })).toBeVisible();
+    await expect(page.getByText("暂无完整度数据", { exact: true })).toBeVisible();
+    await expect(page.getByText(/NaN/)).toHaveCount(0);
   });
 
   test("直接访问 /approvals 不展示审批队列", async ({ page }) => {
@@ -218,5 +356,8 @@ test.describe("工作台信息架构（灰度回旧）", () => {
     await page.goto("/panorama");
     await expect(page).toHaveURL(/\/panorama$/);
     await expect(page.getByRole("heading", { name: "全局一眼看完" })).toBeVisible();
+    for (const label of ["客户", "样品", "单据", "最近审计（只追加）"]) {
+      await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+    }
   });
 });

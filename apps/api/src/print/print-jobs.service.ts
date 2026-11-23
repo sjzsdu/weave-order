@@ -449,7 +449,7 @@ export class PrintJobService {
           reprintReason: input.reprintReason,
         });
     const values = sampleCardValues(source);
-    assertSampleCardPrintable(values);
+    assertSampleCardPrintable(values, { standalone: input.sampleId !== null });
 
     const labelSeq = input.sampleId ? 1 : input.lineIndex + 1;
     const key = jobKey({

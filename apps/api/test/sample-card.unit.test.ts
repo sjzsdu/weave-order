@@ -78,7 +78,7 @@ describe("样卡二维码 token", () => {
 });
 
 describe("样卡字段校验", () => {
-  it("缺业务员电话时显式报错，而不是打一张找不到人的卡", () => {
+  it("报价样卡缺业务员电话时显式报错，而不是打一张找不到人的卡", () => {
     const values = sampleCardValues({ ...source, salesperson: { name: "孙巨中", phone: null } });
     try {
       assertSampleCardPrintable(values);
@@ -90,6 +90,18 @@ describe("样卡字段校验", () => {
         "salesperson.phone",
       );
     }
+  });
+
+  it("独立样品标签缺业务员电话时仍可校验并渲染", () => {
+    const values = sampleCardValues({
+      ...source,
+      quoteNo: null,
+      salesperson: { name: "织序纺织", phone: null },
+    });
+    expect(() => assertSampleCardPrintable(values, { standalone: true })).not.toThrow();
+    expect(() =>
+      renderSampleCardText(builtin("SAMPLE_LABEL", "ZPL").body, values, "ZPL"),
+    ).not.toThrow();
   });
 
   it("字段超出版面时显式报错，并给出长度与上限", () => {

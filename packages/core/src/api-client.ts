@@ -37,6 +37,7 @@ import {
   ItemListResponse,
   MergeCustomerInput,
   ResourceFieldsResponse,
+  ResourceOverview,
   SampleDraftResponse,
   TransitionItemInput,
   UndoCustomerMergeInput,
@@ -908,6 +909,8 @@ export function createApiClient(options: ApiClientOptions) {
 
     panorama: async () => PanoramaSnapshot.parse(await request("/api/panorama")),
 
+    resourceOverview: async () => ResourceOverview.parse(await request("/api/resources/overview")),
+
     /** 审批队列（游标分页）：不传 cursor 即第一页。 */
     approvals: async (options: { cursor?: string | null; limit?: number } = {}) => {
       const params = new URLSearchParams();
@@ -1206,14 +1209,12 @@ export function createApiClient(options: ApiClientOptions) {
       sampleId: string,
       input: { format?: PrintTemplateFormat; templateId?: string | null } = {},
     ) =>
-      z
-        .object({ preview: PrintPreviewArtifact })
-        .parse(
-          await post(`/api/print/sample-labels/${encodeURIComponent(sampleId)}/preview`, {
-            format: "ZPL",
-            ...input,
-          }),
-        ).preview,
+      z.object({ preview: PrintPreviewArtifact }).parse(
+        await post(`/api/print/sample-labels/${encodeURIComponent(sampleId)}/preview`, {
+          format: "ZPL",
+          ...input,
+        }),
+      ).preview,
 
     /** 独立样品标签入队：不依赖报价，重复点击按幂等键去重。 */
     printSampleLabel: async (sampleId: string, input: z.input<typeof SampleCardPrintInput> = {}) =>
@@ -1231,10 +1232,7 @@ export function createApiClient(options: ApiClientOptions) {
         await request(`/api/print/sample-labels/${encodeURIComponent(sampleId)}`),
       ).jobs,
 
-    reprintSampleLabel: async (
-      sampleId: string,
-      input: z.input<typeof SampleCardReprintInput>,
-    ) =>
+    reprintSampleLabel: async (sampleId: string, input: z.input<typeof SampleCardReprintInput>) =>
       z
         .object({ job: PrintJob, deduplicated: z.boolean() })
         .parse(
@@ -1268,9 +1266,8 @@ export function createApiClient(options: ApiClientOptions) {
     updateMeasureUnits: async (input: z.input<typeof UpdateMeasureUnitsInput>) =>
       z
         .object({ ok: z.literal(true), data: MeasureUnits })
-        .parse(
-          await patch("/api/settings/measure-units", UpdateMeasureUnitsInput.parse(input)),
-        ).data,
+        .parse(await patch("/api/settings/measure-units", UpdateMeasureUnitsInput.parse(input)))
+        .data,
 
     /**
      * 五类业务编号规则。预览是纯计算（不写库、不占号），保存只由内核校验

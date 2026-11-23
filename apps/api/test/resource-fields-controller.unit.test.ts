@@ -21,11 +21,14 @@ function field(status: ResourceFieldView["status"]): ResourceFieldView {
 
 function controller(status: ResourceFieldView["status"]) {
   const updateFields = vi.fn().mockResolvedValue([field("CONFIRMED")]);
+  const resourceOverview = vi.fn().mockResolvedValue({ generatedAt: "2026-11-22T00:00:00.000Z" });
+  const scopes: Array<string | undefined> = [];
   const kernel = {
     resourceFields: {
       updateFields,
       list: vi.fn().mockResolvedValue([field(status)]),
     },
+    workbench: { resourceOverview },
     samples: {
       getById: vi.fn().mockResolvedValue({ id: RESOURCE_ID, status: "DRAFT" }),
     },
@@ -38,9 +41,18 @@ function controller(status: ResourceFieldView["status"]) {
       _auth: string | undefined,
       _kernel: Kernel,
       fn: (k: Kernel, c: KernelContext) => Promise<T>,
-    ) => fn(kernel, CTX),
+      options?: { scope: "read" | "write" },
+    ) => {
+      scopes.push(options?.scope);
+      return fn(kernel, CTX);
+    },
   } as unknown as HumanActorService;
-  return { controller: new ResourceController(kernel, human), updateFields };
+  return {
+    controller: new ResourceController(kernel, human),
+    updateFields,
+    resourceOverview,
+    scopes,
+  };
 }
 
 /**
@@ -71,5 +83,15 @@ describe("资源字段确认 HTTP 契约", () => {
 
     expect(result.resourceType).toBe("customer");
     expect(result.pendingCount).toBe(1);
+  });
+
+  it("GET /resources/overview 在读上下文调用资源聚合", async () => {
+    const { controller: resource, resourceOverview, scopes } = controller("CONFIRMED");
+
+    const result = await resource.overview("Bearer token");
+
+    expect(result).toEqual({ generatedAt: "2026-11-22T00:00:00.000Z" });
+    expect(resourceOverview).toHaveBeenCalledWith(CTX);
+    expect(scopes).toEqual(["read"]);
   });
 });

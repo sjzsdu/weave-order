@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { usePanorama } from "@weave-order/core";
 import {
   AuditTrail,
@@ -30,36 +29,22 @@ const STAT_KEYS = [
   { key: "confirmedShipmentCount", label: "已确认寄样" },
 ] as const;
 
-export type PanoramaVariant = "resources" | "legacy";
-
-/**
- * 业务全景：一次只读聚合，页面不提供任何写操作。
- *
- * 新 IA 下它是「资源」首页（客户/样品/模板），旧 IA 下保持「业务全景」。
- * 同一份实现两种文案，避免 /panorama 与 /resources 各写一套聚合读取。
- */
-export function PanoramaOverview({ variant = "legacy" }: { variant?: PanoramaVariant }) {
+/** 旧 IA 的业务全景：保留列表、审计与分享行为，资源首页使用独立聚合页面。 */
+export function PanoramaOverview() {
   const mounted = useMounted();
   if (!mounted) {
     return <div className="p-6 text-sm text-ink-400">正在连接织序…</div>;
   }
-  return <PanoramaPageContent variant={variant} />;
+  return <PanoramaPageContent />;
 }
 
-function PanoramaPageContent({ variant }: { variant: PanoramaVariant }) {
+function PanoramaPageContent() {
   // 自定义等级也要显示名字：接口失败时回退 static 预置表。
   const { options: tierOptions } = useFieldOptions("customer.tier");
   const tierLabel = (code: string) =>
     tierOptions.find((option) => option.code === code)?.label ?? TIER_LABEL[code] ?? code;
   const api = useApi();
   const panorama = usePanorama(api);
-  const templates = useQuery({
-    queryKey: ["print", "templates"],
-    queryFn: () => api.printTemplates(),
-    staleTime: 60_000,
-    // 旧 IA 不展示模板块，省掉这次请求。
-    enabled: variant === "resources",
-  });
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
 
   if (panorama.isLoading) return <Spinner label="正在汇总业务全景…" />;
@@ -78,12 +63,8 @@ function PanoramaPageContent({ variant }: { variant: PanoramaVariant }) {
     <div className="grid gap-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">
-            {variant === "resources" ? "资源" : "业务全景"}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink-900">
-            {variant === "resources" ? "客户、样品与模板" : "全局一眼看完"}
-          </h1>
+          <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">业务全景</p>
+          <h1 className="mt-1 text-2xl font-semibold text-ink-900">全局一眼看完</h1>
           <p className="mt-1 text-sm text-ink-400">
             生成于 {new Date(data.generatedAt).toLocaleString("zh-CN")}
           </p>
@@ -105,41 +86,6 @@ function PanoramaPageContent({ variant }: { variant: PanoramaVariant }) {
           </Link>
         </div>
       </header>
-
-      {variant === "resources" ? (
-        <section aria-label="资源入口" className="grid gap-3 md:grid-cols-3">
-          <Link
-            href="/panorama/customers"
-            className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
-          >
-            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">客户</div>
-            <div className="mt-1 text-base font-semibold text-ink-900">
-              {data.stats.customerCount} 个客户
-            </div>
-            <p className="mt-1 text-sm text-ink-400">联系人、等级、历史报价与 360 视图。</p>
-          </Link>
-          <Link
-            href="/panorama/samples"
-            className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
-          >
-            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">样品</div>
-            <div className="mt-1 text-base font-semibold text-ink-900">
-              {data.stats.sampleCount} 个样品
-            </div>
-            <p className="mt-1 text-sm text-ink-400">图墙、成分与克重、拍照找样。</p>
-          </Link>
-          <Link
-            href="/resources/templates"
-            className="rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
-          >
-            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">模板</div>
-            <div className="mt-1 text-base font-semibold text-ink-900">
-              {templates.data ? `${templates.data.templates.length} 个模板` : "打印与样卡模板"}
-            </div>
-            <p className="mt-1 text-sm text-ink-400">系统模板随版本内置，公司可覆盖发布。</p>
-          </Link>
-        </section>
-      ) : null}
 
       <section className="grid gap-3 md:grid-cols-2">
         {/* 财务的默认工作面是应收：订单不在一级入口出现。能力表 `panorama.orders.view`。 */}
@@ -168,10 +114,7 @@ function PanoramaPageContent({ variant }: { variant: PanoramaVariant }) {
       </section>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {(variant === "resources"
-          ? STAT_KEYS.filter((stat) => stat.key !== "pendingCount")
-          : STAT_KEYS
-        ).map((stat) => (
+        {STAT_KEYS.map((stat) => (
           <StatCard
             key={stat.key}
             label={stat.label}
