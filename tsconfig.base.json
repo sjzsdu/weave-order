@@ -3,6 +3,9 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
+    "types": ["node"],
+    "ignoreDeprecations": "6.0",
+    "noUncheckedSideEffectImports": false,
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
