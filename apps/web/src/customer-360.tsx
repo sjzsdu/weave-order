@@ -10,6 +10,7 @@ import { useApi } from "@/providers";
 import { CustomerContactsSection } from "@/customer-contacts";
 import { SharePanel } from "@/share-panel";
 import { InboundReplyDrawer } from "@/inbound-reply-drawer";
+import { CustomerMergeDialog } from "@/customer-merge";
 import { STATUS_LABEL, TIMELINE_KIND_LABEL, actionLabel, ownerLabel, relativeTime } from "@/format";
 
 type TimelineFilter = "all" | CustomerTimelineKind;
@@ -118,10 +119,13 @@ export function Customer360Panel({
   const api = useApi();
   const me = useAuthContext(api);
   const myMembershipId = me.data && !("tenants" in me.data) ? me.data.membership.id : null;
+  const capabilities = me.data && !("tenants" in me.data) ? me.data.capabilities : [];
+  const canMerge = capabilities.includes("resource.merge");
   const detail = useCustomer360(api, customerId);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
   const [inboundOpen, setInboundOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   const kinds: CustomerTimelineKind[] = filter === "all" ? [] : [filter];
   const timeline = useCustomerTimeline(api, customerId, kinds);
@@ -378,6 +382,15 @@ export function Customer360Panel({
         >
           分享报价链接
         </Button>
+        {canMerge && (
+          <Button
+            className="min-h-9 px-3 text-xs"
+            onClick={() => setMergeOpen(true)}
+            title="把当前客户的单据与联系人并入另一个客户，防止重复客户堆积"
+          >
+            合并到其他客户
+          </Button>
+        )}
         <span className="text-xs text-ink-400">确认与生效仍在审批窗口，这里只发起。</span>
       </section>
 
@@ -497,6 +510,18 @@ export function Customer360Panel({
         onClose={() => setInboundOpen(false)}
         onDone={() => void timeline.refetch()}
       />
+
+      {mergeOpen && (
+        <CustomerMergeDialog
+          sourceCustomer={customer}
+          onClose={() => {
+            setMergeOpen(false);
+            // 合并（或撤销）改了当前客户的归属/状态，360 数据要跟着换。
+            void detail.refetch();
+            void timeline.refetch();
+          }}
+        />
+      )}
     </div>
   );
 }
