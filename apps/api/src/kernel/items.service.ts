@@ -1,4 +1,5 @@
-import { customers, items, quoteItems, quotes, samples } from "@weave-order/db";
+import { randomUUID } from "node:crypto";
+import { auditLog, customers, items, quoteItems, quotes, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import {
   CreateItemInput,
@@ -8,6 +9,7 @@ import {
   ItemListResponse,
   ITEM_STATUS_TRANSITIONS,
   TransitionItemInput,
+  UndoItemTransitionInput,
   canTransitionItemStatus,
   isTerminalItemStatus,
 } from "@weave-order/schema";
@@ -19,6 +21,8 @@ import { decodeCursor, encodeCursor, invalidCursor } from "./cursor";
 import { KernelError } from "./errors";
 import { quantityToMilli } from "./money";
 import { toIso } from "./mappers";
+
+import { createItemTransitionToken, verifyItemTransitionToken } from "./item-transition-token";
 
 type ItemRow = typeof items.$inferSelect;
 
@@ -74,6 +78,7 @@ export class ItemService {
   constructor(
     private readonly db: Db,
     private readonly tenantId: string,
+    private readonly undoSecret: string = "weave-order-local-merge-secret",
   ) {}
 
   async create(input: unknown, ctx: KernelContext): Promise<ItemCreateResult> {
@@ -256,24 +261,32 @@ export class ItemService {
         reason: "ITEM_TRANSITION_INVALID",
       });
     }
+    const transitionId = randomUUID();
     const updated = await this.db.transaction(async (tx) => {
-      const next = await tx
+      // 同一事项的迁移与撤销串行，不能用事务外的状态覆盖他人的更新。
+      const [current] = await tx
+        .select()
+        .from(items)
+        .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
+        .for("update");
+      if (
+        !current ||
+        current.updatedAt.getTime() !== row.updatedAt.getTime() ||
+        current.status !== row.status
+      ) {
+        throw this.undoMismatch();
+      }
+      const [result] = await tx
         .update(items)
         .set({
           status: parsed.status,
           currentStage: row.currentStage ?? STAGE_BY_STATUS[parsed.status].stage,
           nextAction: STAGE_BY_STATUS[parsed.status].next,
-          updatedAt: new Date(),
+          updatedAt: new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1)),
         })
         .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
         .returning();
-      const result = next[0];
-      if (!result) {
-        throw new KernelError("RESOURCE_NOT_FOUND", `事项不存在：${itemId}`, {
-          resourceType: "item",
-          resourceId: itemId,
-        });
-      }
+      if (!result) throw this.undoMismatch();
       await appendAudit(
         tx,
         ctx,
@@ -281,14 +294,137 @@ export class ItemService {
           action: "ITEM_STATUS_CHANGED",
           entityType: "item",
           entityId: itemId,
-          before: { status: row.status },
-          after: { status: parsed.status, note: parsed.note ?? null },
+          before: {
+            status: row.status,
+            currentStage: row.currentStage,
+            nextAction: row.nextAction,
+          },
+          after: { status: parsed.status, note: parsed.note ?? null, transitionId },
+        },
+        this.tenantId,
+      );
+      return result;
+    });
+    const detail = await this.detailOf(updated);
+    if (isTerminalItemStatus(updated.status)) return detail;
+    const exp = Date.now() + 60_000;
+    return {
+      ...detail,
+      undoUntil: new Date(exp).toISOString(),
+      undoToken: createItemTransitionToken(this.undoSecret, {
+        purpose: "item-transition-undo",
+        tenantId: this.tenantId,
+        itemId,
+        actorId: ctx.actor.id,
+        transitionId,
+        from: row.status,
+        to: updated.status,
+        currentStage: row.currentStage,
+        nextAction: row.nextAction,
+        updatedAt: toIso(updated.updatedAt),
+        exp,
+      }),
+    };
+  }
+
+  async undoTransition(itemId: string, input: unknown, ctx: KernelContext): Promise<ItemDetail> {
+    const parsed = UndoItemTransitionInput.parse(input);
+    let payload;
+    try {
+      payload = verifyItemTransitionToken(this.undoSecret, parsed.undoToken);
+    } catch {
+      throw this.undoMismatch();
+    }
+    if (
+      payload.tenantId !== this.tenantId ||
+      payload.itemId !== itemId ||
+      payload.actorId !== ctx.actor.id
+    ) {
+      throw this.undoMismatch();
+    }
+    if (isTerminalItemStatus(payload.from) || isTerminalItemStatus(payload.to)) {
+      throw new KernelError("KERNEL_REJECTED", "已结束的事项不能撤销状态变更", {
+        reason: "ITEM_TERMINAL",
+      });
+    }
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(items)
+        .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
+        .for("update");
+      if (row && isTerminalItemStatus(row.status)) {
+        throw new KernelError("KERNEL_REJECTED", "已结束的事项不能撤销状态变更", {
+          reason: "ITEM_TERMINAL",
+        });
+      }
+      const [latest] = await tx
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, this.tenantId),
+            eq(auditLog.entityId, itemId),
+            inArray(auditLog.action, [
+              "ITEM_STATUS_CHANGED",
+              "ITEM_STATUS_REVERTED",
+              "ITEM_COMPLETED",
+            ]),
+          ),
+        )
+        .orderBy(desc(auditLog.seq))
+        .limit(1);
+      if (
+        !row ||
+        row.status !== payload.to ||
+        toIso(row.updatedAt) !== payload.updatedAt ||
+        payload.exp <= Date.now() ||
+        latest?.action !== "ITEM_STATUS_CHANGED" ||
+        (latest.after as { transitionId?: string } | null)?.transitionId !== payload.transitionId
+      ) {
+        throw this.undoMismatch();
+      }
+      const [result] = await tx
+        .update(items)
+        .set({
+          status: payload.from,
+          currentStage: payload.currentStage,
+          nextAction: payload.nextAction,
+          updatedAt: new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1)),
+        })
+        .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
+        .returning();
+      if (!result) throw this.undoMismatch();
+      await appendAudit(
+        tx,
+        ctx,
+        {
+          action: "ITEM_STATUS_REVERTED",
+          entityType: "item",
+          entityId: itemId,
+          before: {
+            status: row.status,
+            currentStage: row.currentStage,
+            nextAction: row.nextAction,
+          },
+          after: {
+            status: result.status,
+            currentStage: result.currentStage,
+            nextAction: result.nextAction,
+            transitionId: payload.transitionId,
+          },
         },
         this.tenantId,
       );
       return result;
     });
     return this.detailOf(updated);
+  }
+
+  private undoMismatch() {
+    return new KernelError("KERNEL_REJECTED", "撤销已过期或事项已更新，请刷新后查看", {
+      reason: "ITEM_TRANSITION_UNDO_MISMATCH",
+    });
   }
 
   /**
@@ -346,6 +482,18 @@ export class ItemService {
     }
 
     const updated = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(items)
+        .where(and(eq(items.id, itemId), eq(items.tenantId, this.tenantId)))
+        .for("update");
+      if (
+        !current ||
+        current.status !== row.status ||
+        current.updatedAt.getTime() !== row.updatedAt.getTime()
+      ) {
+        throw this.undoMismatch();
+      }
       const next = await tx
         .update(items)
         .set({
