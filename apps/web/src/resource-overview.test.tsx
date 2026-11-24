@@ -65,6 +65,8 @@ describe("资源概览展示", () => {
     expect(html).toContain("资源概览");
     expect(html).toContain("20 个可用样品");
     expect(html).toContain("3 个模板");
+    expect(html).toContain("报价工作台");
+    expect(html).toContain("订单跟踪");
     expect(html).toContain("针织精品");
     expect(html).toContain("战略客户");
     expect(html).toContain("6 个 · 60%");

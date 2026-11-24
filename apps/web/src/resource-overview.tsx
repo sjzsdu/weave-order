@@ -173,13 +173,25 @@ export function ResourceOverviewView({
         />
       </section>
 
-      <section aria-label="业务快捷入口" className="grid gap-3 md:grid-cols-2">
+      <section aria-label="业务快捷入口" className="grid gap-3 md:grid-cols-3">
+        <Can cap="quote.workbench.view">
+          <Link
+            href="/panorama/quotes"
+            className="block rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
+          >
+            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">报价工作台</div>
+            <div className="mt-1 text-base font-semibold text-ink-900">找样报价一步到位</div>
+            <p className="mt-1 text-sm text-ink-400">
+              新建报价、改价、分享链接，六种状态筛选，快速找到需要跟进的单。
+            </p>
+          </Link>
+        </Can>
         <Can cap="panorama.orders.view">
           <Link
             href="/panorama/orders"
             className="block rounded-lg border border-line bg-surface px-4 py-4 hover:border-indigo-600"
           >
-            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">报价与订单</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">订单跟踪</div>
             <div className="mt-1 text-base font-semibold text-ink-900">按交期看订单漏斗</div>
             <p className="mt-1 text-sm text-ink-400">
               逾期的排最前，点开就是那张单，从草稿到发货一路看得见。
