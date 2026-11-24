@@ -1,1 +1,1 @@
-export { default } from "../(desktop)/inbound/page";
+export { default } from "../inbound/page";
