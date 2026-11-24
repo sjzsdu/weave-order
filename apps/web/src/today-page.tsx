@@ -73,8 +73,20 @@ function TodayPageContent() {
   const autoFocusComposer = searchParams.get("compose") === "1";
   // 开张清单第③步：这次输入带着刚建的客户 + 样品，提交时随意图一起落库。
   const onboardingQuote = searchParams.get("onboard") === "quote";
+  /*
+   * 页内输入框只在它比首页那个开口处多带东西时才值得出现：客户名/样品/原话。
+   * 普通访问只留一个入口，避免「说句话」出现两次、用户不知道点哪个。
+   */
+  const showInlineComposer = Boolean(initialIntent) || onboardingQuote || autoFocusComposer;
   const pending = approvals.data?.items ?? [];
   const stats = panorama.data?.stats;
+  /*
+   * 全页只认一个待办件数：徽章、标题、「正在进行」空态共用它。
+   * 以前标题取 `pending.length`（队列当前页）、徽章取 `stats.pendingCount`
+   * （服务端全量计数），两个数各说各话——这正是「同一屏自相矛盾」的来源。
+   * 队列分页时以服务端计数为准；还没拿到统计就退回本页列表长度。
+   */
+  const pendingCount = stats?.pendingCount ?? pending.length;
   const loading = panorama.isLoading || approvals.isLoading;
   // 动态流是后端投影好的业务事件：actorLabel / summary / eventKind 都由 API 给定。
   const events = panorama.data?.events ?? [];
@@ -165,7 +177,7 @@ function TodayPageContent() {
 
   const headline = todayHeadline({
     agentDone,
-    pendingCount: pending.length,
+    pendingCount,
     isNewWorkspace: newWorkspace,
   });
 
@@ -210,7 +222,7 @@ function TodayPageContent() {
           autoCollapse={customerCount > 0 || sampleCount > 0}
         />
       )}
-      <section className="rounded-lg border border-line bg-surface px-6 py-5">
+      <section className="min-w-0 rounded-lg border border-line bg-surface px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">工作台</p>
@@ -221,8 +233,12 @@ function TodayPageContent() {
             ) : (
               <h1 className="mt-1 text-2xl font-semibold text-ink-900">
                 {headline}
-                {pending.length > 0 && (
-                  <span className="text-vermilion-600">，{pending.length} 件等你决定</span>
+                {/*
+                 * 只有业绩态需要补这一句：等决定态的标题本身已经写了件数，
+                 * 再补一次会变成「有 2 件等你决定，2 件等你决定」。
+                 */}
+                {agentDone > 0 && pendingCount > 0 && (
+                  <span className="text-vermilion-600">，{pendingCount} 件等你决定</span>
                 )}
               </h1>
             )}
@@ -235,11 +251,12 @@ function TodayPageContent() {
               <>
                 <Badge tone="info">客户 {stats.customerCount}</Badge>
                 <Badge tone="info">样品 {stats.sampleCount}</Badge>
-                <Badge tone="info">草稿待批 {stats.pendingCount}</Badge>
+                <Badge tone="info">草稿待批 {pendingCount}</Badge>
               </>
             )}
           </div>
         </div>
+        <IntentEntry />
         {notice && (
           <p className="mt-3 rounded-md border border-moss-600/30 bg-moss-600/10 px-3 py-2 text-sm text-moss-600">
             {notice}
@@ -266,60 +283,68 @@ function TodayPageContent() {
         )}
       </section>
 
-      <section
-        id="intent"
-        className="rounded-lg border border-indigo-600/25 bg-indigo-600/[0.03] p-4 sm:p-5"
-      >
-        <h2 className="text-sm font-medium text-ink-700">对小织说句话</h2>
-        <p className="mb-3 mt-1 text-xs text-ink-400">
-          一句话 + 几张图，小织先理解再执行；这是织序最顺手的入口，别等想清楚再点。
-        </p>
-        {onboardingQuote && (
-          <p className="mb-2 rounded-md border border-indigo-600/25 bg-indigo-600/5 px-3 py-2 text-xs text-ink-700">
-            {intentContext
-              ? `已带上客户 ${intentContext.customerName ?? ""}${
-                  intentContext.sampleCode ? ` · 样品 ${intentContext.sampleCode}` : ""
-                }，只补数量和价格。`
-              : "先在客户/样品页建好一个，这里提交时就会自动带上。"}
+      {/*
+       * 页内输入框只在它能多做一件事时才出现：带着客户/样品上下文（开张清单第③步）、
+       * 或者有原话要接着改（客户 360 的 `?intent=` 深链）。平时首页只留上面那一个
+       * 开口处——两个入口做同一件事，用户反而不知道该点哪个。
+       */}
+      {showInlineComposer && (
+        <section
+          id="intent"
+          className="rounded-lg border border-indigo-600/25 bg-indigo-600/[0.03] p-4 sm:p-5"
+        >
+          <h2 className="text-sm font-medium text-ink-700">接着补充这一单</h2>
+          <p className="mb-3 mt-1 text-xs text-ink-400">
+            一句话 + 几张图，小织先理解再执行；补充完在下一页确认理解。
           </p>
-        )}
-        <IntentComposer
-          initialText={initialIntent}
-          autoFocus={autoFocusComposer}
-          submitLabel="下一步：补充并确认"
-          submittingLabel="正在打开…"
-          submittingHint="正在打开统一输入页，原话会带过去，不会丢。"
-          hint="点「下一步」会打开统一输入页：可以补充图片/附件、确认理解，再发给小织。"
-          busy={intentChannel.submitting}
-          error={intentChannel.submitError}
-          onSubmit={(text) => {
-            // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
-            // 按钮与提示已明确写成两步，避免用户误以为这一下已经发给小织。
-            const params = new URLSearchParams({ text });
-            for (const [key, value] of Object.entries(intentContext ?? {})) {
-              params.set(key, String(value));
-            }
-            router.push(`/inbound?${params.toString()}`);
-            return Promise.resolve(true);
-          }}
-        />
-        {(intentChannel.items.length > 0 || intentChannel.submitError) && (
-          <div className="mt-3 grid gap-2">
-            <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-ink-400">
-              这句话的去向
-            </h3>
-            {intentChannel.items.slice(0, 5).map((intent) => (
-              <IntentRunCard
-                key={intent.id}
-                intent={intent}
-                busy={intentChannel.submitting}
-                onCancel={(id) => void intentChannel.cancel(id)}
-                onRetry={(item) => void intentChannel.retry(item)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+          {onboardingQuote && (
+            <p className="mb-2 rounded-md border border-indigo-600/25 bg-indigo-600/5 px-3 py-2 text-xs text-ink-700">
+              {intentContext
+                ? `已带上客户 ${intentContext.customerName ?? ""}${
+                    intentContext.sampleCode ? ` · 样品 ${intentContext.sampleCode}` : ""
+                  }，只补数量和价格。`
+                : "先在客户/样品页建好一个，这里提交时就会自动带上。"}
+            </p>
+          )}
+          <IntentComposer
+            initialText={initialIntent}
+            autoFocus={autoFocusComposer}
+            submitLabel="下一步：补充并确认"
+            submittingLabel="正在打开…"
+            submittingHint="正在打开统一输入页，原话会带过去，不会丢。"
+            hint="点「下一步」会打开统一输入页：可以补充图片/附件、确认理解，再发给小织。"
+            busy={intentChannel.submitting}
+            error={intentChannel.submitError}
+            onSubmit={(text) => {
+              // 统一输入：页内 composer 不再直接提交，原话与上下文一起带到 /inbound。
+              // 按钮与提示已明确写成两步，避免用户误以为这一下已经发给小织。
+              const params = new URLSearchParams({ text });
+              for (const [key, value] of Object.entries(intentContext ?? {})) {
+                params.set(key, String(value));
+              }
+              router.push(`/inbound?${params.toString()}`);
+              return Promise.resolve(true);
+            }}
+          />
+        </section>
+      )}
+
+      {(intentChannel.items.length > 0 || intentChannel.submitError) && (
+        <section className="grid gap-2 rounded-lg border border-line bg-surface px-4 py-3">
+          <h2 className="text-xs font-medium uppercase tracking-[0.14em] text-ink-400">
+            这句话的去向
+          </h2>
+          {intentChannel.items.slice(0, 5).map((intent) => (
+            <IntentRunCard
+              key={intent.id}
+              intent={intent}
+              busy={intentChannel.submitting}
+              onCancel={(id) => void intentChannel.cancel(id)}
+              onRetry={(item) => void intentChannel.retry(item)}
+            />
+          ))}
+        </section>
+      )}
 
       {(shipping.data?.length ?? 0) > 0 && (
         <section className="rounded-lg border border-line bg-surface px-5 py-4">
@@ -358,7 +383,7 @@ function TodayPageContent() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
-        <section className="grid content-start gap-3">
+        <section id="decisions" className="grid scroll-mt-6 content-start gap-3">
           <h2 className="text-sm font-medium text-ink-700">等你决定</h2>
           {approvals.isLoading && <Spinner />}
           {!approvals.isLoading && pending.length === 0 && (
@@ -442,9 +467,7 @@ function TodayPageContent() {
         <section className="grid content-start gap-3">
           <h2 className="text-sm font-medium text-ink-700">正在进行</h2>
           {running.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-line bg-surface px-4 py-3 text-sm text-ink-400">
-              小织还没接到活。
-            </p>
+            <RunningEmptyState pendingCount={pendingCount} />
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
               {running.map((event) => (
@@ -503,7 +526,7 @@ function TodayPageContent() {
                   去建客户
                 </Link>
                 <a
-                  href="#intent"
+                  href="/xiaozhi?compose=1"
                   className="inline-flex min-h-9 items-center rounded-md border border-line px-4 text-sm text-ink-700 hover:border-ink-400"
                 >
                   说点什么
@@ -549,6 +572,64 @@ function TodayPageContent() {
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * 首页的开口处：标题下方的整宽单行入口，只负责把人送到小织面板。
+ *
+ * 首屏主视觉是状态流，光有状态没有开口处，新用户不知道该在哪说话。
+ * 这里不复制输入组件、不新建意图服务：`/xiaozhi` 里已有完整的一段话 +
+ * 多图输入，并且默认聚焦（`?compose=1`），这里只是把人送过去。
+ */
+export function IntentEntry() {
+  return (
+    <Link
+      href="/xiaozhi?compose=1"
+      className="mt-4 flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-indigo-600/40 bg-indigo-600/[0.06] px-4 py-3 hover:border-indigo-600 hover:bg-indigo-600/10"
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-ink-900">说句话，小织就开工</span>
+        <span className="mt-0.5 block text-xs text-ink-400">
+          比如「给天宝纺织找 200g 全棉，灰色」，也可以直接贴客户发来的截图
+        </span>
+      </span>
+      <span className="shrink-0 text-sm text-indigo-600">去说 →</span>
+    </Link>
+  );
+}
+
+/**
+ * 「正在进行」的空态：小织没在跑的时候，它在等什么必须说清楚。
+ *
+ * - 有待办：它没停，只是卡在人这一环——给一个跳回本页待决定列表的锚点。
+ *   以前这里一律写「小织还没接到活」，和旁边的「2 件等你决定」当场打架。
+ * - 无待办：它确实还空着，给一个能开工的动作。
+ */
+export function RunningEmptyState({ pendingCount }: { pendingCount: number }) {
+  if (pendingCount > 0) {
+    return (
+      <a
+        href="#decisions"
+        className="rounded-lg border border-dashed border-vermilion-600/40 bg-vermilion-600/[0.06] px-4 py-3 hover:border-vermilion-600"
+      >
+        <span className="block text-sm text-ink-700">
+          小织在等你决定 {pendingCount} 件，决定完它继续
+        </span>
+        <span className="mt-0.5 block text-xs text-vermilion-600">去决定 →</span>
+      </a>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-dashed border-line bg-surface px-4 py-3">
+      <p className="text-sm text-ink-400">小织还没接到活，先给它一个客户或样品</p>
+      <Link
+        href="/panorama/customers"
+        className="mt-1 inline-block text-xs text-indigo-600 hover:underline"
+      >
+        去建客户
+      </Link>
     </div>
   );
 }
