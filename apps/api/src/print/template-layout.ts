@@ -1,10 +1,11 @@
 import { PRINT_DOCUMENT_VARIABLES } from "@weave-order/schema";
 import type {
   PrintDocumentKind,
+  PrintLabelPreview,
   PrintTemplateFormat,
   PrintTemplateLayout,
 } from "@weave-order/schema";
-import { PrintError } from "./template-engine";
+import { PrintError, renderTemplate } from "./template-engine";
 import type { TemplateValues } from "./template-engine";
 
 /**
@@ -295,36 +296,68 @@ ${body}
 </body></html>`;
 }
 
-function compileZpl(layout: PrintTemplateLayout): string {
+interface PlannedText extends PlannedLine {
+  type: "text";
+  x: number;
+  y: number;
+}
+
+interface PlannedRect {
+  type: "rect";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface PlannedQr {
+  type: "qr";
+  x: number;
+  y: number;
+  size: number;
+  magnification: number;
+}
+
+type LabelPlanItem = PlannedText | PlannedRect | PlannedQr;
+
+interface LabelLayoutPlan {
+  items: LabelPlanItem[];
+}
+
+/** ZPL 与 TSPL 共用坐标、字号、行距和二维码位置，避免两种指令排版漂移。 */
+function planLabelLayout(layout: PrintTemplateLayout): LabelLayoutPlan {
   const lines = plannedLines(layout);
   assertLinesFit(lines);
   assertQrFits(layout.qr.sizeMm);
   const position = layout.qr.position;
   const qrInline = position === "LEFT" || position === "RIGHT";
-  const qrHeight = qrSquareDots(layout.qr.sizeMm);
-  const qrSide = qrLeft(position, qrHeight);
-  // 二维码在左侧时正文必须让出这一栏，否则每一行都压在二维码上。
+  const qrSize = qrSquareDots(layout.qr.sizeMm);
+  const qrX = qrLeft(position, qrSize);
   const textX = textBox(layout).x;
+  const items: LabelPlanItem[] = [];
   let y = LABEL_MARGIN;
-  const commands: string[] = ["^XA", `^PW${LABEL_WIDTH}`, `^LL${LABEL_HEIGHT}`, "^CI28"];
   let qrBottom = 0;
 
-  const qrCommand = (top: number) => {
-    qrBottom = Math.max(qrBottom, top + qrHeight);
-    return `^FO${qrSide},${top}^BQN,2,${qrMagnification(layout.qr.sizeMm)}^FDMA,{{card.qr}}^FS`;
+  const addQr = (top: number) => {
+    qrBottom = Math.max(qrBottom, top + qrSize);
+    items.push({
+      type: "qr",
+      x: qrX,
+      y: top,
+      size: qrSize,
+      magnification: qrMagnification(layout.qr.sizeMm),
+    });
   };
 
   if (layout.qr.visible && (qrInline || position === "TOP")) {
-    commands.push(qrCommand(LABEL_MARGIN));
+    addQr(LABEL_MARGIN);
     if (!qrInline) y = qrBottom + 8;
   }
   for (const line of lines) {
-    commands.push(
-      `^FO${textX},${y}^A0N,${line.dots},${line.dots}^FD${line.label}{{${line.field}}}^FS`,
-    );
+    items.push({ ...line, type: "text", x: textX, y });
     y += line.dots + 8;
   }
-  if (layout.qr.visible && position === "BOTTOM") commands.push(qrCommand(y));
+  if (layout.qr.visible && position === "BOTTOM") addQr(y);
   const used = Math.max(y, qrBottom);
   if (used > LABEL_HEIGHT) {
     throw new PrintError(
@@ -332,6 +365,21 @@ function compileZpl(layout: PrintTemplateLayout): string {
       `版式超出 80×50 标签（需要 ${used} 点 > ${LABEL_HEIGHT} 点）：隐藏几行或调小字号`,
       { height: used, limit: LABEL_HEIGHT },
     );
+  }
+  return { items };
+}
+
+function compileZpl(layout: PrintTemplateLayout): string {
+  const plan = planLabelLayout(layout);
+  const commands: string[] = ["^XA", `^PW${LABEL_WIDTH}`, `^LL${LABEL_HEIGHT}`, "^CI28"];
+  for (const item of plan.items) {
+    if (item.type === "text") {
+      commands.push(
+        `^FO${item.x},${item.y}^A0N,${item.dots},${item.dots}^FD${item.label}{{${item.field}}}^FS`,
+      );
+    } else if (item.type === "qr") {
+      commands.push(`^FO${item.x},${item.y}^BQN,2,${item.magnification}^FDMA,{{card.qr}}^FS`);
+    }
   }
   commands.push("^XZ");
   return commands.join("\n");
@@ -344,44 +392,106 @@ function tsplFont(dots: number): string {
 }
 
 function compileTspl(layout: PrintTemplateLayout): string {
-  const lines = plannedLines(layout);
-  assertLinesFit(lines);
-  assertQrFits(layout.qr.sizeMm);
-  const position = layout.qr.position;
-  const qrInline = position === "LEFT" || position === "RIGHT";
-  const cell = qrMagnification(layout.qr.sizeMm);
-  const qrHeight = qrSquareDots(layout.qr.sizeMm);
-  const qrX = qrLeft(position, qrHeight);
-  const textX = textBox(layout).x;
-  let y = LABEL_MARGIN;
-  let qrBottom = 0;
+  const plan = planLabelLayout(layout);
   const commands: string[] = ["SIZE 80 mm,50 mm", "GAP 2 mm,0 mm", "DIRECTION 1", "CLS"];
-  const qrCommand = (top: number) => {
-    qrBottom = Math.max(qrBottom, top + qrHeight);
-    return `QRCODE ${qrX},${top},L,${cell},A,0,"{{card.qr}}"`;
-  };
-
-  if (layout.qr.visible && (qrInline || position === "TOP")) {
-    commands.push(qrCommand(LABEL_MARGIN));
-    if (!qrInline) y = qrBottom + 8;
-  }
-  for (const line of lines) {
-    commands.push(
-      `TEXT ${textX},${y},"${tsplFont(line.dots)}",0,1,1,"${line.label}{{${line.field}}}"`,
-    );
-    y += line.dots + 8;
-  }
-  if (layout.qr.visible && position === "BOTTOM") commands.push(qrCommand(y));
-  const used = Math.max(y, qrBottom);
-  if (used > LABEL_HEIGHT) {
-    throw new PrintError(
-      "PRINT_LAYOUT_OVERFLOW",
-      `版式超出 80×50 标签（需要 ${used} 点 > ${LABEL_HEIGHT} 点）：隐藏几行或调小字号`,
-      { height: used, limit: LABEL_HEIGHT },
-    );
+  for (const item of plan.items) {
+    if (item.type === "text") {
+      commands.push(
+        `TEXT ${item.x},${item.y},"${tsplFont(item.dots)}",0,1,1,"${item.label}{{${item.field}}}"`,
+      );
+    } else if (item.type === "qr") {
+      commands.push(`QRCODE ${item.x},${item.y},L,${item.magnification},A,0,"{{card.qr}}"`);
+    }
   }
   commands.push("PRINT 1,1");
   return commands.join("\n");
+}
+
+/** 系统内置样卡标签没有 layout；图元仍严格对应 templates.ts 中的固定指令。 */
+function systemSampleCardLabelPlan(format: "ZPL" | "TSPL"): LabelLayoutPlan {
+  const zpl = format === "ZPL";
+  const text = (field: string, x: number, y: number, dots: number): PlannedText => ({
+    type: "text",
+    field,
+    label: "",
+    x,
+    y,
+    dots,
+    fontSize: dots,
+    bold: false,
+  });
+  return {
+    items: [
+      text("tenant.brand", zpl ? 24 : 20, zpl ? 12 : 8, zpl ? 26 : 16),
+      { type: "rect", x: zpl ? 24 : 20, y: zpl ? 44 : 36, width: zpl ? 592 : 580, height: 2 },
+      text("sample.code", zpl ? 24 : 20, zpl ? 52 : 44, zpl ? 30 : 24),
+      text("sample.name", zpl ? 24 : 20, zpl ? 88 : 78, zpl ? 20 : 16),
+      text("sample.composition", zpl ? 24 : 20, zpl ? 112 : 102, 16),
+      text("sample.weight", zpl ? 24 : 20, zpl ? 132 : 126, 16),
+      // 内置指令为 5 点/模块；紧凑样卡 token 的二维码不超过 37 模块。
+      { type: "qr", x: zpl ? 24 : 20, y: 150, size: 185, magnification: 5 },
+      text("salesperson.name", 320, zpl ? 176 : 168, zpl ? 20 : 16),
+      text("salesperson.phone", 320, zpl ? 206 : 196, zpl ? 20 : 16),
+      text("meta.printedAt", 320, zpl ? 240 : 230, 16),
+    ],
+  };
+}
+
+function labelPreviewFromPlan(
+  plan: LabelLayoutPlan,
+  values: TemplateValues,
+  format: "ZPL" | "TSPL",
+): PrintLabelPreview {
+  return {
+    width: LABEL_WIDTH,
+    height: LABEL_HEIGHT,
+    elements: plan.items.map((item) => {
+      if (item.type === "rect") {
+        return {
+          type: "rect",
+          x: item.x,
+          y: item.y,
+          width: item.width,
+          height: item.height,
+        };
+      }
+      if (item.type === "qr") {
+        return {
+          type: "qr",
+          x: item.x,
+          y: item.y,
+          size: item.size,
+          dataUrl: String(values.scalars["card.qrImage"] ?? ""),
+        };
+      }
+      return {
+        type: "text",
+        x: item.x,
+        y: item.y,
+        text: renderTemplate(`${item.label}{{${item.field}}}`, "SAMPLE_LABEL", values, {
+          format,
+          allowMissing: true,
+        }),
+        fontSize: item.dots,
+        bold: item.bold,
+      };
+    }),
+  };
+}
+
+/** 只为有确定布局的标签生成图元；HTML/A4 与手写文本模板不做坐标猜测。 */
+export function buildLabelPreview(input: {
+  layout?: PrintTemplateLayout | null;
+  isSystem: boolean;
+  format: PrintTemplateFormat;
+  values: TemplateValues;
+}): PrintLabelPreview | null {
+  if (input.format === "HTML") return null;
+  if (input.layout) {
+    return labelPreviewFromPlan(planLabelLayout(input.layout), input.values, input.format);
+  }
+  if (!input.isSystem) return null;
+  return labelPreviewFromPlan(systemSampleCardLabelPlan(input.format), input.values, input.format);
 }
 
 export interface CompiledLayout {

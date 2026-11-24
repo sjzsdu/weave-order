@@ -21,7 +21,7 @@ import type { SampleCardSource } from "./sample-card";
 import type { PrintTemplateService, ResolvedTemplate } from "./print-templates.service";
 import { PrintError } from "./template-engine";
 import type { TemplateValues } from "./template-engine";
-import { assertSampleCardDataFits } from "./template-layout";
+import { assertSampleCardDataFits, buildLabelPreview } from "./template-layout";
 
 /** 样卡上的时间用北京时间、精确到分钟：纸上不印毫秒与 UTC 后缀。 */
 function printedAtText(date: Date): string {
@@ -343,6 +343,12 @@ export class SampleCardService {
       html: rendered.html,
       pdfBase64: rendered.pdfBase64,
       text: rendered.text,
+      labelPreview: buildLabelPreview({
+        layout: resolved.layout,
+        isSystem: resolved.isSystem,
+        format,
+        values,
+      }),
       fields: sampleCardPreviewFields(values),
     });
   }

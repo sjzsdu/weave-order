@@ -1,4 +1,6 @@
 ---
+import { app } from "../lib/site";
+
 /**
  * 页脚。所有页面共用一份，改一处只改这里。
  */
@@ -20,8 +22,7 @@ const anchor = (hash: string) => (homeAnchors ? hash : `/index.html${hash}`);
           <span>织序 WeaveOrder</span>
         </div>
         <p>
-          纺织贸易的 AI 员工业务系统。找样、报价、寄样、跟单、对账由 AI
-          员工完成，人只负责审批结果。
+          纺织贸易的 AI 员工业务系统。找样、报价、寄样、跟单、对账由 AI 员工完成，人只负责审批结果。
         </p>
         <span class="footer__badge">
           <i></i>服务运行正常
@@ -73,8 +74,8 @@ const anchor = (hash: string) => (homeAnchors ? hash : `/index.html${hash}`);
             </a>
           </li>
           <li>
-            <a href="/login.html" data-login="site-footer">
-              登录入口
+            <a href={`${app}/`} data-login="site-footer">
+              进入工作台
             </a>
           </li>
           <li>

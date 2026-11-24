@@ -7,7 +7,7 @@ export default [
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, Windows, macOS, iOS, Android",
     url: "__SITE__/download.html",
-    installUrl: "https://weave.wnbgj.com",
+    installUrl: "https://app.wnbgj.com",
     description:
       "纺织贸易的智能体原生业务操作系统：找样、报价、寄样跟进、订单、对账、打印单证由智能体完成，人只审批结果。",
     publisher: {

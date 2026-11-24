@@ -219,15 +219,8 @@ export class PrintController {
   ) {
     return this.human.run(authorization, this.kernel, async (kernel, ctx) => {
       try {
-        const input =
-          body && typeof body === "object" && !Array.isArray(body)
-            ? (body as Record<string, unknown>)
-            : {};
         return {
-          preview: await this.attach(kernel).sampleCards.preview(
-            { ...input, sampleId },
-            ctx.actor.id,
-          ),
+          preview: await this.attach(kernel).jobs.previewSampleLabel(sampleId, body, ctx.actor.id),
         };
       } catch (error) {
         rethrowPrint(error);

@@ -4,6 +4,7 @@ import { analyzeTemplate, PrintError, renderTemplate } from "../src/print/templa
 import {
   assertLayoutAllowed,
   assertSampleCardDataFits,
+  buildLabelPreview,
   compileLayout,
   DEFAULT_SAMPLE_CARD_LABEL_LAYOUT,
   DEFAULT_SAMPLE_CARD_LAYOUT,
@@ -20,6 +21,21 @@ import {
 function layoutWith(blocks: PrintTemplateLayout["blocks"]): PrintTemplateLayout {
   return { version: 1, blocks, qr: { visible: false, position: "RIGHT", sizeMm: 30 } };
 }
+
+const previewValues = {
+  scalars: {
+    "tenant.brand": "织序 WEAVE",
+    "sample.code": "FM-220",
+    "sample.name": "32S 精梳棉汗布",
+    "sample.composition": "100% 棉",
+    "sample.weight": "220 g/m²",
+    "salesperson.name": "孙巨中",
+    "salesperson.phone": "13800000000",
+    "meta.printedAt": "2026-11-23 15:00",
+    "card.qrImage": "data:image/png;base64,AAAA",
+  },
+  loops: {},
+};
 
 describe("样卡版式编译", () => {
   it("默认版式编译成 A4 HTML：只出现白名单字段，二维码用图片字段", () => {
@@ -282,5 +298,122 @@ describe("样卡版式编译", () => {
     const rendered = renderTemplate(html, "SAMPLE_LABEL", values, { format: "HTML" });
     expect(rendered).toContain("&lt;b&gt;");
     expect(rendered).not.toContain("<b>面料</b>");
+  });
+
+  it("labelPreview 与 ZPL/TSPL 共用布局计划，字段、坐标、字号和二维码一致", () => {
+    for (const format of ["ZPL", "TSPL"] as const) {
+      const compiled = compileLayout(DEFAULT_SAMPLE_CARD_LABEL_LAYOUT, "SAMPLE_LABEL", format);
+      const preview = buildLabelPreview({
+        layout: DEFAULT_SAMPLE_CARD_LABEL_LAYOUT,
+        isSystem: false,
+        format,
+        values: previewValues,
+      });
+      expect(preview).toMatchObject({ width: 640, height: 400 });
+      expect(preview?.elements[0]).toEqual({
+        type: "qr",
+        x: 425,
+        y: 20,
+        size: 195,
+        dataUrl: "data:image/png;base64,AAAA",
+      });
+      expect(preview?.elements[1]).toEqual({
+        type: "text",
+        x: 20,
+        y: 20,
+        text: "织序 WEAVE",
+        fontSize: 18,
+        bold: true,
+      });
+      expect(preview?.elements[2]).toMatchObject({
+        type: "text",
+        x: 20,
+        y: 46,
+        text: "FM-220",
+        fontSize: 28,
+      });
+      expect(compiled.body).toContain(format === "ZPL" ? "^FO20,20" : "TEXT 20,20");
+      expect(compiled.body).toContain(format === "ZPL" ? "^FO20,46" : "TEXT 20,46");
+      expect(compiled.body).toContain(format === "ZPL" ? "^FO425,20" : "QRCODE 425,20");
+    }
+  });
+
+  it("系统内置 ZPL/TSPL 标签按固定指令坐标生成图元", () => {
+    const zpl = buildLabelPreview({
+      layout: null,
+      isSystem: true,
+      format: "ZPL",
+      values: previewValues,
+    });
+    expect(zpl?.elements).toContainEqual({
+      type: "rect",
+      x: 24,
+      y: 44,
+      width: 592,
+      height: 2,
+    });
+    expect(zpl?.elements).toContainEqual({
+      type: "text",
+      x: 24,
+      y: 52,
+      text: "FM-220",
+      fontSize: 30,
+      bold: false,
+    });
+    expect(zpl?.elements).toContainEqual({
+      type: "qr",
+      x: 24,
+      y: 150,
+      size: 185,
+      dataUrl: "data:image/png;base64,AAAA",
+    });
+
+    const tspl = buildLabelPreview({
+      layout: null,
+      isSystem: true,
+      format: "TSPL",
+      values: previewValues,
+    });
+    expect(tspl?.elements).toContainEqual({
+      type: "rect",
+      x: 20,
+      y: 36,
+      width: 580,
+      height: 2,
+    });
+    expect(tspl?.elements).toContainEqual({
+      type: "text",
+      x: 20,
+      y: 44,
+      text: "FM-220",
+      fontSize: 24,
+      bold: false,
+    });
+    expect(tspl?.elements).toContainEqual({
+      type: "qr",
+      x: 20,
+      y: 150,
+      size: 185,
+      dataUrl: "data:image/png;base64,AAAA",
+    });
+  });
+
+  it("HTML/A4 与无 layout 的手写模板不伪造 labelPreview", () => {
+    expect(
+      buildLabelPreview({
+        layout: DEFAULT_SAMPLE_CARD_LAYOUT,
+        isSystem: false,
+        format: "HTML",
+        values: previewValues,
+      }),
+    ).toBeNull();
+    expect(
+      buildLabelPreview({
+        layout: null,
+        isSystem: false,
+        format: "ZPL",
+        values: previewValues,
+      }),
+    ).toBeNull();
   });
 });

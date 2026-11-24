@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { app } from "../lib/site";
 
 const title = "页面没有找到 · 织序 WeaveOrder";
 const description = "这个地址没有对应的页面。回到官网首页、帮助中心，或直接登录工作台。";
@@ -27,8 +28,8 @@ const robots = "noindex,follow";
           <span>帮助中心</span>
           <small>上手、导入、审批、打印</small>
         </a>
-        <a href="login.html">
-          <span>登录工作台</span>
+        <a href={`${app}/`} data-login="site-404">
+          <span>进入工作台</span>
           <small>内部同事</small>
         </a>
         <a href="signup.html">

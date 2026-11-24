@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { PRINT_DOCUMENT_VARIABLES, PRINT_VARIABLES } from "@weave-order/schema";
+import {
+  PRINT_DOCUMENT_VARIABLES,
+  PRINT_VARIABLES,
+  PrintPreviewArtifact,
+  PrintPreviewInput,
+} from "@weave-order/schema";
 import {
   SAMPLE_CARD_LIMITS,
   assertSampleCardPdfLayout,
@@ -218,6 +223,38 @@ describe("内置样卡模板", () => {
     for (const path of paths) {
       expect(PRINT_VARIABLES[path]).toBeTruthy();
     }
+  });
+});
+
+describe("样卡预览契约", () => {
+  it("独立标签预览接受可选 nullable printerId", () => {
+    expect(PrintPreviewInput.parse({ sampleId: TENANT_ID, printerId: null })).toMatchObject({
+      sampleId: TENANT_ID,
+      printerId: null,
+      format: "HTML",
+    });
+    expect(PrintPreviewInput.parse({ sampleId: TENANT_ID }).printerId).toBeUndefined();
+  });
+
+  it("旧预览产物缺少 labelPreview 时默认 null，打印指令 text 保持不变", () => {
+    const preview = PrintPreviewArtifact.parse({
+      kind: "SAMPLE_LABEL",
+      quoteId: null,
+      sampleId: TENANT_ID,
+      lineIndex: 0,
+      format: "ZPL",
+      templateName: "手写标签",
+      pageSize: "80x50",
+      isSystem: false,
+      sampleCode: "FM-220",
+      qrPayload,
+      html: null,
+      pdfBase64: null,
+      text: "^XA^FDactual-print-command^FS^XZ",
+      fields: [],
+    });
+    expect(preview.labelPreview).toBeNull();
+    expect(preview.text).toBe("^XA^FDactual-print-command^FS^XZ");
   });
 });
 

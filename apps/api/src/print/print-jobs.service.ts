@@ -15,6 +15,7 @@ import {
   CreateBoxesInput,
   CreatePrintJobInput,
   PickScanInput,
+  PrintPreviewInput,
   SampleCardPrintInput,
   SampleCardReprintInput,
   TestPrintSampleCardInput,
@@ -73,6 +74,8 @@ function jobKey(input: {
   labelSeq?: number | null;
   /** 补打序号：同一张卡补打必须生成新任务，不能被幂等键吞掉。 */
   attempt?: number;
+  /** 仅独立样品标签传入：同一样品切打印机不能命中旧任务。 */
+  printerId?: string | null;
 }): string {
   return hash(
     [
@@ -84,6 +87,7 @@ function jobKey(input: {
       input.operator,
       input.labelSeq ?? "",
       input.attempt ?? 0,
+      ...(input.printerId !== undefined ? [input.printerId ?? ""] : []),
     ].join("|"),
   );
 }
@@ -425,11 +429,13 @@ export class PrintJobService {
       });
     }
     const printer = await this.printerFor(input.printerId);
+    // 报价样卡保留调用方选择的 A4/标签格式；独立样品标签只能按实际设备出 ZPL/TSPL。
+    const format = input.sampleId ? this.formatFor("SAMPLE_LABEL", printer) : input.format;
     let resolved: ResolvedTemplate;
     try {
       resolved = await this.templates.resolve({
         kind: "SAMPLE_LABEL",
-        format: input.format,
+        format,
         ...(input.templateId ? { templateId: input.templateId } : {}),
       });
     } catch (error) {
@@ -462,6 +468,7 @@ export class PrintJobService {
       operator: input.operator,
       labelSeq,
       attempt: input.attempt,
+      ...(input.sampleId ? { printerId: input.printerId } : {}),
     });
 
     const existing = await this.db
@@ -475,9 +482,9 @@ export class PrintJobService {
       source,
       values,
       resolved,
-      format: input.format,
+      format,
     });
-    const payload = input.format === "HTML" ? rendered.pdfBase64 : rendered.text;
+    const payload = format === "HTML" ? rendered.pdfBase64 : rendered.text;
     if (!payload) {
       throw new PrintError("PRINT_MISSING_FIELD", "样卡渲染没有产出可打印的内容");
     }
@@ -494,7 +501,7 @@ export class PrintJobService {
           tenant: source.tenant,
           salesperson: source.salesperson,
           qrPayload: source.qrPayload,
-          format: input.format,
+          format,
           pageSize: resolved.pageSize,
           templateName: resolved.name,
           printedAt: source.printedAt,
@@ -517,7 +524,7 @@ export class PrintJobService {
             templateVersion: resolved.version,
             printerId: printer?.id ?? null,
             agentId: printer?.agentId ?? null,
-            format: input.format,
+            format,
             copies: input.copies,
             priority: input.priority,
             status: "QUEUED",
@@ -671,6 +678,15 @@ export class PrintJobService {
       )
       .orderBy(desc(printJobs.createdAt));
     return rows.map((row) => mapJob(row));
+  }
+
+  /** 独立样品标签预览与打印共用设备格式推导，避免预览 ZPL、实际却出 TSPL。 */
+  async previewSampleLabel(sampleId: string, input: unknown, operator: string) {
+    const body = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const parsed = PrintPreviewInput.parse({ ...body, sampleId });
+    const printer = await this.printerFor(parsed.printerId);
+    const format = this.formatFor("SAMPLE_LABEL", printer);
+    return this.sampleCards.preview({ ...parsed, format }, operator);
   }
 
   /** 独立样品标签：默认走 80×50 热敏标签，不查报价、不要求报价确认。 */

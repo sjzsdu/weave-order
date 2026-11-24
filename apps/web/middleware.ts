@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isProductionLike } from "@/runtime-mode";
 import { appVersionLabel } from "@/format";
+import { safeNext } from "@/public-origin";
 
-// /config.js 是部署期配置（目前只有访问统计），登录页也要读它，必须免登录。
+// /config.js 是部署期配置（目前只有访问统计），登录错误页也要读它，必须免登录。
 const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/_next", "/favicon", "/config.js"];
 
 /**
@@ -19,21 +20,36 @@ function withAppVersion(response: NextResponse): NextResponse {
 }
 
 /**
- * 生产态（isProductionLike()，与 api 同一份判定）：未登录一律回登录页；本地 dev 放行，
+ * 生产态（isProductionLike()，与 api 同一份判定）：未登录直接发起 OIDC；本地 dev 放行，
  * 便于没有 Casdoor 时用 dev token 联调。
  */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const production = isProductionLike();
+  const token = request.cookies.get("weave_token")?.value;
+
+  // 兼容旧登录链接：正常访问不再停留于本地登录页；错误与主动退出仍需展示提示。
+  if (production && pathname === "/login") {
+    const next = safeNext(request.nextUrl.searchParams.get("next"));
+    if (token) return withAppVersion(NextResponse.redirect(new URL(next, request.url)));
+    if (
+      !request.nextUrl.searchParams.has("error") &&
+      !request.nextUrl.searchParams.has("loggedOut")
+    ) {
+      const login = new URL("/auth/login", request.url);
+      login.searchParams.set("next", next);
+      return withAppVersion(NextResponse.redirect(login));
+    }
+  }
+
   if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return withAppVersion(NextResponse.next());
   }
-  if (!isProductionLike()) return withAppVersion(NextResponse.next());
-
-  const token = request.cookies.get("weave_token")?.value;
+  if (!production) return withAppVersion(NextResponse.next());
   if (token) return withAppVersion(NextResponse.next());
 
-  const login = new URL("/login", request.url);
-  login.searchParams.set("next", pathname);
+  const login = new URL("/auth/login", request.url);
+  login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
   return withAppVersion(NextResponse.redirect(login));
 }
 

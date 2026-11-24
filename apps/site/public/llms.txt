@@ -6,7 +6,7 @@
 
 关键事实：
 - 官网：https://weaveorder.cn/
-- 应用入口：https://weave.wnbgj.com （租户工作台）
+- 应用入口：https://app.wnbgj.com （租户工作台）
 - 平台管理：https://weave-admin.wnbgj.com （仅平台运营与财务）
 - 统一登录：https://sso.wnbgj.com
 - 价格：按公司订阅。基础 299 元 / 月（含 5 个账号、20,000 credits）；专业 899 元 / 月（含 20 个账号、100,000 credits）；企业 2,999 元 / 月起。1 credit 约等于 1,000 个词的处理量；超额暂停并提醒，不自动扣费；年付为 10 个月价。

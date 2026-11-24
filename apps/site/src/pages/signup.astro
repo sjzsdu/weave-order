@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import jsonLd from "../data/jsonld/signup.ts";
+import { app } from "../lib/site";
 
 const title = "免费试用与开通 · 织序 WeaveOrder（3 天，当天开通）";
 const description =
@@ -33,11 +34,11 @@ const ogDescription =
             天全功能试用，觉得值再付钱。
           </p>
           <p style="margin-top:22px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-            <a class="btn btn--primary" href="https://weave.wnbgj.com/start" data-cta="hero">
+            <a class="btn btn--primary" href={`${app}/start`} data-cta="hero">
               免费创建公司
             </a>
-            <a class="btn btn--ghost" href="https://weave.wnbgj.com/login" data-login="site-hero">
-              我已有账号，去登录
+            <a class="btn btn--ghost" href={`${app}/`} data-login="site-hero">
+              我已有账号，进入工作台
             </a>
           </p>
         </div>

@@ -1204,17 +1204,20 @@ export function createApiClient(options: ApiClientOptions) {
       PrintJobHistory.parse(await request(`/api/print/sample-cards/${encodeURIComponent(quoteId)}`))
         .jobs,
 
-    /** 独立样品标签预览：默认 80×50 热敏标签，返回的就是入队产物。 */
+    /** 独立样品标签预览：按所选打印机生成实际入队产物。 */
     previewSampleLabel: async (
       sampleId: string,
-      input: { format?: PrintTemplateFormat; templateId?: string | null } = {},
+      input: {
+        format?: PrintTemplateFormat;
+        printerId?: string | null;
+        templateId?: string | null;
+      } = {},
     ) =>
-      z.object({ preview: PrintPreviewArtifact }).parse(
-        await post(`/api/print/sample-labels/${encodeURIComponent(sampleId)}/preview`, {
-          format: "ZPL",
-          ...input,
-        }),
-      ).preview,
+      z
+        .object({ preview: PrintPreviewArtifact })
+        .parse(
+          await post(`/api/print/sample-labels/${encodeURIComponent(sampleId)}/preview`, input),
+        ).preview,
 
     /** 独立样品标签入队：不依赖报价，重复点击按幂等键去重。 */
     printSampleLabel: async (sampleId: string, input: z.input<typeof SampleCardPrintInput> = {}) =>

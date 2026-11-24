@@ -11,7 +11,7 @@ export default [
         "@type": "HowToStep",
         position: 1,
         name: "登录工作台",
-        text: "打开 weave.wnbgj.com，用公司统一账号登录，落在「工作台」。",
+        text: "打开 app.wnbgj.com，用公司统一账号登录，落在「工作台」。",
         url: "__SITE__/docs/quickstart.html#login",
       },
       {

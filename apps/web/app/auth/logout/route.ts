@@ -15,9 +15,9 @@ export async function GET(request: NextRequest) {
       cache: "no-store",
     }).catch(() => undefined);
   }
-  const response = NextResponse.redirect(
-    new URL("/login?logout=1", publicOrigin(request.nextUrl.origin)),
-  );
+  const login = new URL("/login", publicOrigin(request.nextUrl.origin));
+  login.searchParams.set("loggedOut", "1");
+  const response = NextResponse.redirect(login);
   response.cookies.delete("weave_token");
   response.cookies.delete("weave_demo");
   response.cookies.delete("weave_sid");

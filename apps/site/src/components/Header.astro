@@ -1,4 +1,6 @@
 ---
+import { app } from "../lib/site";
+
 /**
  * 页头导航。
  *
@@ -70,8 +72,8 @@ const links = [
           <span>搜索</span>
           <kbd aria-hidden="true">/</kbd>
         </button>
-        <a class="btn btn--ghost btn--sm" href="/login.html" data-login="site-nav">
-          登录
+        <a class="btn btn--ghost btn--sm" href={`${app}/`} data-login="site-nav">
+          进入工作台
         </a>
         <a class="btn btn--primary btn--sm" href="/signup.html" data-cta="nav">
           免费试用

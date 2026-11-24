@@ -2,24 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  PrintJob,
-  PrintTemplateFormat,
-  ReprintReason,
-} from "@weave-order/schema";
+import type { PrintJob, PrintPreviewArtifact, ReprintReason } from "@weave-order/schema";
 import { Badge, Button, Card, Spinner } from "@weave-order/ui";
 import { useApi } from "@/providers";
 
 /**
  * 独立样品标签：样品本身就是要打印的单据，不依赖报价。
- * 预览返回的就是入队后交给打印代理的字节，不允许前端另画一份。
+ * 可视预览使用后端按实际模板生成的图元，打印仍使用同一次预览返回的标签指令。
  */
 
-const FORMAT_OPTIONS: Array<{ value: PrintTemplateFormat; label: string; hint: string }> = [
-  { value: "ZPL", label: "80×50 标签", hint: "斑马 / ZPL 热敏机" },
-  { value: "TSPL", label: "80×50 标签", hint: "TSC / TSPL 热敏机" },
-  { value: "HTML", label: "A4 样卡", hint: "办公室 A4 打印机" },
-];
+const PRINTER_STATUS_LABEL = {
+  READY: "在线",
+  OFFLINE: "离线",
+  NEEDS_ATTENTION: "需处理",
+} as const;
 
 const REPRINT_REASONS: Array<{ value: ReprintReason; label: string }> = [
   { value: "DAMAGED", label: "破损" },
@@ -61,6 +57,61 @@ function timeText(iso: string): string {
   });
 }
 
+function LabelPreview({ preview }: { preview: NonNullable<PrintPreviewArtifact["labelPreview"]> }) {
+  return (
+    <svg
+      aria-label="80×50mm 标签效果预览"
+      className="block aspect-[8/5] w-full bg-white text-black"
+      data-testid="sample-label-visual-preview"
+      role="img"
+      viewBox={`0 0 ${preview.width} ${preview.height}`}
+    >
+      {preview.elements.map((element, index) => {
+        const key = `${element.type}-${element.x}-${index}`;
+        if (element.type === "text") {
+          return (
+            <text
+              key={key}
+              dominantBaseline="text-before-edge"
+              fill="currentColor"
+              fontFamily="Arial, PingFang SC, Microsoft YaHei, sans-serif"
+              fontSize={element.fontSize}
+              fontWeight={element.bold ? 700 : 400}
+              x={element.x}
+              y={element.y}
+            >
+              {element.text}
+            </text>
+          );
+        }
+        if (element.type === "rect") {
+          return (
+            <rect
+              key={key}
+              fill="currentColor"
+              height={element.height}
+              width={element.width}
+              x={element.x}
+              y={element.y}
+            />
+          );
+        }
+        return (
+          <image
+            key={key}
+            height={element.size}
+            href={element.dataUrl}
+            preserveAspectRatio="xMidYMid meet"
+            width={element.size}
+            x={element.x}
+            y={element.y}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 export function SampleLabelPrintDrawer({
   sampleId,
   sampleName,
@@ -72,7 +123,7 @@ export function SampleLabelPrintDrawer({
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  const [format, setFormat] = useState<PrintTemplateFormat>("ZPL");
+  const [selectedPrinterId, setSelectedPrinterId] = useState("");
   const [copies, setCopies] = useState(1);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [reprintReason, setReprintReason] = useState<ReprintReason>("DAMAGED");
@@ -86,9 +137,31 @@ export function SampleLabelPrintDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const devicesQuery = useQuery({
+    queryKey: ["print", "devices"],
+    queryFn: () => api.printDevices(),
+    refetchInterval: 8_000,
+  });
+  const labelPrinters = (devicesQuery.data?.printers ?? []).filter(
+    (printer) => printer.kind !== "A4",
+  );
+  const selectedPrinter = labelPrinters.find((printer) => printer.id === selectedPrinterId);
+
+  useEffect(() => {
+    const available = (devicesQuery.data?.printers ?? []).filter(
+      (printer) => printer.kind !== "A4",
+    );
+    if (selectedPrinterId && available.some((printer) => printer.id === selectedPrinterId)) {
+      return;
+    }
+    const fallback = available.find((printer) => printer.status === "READY") ?? available[0];
+    setSelectedPrinterId(fallback?.id ?? "");
+  }, [devicesQuery.data, selectedPrinterId]);
+
   const previewQuery = useQuery({
-    queryKey: ["sample-label-preview", sampleId, format],
-    queryFn: () => api.previewSampleLabel(sampleId, { format }),
+    queryKey: ["sample-label-preview", sampleId, selectedPrinterId],
+    queryFn: () => api.previewSampleLabel(sampleId, { printerId: selectedPrinterId }),
+    enabled: Boolean(selectedPrinterId),
     retry: false,
     gcTime: 0,
   });
@@ -99,12 +172,13 @@ export function SampleLabelPrintDrawer({
   });
 
   const print = useMutation({
-    mutationFn: () => api.printSampleLabel(sampleId, { format, copies }),
-    onSuccess: (result) => {
+    mutationFn: (input: { printerId: string; printerName: string; copies: number }) =>
+      api.printSampleLabel(sampleId, { printerId: input.printerId, copies: input.copies }),
+    onSuccess: (result, input) => {
       setFeedback(
         result.deduplicated
-          ? "已在队列：不会重复出纸"
-          : `已入队 1 张样品标签 × ${copies} 份，代理在线会自动打印`,
+          ? `已在 ${input.printerName} 的队列：不会重复出纸`
+          : `已入队到 ${input.printerName}：1 张样品标签 × ${input.copies} 份`,
       );
       void queryClient.invalidateQueries({ queryKey: ["sample-label-jobs", sampleId] });
     },
@@ -112,14 +186,14 @@ export function SampleLabelPrintDrawer({
   });
 
   const reprint = useMutation({
-    mutationFn: (job: PrintJob) =>
+    mutationFn: (input: { job: PrintJob; printerId: string; printerName: string }) =>
       api.reprintSampleLabel(sampleId, {
         reason: reprintReason,
-        format: job.format,
+        printerId: input.printerId,
         copies: 1,
       }),
-    onSuccess: () => {
-      setFeedback("已补打：不会新增样品");
+    onSuccess: (_result, input) => {
+      setFeedback(`已补打到 ${input.printerName}：不会新增样品`);
       setReprintTarget(null);
       void queryClient.invalidateQueries({ queryKey: ["sample-label-jobs", sampleId] });
     },
@@ -127,9 +201,6 @@ export function SampleLabelPrintDrawer({
   });
 
   const preview = previewQuery.data;
-  const pdfHref = preview?.pdfBase64
-    ? `data:application/pdf;base64,${preview.pdfBase64}`
-    : null;
 
   return (
     <div>
@@ -160,29 +231,30 @@ export function SampleLabelPrintDrawer({
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <Card className="p-3">
             <p className="text-xs font-medium text-ink-700">标签版式</p>
-            <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="标签版式">
-              {FORMAT_OPTIONS.map((option) => (
-                <button
-                  key={`${option.value}-${option.label}`}
-                  type="button"
-                  role="radio"
-                  aria-checked={format === option.value}
-                  onClick={() => setFormat(option.value)}
-                  className={`min-h-11 rounded-md border px-3 text-left text-sm ${
-                    format === option.value
-                      ? "border-ink-900 bg-paper text-ink-900"
-                      : "border-line bg-surface text-ink-700"
-                  }`}
-                >
-                  <span className="block font-medium">{option.label}</span>
-                  <span className="block text-xs text-ink-400">{option.hint}</span>
-                </button>
-              ))}
+            <div className="mt-2 rounded-md border border-ink-900 bg-paper px-3 py-2 text-sm">
+              <span className="block font-medium text-ink-900">80×50 标签</span>
+              <span className="block text-xs text-ink-400">
+                {preview
+                  ? `${preview.format} · 由所选打印机自动匹配`
+                  : "ZPL / TSPL 由所选打印机自动匹配"}
+              </span>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_8rem]">
-              <div className="rounded-md border border-line bg-paper p-2">
-                {previewQuery.isPending ? (
+            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_8rem]">
+              <div className="min-w-0 overflow-hidden rounded-md border border-line bg-paper p-2">
+                {devicesQuery.isPending ? (
+                  <div className="flex min-h-40 items-center justify-center">
+                    <Spinner />
+                  </div>
+                ) : devicesQuery.isError ? (
+                  <p className="p-3 text-sm text-red-700" role="alert">
+                    不能读取打印机：{errorText(devicesQuery.error)}
+                  </p>
+                ) : !selectedPrinter ? (
+                  <p className="flex min-h-40 items-center justify-center p-3 text-center text-sm text-ink-400">
+                    还没有标签打印机，请先在打印中心连接代理并上报打印机。
+                  </p>
+                ) : previewQuery.isPending ? (
                   <div className="flex min-h-40 items-center justify-center">
                     <Spinner />
                   </div>
@@ -191,22 +263,59 @@ export function SampleLabelPrintDrawer({
                     不能生成样品标签：{errorText(previewQuery.error)}
                   </p>
                 ) : preview ? (
-                  preview.format === "HTML" ? (
-                    <iframe
-                      title="样品标签打印产物（A4 PDF）"
-                      src={pdfHref ?? preview.html ?? undefined}
-                      srcDoc={pdfHref ? undefined : (preview.html ?? "")}
-                      className="h-[420px] w-full rounded bg-white"
-                    />
-                  ) : (
-                    <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-2 text-xs text-ink-700">
-                      {preview.text}
-                    </pre>
-                  )
+                  <div>
+                    {preview.labelPreview ? (
+                      <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
+                        <LabelPreview preview={preview.labelPreview} />
+                      </div>
+                    ) : (
+                      <p className="p-3 text-sm text-ink-700">
+                        该手写指令模板暂不支持效果预览，请迁移为可视版式。
+                      </p>
+                    )}
+                    <p className="mt-2 text-center text-xs text-ink-400">
+                      {preview.format} · 80×50mm 标签效果预览
+                    </p>
+                    {preview.text ? (
+                      <details className="mt-2 min-w-0 text-xs text-ink-700">
+                        <summary className="cursor-pointer select-none">查看打印指令</summary>
+                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-surface p-2">
+                          {preview.text}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 
-              <div className="grid content-start gap-3">
+              <div className="grid min-w-0 content-start gap-3">
+                <label className="grid min-w-0 gap-1 text-sm text-ink-700">
+                  <span>打印机</span>
+                  <select
+                    aria-label="标签打印机"
+                    className="min-h-11 w-full min-w-0 rounded-md border border-line bg-surface px-2 text-sm text-ink-900"
+                    disabled={devicesQuery.isPending || labelPrinters.length === 0}
+                    onChange={(event) => {
+                      setSelectedPrinterId(event.target.value);
+                      setFeedback(null);
+                      setReprintTarget(null);
+                    }}
+                    value={selectedPrinterId}
+                  >
+                    {labelPrinters.length === 0 ? (
+                      <option value="">无可用标签打印机</option>
+                    ) : (
+                      labelPrinters.map((printer) => (
+                        <option key={printer.id} value={printer.id}>
+                          {printer.name} · {PRINTER_STATUS_LABEL[printer.status]}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                {selectedPrinter && selectedPrinter.status !== "READY" ? (
+                  <p className="text-xs text-ink-400">设备当前非在线，任务会排队等待代理恢复。</p>
+                ) : null}
                 <label className="grid gap-1 text-sm text-ink-700">
                   <span>份数</span>
                   <input
@@ -217,26 +326,24 @@ export function SampleLabelPrintDrawer({
                     onChange={(event) =>
                       setCopies(Math.max(1, Math.min(20, Number(event.target.value) || 1)))
                     }
-                    className="min-h-11 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
+                    className="min-h-11 min-w-0 rounded-md border border-line bg-surface px-3 text-sm text-ink-900"
                   />
                 </label>
                 <Button
                   variant="primary"
                   className="min-h-11 w-full"
-                  disabled={print.isPending || !preview}
-                  onClick={() => print.mutate()}
+                  disabled={print.isPending || !preview || !selectedPrinter}
+                  onClick={() => {
+                    if (!selectedPrinter) return;
+                    print.mutate({
+                      printerId: selectedPrinter.id,
+                      printerName: selectedPrinter.name,
+                      copies,
+                    });
+                  }}
                 >
                   {print.isPending ? "正在入队…" : "打印"}
                 </Button>
-                {pdfHref ? (
-                  <a
-                    className="text-center text-xs underline decoration-dotted underline-offset-2"
-                    href={pdfHref}
-                    download={`sample-label-${preview?.sampleCode}.pdf`}
-                  >
-                    下载 A4 PDF
-                  </a>
-                ) : null}
               </div>
             </div>
 
@@ -279,7 +386,9 @@ export function SampleLabelPrintDrawer({
                     className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-xs"
                   >
                     <span className="flex flex-wrap items-center gap-2 text-ink-700">
-                      <Badge tone={JOB_STATUS_TONE[job.status]}>{JOB_STATUS_LABEL[job.status]}</Badge>
+                      <Badge tone={JOB_STATUS_TONE[job.status]}>
+                        {JOB_STATUS_LABEL[job.status]}
+                      </Badge>
                       <span>{job.format === "HTML" ? "A4 样卡" : `${job.format} 标签`}</span>
                       <span className="text-ink-400">
                         {job.copies} 份 · {timeText(job.createdAt)}
@@ -305,8 +414,15 @@ export function SampleLabelPrintDrawer({
                         <Button
                           variant="primary"
                           className="min-h-9"
-                          disabled={reprint.isPending}
-                          onClick={() => reprint.mutate(job)}
+                          disabled={reprint.isPending || !selectedPrinter}
+                          onClick={() => {
+                            if (!selectedPrinter) return;
+                            reprint.mutate({
+                              job,
+                              printerId: selectedPrinter.id,
+                              printerName: selectedPrinter.name,
+                            });
+                          }}
                         >
                           {reprint.isPending ? "补打中…" : "确认补打"}
                         </Button>
@@ -322,6 +438,7 @@ export function SampleLabelPrintDrawer({
                       <Button
                         variant="secondary"
                         className="min-h-9"
+                        disabled={!selectedPrinter}
                         onClick={() => {
                           setReprintTarget(job);
                           setFeedback(null);

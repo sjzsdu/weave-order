@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import jsonLd from "../data/jsonld/index.ts";
+import { app } from "../lib/site";
 
 const title = "织序 WeaveOrder · 纺织贸易智能体操作系统｜报价、寄样、跟单、对账";
 const description =
@@ -31,7 +32,8 @@ const ogDescription =
             <em>就是一支队伍</em>。
           </h1>
           <p class="hero__lede">
-            找样、报价、寄样、跟单、对账，AI 员工做完，你只点头。织序不是「带 AI 功能的纺织 ERP」，而是让
+            找样、报价、寄样、跟单、对账，AI 员工做完，你只点头。织序不是「带 AI 功能的纺织
+            ERP」，而是让
             <strong>AI 员工成为默认操作者</strong>
             的业务系统：它听懂一句话、自己找样、自己起草、自己跟进，人只在最后一张卡上做决定。
           </p>
@@ -55,11 +57,11 @@ const ogDescription =
           <p class="muted" style="font-size:12.5px;margin:12px 0 0">
             不绑卡 · 1 分钟创建公司 · 已开通的直接{" "}
             <a
-              href="login.html"
+              href={`${app}/`}
               data-login="site-hero"
               style="color:var(--indigo);text-decoration:underline;text-underline-offset:3px"
             >
-              登录工作台
+              进入工作台
             </a>
           </p>
           <dl class="hero__meta">
@@ -271,8 +273,8 @@ const ogDescription =
           </h2>
         </div>
         <p class="lede">
-          过去的纺织软件，前提是「业务员是操作者」：人点菜单、人录单、人查表。织序的前提是「AI 员工是操作者」。功能表可以很长，但只要中间还要人搬数据，就还是前
-          AI 时代的软件。
+          过去的纺织软件，前提是「业务员是操作者」：人点菜单、人录单、人查表。织序的前提是「AI
+          员工是操作者」。功能表可以很长，但只要中间还要人搬数据，就还是前 AI 时代的软件。
         </p>
       </div>
 
@@ -729,9 +731,7 @@ const ogDescription =
             <span class="laws__no">01</span>
             <div>
               <h3>只有一条路能改账</h3>
-              <p>
-                智能体、页面、导入都绕不过去直接改账。这条边界由系统自己守着，改不掉。
-              </p>
+              <p>智能体、页面、导入都绕不过去直接改账。这条边界由系统自己守着，改不掉。</p>
             </div>
           </li>
           <li>
@@ -747,9 +747,7 @@ const ogDescription =
             <span class="laws__no">03</span>
             <div>
               <h3>记录只增不改</h3>
-              <p>
-                每笔写入和它的操作记录同时完成。记录在系统层面禁止修改与删除，谁都擦不掉历史。
-              </p>
+              <p>每笔写入和它的操作记录同时完成。记录在系统层面禁止修改与删除，谁都擦不掉历史。</p>
             </div>
           </li>
           <li>
@@ -934,9 +932,7 @@ const ogDescription =
               </svg>
               <span>
                 <b>桌面：工作台、审批、全景</b>
-                <small>
-                  该做什么一眼看清，不用在几十个菜单里找。
-                </small>
+                <small>该做什么一眼看清，不用在几十个菜单里找。</small>
               </span>
             </li>
             <li>
@@ -1280,10 +1276,10 @@ const ogDescription =
         <details>
           <summary>和传统 ERP 软件是什么关系？</summary>
           <p>
-            不是替代它记录的生意，是替代中间搬数据的人。传统 ERP 软件把能力组织成菜单，织序把同样的能力组织成智能体可调用的工具加人能审批的草稿。两者不是同一代产品。
+            不是替代它记录的生意，是替代中间搬数据的人。传统 ERP
+            软件把能力组织成菜单，织序把同样的能力组织成智能体可调用的工具加人能审批的草稿。两者不是同一代产品。
             选型时怎么逐条比对，见
-            <a href="/guides/textile-erp-selection.html">纺织 ERP 选型清单</a>
-            。
+            <a href="/guides/textile-erp-selection.html">纺织 ERP 选型清单</a>。
           </p>
         </details>
         <details>

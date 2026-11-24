@@ -49,6 +49,10 @@ afterAll(async () => {
     await pool.query("DELETE FROM document_snapshots WHERE tenant_id = ANY($1::uuid[])", [
       createdTenants,
     ]);
+    await pool.query("DELETE FROM printers WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
+    await pool.query("DELETE FROM print_agents WHERE tenant_id = ANY($1::uuid[])", [
+      createdTenants,
+    ]);
     await pool.query("DELETE FROM quote_items WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
     await pool.query("DELETE FROM quotes WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
     await pool.query("DELETE FROM items WHERE tenant_id = ANY($1::uuid[])", [createdTenants]);
@@ -166,6 +170,86 @@ describe("P0b 样卡打印", () => {
     expect(await kernel.print.jobs.listForSample(sample.id)).toHaveLength(1);
   });
 
+  it("独立标签按选中设备预览和出纸，切换打印机不会错误幂等去重", async (ctx) => {
+    if (!available) ctx.skip();
+    const { kernel } = await isolatedTenant("sample-label-printers");
+    const { sample } = await seedConfirmedQuote(kernel);
+    const registered = await kernel.print.devices.register({ name: `样卡代理-${suffix()}` }, OWNER);
+    const agent = await kernel.print.devices.heartbeat(registered.agent.id, {
+      printers: [
+        {
+          name: "ZPL 标签机",
+          kind: "THERMAL",
+          connection: "RAW_TCP",
+          address: "192.168.1.50:9100",
+          capabilities: { format: "ZPL" },
+          calibration: {},
+          status: "READY",
+        },
+        {
+          name: "蓝牙标签机",
+          kind: "BLUETOOTH",
+          connection: "BLUETOOTH",
+          address: null,
+          capabilities: {},
+          calibration: {},
+          status: "READY",
+        },
+      ],
+    });
+    const zplPrinter = agent.printers.find((printer) => printer.name === "ZPL 标签机")!;
+    const tsplPrinter = agent.printers.find((printer) => printer.name === "蓝牙标签机")!;
+
+    const zplPreview = await kernel.print.jobs.previewSampleLabel(
+      sample.id,
+      { printerId: zplPrinter.id, format: "HTML" },
+      OWNER.actor.id,
+    );
+    expect(zplPreview.format).toBe("ZPL");
+    expect(zplPreview.text).toContain("^XA");
+    expect(zplPreview.labelPreview).toMatchObject({ width: 640, height: 400 });
+
+    const tsplPreview = await kernel.print.jobs.previewSampleLabel(
+      sample.id,
+      { printerId: tsplPrinter.id, format: "HTML" },
+      OWNER.actor.id,
+    );
+    expect(tsplPreview.format).toBe("TSPL");
+    expect(tsplPreview.text).toContain("SIZE 80 mm,50 mm");
+    expect(tsplPreview.labelPreview).toMatchObject({ width: 640, height: 400 });
+
+    const first = await kernel.print.jobs.printSampleLabel(
+      sample.id,
+      { printerId: zplPrinter.id, format: "HTML" },
+      OWNER,
+    );
+    expect(first.job.format).toBe("ZPL");
+    const duplicate = await kernel.print.jobs.printSampleLabel(
+      sample.id,
+      { printerId: zplPrinter.id, format: "HTML" },
+      OWNER,
+    );
+    expect(duplicate).toMatchObject({ deduplicated: true, job: { id: first.job.id } });
+
+    const switched = await kernel.print.jobs.printSampleLabel(
+      sample.id,
+      { printerId: tsplPrinter.id, format: "HTML" },
+      OWNER,
+    );
+    expect(switched.deduplicated).toBe(false);
+    expect(switched.job.id).not.toBe(first.job.id);
+    expect(switched.job.format).toBe("TSPL");
+    expect(switched.job.idempotencyKey).not.toBe(first.job.idempotencyKey);
+
+    const reprint = await kernel.print.jobs.reprintSampleLabel(
+      sample.id,
+      { reason: "DAMAGED", printerId: zplPrinter.id, format: "HTML" },
+      OWNER,
+    );
+    expect(reprint.job.format).toBe("ZPL");
+    expect(await kernel.print.jobs.listForSample(sample.id)).toHaveLength(3);
+  });
+
   it("独立样品标签未配置业务员电话时仍可预览并入队", async (ctx) => {
     if (!available) ctx.skip();
     const { kernel, tenant } = await isolatedTenant("sample-label-no-phone");
@@ -197,6 +281,7 @@ describe("P0b 样卡打印", () => {
       "owner",
     );
     expect(a4.format).toBe("HTML");
+    expect(a4.labelPreview).toBeNull();
     expect(a4.sampleCode).toBe(sample.code);
     expect(a4.html).toContain(sample.code);
     expect(a4.html).not.toContain("青禾服饰");
@@ -214,6 +299,14 @@ describe("P0b 样卡打印", () => {
     );
     expect(label.text).toContain("^BQN");
     expect(label.text).toContain(sample.code);
+    expect(label.labelPreview?.elements).toContainEqual({
+      type: "text",
+      x: 24,
+      y: 52,
+      text: sample.code,
+      fontSize: 30,
+      bold: false,
+    });
     expect(label.text).not.toContain("青禾服饰");
     expect(label.qrPayload).toBe(a4.qrPayload);
 

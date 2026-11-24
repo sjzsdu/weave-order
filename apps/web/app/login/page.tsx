@@ -19,9 +19,9 @@ const SSO_URL = process.env.CASDOOR_ISSUER ?? "https://sso.wnbgj.com";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string; logout?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; loggedOut?: string }>;
 }) {
-  const { error, next, logout } = await searchParams;
+  const { error, next, loggedOut } = await searchParams;
   // 官网静态页路径 / 外站地址不进 OIDC 回跳，统一落到工作台首页。
   const target = safeNext(next);
 
@@ -38,12 +38,14 @@ export default async function LoginPage({
           </div>
         </div>
         <p className="text-xs uppercase tracking-[0.18em] text-indigo-600">公司工作台</p>
-        <h1 className="mt-2 text-2xl font-semibold text-ink-900">登录织序工作台</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-ink-900">
+          {loggedOut ? "你已退出登录" : "登录织序工作台"}
+        </h1>
         <p className="mt-2 text-sm text-ink-500">用公司的统一账号登录，不用再记一个密码。</p>
 
-        {logout === "1" && (
-          <p className="mt-4 rounded-md border border-moss-600/40 bg-moss-600/10 px-3 py-2 text-sm text-moss-600">
-            你已安全退出登录。
+        {loggedOut && (
+          <p className="mt-4 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink-500">
+            本工作台会话已退出。需要继续使用时，可重新通过公司账号登录。
           </p>
         )}
 

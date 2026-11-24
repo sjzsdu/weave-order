@@ -103,6 +103,20 @@ describe("官网构建产物", () => {
     expect(broken, `站内链接指向不存在的文件：\n${broken.join("\n")}`).toEqual([]);
   });
 
+  it("登录入口直达工作台，不经过中间登录页", () => {
+    for (const page of ["index.html", "signup.html", "login.html", "404.html"]) {
+      const html = readFileSync(join(distDir, page), "utf8");
+      const links = [...html.matchAll(/<a\b[^>]*data-login="[^"]+"[^>]*>/g)].map(
+        (match) => match[0],
+      );
+      expect(links.length, `${page} 缺工作台入口`).toBeGreaterThan(0);
+      for (const link of links) {
+        const href = link.match(/href="([^"]+)"/)?.[1];
+        expect(href, `${page} 的工作台入口`).toBe("https://app.wnbgj.com/");
+      }
+    }
+  });
+
   it("sitemap 覆盖全部可索引页面", () => {
     const sitemap = readFileSync(join(distDir, "sitemap.xml"), "utf8");
     const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
@@ -121,9 +135,7 @@ describe("官网构建产物", () => {
     expect(guides.length).toBeGreaterThan(0);
     for (const page of guides) {
       const html = readFileSync(join(distDir, page), "utf8");
-      const text = html
-        .replace(/<script[\s\S]*?<\/script>/g, " ")
-        .replace(/<[^>]+>/g, " ");
+      const text = html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<[^>]+>/g, " ");
       const cjk = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length;
       expect((html.match(/<h1[\s>]/g) ?? []).length, `${page} 的 h1 数量`).toBe(1);
       expect(cjk, `${page} 的中文字数`).toBeGreaterThanOrEqual(800);

@@ -530,8 +530,7 @@ export const CreatePrintJobInput = z
   })
   .strict()
   .refine(
-    (value) =>
-      value.kind !== "SAMPLE_LABEL" || Boolean(value.quoteId) !== Boolean(value.sampleId),
+    (value) => value.kind !== "SAMPLE_LABEL" || Boolean(value.quoteId) !== Boolean(value.sampleId),
     {
       message: "样品标签必须且只能提供 quoteId 或 sampleId 之一",
       path: ["sampleId"],
@@ -631,6 +630,7 @@ export const PrintPreviewInput = z
     lineIndex: z.number().int().nonnegative().default(0),
     format: PrintTemplateFormat.default("HTML"),
     templateId: EntityId.nullable().optional(),
+    printerId: EntityId.nullable().optional(),
   })
   .strict()
   .refine((value) => Boolean(value.quoteId) !== Boolean(value.sampleId), {
@@ -647,6 +647,50 @@ export const PrintPreviewField = z
   })
   .strict();
 export type PrintPreviewField = z.infer<typeof PrintPreviewField>;
+
+const LabelPreviewPosition = {
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+};
+
+export const PrintLabelPreviewElement = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("text"),
+      ...LabelPreviewPosition,
+      text: z.string(),
+      fontSize: z.number().int().positive(),
+      bold: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("rect"),
+      ...LabelPreviewPosition,
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("qr"),
+      ...LabelPreviewPosition,
+      size: z.number().int().positive(),
+      dataUrl: z.string(),
+    })
+    .strict(),
+]);
+export type PrintLabelPreviewElement = z.infer<typeof PrintLabelPreviewElement>;
+
+/** 80×50mm、203dpi 标签的 640×400 点画布。 */
+export const PrintLabelPreview = z
+  .object({
+    width: z.literal(640),
+    height: z.literal(400),
+    elements: z.array(PrintLabelPreviewElement),
+  })
+  .strict();
+export type PrintLabelPreview = z.infer<typeof PrintLabelPreview>;
 
 export const PrintPreviewArtifact = z
   .object({
@@ -668,6 +712,8 @@ export const PrintPreviewArtifact = z
     pdfBase64: z.string().nullable(),
     /** 标签：送进打印代理的 ZPL/TSPL 文本。 */
     text: z.string().nullable(),
+    /** 标签点阵图元；HTML/A4 与无版式的手写文本模板为 null。 */
+    labelPreview: PrintLabelPreview.nullable().default(null),
     /** 模板实际用到的字段：预览面板逐行展示，方便比对纸上内容。 */
     fields: z.array(PrintPreviewField),
   })

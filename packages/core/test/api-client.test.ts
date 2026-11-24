@@ -421,3 +421,107 @@ describe("API client（资源字段确认）", () => {
     });
   });
 });
+
+describe("API client（样品标签打印）", () => {
+  const printerId = "123e4567-e89b-12d3-a456-426614174010";
+  const agentId = "123e4567-e89b-12d3-a456-426614174011";
+  const printer = {
+    id: printerId,
+    agentId,
+    name: "仓库斑马打印机",
+    kind: "THERMAL",
+    connection: "RAW_TCP",
+    address: null,
+    capabilities: { format: "ZPL" },
+    calibration: {},
+    status: "READY",
+    lastSeenAt: null,
+  };
+
+  it("预览、打印和补打都转发所选打印机", async () => {
+    const preview = {
+      kind: "SAMPLE_LABEL",
+      quoteId: null,
+      sampleId: SAMPLE.id,
+      lineIndex: 0,
+      format: "ZPL",
+      templateName: "系统 · 样卡标签（ZPL 80×50）",
+      pageSize: "80x50",
+      isSystem: true,
+      sampleCode: SAMPLE.code,
+      qrPayload: "https://example.test/sample-card/token",
+      html: null,
+      pdfBase64: null,
+      text: "^XA^XZ",
+      fields: [],
+      labelPreview: {
+        width: 640,
+        height: 400,
+        elements: [{ type: "text", x: 24, y: 52, text: SAMPLE.code, fontSize: 30, bold: false }],
+      },
+    };
+    const job = {
+      id: "123e4567-e89b-12d3-a456-426614174012",
+      kind: "SAMPLE_LABEL",
+      documentId: SAMPLE.id,
+      orderId: null,
+      shipmentId: null,
+      boxId: null,
+      labelSeq: 1,
+      templateVersion: 1,
+      format: "ZPL",
+      copies: 2,
+      priority: 0,
+      status: "QUEUED",
+      isTest: false,
+      idempotencyKey: "sample-label-key",
+      reprintReason: null,
+      requestedBy: "owner",
+      attempts: 0,
+      lastError: null,
+      printerId,
+      agentId,
+      snapshotId: null,
+      createdAt: "2026-11-23T00:00:00.000Z",
+      completedAt: null,
+    };
+    const fetchImpl = vi
+      .fn((_input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(jsonResponse({})))
+      .mockResolvedValueOnce(jsonResponse({ preview }))
+      .mockResolvedValueOnce(jsonResponse({ job, deduplicated: false }))
+      .mockResolvedValueOnce(jsonResponse({ job, deduplicated: false }));
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl,
+    });
+
+    await expect(client.previewSampleLabel(SAMPLE.id, { printerId })).resolves.toMatchObject({
+      format: "ZPL",
+      labelPreview: { width: 640, height: 400 },
+    });
+    await client.printSampleLabel(SAMPLE.id, { printerId, copies: 2 });
+    await client.reprintSampleLabel(SAMPLE.id, {
+      reason: "DAMAGED",
+      printerId,
+      copies: 1,
+    });
+
+    const bodies = fetchImpl.mock.calls.map((call) => JSON.parse(call[1]?.body as string));
+    expect(bodies[0]).toEqual({ printerId });
+    expect(bodies[1]).toMatchObject({ printerId, copies: 2 });
+    expect(bodies[2]).toMatchObject({ printerId, copies: 1, reason: "DAMAGED" });
+  });
+
+  it("解析打印中心已上报的具体设备", async () => {
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      getToken: () => null,
+      fetchImpl: () => Promise.resolve(jsonResponse({ agents: [], printers: [printer] })),
+    });
+
+    await expect(client.printDevices()).resolves.toMatchObject({
+      printers: [{ id: printerId, name: "仓库斑马打印机" }],
+    });
+  });
+});
