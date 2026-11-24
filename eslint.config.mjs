@@ -4,11 +4,17 @@ import tseslint from "typescript-eslint";
 
 /**
  * 目录边界铁律（机器强制，不靠自觉）：
+ * 0. 「只有内核能写业务表」覆盖 apps/api/src 全目录：除 kernel / platform 外，
+ *    任何文件都不得 import drizzle-orm / pg / @weave-order/db / platform/database。
+ *    打印中心原本是第二写库者（print/ 直接读写 print_jobs、printers 等业务表），
+ *    已并入 kernel/print：写入回到内核，print ↔ kernel 的双向依赖也一并消失。
+ *    演示身份目录（原 dev/demo-identity）与样卡公开读（原 shares/public-sample-card）
+ *    同理收进 kernel。
  * 1. apps/api/src/agent 只能 import tools，禁止 import kernel，也禁止触达数据库。
  * 2. apps/api/src/tools、approval、import 只能调用 kernel service / 做解析，禁止直连数据库。
  * 3. apps/api/src/http 不得直连数据库；唯一例外是 http 的组合根（http.module.ts 装配 +
  *    database.provider.ts 建连接），它们只能 import ../platform/database，仍不许直接碰 pg。
- * 4. 只有 kernel / platform 可以拥有数据库连接。
+ * 4. 只有 kernel / platform 可以拥有数据库连接；kernel 还是业务表的唯一写入者。
  */
 const DATABASE_PATTERNS = [
   "drizzle-orm",
@@ -80,6 +86,28 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+  {
+    // 铁律 #0：apps/api/src 全目录默认禁止直连数据库，只白名单 kernel / platform。
+    // kernel 是业务表唯一写入者；platform 持有连接池、迁移与控制面句柄。
+    // 其余目录（http / gateway / shares / onboarding / dev / agent / tools …）
+    // 只能通过 kernel service 或 kernel/tenant-scope 拿到租户会话。
+    files: ["apps/api/src/**/*.ts"],
+    ignores: ["apps/api/src/kernel/**", "apps/api/src/platform/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: DATABASE_PATTERNS,
+              message:
+                "目录边界铁律：只有 kernel 能写业务表。除组合根外，任何文件都不得 import drizzle-orm / pg / @weave-order/db / platform/database；请通过 kernel service 或 kernel/tenant-scope 访问。",
+            },
+          ],
+        },
       ],
     },
   },

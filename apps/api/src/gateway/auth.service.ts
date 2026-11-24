@@ -1,5 +1,3 @@
-import { openTenantSession } from "@weave-order/db";
-import type { Pool } from "pg";
 import {
   AuthClaims,
   AuthContextResponse,
@@ -13,9 +11,10 @@ import type {
   TenantChoicesResponse,
   TokenScope,
 } from "@weave-order/schema";
-import { createKernel } from "../kernel";
 import type { Kernel } from "../kernel";
 import { isKernelError } from "../kernel";
+import { openKernelScope } from "../kernel/tenant-scope";
+import type { TenantPool } from "../kernel/tenant-scope";
 import { authError } from "../auth/errors";
 import { PersonalAccessService } from "../auth/personal-access.service";
 import type { SessionRecord, SessionService } from "./session.service";
@@ -52,7 +51,7 @@ export interface AuthResponse<T> {
 
 export class AuthService {
   constructor(
-    private readonly pool: Pool,
+    private readonly pool: TenantPool,
     private readonly verifier: { verify(token: string): Promise<AuthClaims> },
     /** 平台/控制面连接：只用于把 (sub) 映射到本地 membership。 */
     private readonly directory: Kernel,
@@ -543,11 +542,6 @@ export class AuthService {
   }
 
   async openScope(membership: Membership): Promise<TenantScope> {
-    const session = await openTenantSession(this.pool, membership.tenantId);
-    const kernel = createKernel(session.db, undefined, { tenantId: membership.tenantId });
-    return {
-      kernel,
-      release: () => session.release(),
-    };
+    return openKernelScope(this.pool, membership.tenantId);
   }
 }

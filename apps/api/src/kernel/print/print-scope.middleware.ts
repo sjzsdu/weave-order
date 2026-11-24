@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { jwtVerify } from "jose";
 import type { IncomingMessage } from "node:http";
-import { loadEnv } from "../platform/env";
+import { loadEnv } from "../../platform/env";
 import { PRINT_AGENT_AUDIENCE, PRINT_AGENT_ISSUER } from "./print-devices.service";
 
 interface RequestLike extends IncomingMessage {

@@ -3,7 +3,7 @@ import type { OnApplicationBootstrap } from "@nestjs/common";
 import { GatewayModule } from "../gateway/gateway.module";
 import { DatabaseProvider } from "../platform/database.provider";
 import { isProductionLike } from "../platform/runtime-mode";
-import { ensureDemoIdentity } from "./demo-identity";
+import { ensureDemoIdentity } from "../kernel/demo-identity";
 import { DevPersonasController } from "./personas.controller";
 
 /**

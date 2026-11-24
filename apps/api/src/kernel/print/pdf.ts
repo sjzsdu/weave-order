@@ -16,7 +16,7 @@ const MARGIN = 40;
 
 const FONT_CANDIDATES = [
   process.env.PRINT_CJK_FONT_PATH,
-  path.join(__dirname, "..", "..", "assets", "fonts", "DroidSansFallbackFull.ttf"),
+  path.join(__dirname, "..", "..", "..", "assets", "fonts", "DroidSansFallbackFull.ttf"),
   "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
   "/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf",
   "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf",

@@ -8,7 +8,7 @@ import { HttpModule } from "./http/http.module";
 import { ZodExceptionFilter } from "./http/zod-exception.filter";
 import { DatabaseModule } from "./platform/database.module";
 import { ControlSyncService } from "./platform/control-sync.service";
-import { PrintAgentScopeMiddleware } from "./print/print-scope.middleware";
+import { PrintAgentScopeMiddleware } from "./kernel/print/print-scope.middleware";
 
 /**
  * 组合根：连接池 → 内核 / 工具 / 审批 → HTTP。

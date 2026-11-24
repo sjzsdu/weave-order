@@ -4,9 +4,9 @@ import type { Db } from "@weave-order/db";
 import { PrintPreviewArtifact, PrintPreviewInput } from "@weave-order/schema";
 import type { PrintTemplateFormat } from "@weave-order/schema";
 import { weightLabel, weightMeasurementFrom } from "@weave-order/schema";
-import { KernelError } from "../kernel/errors";
-import { quoteNumberOf } from "../kernel/quotes.service";
-import { buildSampleCardUrl, createSampleCardToken } from "../kernel/share-token";
+import { KernelError } from "../errors";
+import { quoteNumberOf } from "../quotes.service";
+import { buildSampleCardUrl, createSampleCardToken } from "../share-token";
 import {
   assertSampleCardPrintable,
   assertSampleCodeFitsToken,

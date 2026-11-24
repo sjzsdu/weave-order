@@ -8,7 +8,7 @@ import {
 import type { EmbeddingProvider, ImageEmbeddingProvider } from "../platform/embedding";
 import { createCaptionerFromEnv } from "../platform/caption";
 import { loadEnv } from "../platform/env";
-import { createPrintCenter } from "../print";
+import { createPrintCenter } from "./print";
 import { createOcrGatewayFromEnv } from "../platform/ocr";
 import type { OcrGateway } from "../platform/ocr";
 import { createObjectStorageFromEnv } from "../platform/storage";
@@ -251,6 +251,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
 
 export type Kernel = ReturnType<typeof createKernel>;
 
+export { DEFAULT_TENANT_ID };
 export { KernelError, isKernelError, errorChainMessage } from "./errors";
 export { QuoteLinkError } from "./shares.service";
 export { parseShareToken } from "./share-token";

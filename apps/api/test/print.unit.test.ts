@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { renderBoxLabel } from "../src/print/labels";
-import { renderBuiltinA4Pdf } from "../src/print/pdf";
-import { buildBoxQr, parseBoxQr } from "../src/print/qr";
-import { analyzeTemplate, PrintError, renderTemplate } from "../src/print/template-engine";
+import { renderBoxLabel } from "../src/kernel/print/labels";
+import { renderBuiltinA4Pdf } from "../src/kernel/print/pdf";
+import { buildBoxQr, parseBoxQr } from "../src/kernel/print/qr";
+import { analyzeTemplate, PrintError, renderTemplate } from "../src/kernel/print/template-engine";
 import type { DocumentView, OrderBox } from "@weave-order/schema";
 
 const TENANT_ID = "11111111-1111-4111-8111-111111111111";

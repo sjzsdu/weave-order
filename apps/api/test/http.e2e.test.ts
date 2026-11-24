@@ -11,7 +11,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module";
 import { createKernel } from "../src/kernel";
-import { ensureDemoIdentity } from "../src/dev/demo-identity";
+import { ensureDemoIdentity } from "../src/kernel/demo-identity";
 import type { KernelContext } from "../src/kernel";
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PrintTemplateLayout } from "@weave-order/schema";
-import { analyzeTemplate, PrintError, renderTemplate } from "../src/print/template-engine";
+import { analyzeTemplate, PrintError, renderTemplate } from "../src/kernel/print/template-engine";
 import {
   assertLayoutAllowed,
   assertSampleCardDataFits,
@@ -8,7 +8,7 @@ import {
   compileLayout,
   DEFAULT_SAMPLE_CARD_LABEL_LAYOUT,
   DEFAULT_SAMPLE_CARD_LAYOUT,
-} from "../src/print/template-layout";
+} from "../src/kernel/print/template-layout";
 
 /**
  * P0c 版式编译：编辑器产出的版式必须先过白名单，再编译成真的模板正文。

@@ -20,7 +20,7 @@ import type { Db } from "@weave-order/db";
 import { PERSONAS } from "@weave-order/schema";
 import type { Persona, PersonaKey } from "@weave-order/schema";
 import { and, eq } from "drizzle-orm";
-import type { KernelContext } from "../kernel";
+import type { KernelContext } from "./audit";
 
 export interface DemoIdentity {
   tenantId: string;

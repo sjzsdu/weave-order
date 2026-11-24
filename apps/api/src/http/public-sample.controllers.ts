@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { QuoteLinkError } from "../kernel";
 import { PublicRateLimitService } from "../platform/rate-limit";
-import type { PublicSampleCardService } from "../shares/public-sample-card.service";
+import type { PublicSampleCardService } from "../kernel/public-sample-card.service";
 import { PUBLIC_RATE_LIMIT, PUBLIC_SAMPLE } from "./tokens";
 
 function clientIp(ip: string | undefined, forwarded: string | undefined): string | undefined {

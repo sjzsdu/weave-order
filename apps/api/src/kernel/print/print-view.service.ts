@@ -28,10 +28,10 @@ import type {
   Unit,
 } from "@weave-order/schema";
 import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
-import { shipmentNo } from "../kernel/order-shipments.service";
-import { KernelError } from "../kernel/errors";
-import { multiplyCents } from "../kernel/money";
-import { toIso, toIsoOrNull } from "../kernel/mappers";
+import { shipmentNo } from "../order-shipments.service";
+import { KernelError } from "../errors";
+import { multiplyCents } from "../money";
+import { toIso, toIsoOrNull } from "../mappers";
 import { buildBoxQr } from "./qr";
 
 function settingString(settings: unknown, key: string, fallback: string): string {

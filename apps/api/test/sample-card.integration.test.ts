@@ -5,8 +5,8 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@weave-order/db";
 import { createKernel, isKernelError } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
-import { PrintError } from "../src/print";
-import { PublicSampleCardService } from "../src/shares/public-sample-card.service";
+import { PrintError } from "../src/kernel/print";
+import { PublicSampleCardService } from "../src/kernel/public-sample-card.service";
 
 /**
  * P0b 样卡（真实 PG）：

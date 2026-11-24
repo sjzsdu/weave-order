@@ -13,7 +13,7 @@ import { createKernel, errorChainMessage } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
 import { formatMoney } from "../src/kernel/money";
 import { createTools } from "../src/tools";
-import { demoWriteContext, ensureDemoIdentity } from "../src/dev/demo-identity";
+import { demoWriteContext, ensureDemoIdentity } from "../src/kernel/demo-identity";
 
 // 可选：仓库根目录存在 .env 时加载（Node 20.12+）。
 try {

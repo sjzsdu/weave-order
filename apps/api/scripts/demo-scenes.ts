@@ -18,7 +18,7 @@ import { connectDatabase } from "../src/platform/database";
 import { createKernel } from "../src/kernel";
 import { createApprovalService } from "../src/approval";
 import type { KernelContext } from "../src/kernel";
-import { demoWriteContext, ensureDemoIdentity } from "../src/dev/demo-identity";
+import { demoWriteContext, ensureDemoIdentity } from "../src/kernel/demo-identity";
 
 try {
   process.loadEnvFile(path.resolve(__dirname, "../../../.env"));

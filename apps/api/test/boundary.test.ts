@@ -58,6 +58,10 @@ async function authRule(): Promise<RuleEntry | undefined> {
   ];
 }
 
+async function directRule(file: string): Promise<RuleEntry | undefined> {
+  return (await resolvedRules(file))["no-restricted-imports"];
+}
+
 async function httpRule(): Promise<RuleEntry | undefined> {
   return (await resolvedRules("apps/api/src/http/controllers.ts"))["no-restricted-imports"];
 }
@@ -67,24 +71,55 @@ async function httpCompositionRootRule(file: string): Promise<RuleEntry | undefi
 }
 
 describe("agent→kernel / 数据库 目录边界（no-restricted-imports）", () => {
-  it("规则只作用于 agent / tools / approval / import / http，kernel 与其余包不生效（files 作用域）", async () => {
-    const agentRules = await resolvedRules("apps/api/src/agent/foo.ts");
-    const toolsRules = await resolvedRules("apps/api/src/tools/foo.ts");
-    const approvalRules = await resolvedRules("apps/api/src/approval/foo.ts");
-    const importRules = await resolvedRules("apps/api/src/import/parse.ts");
-    const httpRules = await resolvedRules("apps/api/src/http/controllers.ts");
-    const authRules = await resolvedRules("apps/api/src/auth/personal-access.service.ts");
-    const kernelRules = await resolvedRules("apps/api/src/kernel/foo.ts");
-    const schemaRules = await resolvedRules("packages/schema/src/index.ts");
+  it("唯一写者：apps/api/src 全目录受数据库禁令约束，只白名单 kernel / platform", async () => {
+    // 每个业务目录都要有默认禁令，而不是只挑 6 个目录覆盖。
+    for (const file of [
+      "apps/api/src/agent/foo.ts",
+      "apps/api/src/tools/foo.ts",
+      "apps/api/src/approval/foo.ts",
+      "apps/api/src/import/parse.ts",
+      "apps/api/src/http/controllers.ts",
+      "apps/api/src/auth/personal-access.service.ts",
+      "apps/api/src/gateway/auth.service.ts",
+      "apps/api/src/shares/public-share.service.ts",
+      "apps/api/src/onboarding/onboarding.service.ts",
+      "apps/api/src/dev/personas.controller.ts",
+      "apps/api/src/media/media.service.ts",
+    ]) {
+      expect(await directRule(file), file).toBeDefined();
+    }
+    // kernel 是业务表唯一写入者（打印中心已并入 kernel/print），platform 持有连接；
+    // 两者是白名单，其余包不受影响。
+    for (const file of [
+      "apps/api/src/kernel/foo.ts",
+      "apps/api/src/kernel/print/print-jobs.service.ts",
+      "apps/api/src/kernel/demo-identity.ts",
+      "apps/api/src/kernel/public-sample-card.service.ts",
+      "apps/api/src/platform/database.ts",
+      "packages/schema/src/index.ts",
+    ]) {
+      expect(await directRule(file), file).toBeUndefined();
+    }
+  });
 
-    expect(agentRules["no-restricted-imports"]).toBeDefined();
-    expect(toolsRules["no-restricted-imports"]).toBeDefined();
-    expect(approvalRules["no-restricted-imports"]).toBeDefined();
-    expect(importRules["no-restricted-imports"]).toBeDefined();
-    expect(httpRules["no-restricted-imports"]).toBeDefined();
-    expect(authRules["no-restricted-imports"]).toBeDefined();
-    expect(kernelRules["no-restricted-imports"]).toBeUndefined();
-    expect(schemaRules["no-restricted-imports"]).toBeUndefined();
+  it("非内核目录（gateway / shares / dev / onboarding / media）直连数据库被拦，调用 kernel 放行", async () => {
+    for (const file of [
+      "apps/api/src/gateway/auth.service.ts",
+      "apps/api/src/shares/public-share.service.ts",
+      "apps/api/src/dev/personas.controller.ts",
+      "apps/api/src/onboarding/onboarding.service.ts",
+      "apps/api/src/media/media.service.ts",
+    ]) {
+      const rule = await directRule(file);
+      for (const source of ["drizzle-orm", "@weave-order/db", "pg", "../platform/database"]) {
+        expect(restrictedRuleIds(file, `import x from "${source}";`, rule)).toContain(
+          "no-restricted-imports",
+        );
+      }
+      expect(
+        restrictedRuleIds(file, 'import { createKernel } from "../kernel";', rule),
+      ).not.toContain("no-restricted-imports");
+    }
   });
 
   it("agent 裸 barrel 导入 ../kernel 被拦", async () => {

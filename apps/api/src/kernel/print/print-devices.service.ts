@@ -10,11 +10,11 @@ import type { PrinterProfile } from "@weave-order/schema";
 import { SignJWT, jwtVerify } from "jose";
 import { and, asc, eq } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
-import { appendAudit } from "../kernel/audit";
-import type { KernelContext } from "../kernel/audit";
-import { KernelError } from "../kernel/errors";
-import { toIsoOrNull } from "../kernel/mappers";
-import { loadEnv } from "../platform/env";
+import { appendAudit } from "../audit";
+import type { KernelContext } from "../audit";
+import { KernelError } from "../errors";
+import { toIsoOrNull } from "../mappers";
+import { loadEnv } from "../../platform/env";
 import { PrintError } from "./template-engine";
 
 export const PRINT_AGENT_ISSUER = "weave-order";

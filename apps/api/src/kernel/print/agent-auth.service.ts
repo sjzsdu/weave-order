@@ -2,8 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { openTenantSession } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
 import { jwtVerify } from "jose";
-import { AppDatabaseProvider } from "../platform/database.provider";
-import { loadEnv } from "../platform/env";
+import { AppDatabaseProvider } from "../../platform/database.provider";
+import { loadEnv } from "../../platform/env";
 import {
   PrintDeviceService,
   PRINT_AGENT_AUDIENCE,

@@ -21,7 +21,7 @@ import { buildBatch, readRecords } from "../src/import";
 import { createKernel } from "../src/kernel";
 import { connectDatabase } from "../src/platform/database";
 import { loadEnv } from "../src/platform/env";
-import { demoWriteContext, ensureDemoIdentity } from "../src/dev/demo-identity";
+import { demoWriteContext, ensureDemoIdentity } from "../src/kernel/demo-identity";
 
 // 可选：仓库根目录存在 .env 时加载（Node 20.12+）。
 try {

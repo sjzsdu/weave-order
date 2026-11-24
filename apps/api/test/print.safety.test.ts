@@ -3,11 +3,11 @@ import {
   assertHtmlTemplateSafe,
   sanitizeHtmlForPrint,
   templateSafetyViolation,
-} from "../src/print/html-safety";
-import { chromePrintArgs } from "../src/print/pdf";
-import { assertTemplatePublishAllowed } from "../src/print/print-templates.service";
-import { PrintError, renderTemplate } from "../src/print/template-engine";
-import { SYSTEM_TEMPLATES } from "../src/print/templates";
+} from "../src/kernel/print/html-safety";
+import { chromePrintArgs } from "../src/kernel/print/pdf";
+import { assertTemplatePublishAllowed } from "../src/kernel/print/print-templates.service";
+import { PrintError, renderTemplate } from "../src/kernel/print/template-engine";
+import { SYSTEM_TEMPLATES } from "../src/kernel/print/templates";
 import type { KernelContext } from "../src/kernel";
 
 const OWNER: KernelContext = { actor: { type: "HUMAN", id: "owner", role: "OWNER" } };

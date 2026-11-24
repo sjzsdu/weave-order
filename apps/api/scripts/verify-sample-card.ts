@@ -14,8 +14,8 @@ import { weightLabel } from "@weave-order/schema";
 import { createKernel } from "../src/kernel";
 import type { KernelContext } from "../src/kernel";
 import { buildSampleCardUrl, createSampleCardToken } from "../src/kernel/share-token";
-import { renderSampleCardText, sampleCardValues } from "../src/print/sample-card";
-import { SYSTEM_TEMPLATES } from "../src/print/templates";
+import { renderSampleCardText, sampleCardValues } from "../src/kernel/print/sample-card";
+import { SYSTEM_TEMPLATES } from "../src/kernel/print/templates";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://weave:weave@localhost:5433/weave_order";

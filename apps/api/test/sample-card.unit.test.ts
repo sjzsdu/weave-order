@@ -16,10 +16,10 @@ import {
   renderSampleCardText,
   sampleCardQrPng,
   sampleCardValues,
-} from "../src/print/sample-card";
-import type { SampleCardSource } from "../src/print/sample-card";
-import { analyzeTemplate, PrintError } from "../src/print/template-engine";
-import { SYSTEM_TEMPLATES } from "../src/print/templates";
+} from "../src/kernel/print/sample-card";
+import type { SampleCardSource } from "../src/kernel/print/sample-card";
+import { analyzeTemplate, PrintError } from "../src/kernel/print/template-engine";
+import { SYSTEM_TEMPLATES } from "../src/kernel/print/templates";
 import {
   buildSampleCardUrl,
   createSampleCardToken,

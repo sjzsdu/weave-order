@@ -41,11 +41,11 @@ import type {
 } from "@weave-order/schema";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { appendAudit } from "../kernel/audit";
-import type { KernelContext } from "../kernel/audit";
-import { KernelError } from "../kernel/errors";
-import { milliToQuantity, quantityToMilli } from "../kernel/money";
-import { toIso, toIsoOrNull } from "../kernel/mappers";
+import { appendAudit } from "../audit";
+import type { KernelContext } from "../audit";
+import { KernelError } from "../errors";
+import { milliToQuantity, quantityToMilli } from "../money";
+import { toIso, toIsoOrNull } from "../mappers";
 import { renderBoxLabel, renderTestLabel } from "./labels";
 import type { SampleCardService } from "./sample-card.service";
 import { assertSampleCardPrintable, sampleCardValues } from "./sample-card";

@@ -18,10 +18,10 @@ import type {
   PrintTemplateVersionSummary,
 } from "@weave-order/schema";
 import { and, asc, count, desc, eq, gt, isNull } from "drizzle-orm";
-import { appendAudit } from "../kernel/audit";
-import type { KernelContext } from "../kernel/audit";
-import { KernelError } from "../kernel/errors";
-import { toIso } from "../kernel/mappers";
+import { appendAudit } from "../audit";
+import type { KernelContext } from "../audit";
+import { KernelError } from "../errors";
+import { toIso } from "../mappers";
 import { assertHtmlTemplateSafe } from "./html-safety";
 import { OFFICIAL_PRINT_JOB } from "./job-scope";
 import { analyzeTemplate, PrintError } from "./template-engine";

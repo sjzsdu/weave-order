@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>织序 WeaveOrder · 系统架构</title>
+    <style>
+      :root {
+        --ink: #0e1726;
+        --ink-2: #33415c;
+        --ink-3: #64748b;
+        --line: #e2e8f0;
+        --line-strong: #cbd5e1;
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --teal: #0f766e;
+        --teal-soft: #e6f2f0;
+        --amber: #b45309;
+        --amber-soft: #fdf3e3;
+        --blue: #1d4ed8;
+        --blue-soft: #eaeffd;
+        --violet: #6d28d9;
+        --violet-soft: #f1ecfd;
+        --red: #b91c1c;
+        --red-soft: #fdecec;
+        --radius: 14px;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--ink);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.65;
+      }
+      a { color: inherit; }
+      code, .mono { font-family: var(--mono); font-size: .86em; }
+
+      /* ---------- shell ---------- */
+      .topbar {
+        position: sticky; top: 0; z-index: 20;
+        background: rgba(246, 247, 249, .88);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+      }
+      .topbar-inner {
+        max-width: 1180px; margin: 0 auto; padding: 10px 28px;
+        display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+      }
+      .brand {
+        display: flex; align-items: center; gap: 10px;
+        font-weight: 700; letter-spacing: .01em;
+      }
+      .brand .mark {
+        width: 26px; height: 26px; border-radius: 8px;
+        background: linear-gradient(135deg, #0f766e, #0e1726);
+        display: grid; place-items: center; color: #fff; font-size: 14px;
+      }
+      .brand small { color: var(--ink-3); font-weight: 500; }
+      nav.toc { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+      nav.toc a {
+        text-decoration: none; font-size: 13px; color: var(--ink-2);
+        padding: 5px 10px; border-radius: 999px;
+      }
+      nav.toc a:hover { background: #fff; color: var(--teal); box-shadow: inset 0 0 0 1px var(--line); }
+
+      main { max-width: 1180px; margin: 0 auto; padding: 40px 28px 96px; }
+
+      /* ---------- hero ---------- */
+      .hero { margin-bottom: 34px; }
+      .eyebrow {
+        font-family: var(--mono); font-size: 12px; letter-spacing: .16em;
+        text-transform: uppercase; color: var(--teal); margin: 0 0 12px;
+      }
+      h1 { font-size: clamp(30px, 4vw, 44px); line-height: 1.2; margin: 0 0 14px; letter-spacing: -.02em; }
+      .lede { font-size: 17px; color: var(--ink-2); max-width: 780px; margin: 0 0 26px; }
+      .lede strong { color: var(--ink); }
+
+      .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+      .stat {
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      .stat b { display: block; font-size: 26px; line-height: 1.2; letter-spacing: -.01em; }
+      .stat span { font-size: 12.5px; color: var(--ink-3); }
+
+      /* ---------- sections ---------- */
+      section { margin-top: 56px; }
+      .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+      .sec-no { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+      h2 { font-size: 23px; margin: 0; letter-spacing: -.01em; }
+      .sec-sub { color: var(--ink-3); font-size: 14px; margin: 0 0 22px; max-width: 800px; }
+
+      .card {
+        background: var(--card); border: 1px solid var(--line);
+        border-radius: var(--radius); padding: 20px 22px;
+      }
+
+      /* ---------- layered diagram ---------- */
+      .stack { display: grid; gap: 10px; }
+      .layer {
+        display: grid; grid-template-columns: 148px 1fr; gap: 18px;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+        padding: 16px 20px;
+      }
+      .layer-label { border-right: 1px dashed var(--line-strong); padding-right: 16px; }
+      .layer-label b { display: block; font-size: 14px; }
+      .layer-label span { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
+      .nodes { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+      .node {
+        border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe;
+        padding: 9px 12px; font-size: 13px; line-height: 1.4; min-width: 150px;
+      }
+      .node b { display: block; font-size: 13px; }
+      .node span { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
+      .node.t { background: var(--teal-soft); border-color: #bfe0db; }
+      .node.a { background: var(--amber-soft); border-color: #f2ddbb; }
+      .node.b { background: var(--blue-soft); border-color: #cfdbfb; }
+      .node.v { background: var(--violet-soft); border-color: #ded2f7; }
+      .node.r { background: var(--red-soft); border-color: #f6cfcf; }
+      .node.key { box-shadow: 0 0 0 2px #0f766e22; }
+
+      .flow-arrow {
+        text-align: center; color: var(--ink-3); font-size: 12px;
+        font-family: var(--mono); letter-spacing: .08em; padding: 2px 0;
+      }
+
+      /* ---------- call flow ---------- */
+      .track {
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .step { padding: 18px 16px 20px; position: relative; border-right: 1px solid var(--line); }
+      .step:last-child { border-right: 0; }
+      .step .k { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+      .step h4 { margin: 4px 0 6px; font-size: 14px; }
+      .step p { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+      .step .tag {
+        display: inline-block; margin-top: 10px; font-size: 11px; font-family: var(--mono);
+        padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--ink-2);
+      }
+      .step.human { background: #fffaf2; }
+      .step.agent { background: #f3faf9; }
+      .step.kernel { background: #f5f6ff; }
+      .step.data { background: #faf5ff; }
+
+      /* ---------- cards grid ---------- */
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+      .card h3 { margin: 0 0 4px; font-size: 15px; }
+      .card .path { font-family: var(--mono); font-size: 11.5px; color: var(--teal); }
+      .card p { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+      .card ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+      .card li { margin: 2px 0; }
+
+      .chip {
+        display: inline-block; font-size: 11px; font-family: var(--mono);
+        padding: 2px 8px; border-radius: 999px; background: #f1f5f9;
+        border: 1px solid var(--line); color: var(--ink-2); margin: 2px 3px 2px 0;
+      }
+
+      /* ---------- table ---------- */
+      table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 13.5px; }
+      .table-wrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+      th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { background: #fbfcfe; font-size: 12px; color: var(--ink-3); font-weight: 600; letter-spacing: .02em; }
+      tr:last-child td { border-bottom: 0; }
+      td code { color: var(--teal); }
+      td.mut { color: var(--ink-3); }
+
+      /* ---------- rules ---------- */
+      .rule {
+        display: grid; grid-template-columns: 34px 1fr; gap: 14px;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      .rule .n {
+        width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+        background: var(--ink); color: #fff; font-family: var(--mono); font-size: 13px;
+      }
+      .rule b { font-size: 14px; }
+      .rule p { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
+      .rule code { color: var(--teal); }
+
+      /* ---------- tree ---------- */
+      pre.tree {
+        margin: 0; padding: 20px 22px; overflow-x: auto;
+        background: #0e1726; color: #d7dee9; border-radius: var(--radius);
+        font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+      }
+      pre.tree .c { color: #7c8aa3; }
+      pre.tree .d { color: #7dd3c7; }
+      pre.tree .h { color: #e7c07b; }
+
+      /* ---------- footer ---------- */
+      footer {
+        max-width: 1180px; margin: 0 auto; padding: 26px 28px 60px;
+        border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12.5px;
+        display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      }
+      footer code { color: var(--ink-2); }
+
+      @media (max-width: 900px) {
+        .stats { grid-template-columns: 1fr 1fr; }
+        .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
+        .track { grid-template-columns: 1fr; }
+        .step { border-right: 0; border-bottom: 1px solid var(--line); }
+        .layer { grid-template-columns: 1fr; }
+        .layer-label { border-right: 0; border-bottom: 1px dashed var(--line-strong); padding: 0 0 8px; }
+      }
+      @media (max-width: 620px) {
+        main { padding: 28px 16px 72px; }
+        .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+        nav.toc { display: none; }
+      }
+      @media print {
+        body { background: #fff; }
+        .topbar { position: static; }
+        nav.toc { display: none; }
+        section { break-inside: avoid; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand"><span class="mark">织</span> 织序 WeaveOrder <small>系统架构</small></div>
+        <nav class="toc">
+          <a href="#overview">全景</a>
+          <a href="#ends">端</a>
+          <a href="#flow">主链路</a>
+          <a href="#modules">后端模块</a>
+          <a href="#repo">仓库</a>
+          <a href="#data">数据</a>
+          <a href="#stack">技术栈</a>
+          <a href="#rules">铁律</a>
+          <a href="#deploy">部署</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <header class="hero">
+        <p class="eyebrow">Architecture Overview · v1</p>
+        <h1>智能体干活，人类只审批</h1>
+        <p class="lede">
+          织序是纺织贸易的<b>智能体原生业务操作系统</b>。架构的核心不是「人操作系统」，而是
+          <strong>确定性内核（唯一写入口）</strong> + <strong>工具层（智能体唯一入口）</strong> +
+          <strong>审批窗口（人类唯一决策入口）</strong>。智能体的产出永远是草稿与建议，账本只在人类批准后由内核写入，并与审计同事务落库。
+        </p>
+        <div class="stats">
+          <div class="stat"><b>9</b><span>apps · 多端应用</span></div>
+          <div class="stat"><b>7</b><span>packages · 共享契约与 UI</span></div>
+          <div class="stat"><b>1</b><span>模块化单体后端（NestJS）</span></div>
+          <div class="stat"><b>4</b><span>条不可违反的架构铁律</span></div>
+        </div>
+      </header>
+
+      <!-- ============ 全景 ============ -->
+      <section id="overview">
+        <div class="sec-head"><span class="sec-no">01</span><h2>架构全景</h2></div>
+        <p class="sec-sub">
+          自上而下：多端入口 → 同源 BFF / OIDC 网关 → 模块化单体（工具层只碰内核，智能体只碰工具）→ 数据面与外部 provider。
+          依赖方向是单向的，任何越界都会被 ESLint 规则与 <code class="mono">boundary.test.ts</code> 拦下。
+        </p>
+
+        <div class="stack">
+          <div class="layer">
+            <div class="layer-label"><b>客户端入口</b><span>apps/*</span></div>
+            <div class="nodes">
+              <div class="node t"><b>租户工作台</b><span>apps/web · Next 15 · :3001</span></div>
+              <div class="node t"><b>移动端 H5/PWA</b><span>apps/mobile · Taro · :10086</span></div>
+              <div class="node t"><b>客户报价页</b><span>apps/quote · /s/[token] · :5174</span></div>
+              <div class="node t"><b>平台控制台</b><span>apps/admin · :3003</span></div>
+              <div class="node t"><b>官网 / 帮助中心</b><span>apps/site · Astro 5 · :4321</span></div>
+              <div class="node t"><b>CLI / Agent 接入</b><span>apps/cli · bin weave</span></div>
+              <div class="node t"><b>打印代理</b><span>apps/print-agent · Tauri 2</span></div>
+            </div>
+          </div>
+
+          <div class="flow-arrow">↓ &nbsp;同源 /api/* &nbsp;·&nbsp; OIDC Authorization Code + PKCE &nbsp;·&nbsp; PAT（CLI / agent）</div>
+
+          <div class="layer">
+            <div class="layer-label"><b>接入与身份</b><span>gateway / auth / BFF</span></div>
+            <div class="nodes">
+              <div class="node b"><b>Next BFF</b><span>apps/web/app/api/[...path]</span></div>
+              <div class="node b"><b>OIDC 验签</b><span>apps/api/src/gateway</span></div>
+              <div class="node b"><b>membership → tenant</b><span>角色 / 数据范围 / 阈值</span></div>
+              <div class="node b"><b>PAT + 设备码登录</b><span>apps/api/src/auth</span></div>
+              <div class="node b"><b>RLS SET LOCAL</b><span>app.tenant_id</span></div>
+              <div class="node b"><b>Casdoor</b><span>外部 · sso.wnbgj.com</span></div>
+            </div>
+          </div>
+
+          <div class="flow-arrow">↓ &nbsp;受控调用 &nbsp;·&nbsp; 控制器只做编排与只读聚合</div>
+
+          <div class="layer">
+            <div class="layer-label"><b>业务能力</b><span>apps/api/src</span></div>
+            <div class="nodes">
+              <div class="node a"><b>智能体编排</b><span>agent · LangGraph.js</span></div>
+              <div class="node a"><b>工具层</b><span>tools · T-001…T-006 · Zod</span></div>
+              <div class="node key v"><b>确定性内核</b><span>kernel · 唯一写业务表</span></div>
+              <div class="node v"><b>审批 / 草稿 / 修订</b><span>approval · diff · 阈值</span></div>
+              <div class="node v"><b>导入（整批原子）</b><span>import · Excel / CSV</span></div>
+              <div class="node v"><b>分享 / 公开报价</b><span>shares · 签名 token</span></div>
+              <div class="node v"><b>打印中心</b><span>print · 模板 · 队列</span></div>
+              <div class="node v"><b>媒体与向量</b><span>media · 缩略图 · embedding</span></div>
+              <div class="node v"><b>开户 / 配置 / LLM</b><span>onboarding · platform · llm</span></div>
+            </div>
+          </div>
+
+          <div class="flow-arrow">↓ &nbsp;只有内核持有 Db；工具层拿不到 Db，只拿 Kernel 对象</div>
+
+          <div class="layer">
+            <div class="layer-label"><b>数据面</b><span>packages/db · control-db</span></div>
+            <div class="nodes">
+              <div class="node r"><b>PostgreSQL 16 + pgvector</b><span>共享库 + RLS · Drizzle</span></div>
+              <div class="node r"><b>控制面库</b><span>packages/control-db · 平台侧</span></div>
+              <div class="node r"><b>Redis 7</b><span>缓存 + 队列 / 限流</span></div>
+              <div class="node r"><b>S3 兼容对象存储</b><span>MinIO / COS · tenant 前缀</span></div>
+            </div>
+          </div>
+
+          <div class="flow-arrow">↕ &nbsp;provider 接口，默认本地确定性实现（零外部 key 即可跑通）</div>
+
+          <div class="layer">
+            <div class="layer-label"><b>外部依赖</b><span>providers</span></div>
+            <div class="nodes">
+              <div class="node"><b>LLM 网关</b><span>OpenAI 兼容 · 预算 · 计量</span></div>
+              <div class="node"><b>Embedding</b><span>dashscope / local-stub</span></div>
+              <div class="node"><b>物流轨迹</b><span>箋单号哈希 · 可替换</span></div>
+              <div class="node"><b>客户回复来源</b><span>脚本化 · 微信 / 邮件适配</span></div>
+              <div class="node"><b>短信 / 邮件</b><span>通知通道</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 端 ============ -->
+      <section id="ends">
+        <div class="sec-head"><span class="sec-no">02</span><h2>端与职责</h2></div>
+        <p class="sec-sub">一个产品一个仓库。每个端只承担一件事，共享 <code class="mono">packages/core</code> 的数据与状态逻辑、<code class="mono">packages/schema</code> 的契约。</p>
+
+        <div class="grid-3">
+          <div class="card">
+            <div class="path">apps/web · Next.js 15</div>
+            <h3>租户工作台</h3>
+            <p>三个业务窗口 + 一个管理面：工作台（⌘1）、审批（⌘2）、全景只读（⌘3）、组织设置（⌘,）。打印是全局抽屉，不是第四窗口。</p>
+            <ul>
+              <li>只调只读目录、工具、<code>/api/approvals/decide</code></li>
+              <li>OIDC token 只存 httpOnly Cookie</li>
+              <li>前端不读 token，不落 localStorage</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="path">apps/mobile · Taro</div>
+            <h3>移动端</h3>
+            <p>一套 React 代码输出 H5/PWA，后续可编译小程序与 RN App。底部五入口：今日 / 审批 / 相机 / 客户 / 更多。</p>
+            <ul>
+              <li>业务逻辑 100% 复用 <code>packages/core</code></li>
+              <li>离线队列落 IndexedDB，恢复后按序提交</li>
+              <li>冲突策略：服务端版本 + 人工确认</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="path">apps/quote · Next.js 15</div>
+            <h3>客户报价页</h3>
+            <p>公开路由组 <code>/s/[token]</code>，SSR + 无鉴权 Cookie + 独立部署，客户面与租户面物理隔离。</p>
+            <ul>
+              <li>只返回客户视图字段，绝不返回成本 / 毛利 / 内部备注</li>
+              <li>支持接受意向、留言提问、PDF 下载事件</li>
+              <li>撤回后立即 410</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="path">apps/admin + apps/platform-api</div>
+            <h3>平台控制台</h3>
+            <p>租户总览、订阅账单、用量、套餐、LLM 设置、身份、配置中心、支持与平台审计。独立应用、独立部署、强制 MFA。</p>
+            <ul>
+              <li>只连控制面数据（<code>platform_*</code> / <code>plans</code> / <code>subscriptions</code>）</li>
+              <li>默认看不到租户业务数据</li>
+              <li>Break-glass：租户同意 + 双人复核 + 限时只读 + 全程审计</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="path">apps/cli + skills/weave-order</div>
+            <h3>CLI / Agent 接入</h3>
+            <p><code class="mono">weave</code> 命令：设备码登录、凭据管理、业务工具、把 skill 安装到 codex 等 agent 环境。</p>
+            <ul>
+              <li>用 PAT 而不是 OIDC 会话</li>
+              <li>PAT 绑定 membership，仍走同一租户与 RLS</li>
+              <li>审批需人类显式签发 <code>approve</code> 作用域</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="path">apps/print-agent · Tauri 2</div>
+            <h3>打印代理</h3>
+            <p>本地常驻、托盘、WSS 出站长连接、不开启入站端口。A4 PDF 走系统打印，标签走 RAW TCP 9100。</p>
+            <ul>
+              <li>专用 token：只能打印，不能读业务数据</li>
+              <li>本地 spool ≤ 24h，<code>idempotency_key</code> 去重</li>
+              <li>签名自动更新，灰度可回滚</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 主链路 ============ -->
+      <section id="flow">
+        <div class="sec-head"><span class="sec-no">03</span><h2>一次业务动作的主链路</h2></div>
+        <p class="sec-sub">以「寄样单 / 报价」为例：智能体把事做到只剩一个决定，人类在审批窗口按下批准，状态才流转。</p>
+
+        <div class="track">
+          <div class="step human">
+            <div class="k">01 · HUMAN</div>
+            <h4>派发意图</h4>
+            <p>工作台选上下文（客户 / 样品），输入意图，或粘贴客户原话。</p>
+            <span class="tag">Intent Bar</span>
+          </div>
+          <div class="step agent">
+            <div class="k">02 · AGENT</div>
+            <h4>编排 + 调工具</h4>
+            <p>LangGraph 状态机在 PostgreSQL 上打检查点，节点只调用 tools，输入输出全部 Zod 校验。</p>
+            <span class="tag">T-001…T-006</span>
+          </div>
+          <div class="step kernel">
+            <div class="k">03 · KERNEL</div>
+            <h4>计算并落草稿</h4>
+            <p>金额用整数「分」+ BigInt 计算，成本底线、定价继承、审批阈值都在内核判定，强制产出 DRAFT。</p>
+            <span class="tag">DRAFT / 建议</span>
+          </div>
+          <div class="step human">
+            <div class="k">04 · HUMAN</div>
+            <h4>审批决策</h4>
+            <p>审批窗口看得到出处、diff、草稿态；批准或驳回，可带分诊备注。这是唯一状态流转入口。</p>
+            <span class="tag">POST /api/approvals/decide</span>
+          </div>
+          <div class="step data">
+            <div class="k">05 · KERNEL</div>
+            <h4>生效 + 留痕</h4>
+            <p>内核校验 <code>actor.type === "HUMAN"</code>，同事务改状态并写审计；审计表由触发器禁止改写。</p>
+            <span class="tag">SENT / CONFIRMED + audit_log</span>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 14px">
+          <div class="card">
+            <h3>智能体的完整旅程（寄样跟进）</h3>
+            <pre class="tree" style="margin-top:10px">建寄样单 (T-005) → 追踪物流 → 生成跟进建议
+   → 等待客户回复 (interrupt · checkpoint)
+   → 识别回复 → 客户询价？
+        ├─ 是 → 生成报价草稿 (T-004, DRAFT) → DONE
+        └─ 否 → DONE</pre>
+            <p>进程 A 中断并打印 checkpoint id；全新 Node 进程 B 从同一 thread 恢复，注入回复继续跑。物流 / LLM / 回复来源都是 provider 接口，默认本地确定性实现。</p>
+          </div>
+          <div class="card">
+            <h3>失败语义是封闭可判别联合</h3>
+            <p>业务失败仍返回 <code>{ ok: false, error }</code>，HTTP 状态按 <code>code</code> / <code>reason</code> 映射为 400 / 403 / 404 / 409 / 422 / 502。</p>
+            <ul>
+              <li><code>PERMISSION_DENIED</code> — 智能体试图确认草稿</li>
+              <li><code>PRICE_BELOW_COST_FLOOR</code> — 报价击穿成本底线</li>
+              <li><code>NO_TRACKING_NUMBER</code> — 缺运单号，零副作用拒绝</li>
+              <li><code>BATCH_REJECTED</code> / <code>WRITE_FAILED</code> — 导入整批回滚</li>
+              <li><code>KERNEL_REJECTED</code> — 数量/金额超界</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 后端模块 ============ -->
+      <section id="modules">
+        <div class="sec-head"><span class="sec-no">04</span><h2>后端模块与边界</h2></div>
+        <p class="sec-sub">模块化单体 <code class="mono">apps/api</code>。分层不是命名习惯，而是被 ESLint <code class="mono">no-restricted-imports</code> 与常驻回归测试强制的依赖方向。</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th style="width:190px">目录</th><th>职责</th><th style="width:250px">允许依赖</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>src/kernel/</code></td>
+                <td>确定性内核。唯一可写业务表的代码；草稿、确认、驳回、定价继承、阈值升级、同事务审计。<code>import.service.ts</code> 是唯一批量写入者。</td>
+                <td class="mut">packages/db · packages/schema</td>
+              </tr>
+              <tr>
+                <td><code>src/tools/</code></td>
+                <td>工具接口层。智能体唯一可调用的入口（T-001 以图搜样 / T-002 参数匹配 / T-003 客户历史 / T-004 报价草稿 / T-005 寄样单 / T-006 建议单价）。</td>
+                <td class="mut">kernel service · 不连数据库</td>
+              </tr>
+              <tr>
+                <td><code>src/agent/</code></td>
+                <td>智能体编排。LangGraph 状态机 + PostgreSQL 检查点，节点只调 tools。</td>
+                <td class="mut">tools · <b>禁止</b> import kernel / drizzle / pg</td>
+              </tr>
+              <tr>
+                <td><code>src/approval/</code></td>
+                <td>审批队列、决策、业务全景只读聚合；批准 → 内核 confirm，驳回 → reject。</td>
+                <td class="mut">kernel · 不直连数据库</td>
+              </tr>
+              <tr>
+                <td><code>src/http/</code></td>
+                <td>HTTP 面：目录、工具、审批决策、全景、审计、导入、健康检查。唯一例外是两个组合根文件可 import <code>../platform/database</code>。</td>
+                <td class="mut">kernel / tools / approval（只读编排）</td>
+              </tr>
+              <tr>
+                <td><code>src/import/</code></td>
+                <td>Excel / CSV 解析适配器：列 → 字段映射。只解析、不写库、不连数据库。</td>
+                <td class="mut">packages/schema</td>
+              </tr>
+              <tr>
+                <td><code>src/gateway/ · src/auth/</code></td>
+                <td>Casdoor OIDC 验签 + membership → tenant 上下文；个人访问凭据（PAT）与 CLI 设备码登录。</td>
+                <td class="mut">platform · packages/db（经内核/服务）</td>
+              </tr>
+              <tr>
+                <td><code>src/shares/ · src/print/ · src/media/</code></td>
+                <td>公开报价分享与访问计量；打印模板/队列/渲染；图片派生缩略图、原图压缩、孤儿清理。</td>
+                <td class="mut">kernel · provider 接口</td>
+              </tr>
+              <tr>
+                <td><code>src/platform/ · src/onboarding/</code></td>
+                <td>配置、数据库连接、Redis、embedding provider；租户开户流程与状态机。</td>
+                <td class="mut">基础设施层（仅组合根对外暴露连接）</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 仓库 ============ -->
+      <section id="repo">
+        <div class="sec-head"><span class="sec-no">05</span><h2>仓库结构</h2></div>
+        <p class="sec-sub">pnpm workspace + Turborepo。<code class="mono">packages/schema</code> 是前后端 / 工具 / 内核 / 导入的唯一契约来源，任何地方不重复定义业务结构。</p>
+
+        <pre class="tree"><span class="d">weave-order/</span>
+├── <span class="d">apps/</span>
+│   ├── <span class="h">api/</span>            <span class="c"># NestJS 模块化单体：kernel / tools / agent / approval / http / import / gateway</span>
+│   ├── <span class="h">web/</span>            <span class="c"># Next.js 15 租户工作台 + 同源 BFF（/api/[...path]）</span>
+│   ├── <span class="h">quote/</span>          <span class="c"># Next.js 15 客户报价页 /s/[token]（SSR、无鉴权 Cookie）</span>
+│   ├── <span class="h">admin/</span>          <span class="c"># Next.js 15 平台控制台</span>
+│   ├── <span class="h">platform-api/</span>   <span class="c"># 控制面 API（平台侧，独立数据面）</span>
+│   ├── <span class="h">mobile/</span>         <span class="c"># Taro：H5/PWA（→ 小程序 / RN App）</span>
+│   ├── <span class="h">site/</span>           <span class="c"># Astro 5 官网与帮助中心（价格 / 下载 / 开通 / llms.txt）</span>
+│   ├── <span class="h">cli/</span>            <span class="c"># weave 命令：设备登录 / 凭据 / 业务工具 / skill 安装</span>
+│   └── <span class="h">print-agent/</span>    <span class="c"># Tauri 2 打印代理（WSS 出站、本地 spool）</span>
+├── <span class="d">packages/</span>
+│   ├── <span class="h">schema/</span>         <span class="c"># Zod 契约：domain / kernel / approval / import / tools / quoting / llm</span>
+│   ├── <span class="h">core/</span>           <span class="c"># 前端业务逻辑：API client / TanStack Query hooks / 离线队列</span>
+│   ├── <span class="h">ui/</span>             <span class="c"># 设计系统：tokens + 组件（DraftCard / ApprovalSheet / DiffRow …）</span>
+│   ├── <span class="h">db/</span>             <span class="c"># Drizzle Schema、连接、SQL 迁移、租户会话</span>
+│   ├── <span class="h">control-db/</span>     <span class="c"># 控制面数据库（平台订阅 / 用量 / 账单）</span>
+│   ├── <span class="h">shared/</span>         <span class="c"># 跨端共享工具</span>
+│   └── <span class="h">notify/</span>         <span class="c"># 通知通道</span>
+├── <span class="d">skills/weave-order/</span> <span class="c"># agent skill（SKILL.md），codex 等加载后即可操作织序</span>
+├── <span class="d">data/seed/</span>         <span class="c"># 冷启动样例数据：customers.csv / samples.csv / .xlsx</span>
+├── <span class="d">docs/</span>              <span class="c"># 架构、产品、各 track 设计与验收记录</span>
+├── <span class="d">e2e/ · scripts/</span>    <span class="c"># Playwright 端到端、dev 统一入口 / 健康检查 / 发布校验</span>
+├── docker-compose.yml <span class="c"># PostgreSQL + pgvector、Redis（+ MinIO）</span>
+└── turbo.json · pnpm-workspace.yaml</pre>
+      </section>
+
+      <!-- ============ 数据 ============ -->
+      <section id="data">
+        <div class="sec-head"><span class="sec-no">06</span><h2>数据模型与隔离</h2></div>
+        <p class="sec-sub">共享库 + RLS 起步，可按租户单向升级到 schema-per-tenant / 独立库。每张业务表带 <code class="mono">tenant_id</code>，连接先 <code class="mono">SET LOCAL app.tenant_id</code>。</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>业务主数据</h3>
+            <p><span class="chip">customers</span><span class="chip">customer_contacts</span><span class="chip">customer_contexts</span><span class="chip">samples</span><span class="chip">sample_embeddings</span><span class="chip">sample_image_embeddings</span><span class="chip">items</span><span class="chip">pricing</span><span class="chip">code_rules</span></p>
+            <h3 style="margin-top:16px">交易与账本</h3>
+            <p><span class="chip">quotes</span><span class="chip">quote_shares</span><span class="chip">orders</span><span class="chip">inbound</span><span class="chip">receivables</span><span class="chip">receivable_payments</span><span class="chip">revisions</span><span class="chip">decision_deltas</span><span class="chip">intents</span></p>
+            <h3 style="margin-top:16px">审计与凭据</h3>
+            <p><span class="chip">audit_log</span><span class="chip">auth (tokens)</span><span class="chip">tenants / memberships</span><span class="chip">audit_export_jobs</span></p>
+          </div>
+          <div class="card">
+            <h3>关键约定</h3>
+            <ul>
+              <li><b>金额</b>：一律整数「分」，PG <code>bigint</code>，行金额用 BigInt 计算再一次 half-up；契约层以 <code>Number.MAX_SAFE_INTEGER</code> 兜底。</li>
+              <li><b>数量</b>：千分之一单位整数，乘法走 BigInt，超界显式 <code>KERNEL_REJECTED</code>。</li>
+              <li><b>输入契约</b>：全部 <code>.strict()</code>，智能体不能夹带 <code>status</code>、<code>version</code> 等账本字段。</li>
+              <li><b>审计不可改</b>：业务写入与审计写入同一事务；<code>audit_log</code> 由数据库触发器禁止 UPDATE / DELETE。</li>
+              <li><b>数据范围</b>：<code>owner_id</code> + 角色 <code>dataScope</code>（OWN / TEAM / ALL），生产缺令牌 401，缺角色 fail-closed。</li>
+              <li><b>向量</b>：<code>vector(1024)</code> + HNSW；<code>local-stub</code> 走 <code>real[]</code> 兼容，零外部 key 可演示。</li>
+              <li><b>控制面分离</b>：<code>platform_*</code> / <code>plans</code> / <code>subscriptions</code> / <code>usage_*</code> / <code>invoices</code> 在独立库，平台侧只看聚合。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 技术栈 ============ -->
+      <section id="stack">
+        <div class="sec-head"><span class="sec-no">07</span><h2>技术栈</h2></div>
+        <p class="sec-sub">全栈 TypeScript 为主，managed service 优先，单人可维护、基础设施成本可控。</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th style="width:180px">层</th><th>选型</th><th style="width:320px">说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>后端</td><td>NestJS 10+ · TypeScript</td><td class="mut">模块化单体；DI、Guard（租户上下文）、Zod Pipe</td></tr>
+              <tr><td>数据库</td><td>PostgreSQL 16 + pgvector</td><td class="mut">RLS 行级隔离、JSONB 配置、向量检索</td></tr>
+              <tr><td>ORM / 迁移</td><td>Drizzle ORM</td><td class="mut">类型安全，SQL 迁移可控、不可变校验</td></tr>
+              <tr><td>缓存 / 队列</td><td>Redis 7（+ BullMQ）</td><td class="mut">租户前缀 key，打印队列与异步任务幂等</td></tr>
+              <tr><td>智能体编排</td><td>LangGraph.js</td><td class="mut">状态机 + PostgreSQL 检查点，工具调用 Zod 校验</td></tr>
+              <tr><td>桌面 / 审批面</td><td>Next.js 15 · React 19 · Tailwind</td><td class="mut">App Router，shadcn 风格设计系统</td></tr>
+              <tr><td>移动端</td><td>Taro（React）</td><td class="mut">一套代码 → H5/PWA + 小程序 + RN App</td></tr>
+              <tr><td>官网</td><td>Astro 5 · Tailwind 4</td><td class="mut">静态站，含价格、下载、开通流程与 SEO</td></tr>
+              <tr><td>桌面壳 / 打印</td><td>Tauri 2（Rust）</td><td class="mut">只暴露 print / scan / readFile / 电子秤</td></tr>
+              <tr><td>契约 / 校验</td><td>Zod</td><td class="mut">工具输入输出、API、环境变量的唯一契约来源</td></tr>
+              <tr><td>身份</td><td>Casdoor（OIDC / OAuth2）</td><td class="mut">一个租户一个 Organization；平台独立 Application + MFA</td></tr>
+              <tr><td>对象存储</td><td>S3 兼容（MinIO / 腾讯云 COS）</td><td class="mut">图片直传、PDF 快照、tenant 前缀隔离</td></tr>
+              <tr><td>LLM</td><td>OpenAI 兼容企业网关</td><td class="mut">不直连上游；Key / 模型白名单 / 预算 / token 只计量</td></tr>
+              <tr><td>测试</td><td>Vitest + Playwright</td><td class="mut">单元 / 内核集成 / HTTP e2e / 边界 / 契约一致性</td></tr>
+              <tr><td>构建</td><td>pnpm workspace + Turborepo</td><td class="mut">9 个应用、7 个包，按依赖图增量构建</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 铁律 ============ -->
+      <section id="rules">
+        <div class="sec-head"><span class="sec-no">08</span><h2>架构铁律</h2></div>
+        <p class="sec-sub">这四条不是建议，是代码与数据库里可被测试验证的约束。</p>
+
+        <div class="grid-2">
+          <div class="rule">
+            <div class="n">1</div>
+            <div>
+              <b>确定性内核与智能体外壳分离</b>
+              <p>智能体永远不直接修改库存、应收、合同状态。只有 <code>src/kernel</code> 能写业务表；工具层只拿到 Kernel 对象，拿不到 Db。</p>
+            </div>
+          </div>
+          <div class="rule">
+            <div class="n">2</div>
+            <div>
+              <b>智能体输出一律是草稿 / 建议</b>
+              <p>内核 <code>createDraft</code> 强制 DRAFT；<code>confirm*</code> / <code>reject*</code> 校验 <code>actor.type === "HUMAN"</code>，人类批准后才生效。</p>
+            </div>
+          </div>
+          <div class="rule">
+            <div class="n">3</div>
+            <div>
+              <b>每个业务能力以工具形式暴露</b>
+              <p>工具输入输出严格 Schema 校验；智能体不「打开页面」，只调用工具。审批决策只有 <code>/api/approvals/decide</code> 一个入口。</p>
+            </div>
+          </div>
+          <div class="rule">
+            <div class="n">4</div>
+            <div>
+              <b>人类界面只有三个窗口</b>
+              <p>任务派发（Intent Bar）、审批与异常分诊（Review Queue）、业务全景只读（Read-Only Panorama）。不做第二个写入口。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <h3>铁律在代码里的可验证落点</h3>
+          <ul>
+            <li><code>eslint.config.mjs</code> 的 <code>no-restricted-imports</code>：agent 禁止 import kernel / drizzle-orm / pg / <code>@weave-order/db</code>；tools / approval / import / http 禁止直连数据库。</li>
+            <li><code>apps/api/test/boundary.test.ts</code>：常驻回归测试锁定目录边界，改配置会被测出来；http 层例外仅限两个组合根文件。</li>
+            <li><code>apps/api/test/schema-parity.test.ts</code>：数据库枚举与契约枚举逐项比对，契约只有一处定义。</li>
+            <li><code>apps/api/test/import.integration.test.ts</code>：整批原子导入——任一坏行整批不提交，失败零脏数据。</li>
+            <li><code>apps/api/test/track-a.integration.test.ts</code> / <code>track-a.e2e.test.ts</code>：报价全链路与审计留痕。</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============ 部署 ============ -->
+      <section id="deploy">
+        <div class="sec-head"><span class="sec-no">09</span><h2>运行与部署</h2></div>
+        <p class="sec-sub">本地一条 <code class="mono">pnpm dev</code> 起全部 URL 端，健康检查全 200 才算就绪；生产国内为主，腾讯云容器化起步。</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="width:220px">端</th><th style="width:260px">本地地址</th><th>健康 / 首页</th></tr></thead>
+            <tbody>
+              <tr><td>API 内核</td><td><code>http://localhost:3000</code></td><td class="mut"><code>/api/health</code></td></tr>
+              <tr><td>工作台 web</td><td><code>http://localhost:3001</code></td><td class="mut"><code>/login</code> · demo 模式 <code>/today?demo=1</code></td></tr>
+              <tr><td>客户报价 quote</td><td><code>http://localhost:5174/s/&lt;token&gt;</code></td><td class="mut"><code>/s/dev-readiness</code></td></tr>
+              <tr><td>平台控制台 admin</td><td><code>http://localhost:3003</code></td><td class="mut"><code>/login</code></td></tr>
+              <tr><td>平台控制面 API</td><td><code>http://localhost:3002</code></td><td class="mut"><code>/platform/api/health</code></td></tr>
+              <tr><td>官网 site</td><td><code>http://localhost:4321</code></td><td class="mut"><code>/</code></td></tr>
+              <tr><td>移动端 H5</td><td><code>http://localhost:10086</code></td><td class="mut"><code>/</code></td></tr>
+              <tr><td>CLI / 打印代理</td><td class="mut">非 URL 服务</td><td class="mut"><code>pnpm dev:cli</code> · <code>pnpm dev:desktop</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-3" style="margin-top:14px">
+          <div class="card">
+            <h3>本地依赖</h3>
+            <p>Docker Compose：PostgreSQL 16 + pgvector、Redis 7。图片链路可选 S3 兼容对象存储；默认 embedding 走 local-stub，不需要任何外部 key。</p>
+          </div>
+          <div class="card">
+            <h3>生产（国内为主）</h3>
+            <p>腾讯云 CVM 容器化（Compose 起步，后接 K8s）+ CDB PostgreSQL + Redis + COS + 短信。前端可独立部署，<code>.cn</code> 需备案。</p>
+          </div>
+          <div class="card">
+            <h3>隔离与可观测</h3>
+            <p>租户面 / 客户面 / 平台面物理或逻辑隔离；每租户前缀隔离对象存储与缓存。监控自托管 Uptime Kuma + Plausible，可选 Sentry / Prometheus。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>织序 WeaveOrder · 架构总览 · 依据仓库 <code>README.md</code> 与 <code>docs/architecture-and-tech-stack.md</code></span>
+      <span>单文件、零外部依赖，可直接浏览器打开或打印为 PDF</span>
+    </footer>
+  </body>
+</html>

@@ -1,13 +1,14 @@
-import { withTenantSession } from "@weave-order/db";
-import type { Pool } from "pg";
-import { createKernel, parseShareToken, QuoteLinkError } from "../kernel";
-import type {
+import {
   CustomerAcceptQuoteResult,
   CustomerAskQuestionResult,
-  CustomerQuotePage as CustomerPage,
 } from "@weave-order/schema";
-import { loadEnv } from "../platform/env";
+import type { CustomerQuotePage as CustomerPage } from "@weave-order/schema";
+import { parseShareToken, QuoteLinkError } from "../kernel";
+import type { Kernel } from "../kernel";
 import type { ShareVisitor } from "../kernel/shares.service";
+import { withKernelScope } from "../kernel/tenant-scope";
+import type { TenantPool } from "../kernel/tenant-scope";
+import { loadEnv } from "../platform/env";
 
 /**
  * 公开报价链接的唯一入口。
@@ -15,12 +16,14 @@ import type { ShareVisitor } from "../kernel/shares.service";
  * 顺序：验签 token → 从 token 拿到 tenantId → 打开该租户的 RLS 会话 → 内核。
  * 因此公开路由不需要、也没有一条跨租户的 owner 连接去「猜」租户；
  * 每个查询都仍在 `app.tenant_id` 约束下执行。
+ *
+ * 会话与连接由 kernel.tenant-scope 提供：这里只能拿到 kernel，拿不到 db。
  */
 export class PublicShareService {
   private readonly secret: string;
   private readonly publicAppUrl: string;
 
-  constructor(private readonly pool: Pool) {
+  constructor(private readonly pool: TenantPool) {
     const env = loadEnv();
     this.secret = env.QUOTE_SHARE_SECRET;
     this.publicAppUrl = env.PUBLIC_APP_URL;
@@ -28,20 +31,18 @@ export class PublicShareService {
 
   private async withShare<T>(
     token: string,
-    fn: (shares: ReturnType<typeof createKernel>["shares"], shareId: string) => Promise<T>,
+    fn: (shares: Kernel["shares"], shareId: string) => Promise<T>,
   ): Promise<T> {
     const payload = parseShareToken(token, this.secret);
     if (!payload) {
       throw new QuoteLinkError("INVALID_LINK", "链接无效，请联系您的业务员重新获取");
     }
-    return withTenantSession(this.pool, payload.t, async (db) => {
-      const kernel = createKernel(db, undefined, {
-        tenantId: payload.t,
-        shareSecret: this.secret,
-        publicAppUrl: this.publicAppUrl,
-      });
-      return fn(kernel.shares, payload.s);
-    });
+    return withKernelScope(
+      this.pool,
+      payload.t,
+      (kernel) => fn(kernel.shares, payload.s),
+      { shareSecret: this.secret, publicAppUrl: this.publicAppUrl },
+    );
   }
 
   view(

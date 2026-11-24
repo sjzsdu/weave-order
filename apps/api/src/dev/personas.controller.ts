@@ -1,11 +1,11 @@
 import { Body, Controller, Get, Headers, HttpCode, Inject, Post, Res } from "@nestjs/common";
-import { DEFAULT_TENANT_ID } from "@weave-order/db";
 import {
   DevPersonaListResponse,
   DevSessionInput,
   PERSONAS,
   personaByKey,
 } from "@weave-order/schema";
+import { DEFAULT_TENANT_ID } from "../kernel";
 import { toHttpError } from "../gateway/auth.controller";
 import { AuthService } from "../gateway/auth.service";
 import { SESSION_COOKIE } from "../gateway/session.service";

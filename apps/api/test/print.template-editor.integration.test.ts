@@ -5,10 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrintTemplateLayout } from "@weave-order/schema";
 import { createKernel } from "../src/kernel";
 import type { Kernel, KernelContext } from "../src/kernel";
-import { SampleCardService } from "../src/print/sample-card.service";
-import { PrintJobService } from "../src/print/print-jobs.service";
-import { PrintTemplateService } from "../src/print/print-templates.service";
-import { PrintViewService } from "../src/print/print-view.service";
+import { SampleCardService } from "../src/kernel/print/sample-card.service";
+import { PrintJobService } from "../src/kernel/print/print-jobs.service";
+import { PrintTemplateService } from "../src/kernel/print/print-templates.service";
+import { PrintViewService } from "../src/kernel/print/print-view.service";
 import { requirePrintTestEnv } from "./support/print-env";
 
 /**

@@ -3,7 +3,7 @@
  * → 内核定价 → 报价 DRAFT（带定价依据 + 缺失项）+ token 计量。
  */
 import { createQuoteDemoContext, ok, section } from "./quote-demo-lib";
-import { demoWriteContext, ensureDemoIdentity } from "../src/dev/demo-identity";
+import { demoWriteContext, ensureDemoIdentity } from "../src/kernel/demo-identity";
 import type { FabricSample } from "@weave-order/schema";
 
 async function main(): Promise<void> {
