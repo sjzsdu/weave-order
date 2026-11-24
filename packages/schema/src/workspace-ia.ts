@@ -40,11 +40,14 @@ export function resolveWorkspaceIA(
 }
 
 /**
- * 新 IA 一级入口：工作台 / 事项 / 资源 / 设置。
- * 审批不再是入口（D1 取消审批），日志归入设置里的「审计日志」。
+ * 新 IA 一级入口：工作台 / 小织 / 事项 / 资源 / 设置。
+ *
+ * 小织放在工作台之后作为第二项（WAN-213）：AI 对话是主路径，不该排最后。
+ * ⌘4：⌘1/⌘2/⌘3 已被事项/资源/设置占用。
  */
 export const WORKSPACE_NAV: readonly NavItem[] = [
   { href: "/workbench", label: "工作台", hint: "小织今天的动态与待决事项" },
+  { href: "/xiaozhi", label: "小织", key: "4", hint: "⌘4" },
   { href: "/items", label: "事项", key: "1", hint: "⌘1" },
   { href: "/resources", label: "资源", key: "2", hint: "⌘2" },
   { href: "/settings", label: "设置", key: "3", hint: "⌘3" },
@@ -60,6 +63,7 @@ export const RESOURCE_NAV: readonly NavItem[] = [
   { href: "/resources", label: "资源首页" },
   { href: "/panorama/customers", label: "客户" },
   { href: "/panorama/samples", label: "样品" },
+  { href: "/panorama/quotes", label: "报价", requiredCapability: "quote.workbench.view" },
   { href: "/resources/templates", label: "模板" },
 ];
 
@@ -70,8 +74,8 @@ export const LEGACY_BUSINESS_NAV = BUSINESS_NAV;
 /**
  * 一级入口的「当前页」判定。
  *
- * - 精确匹配的一级页（资源首页/设置）只点亮自己；
- * - 新 IA 的「资源」同时覆盖 `/panorama/*` 深链（客户/样品仍住在旧路径上）；
+ * - 精确匹配的一级页（资源首页/设置/小织）只点亮自己；
+ * - 新 IA 的「资源」同时覆盖 `/panorama/*` 深链（客户/样品/报价仍住在旧路径上）；
  * - 事项覆盖 `/items/[id]`。
  */
 export function isNavItemActive(href: string, pathname: string, ia: WorkspaceIA = "new"): boolean {
@@ -79,7 +83,7 @@ export function isNavItemActive(href: string, pathname: string, ia: WorkspaceIA 
     if (pathname === href) return true;
     return ia === "new" && pathname.startsWith("/panorama");
   }
-  if (href === "/settings") return pathname === href;
+  if (href === "/settings" || href === "/xiaozhi") return pathname === href;
   // 旧业务概览必须精确匹配：否则客户/样品二级页会把「概览」也点亮。
   if (href === "/panorama") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);

@@ -13,11 +13,13 @@ describe("页面标题映射", () => {
     expect(titleForPath("/items/01a2")).toBe("事项 · 织序 WeaveOrder");
   });
 
-  it("资源深链归到资源标题，设置与输入页各自独立", () => {
+  it("资源深链归到资源标题，设置、输入页与小织各自独立", () => {
     expect(titleForPath("/resources")).toBe("资源 · 织序 WeaveOrder");
     expect(titleForPath("/panorama/customers")).toBe("资源 · 织序 WeaveOrder");
     expect(titleForPath("/settings")).toBe("设置 · 织序 WeaveOrder");
     expect(titleForPath("/inbound")).toBe("对小织说句话 · 织序 WeaveOrder");
+    expect(titleForPath("/xiaozhi")).toBe("小织 · 织序 WeaveOrder");
+    expect(titleForPath("/xiaozhi?text=你好")).toBe("小织 · 织序 WeaveOrder");
   });
 
   it("未知路径回落到完整产品标题", () => {

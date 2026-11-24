@@ -22,6 +22,9 @@ export function titleForPath(pathname: string): string {
   if (pathname === "/inbound" || pathname.startsWith("/inbound?")) {
     return "对小织说句话 · 织序 WeaveOrder";
   }
+  if (pathname === "/xiaozhi" || pathname.startsWith("/xiaozhi?")) {
+    return "小织 · 织序 WeaveOrder";
+  }
   return BASE_TITLE;
 }
 
