@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ItemStatus } from "@weave-order/schema";
-import { Badge, Button, Card, EmptyState, Spinner, formatMoney } from "@weave-order/ui";
+import { Badge, Button, Card, EmptyState, Spinner, UndoToast, formatMoney } from "@weave-order/ui";
 import { useTenantContext } from "@weave-order/core";
 import { useApi } from "@/providers";
 import { confirmedByLabel } from "@/format";
@@ -19,9 +19,22 @@ const QUOTE_STATUS_TEXT: Record<string, string> = {
   EXPIRED: "已过期",
 };
 
+function floorSourceLabel(source: string): string {
+  // 旧依据接口把数据库出处放在字符串中；这里只翻译已知字段，不猜定价规则。
+  return source
+    .replace(/samples\.cost_floor\([^)]*\)/g, "样品成本底线")
+    .replaceAll("pricing_policies.min_margin_pct", "最低毛利规则")
+    .replaceAll("SYSTEM", "系统默认")
+    .replaceAll("COMPANY", "公司")
+    .replaceAll("TEAM", "团队")
+    .replaceAll("PERSON", "个人")
+    .replaceAll("CATEGORY", "品类")
+    .replaceAll("CUSTOMER", "客户");
+}
+
 const TRANSITION_LABEL: Partial<Record<ItemStatus, string>> = {
-  WAITING_INPUT: "等待补充",
-  WAITING_DECISION: "等待决定",
+  WAITING_INPUT: "等我补资料",
+  WAITING_DECISION: "等我决定",
   IN_PROGRESS: "回到处理中",
 };
 
@@ -52,6 +65,8 @@ export default function ItemDetailPage() {
   const [confirmClose, setConfirmClose] = useState(false);
   const [quotePrice, setQuotePrice] = useState("");
   const [copied, setCopied] = useState(false);
+  const [undoNotice, setUndoNotice] = useState<{ token: string; message: string } | null>(null);
+  const dismissUndo = useCallback(() => setUndoNotice(null), []);
 
   const quotesQuery = useQuery({
     queryKey: ["item", itemId, "quotes"],
@@ -67,10 +82,42 @@ export default function ItemDetailPage() {
     enabled: Boolean(confirmedQuote),
   });
 
+  const basisQuery = useQuery({
+    queryKey: ["quote", confirmedQuote?.id, "basis"],
+    queryFn: () => api.quoteBasis(confirmedQuote!.id),
+    enabled: Boolean(confirmedQuote),
+    retry: false,
+  });
+  const undo = useMutation({
+    mutationFn: (token: string) => api.undoItemTransition(itemId, { undoToken: token }),
+    onSuccess: () => {
+      setUndoNotice(null);
+      setFeedback("已撤销状态变更");
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (error) => {
+      setUndoNotice(null);
+      setFeedback(error instanceof Error ? error.message : "撤销失败，请刷新后查看");
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+  });
+
   const transition = useMutation({
+    onMutate: () => setUndoNotice(null),
     mutationFn: (status: ItemStatus) => api.transitionItem(itemId, { status }),
     onSuccess: (detail) => {
       queryClient.setQueryData(key, detail);
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
+      setUndoNotice(
+        detail.undoToken
+          ? {
+              token: detail.undoToken,
+              message: "事项状态已更新",
+            }
+          : null,
+      );
       setFeedback("事项状态已更新");
       setMoreOpen(false);
       setConfirmClose(false);
@@ -78,9 +125,12 @@ export default function ItemDetailPage() {
     onError: (error) => setFeedback(error instanceof Error ? error.message : "状态更新失败"),
   });
   const complete = useMutation({
+    onMutate: () => setUndoNotice(null),
     mutationFn: () => api.completeItem(itemId),
     onSuccess: (detail) => {
       queryClient.setQueryData(key, detail);
+      setUndoNotice(null);
+      void queryClient.invalidateQueries({ queryKey: ["items"] });
       setFeedback("事项已完成");
     },
     onError: (error) =>
@@ -132,11 +182,20 @@ export default function ItemDetailPage() {
     (status) => status !== "COMPLETED" && status !== "CLOSED",
   );
   const canClose = allowedTransitions.includes("CLOSED");
-  const busy = transition.isPending || complete.isPending;
+  const busy = transition.isPending || complete.isPending || undo.isPending;
   const quotes = quotesQuery.data?.quotes ?? [];
 
   return (
     <div className="grid gap-4 pb-24 md:pb-6">
+      {undoNotice ? (
+        <UndoToast
+          key={undoNotice.token}
+          message={undoNotice.message}
+          pending={undo.isPending}
+          onUndo={() => undo.mutate(undoNotice.token)}
+          onDismiss={dismissUndo}
+        />
+      ) : null}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <nav
@@ -162,6 +221,11 @@ export default function ItemDetailPage() {
         </div>
         <Badge tone={ITEM_STATUS_TONE[item.status]}>{ITEM_STATUS_LABEL[item.status]}</Badge>
       </header>
+      {feedback ? (
+        <p className="text-sm text-ink-500" role="status">
+          {feedback}
+        </p>
+      ) : null}
 
       {item.nextAction ? (
         <Card className="border-l-4 border-l-indigo-600 p-4">
@@ -329,9 +393,52 @@ export default function ItemDetailPage() {
         </Card>
       ) : null}
 
+      {confirmedQuote && basisQuery.data && !basisQuery.isError ? (
+        <Card className="min-w-0 p-4">
+          <h2 className="text-sm font-medium text-ink-700">已确认报价的定价依据</h2>
+          {basisQuery.data.lastDealUnitPrice && basisQuery.data.lastDealAt ? (
+            <p className="mt-2 text-xs text-ink-500">
+              历史成交参考：{formatMoney(basisQuery.data.lastDealUnitPrice)} ·{" "}
+              {new Date(basisQuery.data.lastDealAt).toLocaleString("zh-CN")}
+            </p>
+          ) : null}
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[40rem] text-left text-sm">
+              <thead>
+                <tr className="border-b border-line text-xs text-ink-400">
+                  {["样品", "单价", "样品成本底线", "含最低毛利的底价", "毛利空间", "底价来源"].map(
+                    (label) => (
+                      <th key={label} className="py-2 pr-3 font-normal">
+                        {label}
+                      </th>
+                    ),
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {basisQuery.data.lines.map((line) => (
+                  <tr key={line.lineIndex} className="border-b border-line/60 text-ink-700">
+                    <td className="max-w-64 break-words py-2 pr-3">
+                      {line.sampleCode} · {line.sampleName}
+                    </td>
+                    <td className="py-2 pr-3">{formatMoney(line.unitPrice)}</td>
+                    <td className="py-2 pr-3">{formatMoney(line.sampleCostFloor)}</td>
+                    <td className="py-2 pr-3">{formatMoney(line.priceFloor)}</td>
+                    <td className="py-2 pr-3">{(line.marginBps / 100).toFixed(1)}%</td>
+                    <td className="max-w-64 break-words py-2 pr-3">
+                      {floorSourceLabel(line.floorSource)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+
       {!terminal ? (
         <div className="rounded-lg border border-line bg-surface p-3">
-          <div className="mx-auto grid max-w-3xl gap-2 md:flex md:flex-wrap md:items-center">
+          <div className="mx-auto grid max-w-3xl gap-2">
             <Button
               className="min-h-11 md:flex-1"
               variant="primary"
@@ -340,32 +447,34 @@ export default function ItemDetailPage() {
             >
               {complete.isPending ? "完成中…" : "标记完成"}
             </Button>
-            {statusTransitions.map((status) => (
-              <Button
-                key={status}
-                className="min-h-11 md:flex-1"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => transition.mutate(status)}
-              >
-                {TRANSITION_LABEL[status] ?? ITEM_STATUS_LABEL[status]}
-              </Button>
-            ))}
-            {canClose ? (
-              <div className="md:ml-auto">
-                <button
-                  type="button"
-                  aria-expanded={moreOpen}
-                  onClick={() => {
-                    setMoreOpen((open) => !open);
-                    setConfirmClose(false);
-                  }}
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 text-sm text-ink-500 hover:bg-paper hover:text-ink-900"
+            <div className="flex flex-wrap items-center gap-2">
+              {statusTransitions.map((status) => (
+                <Button
+                  key={status}
+                  className="min-h-11 justify-start"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => transition.mutate(status)}
                 >
-                  更多操作
-                </button>
-              </div>
-            ) : null}
+                  {TRANSITION_LABEL[status] ?? ITEM_STATUS_LABEL[status]}
+                </Button>
+              ))}
+              {canClose ? (
+                <div className="md:ml-auto">
+                  <button
+                    type="button"
+                    aria-expanded={moreOpen}
+                    onClick={() => {
+                      setMoreOpen((open) => !open);
+                      setConfirmClose(false);
+                    }}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 text-sm text-ink-500 hover:bg-paper hover:text-ink-900"
+                  >
+                    更多操作
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           {moreOpen && canClose ? (
@@ -399,12 +508,6 @@ export default function ItemDetailPage() {
                 </button>
               )}
             </div>
-          ) : null}
-
-          {feedback ? (
-            <p className="mx-auto mt-2 max-w-3xl text-xs text-ink-400" role="status">
-              {feedback}
-            </p>
           ) : null}
         </div>
       ) : (

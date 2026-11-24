@@ -21,3 +21,5 @@ export * from "./offline-banner";
 export * from "./audit-trail";
 export * from "./audit-diff";
 export * from "./intent-run-card";
+
+export { UndoToast } from "./undo-toast";
