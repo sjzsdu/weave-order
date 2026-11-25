@@ -45,7 +45,7 @@
     "@weave-order/db": "workspace:*",
     "@weave-order/notify": "workspace:*",
     "@weave-order/schema": "workspace:*",
-    "csv-parse": "^6.2.1",
+    "csv-parse": "^7.0.3",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "ioredis": "^6.0.0",
