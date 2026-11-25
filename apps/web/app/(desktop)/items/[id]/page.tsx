@@ -118,7 +118,8 @@ export default function ItemDetailPage() {
             }
           : null,
       );
-      setFeedback("事项状态已更新");
+      // 撤销条已经承载这条消息，再写一行内联提示就是同一句话说两遍。
+      setFeedback(detail.undoToken ? null : "事项状态已更新");
       setMoreOpen(false);
       setConfirmClose(false);
     },
@@ -402,8 +403,32 @@ export default function ItemDetailPage() {
               {new Date(basisQuery.data.lastDealAt).toLocaleString("zh-CN")}
             </p>
           ) : null}
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-left text-sm">
+          {/* 窄屏不用横滚表格：底价和毛利被挤到屏幕外，等于又看不见依据了。 */}
+          <ul className="mt-3 grid gap-3 md:hidden">
+            {basisQuery.data.lines.map((line) => (
+              <li key={line.lineIndex} className="rounded-md border border-line/70 p-3 text-sm">
+                <p className="break-words font-medium text-ink-900">
+                  {line.sampleCode} · {line.sampleName}
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  {[
+                    ["单价", formatMoney(line.unitPrice)],
+                    ["样品成本底线", formatMoney(line.sampleCostFloor)],
+                    ["含最低毛利的底价", formatMoney(line.priceFloor)],
+                    ["毛利空间", `${(line.marginBps / 100).toFixed(1)}%`],
+                    ["底价来源", floorSourceLabel(line.floorSource)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="min-w-0">
+                      <dt className="text-ink-400">{label}</dt>
+                      <dd className="break-words text-ink-700">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 hidden md:block">
+            <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line text-xs text-ink-400">
                   {["样品", "单价", "样品成本底线", "含最低毛利的底价", "毛利空间", "底价来源"].map(
