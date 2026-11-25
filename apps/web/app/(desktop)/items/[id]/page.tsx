@@ -222,12 +222,6 @@ export default function ItemDetailPage() {
         </div>
         <Badge tone={ITEM_STATUS_TONE[item.status]}>{ITEM_STATUS_LABEL[item.status]}</Badge>
       </header>
-      {feedback ? (
-        <p className="text-sm text-ink-500" role="status">
-          {feedback}
-        </p>
-      ) : null}
-
       {item.nextAction ? (
         <Card className="border-l-4 border-l-indigo-600 p-4">
           <div className="text-xs uppercase tracking-[0.18em] text-indigo-600">下一步</div>
@@ -533,6 +527,13 @@ export default function ItemDetailPage() {
                 </button>
               )}
             </div>
+          ) : null}
+
+          {/* 终态有自己的一句结果文案，提示留在这里才不会和它重复。 */}
+          {feedback ? (
+            <p className="mx-auto mt-2 max-w-3xl text-xs text-ink-400" role="status">
+              {feedback}
+            </p>
           ) : null}
         </div>
       ) : (
