@@ -52,6 +52,7 @@ import { DemoScenesController } from "../demo/scenes.controller";
 import { demoScenesEnabled } from "../demo/scene-catalog";
 import { InboundIntakeService } from "./inbound-intake.service";
 import { SampleController } from "./samples.controllers";
+import { SampleShipmentController } from "./sample-shipments.controllers";
 import { ItemController } from "./items.controllers";
 import { ResourceController } from "./resources.controllers";
 import {
@@ -152,6 +153,7 @@ const providers: Provider[] = [
     IntentController,
     OnboardingStateController,
     SampleController,
+    SampleShipmentController,
     ItemController,
     ResourceController,
     OnboardingController,

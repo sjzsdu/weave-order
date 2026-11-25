@@ -7,6 +7,7 @@ import { isSampleStatusAvailable, weightLabel, widthLabel } from "@weave-order/s
 import { Badge, Button, MoneyText, Spinner, cn } from "@weave-order/ui";
 import { useApi } from "@/providers";
 import { canRetryImage, imageStatusBadges, thumbnailNote } from "@/sample-image-status";
+import { SampleShipmentHistory } from "@/sample-shipments";
 
 const UNIT_LABEL: Record<Unit, string> = {
   meter: "米",
@@ -45,6 +46,12 @@ export function SampleDrawer({
     queryFn: () => api.getSample(sampleId),
   });
   const sample = detail.data;
+  // 这个样品寄给过谁、到哪了。与图墙共用同一个批量接口（这里是单样品）。
+  const shipments = useQuery({
+    queryKey: ["sample-shipments", "by-samples", [sampleId]],
+    queryFn: () => api.listSampleShipments({ sampleIds: [sampleId] }),
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     setIndex(0);
@@ -315,6 +322,18 @@ export function SampleDrawer({
               </section>
             )}
 
+            <SampleShipmentHistory
+              shipments={shipments.data}
+              loading={shipments.isLoading}
+              error={
+                shipments.isError
+                  ? shipments.error instanceof Error
+                    ? `寄样记录读取失败：${shipments.error.message}`
+                    : "寄样记录读取失败"
+                  : null
+              }
+            />
+
             {shipmentOpen && <ShipmentForm sample={sample} />}
           </div>
         )}
@@ -385,6 +404,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 /** 建寄样单只产出 DRAFT：确认统一在审批窗口。 */
 function ShipmentForm({ sample }: { sample: FabricSample }) {
   const api = useApi();
+  const queryClient = useQueryClient();
   const customers = useQuery({ queryKey: ["customers", 50], queryFn: () => api.listCustomers(50) });
   const [customerId, setCustomerId] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -404,9 +424,11 @@ function ShipmentForm({ sample }: { sample: FabricSample }) {
         setStatus({ tone: "error", message: result.error.message });
         return;
       }
+      // 抽屉里的寄样记录和图墙徽标都要跟着多出这一张草稿。
+      void queryClient.invalidateQueries({ queryKey: ["sample-shipments"] });
       setStatus({
         tone: "ok",
-        message: `已建寄样单草稿（${result.data.shipment.id.slice(0, 8)}…），去审批窗口确认后生效。`,
+        message: `已建寄样单草稿（${result.data.shipment.id.slice(0, 8)}…）。草稿确认后才算寄出。`,
       });
     },
     onError: (error) => {

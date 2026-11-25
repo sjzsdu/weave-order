@@ -44,7 +44,13 @@ interface ApiSample {
 
 export interface SeedSample extends ApiSample {
   /** 这个样品在种子里的角色，specs 用它挑卡片。 */
-  role: "fabric" | "carousel";
+  role: "fabric" | "carousel" | "shipment";
+}
+
+/** WAN-220：专门承载「寄样进度」断言的样品与它那张真实寄样单草稿。 */
+export interface ShipmentFixture {
+  sample: SeedSample;
+  shipment: { id: string; status: string; customerName: string };
 }
 
 export interface SeedManifest {
@@ -62,6 +68,7 @@ export interface SeedManifest {
   /** 10 个样品共用同一张图：top-5 断言不依赖真实模型也有 5 条候选，同时撑满 5 列两行。 */
   fabricSamples: SeedSample[];
   carouselSample: SeedSample;
+  shipmentFixture: ShipmentFixture;
   /** 共用图样品的 code 集合，供「top-5 必须包含它们」断言。 */
   sharedImageCodes: string[];
 }
@@ -259,6 +266,68 @@ async function waitIndexed(sampleId: string, timeoutMs = 90_000): Promise<ApiSam
   );
 }
 
+/** 按样品反查寄样单（WAN-220 的批量只读面），种子用它做幂等判断。 */
+async function listShipments(
+  sampleId: string,
+): Promise<{ id: string; status: string; customerName: string }[]> {
+  const body = await api<{ shipments: { id: string; status: string; customerName: string }[] }>(
+    `/api/sample-shipments?sampleIds=${sampleId}`,
+  );
+  return body.shipments;
+}
+
+/**
+ * 寄样夹具：一个专门的样品 + 一张真实寄样单草稿。
+ *
+ * 不挂在 fabricSamples 上：那批样品被图墙布局与以图找样用例共用，
+ * 多一行寄样记录会让它们的断言跟着变。草稿走 `/api/tools/create-sample-shipment`
+ * 建（人类界面同样走这条），确认才归审批队列，种子不越过这条边界。
+ */
+async function ensureShipmentFixture(sha: string): Promise<ShipmentFixture> {
+  const code = `E2E-SHIP-${sha}-01`;
+  let sample = await findByCode(code);
+  if (!sample) {
+    sample = await createSample({
+      code,
+      name: "E2E 寄样样品",
+      composition: "100% 棉 · E2E",
+      weight: { value: 150, unit: "gsm" },
+    });
+  }
+
+  const existing = await listShipments(sample.id);
+  const first = existing[0];
+  if (first) {
+    return { sample: { ...sample, role: "shipment" }, shipment: first };
+  }
+
+  const customers = await api<{ customers: { id: string; name: string }[] }>(
+    "/api/customers?limit=1&sort=recent",
+  );
+  const customer = customers.customers[0];
+  if (!customer) throw new Error("库里没有客户：寄样夹具需要一位收样客户");
+  const created = await api<{
+    ok: boolean;
+    data?: { shipment: { id: string; status: string; customerName: string } };
+    error?: { message?: string };
+  }>("/api/tools/create-sample-shipment", {
+    method: "POST",
+    body: JSON.stringify({
+      customerId: customer.id,
+      items: [{ sampleId: sample.id, quantity: { value: 1, unit: "meter" } }],
+    }),
+  });
+  if (!created.ok || !created.data) {
+    throw new Error(`建寄样单草稿失败：${created.error?.message ?? "未知原因"}`);
+  }
+  // 工具返回的是内核单据（没有客户名），读模型才带 customerName：
+  // spec 要用它对齐抽屉里显示的名字，所以按样品重查一次。
+  const rows = await listShipments(sample.id);
+  const row = rows.find((item) => item.id === created.data!.shipment.id) ?? rows[0];
+  if (!row) throw new Error("寄样单草稿创建后查不到：读模型与写路径不一致");
+  return { sample: { ...sample, role: "shipment" }, shipment: row };
+}
+
 /**
  * persona 夹具：7 个成员 + 一条业务员名下客户。
  *
@@ -354,6 +423,8 @@ export async function ensureSeed(): Promise<SeedManifest> {
     throw new Error("轮播样品应有 2 张图");
   }
 
+  const shipmentFixture = await ensureShipmentFixture(sha);
+
   const manifest: SeedManifest = {
     fixture: PRIMARY_FILE,
     altFixture: ALT_FILE,
@@ -365,6 +436,7 @@ export async function ensureSeed(): Promise<SeedManifest> {
     persona,
     fabricSamples,
     carouselSample: { ...carouselReady, role: "carousel" },
+    shipmentFixture,
     sharedImageCodes: fabricSamples.map((sample) => sample.code),
   };
   await mkdir(ARTIFACTS_DIR, { recursive: true });
