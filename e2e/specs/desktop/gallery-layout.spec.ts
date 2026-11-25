@@ -30,7 +30,12 @@ test.describe("样品图墙布局", () => {
     /*
      * 入口可见性（WAN-131）：<768 的三个桌面动作收进「更多」折叠菜单，
      * 而不是直接消失。桌面视口保持直接入口，且不出现多余的「更多」。
+     *
+     * 断言的必须是顶栏那一份：图墙每张卡片自带「打印标签」按钮（c84445f），
+     * 不限定 header 时 /打印/ 会命中 10 个卡片按钮，和顶栏无关（WAN-218）。
      */
+    const header = page.locator("header");
+    const headerPrint = header.getByRole("button", { name: /打印/ });
     const moreButton = page.getByRole("button", { name: "更多入口" });
     if (viewport.width < 768) {
       await expect(moreButton).toBeVisible();
@@ -67,12 +72,12 @@ test.describe("样品图墙布局", () => {
 
       // 640~767 缝隙：桌面入口不能和「更多」同时出现（review P2-1）。
       await expect(page.getByLabel("组织与设置（⌘,）")).toBeHidden();
-      await expect(page.getByRole("button", { name: /打印/ })).toHaveCount(0);
-      await expect(page.getByText("退出", { exact: true })).toBeHidden();
+      await expect(headerPrint).toHaveCount(0);
+      await expect(header.getByText("退出", { exact: true })).toBeHidden();
     } else {
       await expect(moreButton).toBeHidden();
       await expect(page.getByLabel("组织与设置（⌘,）")).toBeVisible();
-      await expect(page.getByRole("button", { name: /打印/ }).first()).toBeVisible();
+      await expect(headerPrint).toBeVisible();
     }
 
     const boxes = await page.locator(GALLERY_CARDS).evaluateAll((elements) =>

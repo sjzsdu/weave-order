@@ -48,7 +48,13 @@ export function XiaozhiAssistant({ pendingCount }: { pendingCount: number }) {
     pendingCount > 0 ? `有 ${pendingCount} 件等你决定，小织在值守` : "小织在值守，随时可以派活";
 
   return (
-    <div ref={rootRef} className="fixed bottom-24 right-4 z-40 md:bottom-6 md:right-6">
+    <div
+      ref={rootRef}
+      // z-30（不是 z-40）：抽屉/弹窗遮罩是 z-40，浮标同为 z-40 时排在壳层最后，
+      // 会盖住「新建客户」抽屉右下角的主按钮，人点不到、e2e 也被它拦下（WAN-218）。
+      // 与 persona-bar 同一取舍：浮层优先，浮标让位。
+      className="fixed bottom-24 right-4 z-30 md:bottom-6 md:right-6"
+    >
       {open && (
         <div
           role="dialog"

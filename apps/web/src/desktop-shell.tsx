@@ -247,7 +247,12 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             className="flex shrink-0 items-baseline gap-2 whitespace-nowrap"
           >
             <span className="text-lg font-semibold tracking-wide text-ink-900">织序</span>
-            <span className="hidden text-xs text-ink-400 sm:inline">WeaveOrder</span>
+            {/* 英文副标只在 768–1023 让位：这一段顶栏要放下五项导航、搜索、打印、
+                设置与「更多」，单行天然宽度 782px 放不进 768（WAN-218）。挪走装饰性
+                副标，比让按钮折行、或拿 overflow 盖住溢出更诚实。 */}
+            <span className="hidden text-xs text-ink-400 sm:inline md:hidden lg:inline">
+              WeaveOrder
+            </span>
           </Link>
 
           <nav
@@ -320,10 +325,10 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             />
           </div>
 
-          <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
-            {/* 375 视口只保留「退出」：公司切换 / 打印 / 设置是桌面工作面的动作，
-                挤在手机上只会把顶栏撑出横向滚动。 */}
-            <div className="hidden md:block">
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 md:gap-3">
+            {/* 768–1023 把「公司切换 / 退出」收进「更多」：md 断点下整套桌面入口在
+                恰好 768px 时挤成 780px，撑出横向滚动（WAN-218）。lg 起才放回顶栏。 */}
+            <div className="hidden lg:block">
               <TenantSwitcher
                 tenants={
                   tenants.length > 0
@@ -349,7 +354,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setPrintOpen(true)}
-              className="hidden min-h-9 items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm text-ink-700 hover:border-ink-400 md:inline-flex"
+              className="hidden min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-line bg-surface px-3 text-sm text-ink-700 hover:border-ink-400 md:inline-flex"
             >
               <span aria-hidden>⎙</span>
               打印
@@ -357,23 +362,26 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
             <Link
               href="/settings"
               aria-label="组织与设置（⌘,）"
+              title={name}
               className={cn(
-                "hidden min-h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm md:inline-flex",
+                // 用户名是唯一长度不可控的顶栏文本：中文名十几个字就能把 768 顶栏
+                // 再撑出一次横向滚动（实测 859px）。截断并保留 title 兜底（WAN-218）。
+                "hidden max-w-[10rem] min-h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm md:inline-flex",
                 pathname.startsWith("/settings")
                   ? "bg-indigo-100 text-indigo-600"
                   : "text-ink-700 hover:bg-surface",
               )}
             >
-              {name}
-              <span className="text-xs text-ink-400">⌘,</span>
+              <span className="min-w-0 truncate">{name}</span>
+              <span className="shrink-0 text-xs text-ink-400">⌘,</span>
             </Link>
             <a
               href="/auth/logout"
-              className="hidden whitespace-nowrap text-xs text-ink-400 underline underline-offset-2 md:inline"
+              className="hidden whitespace-nowrap text-xs text-ink-400 underline underline-offset-2 lg:inline"
             >
               退出
             </a>
-            <div ref={moreRef} className="relative md:hidden">
+            <div ref={moreRef} className="relative lg:hidden">
               <button
                 ref={moreButtonRef}
                 type="button"
@@ -381,7 +389,7 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                 aria-expanded={moreOpen}
                 aria-label="更多入口"
                 onClick={() => setMoreOpen((open) => !open)}
-                className="inline-flex min-h-9 items-center rounded-md border border-line bg-surface px-2 text-xs text-ink-700 hover:border-ink-400"
+                className="inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-md border border-line bg-surface px-2 text-xs text-ink-700 hover:border-ink-400"
               >
                 更多
               </button>
@@ -391,6 +399,8 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                   aria-label="更多入口"
                   className="absolute right-0 z-40 mt-2 w-56 rounded-lg border border-line bg-surface p-1 shadow-card"
                 >
+                  {/* 打印 / 设置从 md 起已在顶栏常驻：768–1023 这一段「更多」只补位
+                      被收起来的退出登录与公司切换，不再列一遍同样的动作（WAN-218）。 */}
                   <button
                     type="button"
                     role="menuitem"
@@ -398,14 +408,14 @@ function DesktopShellContent({ children }: { children: ReactNode }) {
                       setMoreOpen(false);
                       setPrintOpen(true);
                     }}
-                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper"
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper md:hidden"
                   >
                     打印
                   </button>
                   <Link
                     role="menuitem"
                     href="/settings"
-                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper"
+                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-ink-700 hover:bg-paper md:hidden"
                   >
                     组织与设置
                   </Link>
