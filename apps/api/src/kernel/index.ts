@@ -170,7 +170,7 @@ export function createKernel(db: Db, embedder?: EmbeddingProvider, options: Kern
   const llmSettings = new LlmSettingsService(db, tenantId);
   const usage = new UsageService(db, tenantId);
   const intents = new IntentService(db, tenantId);
-  const items = new ItemService(db, tenantId);
+  const items = new ItemService(db, tenantId, mergeSecret);
   const inbound = new InboundService(db, tenantId, {
     ocr: options.ocrGateway ?? createOcrGatewayFromEnv(env),
     storage,

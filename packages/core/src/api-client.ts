@@ -40,6 +40,7 @@ import {
   ResourceOverview,
   SampleDraftResponse,
   TransitionItemInput,
+  UndoItemTransitionInput,
   UndoCustomerMergeInput,
   UpdateResourceFieldsInput,
   CreateQuoteShareInput,
@@ -1511,6 +1512,14 @@ export function createApiClient(options: ApiClientOptions) {
         await post(
           `/api/items/${encodeURIComponent(itemId)}/transition`,
           TransitionItemInput.parse(input),
+        ),
+      ),
+
+    undoItemTransition: async (itemId: string, input: z.input<typeof UndoItemTransitionInput>) =>
+      ItemDetail.parse(
+        await post(
+          `/api/items/${encodeURIComponent(itemId)}/transition/undo`,
+          UndoItemTransitionInput.parse(input),
         ),
       ),
 

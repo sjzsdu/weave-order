@@ -98,6 +98,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   SAMPLE_FIELDS_UPDATED: "逐字段确认了样品信息",
   ITEM_CREATED: "创建了业务事项",
   ITEM_STATUS_CHANGED: "变更了事项状态",
+  ITEM_STATUS_REVERTED: "撤销了事项状态变更",
   ITEM_COMPLETED: "完成了业务事项",
   MEMBERSHIP_ROLE_CHANGED: "调整了成员角色",
   MEMBERSHIP_SCOPE_CHANGED: "调整了成员数据范围",

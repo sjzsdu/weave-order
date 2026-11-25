@@ -147,6 +147,8 @@ export const ItemDetail = z
     sample: ItemResourceRef.nullable(),
     /** 当前状态允许迁移到的状态（空数组 = 终态）。 */
     allowedTransitions: z.array(ItemStatus),
+    undoToken: z.string().optional(),
+    undoUntil: Timestamp.optional(),
   })
   .strict();
 export type ItemDetail = z.infer<typeof ItemDetail>;
@@ -169,3 +171,8 @@ export const TransitionItemInput = z
   })
   .strict();
 export type TransitionItemInput = z.infer<typeof TransitionItemInput>;
+
+export const UndoItemTransitionInput = z
+  .object({ undoToken: z.string().min(1).max(8192) })
+  .strict();
+export type UndoItemTransitionInput = z.infer<typeof UndoItemTransitionInput>;

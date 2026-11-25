@@ -332,6 +332,7 @@ export const AuditAction = z.enum([
   "SAMPLE_FIELDS_UPDATED",
   "ITEM_CREATED",
   "ITEM_STATUS_CHANGED",
+  "ITEM_STATUS_REVERTED",
   "ITEM_COMPLETED",
   // 成员权限
   "MEMBERSHIP_ROLE_CHANGED",

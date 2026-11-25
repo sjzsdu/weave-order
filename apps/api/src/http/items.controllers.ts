@@ -103,6 +103,25 @@ export class ItemController {
     }
   }
 
+  @Post("items/:id/transition/undo")
+  @HttpCode(200)
+  async undoTransition(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    try {
+      return await this.human.run(
+        authorization,
+        this.kernel,
+        async (kernel, ctx) => kernel.items.undoTransition(id, body, ctx),
+        { scope: "write" },
+      );
+    } catch (error) {
+      rethrowHttp(error);
+    }
+  }
+
   @Post("items/:id/complete")
   @HttpCode(200)
   async complete(@Param("id") id: string, @Headers("authorization") authorization?: string) {

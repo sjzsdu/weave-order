@@ -1843,6 +1843,9 @@ export function createMockApiClient(): ApiClient {
             ? []
             : mockItemDetail.allowedTransitions,
       }),
+    undoItemTransition: async () => {
+      throw new Error("演示模式不支持撤销事项状态");
+    },
     completeItem: () =>
       Promise.resolve({
         ...mockItemDetail,
