@@ -143,7 +143,7 @@ test("样品标签提供可视预览、具体打印机选择且各宽度不裁�
     (request) =>
       request.url().includes("/api/print/sample-labels/") &&
       request.url().endsWith("/preview") &&
-      request.postDataJSON()?.printerId === TSPL_PRINTER_ID,
+      (request.postDataJSON() as { printerId?: string } | null)?.printerId === TSPL_PRINTER_ID,
   );
   await dialog.getByLabel("标签打印机").selectOption(TSPL_PRINTER_ID);
   await tsplRequest;

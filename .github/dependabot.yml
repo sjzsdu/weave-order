@@ -18,6 +18,10 @@ updates:
         update-types: ["minor", "patch"]
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # Taro 4 / babel-loader 8 只支持 Babel 7，升到 8.x 会直接构建失败。
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "cargo"
     directory: "/apps/print-agent/src-tauri"
