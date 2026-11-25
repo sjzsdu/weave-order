@@ -1,7 +1,7 @@
 import { customers, sampleShipmentItems, sampleShipments, samples } from "@weave-order/db";
 import type { Db } from "@weave-order/db";
-import { ApprovalItem, CreateSampleShipmentInput } from "@weave-order/schema";
-import type { SampleShipment, SampleShipmentItem } from "@weave-order/schema";
+import { ApprovalItem, CreateSampleShipmentInput, SampleShipmentRecord } from "@weave-order/schema";
+import type { SampleShipment, SampleShipmentItem, SampleShipmentStatus } from "@weave-order/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { appendAudit } from "./audit";
@@ -367,6 +367,74 @@ export class ShipmentService {
           quantity: { value: milliToQuantity(item.quantityMilli), unit: item.unit },
         })),
       ),
+    );
+  }
+
+  /**
+   * 按样品批量反查寄样记录（图墙徽标 / 样品抽屉）。
+   *
+   * 一次查完两张表，不做「每个样品一次」的循环：图墙首屏十几个样品，
+   * N+1 会把它拖慢到用户以为页面坏了。越权语义与 `getById` 一致——
+   * 客户不在数据范围内时，单据当作不存在，返回空数组而不是报错。
+   */
+  async listBySampleIds(
+    sampleIds: readonly string[],
+    ctx?: KernelContext,
+    status?: SampleShipmentStatus,
+  ): Promise<SampleShipmentRecord[]> {
+    const ids = [...new Set(sampleIds)];
+    if (ids.length === 0) return [];
+
+    const conditions: SQL[] = [
+      eq(sampleShipments.tenantId, this.tenantId),
+      inArray(sampleShipmentItems.sampleId, ids),
+    ];
+    if (status) conditions.push(eq(sampleShipments.status, status));
+    const scope = ownerScopeFilter(this.db, ctx, this.tenantId, customers.ownerId);
+    if (scope) conditions.push(scope);
+
+    const rows = await this.db
+      .select({ shipment: sampleShipments, customerName: customers.name })
+      .from(sampleShipments)
+      .innerJoin(sampleShipmentItems, eq(sampleShipmentItems.shipmentId, sampleShipments.id))
+      .innerJoin(customers, eq(customers.id, sampleShipments.customerId))
+      .where(and(...conditions))
+      .orderBy(desc(sampleShipments.createdAt), desc(sampleShipments.id));
+
+    // 一张寄样单可含多个样品：join 后同一单会出现多行，按 id 收敛。
+    const byId = new Map<string, { row: ShipmentRow; customerName: string }>();
+    for (const entry of rows) {
+      if (!byId.has(entry.shipment.id)) {
+        byId.set(entry.shipment.id, { row: entry.shipment, customerName: entry.customerName });
+      }
+    }
+    if (byId.size === 0) return [];
+
+    const itemRows = await this.db
+      .select()
+      .from(sampleShipmentItems)
+      .where(inArray(sampleShipmentItems.shipmentId, [...byId.keys()]))
+      .orderBy(asc(sampleShipmentItems.id));
+    const samplesByShipment = new Map<string, string[]>();
+    for (const item of itemRows) {
+      const bucket = samplesByShipment.get(item.shipmentId) ?? [];
+      bucket.push(item.sampleId);
+      samplesByShipment.set(item.shipmentId, bucket);
+    }
+
+    return [...byId.values()].map(({ row, customerName }) =>
+      SampleShipmentRecord.parse({
+        id: row.id,
+        code: row.code,
+        status: row.status,
+        carrier: row.carrier,
+        trackingNumber: row.trackingNumber,
+        customerId: row.customerId,
+        customerName,
+        sampleIds: samplesByShipment.get(row.id) ?? [],
+        createdAt: toIso(row.createdAt),
+        confirmedAt: toIsoOrNull(row.confirmedAt),
+      }),
     );
   }
 

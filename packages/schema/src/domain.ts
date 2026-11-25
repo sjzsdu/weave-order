@@ -344,6 +344,33 @@ export const SampleShipment = z.object({
 });
 export type SampleShipment = z.infer<typeof SampleShipment>;
 
+/**
+ * 寄样单读模型：按样品反查（图墙徽标 / 样品抽屉的寄样记录）。
+ *
+ * 不是 `SampleShipment` 的子集替代：多了 `customerName`，少了 `items` 的数量明细。
+ * 用途只有一个——回答「这个样品寄给过谁、到哪了」，因此不重复返回整单明细。
+ */
+export const SampleShipmentRecord = z.object({
+  id: EntityId,
+  code: z.string().max(64).nullable(),
+  status: SampleShipmentStatus,
+  carrier: z.string().max(128).nullable(),
+  trackingNumber: z.string().max(128).nullable(),
+  customerId: EntityId,
+  customerName: z.string(),
+  /** 这张寄样单包含的全部样品 id（抽屉据此显示「同单还有 N 个样品」时不用再查）。 */
+  sampleIds: z.array(EntityId),
+  createdAt: Timestamp,
+  confirmedAt: Timestamp.nullable(),
+});
+export type SampleShipmentRecord = z.infer<typeof SampleShipmentRecord>;
+
+/**
+ * 按样品批量反查寄样单时单次允许的样品上限。
+ * 超过就明确 400，不静默截断——图墙一屏十几个样品，截断会让徽标凭运气出现。
+ */
+export const SAMPLE_SHIPMENT_LOOKUP_MAX_SAMPLE_IDS = 100;
+
 /** 报价单状态。 */
 export const QuoteStatus = z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]);
 export type QuoteStatus = z.infer<typeof QuoteStatus>;

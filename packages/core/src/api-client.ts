@@ -135,6 +135,7 @@ import {
   ScanResult,
   SampleFilterTiers,
   SampleImage,
+  SampleShipmentRecord,
   Shipment,
   ShipmentView,
   UpdateCustomerContactInput,
@@ -160,6 +161,7 @@ import type {
   PersonaKey,
   PrintTemplateFormat,
   ReprintReason,
+  SampleShipmentStatus,
   SampleStatus,
 } from "@weave-order/schema";
 
@@ -266,6 +268,7 @@ const SamplePageResponse = z
   })
   .strict();
 const SampleResponse = z.object({ sample: FabricSample }).strict();
+const SampleShipmentListResponse = z.object({ shipments: z.array(SampleShipmentRecord) }).strict();
 const ConfirmImageResponse = z.object({ image: SampleImage }).strict();
 const RecordPaymentResponse = z
   .object({ receivable: Receivable, payment: ReceivablePaymentView.nullable() })
@@ -1028,6 +1031,21 @@ export function createApiClient(options: ApiClientOptions) {
       T005CreateSampleShipmentResult.parse(
         await post("/api/tools/create-sample-shipment", CreateSampleShipmentInput.parse(input)),
       ),
+
+    /**
+     * 按样品批量反查寄样记录：图墙徽标与样品抽屉共用这一条。
+     * 单次上限 100 个样品（服务端超限 400），调用方分片，不要逐样品请求。
+     */
+    listSampleShipments: async (params: {
+      sampleIds: readonly string[];
+      status?: SampleShipmentStatus;
+    }): Promise<SampleShipmentRecord[]> => {
+      const search = new URLSearchParams({ sampleIds: params.sampleIds.join(",") });
+      if (params.status) search.set("status", params.status);
+      return SampleShipmentListResponse.parse(
+        await request(`/api/sample-shipments?${search.toString()}`),
+      ).shipments;
+    },
 
     decideApproval: async (input: z.infer<typeof ApprovalDecisionInput>) =>
       ApprovalDecisionResult.parse(

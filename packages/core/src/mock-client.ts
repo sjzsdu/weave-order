@@ -1500,6 +1500,9 @@ export function createMockApiClient(): ApiClient {
 
     createSampleShipment: () => Promise.reject(new Error("演示模式不支持建寄样单，请用真实账号")),
 
+    // 演示数据里没有寄样单：如实返回空，图墙不加徽标、抽屉显示空态。
+    listSampleShipments: () => Promise.resolve([]),
+
     generateQuoteDraft: (_input: Parameters<ApiClient["generateQuoteDraft"]>[0]) =>
       Promise.resolve(T004GenerateQuoteDraftResult.parse({ ok: true, data: { draft } })),
 

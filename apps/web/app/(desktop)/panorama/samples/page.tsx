@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import type { FabricSample, FieldKey } from "@weave-order/schema";
 import { isSampleStatusAvailable, weightLabel } from "@weave-order/schema";
 import { Badge, Button, EmptyState, Spinner, cn } from "@weave-order/ui";
@@ -16,6 +16,14 @@ import { SampleLabelPrintDrawer } from "@/sample-label-print";
 import { SampleSavedToast, toSampleSaveFeedback } from "@/sample-saved-toast";
 import type { SampleSaveFeedback } from "@/sample-saved-toast";
 import { thumbBadge } from "@/sample-image-status";
+import {
+  SampleShipmentBadge,
+  fetchSampleShipments,
+  pickSampleShipmentBadge,
+  sampleShipmentSummaryText,
+  summarizeSampleShipments,
+} from "@/sample-shipments";
+import type { SampleShipmentBadgeView } from "@/sample-shipments";
 import { FieldOptionsManager } from "@/field-options-manager";
 
 type StatusFilter = "ACTIVE" | "ARCHIVED" | "ALL";
@@ -90,6 +98,24 @@ function SamplesWall() {
 
   const pages = list.data?.pages ?? [];
   const samples = useMemo(() => pages.flatMap((page) => page.samples), [pages]);
+  // 寄样进度按「每一页样品」批量取：滚到下一页只新增一个请求，
+  // 不会把已加载的几百个样品重查一遍。图墙也不按卡片各发一次请求。
+  const pageSampleIds = useMemo(
+    () => pages.map((page) => page.samples.map((sample) => sample.id)),
+    [pages],
+  );
+  const shipmentQueries = useQueries({
+    queries: pageSampleIds.map((ids) => ({
+      queryKey: ["sample-shipments", "by-samples", ids],
+      queryFn: () => fetchSampleShipments(api, ids),
+      enabled: ids.length > 0,
+      staleTime: 30_000,
+    })),
+  });
+  const shipmentRows = shipmentQueries.flatMap((query) => query.data ?? []);
+  const shipmentsLoading = shipmentQueries.some((query) => query.isLoading);
+  const shipmentsFailed = shipmentQueries.some((query) => query.isError);
+  const shipmentSummary = summarizeSampleShipments(shipmentRows);
   const lastPage = pages[pages.length - 1];
   const categories = lastPage?.categories ?? [];
   const colors = lastPage?.colors ?? [];
@@ -347,6 +373,16 @@ function SamplesWall() {
         {query && <span>筛选：{query}</span>}
       </div>
 
+      {samples.length > 0 && (
+        <p data-testid="sample-shipment-summary" className="text-xs text-ink-500">
+          {shipmentsLoading
+            ? "正在读取寄样进度…"
+            : shipmentsFailed
+              ? "寄样进度读取失败，刷新可重试。"
+              : sampleShipmentSummaryText(shipmentSummary)}
+        </p>
+      )}
+
       {list.isLoading && <Spinner label="正在加载样品图墙…" />}
       {list.isError && (
         <EmptyState
@@ -386,6 +422,7 @@ function SamplesWall() {
           <SampleCard
             key={sample.id}
             sample={sample}
+            shipmentBadge={pickSampleShipmentBadge(shipmentRows, sample.id)}
             onOpen={() => setOpenSampleId(sample.id)}
             onFillImage={() => openEdit(sample)}
             onPrint={() => setPrintSampleId(sample.id)}
@@ -460,11 +497,13 @@ function SamplesWall() {
 
 function SampleCard({
   sample,
+  shipmentBadge,
   onOpen,
   onFillImage,
   onPrint,
 }: {
   sample: FabricSample;
+  shipmentBadge: SampleShipmentBadgeView | null;
   onOpen: () => void;
   onFillImage: () => void;
   onPrint: () => void;
@@ -522,6 +561,7 @@ function SampleCard({
               .filter(Boolean)
               .join(" · ") || "规格未填"}
           </span>
+          {shipmentBadge && <SampleShipmentBadge view={shipmentBadge} />}
         </span>
       </button>
       <div className="flex items-center gap-2 px-3 pb-2">
