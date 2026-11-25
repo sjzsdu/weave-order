@@ -507,7 +507,9 @@ describe("API client（样品标签打印）", () => {
       copies: 1,
     });
 
-    const bodies = fetchImpl.mock.calls.map((call) => JSON.parse(call[1]?.body as string));
+    const bodies = fetchImpl.mock.calls.map(
+      (call) => JSON.parse(call[1]?.body as string) as Record<string, unknown>,
+    );
     expect(bodies[0]).toEqual({ printerId });
     expect(bodies[1]).toMatchObject({ printerId, copies: 2 });
     expect(bodies[2]).toMatchObject({ printerId, copies: 1, reason: "DAMAGED" });
