@@ -8,6 +8,7 @@ import type { ItemStatus } from "@weave-order/schema";
 import { Badge, Button, Card, EmptyState, Spinner, UndoToast, formatMoney } from "@weave-order/ui";
 import { useTenantContext } from "@weave-order/core";
 import { useApi } from "@/providers";
+import { floorSourceLabel } from "@/floor-source-label";
 import { confirmedByLabel } from "@/format";
 import { ITEM_STATUS_LABEL, ITEM_STATUS_TONE, itemQuantityText } from "@/item-format";
 
@@ -18,19 +19,6 @@ const QUOTE_STATUS_TEXT: Record<string, string> = {
   REJECTED: "已驳回",
   EXPIRED: "已过期",
 };
-
-function floorSourceLabel(source: string): string {
-  // 旧依据接口把数据库出处放在字符串中；这里只翻译已知字段，不猜定价规则。
-  return source
-    .replace(/samples\.cost_floor\([^)]*\)/g, "样品成本底线")
-    .replaceAll("pricing_policies.min_margin_pct", "最低毛利规则")
-    .replaceAll("SYSTEM", "系统默认")
-    .replaceAll("COMPANY", "公司")
-    .replaceAll("TEAM", "团队")
-    .replaceAll("PERSON", "个人")
-    .replaceAll("CATEGORY", "品类")
-    .replaceAll("CUSTOMER", "客户");
-}
 
 const TRANSITION_LABEL: Partial<Record<ItemStatus, string>> = {
   WAITING_INPUT: "等我补资料",
