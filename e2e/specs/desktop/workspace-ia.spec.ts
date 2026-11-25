@@ -165,13 +165,13 @@ test.describe("工作台信息架构（新 IA）", () => {
     await expect(page).toHaveURL(/\/panorama\/customers/);
   });
 
-  test("资源概览只请求聚合接口，三档宽度无横向滚动且支持键盘进入建客户", async ({ page }) => {
+  test("资源概览只请求聚合接口，四档宽度无横向滚动且支持键盘进入建客户", async ({ page }) => {
     const panoramaRequests: string[] = [];
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/panorama") panoramaRequests.push(request.url());
     });
 
-    for (const width of [375, 768, 1440]) {
+    for (const width of [375, 768, 820, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       const overviewResponse = page.waitForResponse(
         (response) =>
@@ -302,20 +302,61 @@ test.describe("工作台信息架构（新 IA）", () => {
     await expect(page.getByText("待批草稿")).toHaveCount(0);
   });
 
-  test("375 宽：底部导航四项、触控目标 ≥44px、无横向滚动", async ({ page }) => {
+  test("768–1023 宽：顶栏一行放得下，退出收进「更多」，1024 起回到顶栏", async ({ page }) => {
+    /*
+     * WAN-218：五项导航后顶栏单行天然宽度 782px，恰好 768 时溢出 12px，
+     * 「打印」被挤成两行、「更多」压成 30px。这条守住两点：
+     * 1) 任何一档都不能横向滚动；2) 桌面动作不能被挤到折行（高度仍是 min-h-9）。
+     */
+    const logout = page.locator('a[href="/auth/logout"]').first();
+    const moreButton = page.getByRole("button", { name: "更多入口" });
+    const printButton = page.getByRole("button", { name: /打印/ });
+
+    for (const width of [768, 820, 1023]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/workbench");
+      await expect(page.getByRole("navigation", { name: "桌面窗口" })).toBeVisible();
+      await noHorizontalScroll(page);
+
+      await expect(printButton, `${width} 宽打印入口`).toBeVisible();
+      const printBox = await printButton.boundingBox();
+      expect(printBox?.height ?? 0, `${width} 宽打印入口被挤成折行`).toBeLessThan(44);
+      const moreBox = await moreButton.boundingBox();
+      expect(moreBox?.width ?? 0, `${width} 宽「更多」被挤变形`).toBeGreaterThanOrEqual(40);
+
+      // 退出是这一段唯一被收起来的顶栏动作：必须在「更多」里还能点到。
+      await expect(logout, `${width} 宽退出应已收起`).toBeHidden();
+      await moreButton.click();
+      const menu = page.getByRole("menu", { name: "更多入口" });
+      await expect(menu.getByRole("menuitem", { name: "退出登录" })).toBeVisible();
+      // 打印与设置在顶栏常驻，不再在菜单里重复一遍。
+      await expect(menu.getByRole("menuitem", { name: "打印", exact: true })).toHaveCount(0);
+      await expect(menu.getByRole("menuitem", { name: "组织与设置" })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+    }
+
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.goto("/workbench");
+    await expect(moreButton).toBeHidden();
+    await expect(logout).toBeVisible();
+    await noHorizontalScroll(page);
+  });
+
+  test("375 宽：底部导航五项、触控目标 ≥44px、无横向滚动", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto("/items?filter=recent");
     const bottomNav = page.getByRole("navigation", { name: "移动端主导航" });
     await expect(bottomNav).toBeVisible();
     const links = bottomNav.getByRole("link");
-    await expect(links).toHaveCount(4);
+    await expect(links).toHaveCount(5);
     const boxes = await links.evaluateAll((elements) =>
       elements.map((element) => {
         const rect = element.getBoundingClientRect();
         return { label: element.textContent?.trim(), height: rect.height, width: rect.width };
       }),
     );
-    expect(boxes.map((box) => box.label)).toEqual(["工作台", "事项", "资源", "设置"]);
+    expect(boxes.map((box) => box.label)).toEqual(["工作台", "小织", "事项", "资源", "设置"]);
     for (const box of boxes) {
       expect(box.height, `${box.label} 触控高度`).toBeGreaterThanOrEqual(44);
       expect(box.width, `${box.label} 触控宽度`).toBeGreaterThanOrEqual(44);
