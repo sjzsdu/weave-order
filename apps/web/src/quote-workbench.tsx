@@ -3,10 +3,11 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { QuoteDetail } from "@weave-order/schema";
+import type { Money, QuoteBasis, QuoteDetail } from "@weave-order/schema";
 import { Badge, Button, Card, Spinner, formatMoney } from "@weave-order/ui";
 import { centsToYuanInput, useTenantContext } from "@weave-order/core";
 import { useApi } from "@/providers";
+import { floorSourceLabel } from "@/floor-source-label";
 import { confirmedByLabel } from "@/format";
 import { ITEM_UNIT_LABEL } from "@/item-format";
 import { SampleCardPrint } from "@/sample-card-print";
@@ -66,6 +67,134 @@ function diffValue(value: unknown): string {
     return String(value);
   }
   return JSON.stringify(value);
+}
+
+/**
+ * 报价依据。出处行必须走 `floorSourceLabel`：同一个字段在事项详情说的是
+ * 「样品成本底线 + 最低毛利规则（系统默认）」，这里露出 `samples.cost_floor(...)`
+ * 就等于往里点一层可读性掉一级（WAN-219）。
+ */
+export function QuoteBasisCard({
+  basis,
+  baselineTotal,
+  currentTotal,
+  pendingDiff,
+  loading = false,
+  error = null,
+}: {
+  basis: QuoteBasis | undefined;
+  baselineTotal: Money | null;
+  currentTotal: Money;
+  pendingDiff: QuoteDetail["pendingDiff"];
+  loading?: boolean;
+  error?: unknown;
+}) {
+  return (
+    <Card className="border-l-4 border-l-indigo-600 p-4">
+      <h2 className="text-sm font-medium text-ink-700">报价依据（实时查）</h2>
+      {loading ? <Spinner label="正在查成本与历史价…" /> : null}
+      {error ? (
+        <p className="mt-2 text-sm text-vermilion-600">
+          {error instanceof Error ? error.message : "依据读取失败"}
+        </p>
+      ) : null}
+      {basis ? (
+        <div className="mt-3 grid gap-3">
+          {basis.lines.map((line) => (
+            <div key={line.lineIndex} className="rounded-md bg-paper p-3 text-sm">
+              <div className="font-medium text-ink-900">
+                {line.sampleName}（{line.sampleCode}）
+              </div>
+              <dl className="mt-2 grid gap-1 text-ink-700">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-400">当前单价</dt>
+                  <dd>{formatMoney(line.unitPrice)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-400">样品成本底线</dt>
+                  <dd>{formatMoney(line.sampleCostFloor)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-400">公司成本底线</dt>
+                  <dd>{formatMoney(line.companyCostFloor)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-400">含最低毛利的底价</dt>
+                  <dd>{formatMoney(line.priceFloor)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-400">毛利空间</dt>
+                  <dd>
+                    {formatMoney(line.marginAmount)}（{(line.marginBps / 100).toFixed(1)}%）
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-1 text-xs text-ink-400">{floorSourceLabel(line.floorSource)}</p>
+            </div>
+          ))}
+          <div>
+            <h3 className="text-xs uppercase tracking-[0.16em] text-ink-400">
+              历史成交（来源单据）
+            </h3>
+            {basis.history.length === 0 ? (
+              <p className="mt-1 text-sm text-ink-400">这个样品还没有确认过的成交价。</p>
+            ) : (
+              <ul className="mt-1 grid gap-1 text-sm">
+                {basis.history.map((entry) => (
+                  <li
+                    key={`${entry.quoteId}-${entry.unitPrice.amount}`}
+                    className="flex flex-wrap justify-between gap-2 border-b border-line/60 py-1"
+                  >
+                    <span className="text-ink-900">
+                      {entry.customerName} · {entry.quoteNumber}
+                    </span>
+                    <span className="text-ink-700">
+                      {formatMoney(entry.unitPrice)} ｜ {dateText(entry.confirmedAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {basis.lastDealUnitPrice ? (
+              <p className="mt-2 text-xs text-ink-500">
+                最近一次成交：{formatMoney(basis.lastDealUnitPrice)}（{dateText(basis.lastDealAt)}）
+              </p>
+            ) : null}
+          </div>
+          <div>
+            <h3 className="text-xs uppercase tracking-[0.16em] text-ink-400">原稿与差异</h3>
+            <p className="mt-1 text-sm text-ink-700">
+              智能体原稿：{baselineTotal ? formatMoney(baselineTotal) : "—"}
+              {" → "}
+              当前：{formatMoney(currentTotal)}
+            </p>
+            {pendingDiff.length === 0 ? (
+              <p className="mt-1 text-sm text-ink-400">当前价格与智能体原稿一致。</p>
+            ) : (
+              <ul className="mt-1 grid gap-1 text-sm">
+                {pendingDiff.map((entry) => (
+                  <li
+                    key={`${entry.field}-${entry.lineIndex ?? "doc"}`}
+                    className="flex flex-wrap gap-2 text-ink-700"
+                  >
+                    <span className="text-ink-400">
+                      {entry.label ?? entry.field}
+                      {entry.lineIndex !== null && entry.lineIndex !== undefined
+                        ? `（第 ${entry.lineIndex + 1} 行）`
+                        : ""}
+                    </span>
+                    <span className="line-through">{diffValue(entry.before)}</span>
+                    <span aria-hidden>→</span>
+                    <span className="text-ink-900">{diffValue(entry.after)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
 }
 
 export function QuoteWorkbench({ itemId, quoteId }: { itemId: string; quoteId: string }) {
@@ -275,111 +404,14 @@ export function QuoteWorkbench({ itemId, quoteId }: { itemId: string; quoteId: s
       </Card>
 
       {basisOpen ? (
-        <Card className="border-l-4 border-l-indigo-600 p-4">
-          <h2 className="text-sm font-medium text-ink-700">报价依据（实时查）</h2>
-          {basisQuery.isLoading ? <Spinner label="正在查成本与历史价…" /> : null}
-          {basisQuery.isError ? (
-            <p className="mt-2 text-sm text-vermilion-600">
-              {basisQuery.error instanceof Error ? basisQuery.error.message : "依据读取失败"}
-            </p>
-          ) : null}
-          {basisQuery.data ? (
-            <div className="mt-3 grid gap-3">
-              {basisQuery.data.lines.map((line) => (
-                <div key={line.lineIndex} className="rounded-md bg-paper p-3 text-sm">
-                  <div className="font-medium text-ink-900">
-                    {line.sampleName}（{line.sampleCode}）
-                  </div>
-                  <dl className="mt-2 grid gap-1 text-ink-700">
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-ink-400">当前单价</dt>
-                      <dd>{formatMoney(line.unitPrice)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-ink-400">样品成本底线</dt>
-                      <dd>{formatMoney(line.sampleCostFloor)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-ink-400">公司成本底线</dt>
-                      <dd>{formatMoney(line.companyCostFloor)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-ink-400">含最低毛利的底价</dt>
-                      <dd>{formatMoney(line.priceFloor)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-ink-400">毛利空间</dt>
-                      <dd>
-                        {formatMoney(line.marginAmount)}（{(line.marginBps / 100).toFixed(1)}%）
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="mt-1 text-xs text-ink-400">{line.floorSource}</p>
-                </div>
-              ))}
-              <div>
-                <h3 className="text-xs uppercase tracking-[0.16em] text-ink-400">
-                  历史成交（来源单据）
-                </h3>
-                {basisQuery.data.history.length === 0 ? (
-                  <p className="mt-1 text-sm text-ink-400">这个样品还没有确认过的成交价。</p>
-                ) : (
-                  <ul className="mt-1 grid gap-1 text-sm">
-                    {basisQuery.data.history.map((entry) => (
-                      <li
-                        key={`${entry.quoteId}-${entry.unitPrice.amount}`}
-                        className="flex flex-wrap justify-between gap-2 border-b border-line/60 py-1"
-                      >
-                        <span className="text-ink-900">
-                          {entry.customerName} · {entry.quoteNumber}
-                        </span>
-                        <span className="text-ink-700">
-                          {formatMoney(entry.unitPrice)} ｜ {dateText(entry.confirmedAt)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {basisQuery.data.lastDealUnitPrice ? (
-                  <p className="mt-2 text-xs text-ink-500">
-                    最近一次成交：{formatMoney(basisQuery.data.lastDealUnitPrice)}（
-                    {dateText(basisQuery.data.lastDealAt)}）
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <h3 className="text-xs uppercase tracking-[0.16em] text-ink-400">原稿与差异</h3>
-                <p className="mt-1 text-sm text-ink-700">
-                  智能体原稿：{quote.baselineTotal ? formatMoney(quote.baselineTotal) : "—"}
-                  {" → "}
-                  当前：{formatMoney(quote.draft.total)}
-                </p>
-                {quote.pendingDiff.length === 0 ? (
-                  <p className="mt-1 text-sm text-ink-400">当前价格与智能体原稿一致。</p>
-                ) : (
-                  <ul className="mt-1 grid gap-1 text-sm">
-                    {quote.pendingDiff.map((entry) => (
-                      <li
-                        key={`${entry.field}-${entry.lineIndex ?? "doc"}`}
-                        className="flex flex-wrap gap-2 text-ink-700"
-                      >
-                        <span className="text-ink-400">
-                          {entry.label ?? entry.field}
-                          {entry.lineIndex !== null && entry.lineIndex !== undefined
-                            ? `（第 ${entry.lineIndex + 1} 行）`
-                            : ""}
-                        </span>
-                        <span className="line-through">{diffValue(entry.before)}</span>
-                        <span aria-hidden>→</span>
-                        <span className="text-ink-900">{diffValue(entry.after)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </Card>
+        <QuoteBasisCard
+          basis={basisQuery.data}
+          loading={basisQuery.isLoading}
+          error={basisQuery.isError ? basisQuery.error : null}
+          baselineTotal={quote.baselineTotal}
+          currentTotal={quote.draft.total}
+          pendingDiff={quote.pendingDiff}
+        />
       ) : null}
 
       {changeRows.length > 0 ? (
